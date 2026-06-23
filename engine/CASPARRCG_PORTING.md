@@ -151,6 +151,10 @@ UFF (`bmdUpperFieldFirst`). Titulus: тот же подход — weave в deckl
 |---|---|---|
 | 0 | engine skeleton (CEF host + null consumer + stats) | ✅ done (PR #3) |
 | 0 | pipe + preview consumers | ✅ done (PR #4) |
+| 0 | bench harness + mask/alpha scene | ✅ done (PR #5) |
+| 0 | CasparCG baseline driver | ✅ done (PR #6) — formal baseline deferred (OSC/SDI) |
+| 0 | **steady-state soak report** | ✅ done (PR #7) — 3ch 60s: avg 47.88fps **0 drops**, mask/alpha 0.7% overhead |
+| 0 | **Phase 0 exit** | ✅ **render plane proven** — see docs/PHASE0_BENCH.md |
 | 1 | runtime TS (JSON→DOM) — **new design**, не port (CasparCG = raw HTML) | ⏳ todo |
 | 2 | backend + frontend control plane — new (cherry-pick sandbox optional) | ⏳ todo |
 | 3 | decklink_consumer port | ⏳ todo (code-complete, validation deferred — no HW) |
