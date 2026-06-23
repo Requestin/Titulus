@@ -1,0 +1,79 @@
+// engine/src/config.h
+//
+// bg_engine channel configuration (DEVELOPMENT_PROMPT §9.5).
+//
+// Parsed from CLI flags (with BG_ENGINE_* env fallbacks). One bg_engine process
+// = one channel = one primary consumer (+ optional JPEG preview parallel).
+
+#ifndef BG_ENGINE_CONFIG_H
+#define BG_ENGINE_CONFIG_H
+
+#include <cstdint>
+#include <string>
+
+namespace bg {
+
+enum class ConsumerKind {
+    Null,       // bench / headless
+    Pipe,       // raw BGRA -> fd/file (debug with ffplay)
+    Preview,    // throttled JPEG -> file
+    Decklink,   // SDI Fill+Key (Phase 3, needs HW)
+    Stream,     // ffmpeg SRT/RTMP (Phase 5)
+};
+
+enum class KeyerMode {
+    FillOnly,
+    Internal,
+    External,
+};
+
+struct Config {
+    // Page / sizing.
+    std::string url = "http://localhost:3001/channel.html?engine=1";
+    std::string name = "bg_engine";          // log label + cache dir basename
+    int  width  = 1920;
+    int  height = 1080;
+    int  fps    = 50;
+
+    // Run control.
+    int  duration_sec      = 0;              // 0 = infinite
+    int  stats_interval_sec = 5;
+
+    // Consumer selection.
+    ConsumerKind consumer = ConsumerKind::Null;
+
+    // Unique per-channel cache dir (avoids Chromium process singleton).
+    // DEVELOPMENT_PROMPT §9.2: cache-path MUST be unique per channel.
+    std::string cache_dir;
+
+    // Preview (PreviewWriter).
+    std::string preview_out;                 // JPEG path; empty = none
+    int  preview_fps = 10;
+
+    // Pipe.
+    std::string pipe_out;                    // file path; empty = stdout (fd 1)
+
+    // DeckLink (Phase 3).
+    int         device_index  = -1;          // -1 = none
+    std::string display_mode  = "HD1080i50"; // BMD display mode name
+    KeyerMode   keyer         = KeyerMode::External;
+
+    // Stream (Phase 5).
+    std::string stream_url;                  // srt://... | rtmp://...
+
+    // Parse argv into this config. Returns false on a fatal parse error (and
+    // prints usage to stderr). Exits the process on --help / a missing required
+    // arg so callers don't need to branch.
+    bool Parse(int argc, char** argv);
+
+    // Human-readable dump for the startup log line.
+    std::string Describe() const;
+};
+
+// String helpers for logs.
+const char* ConsumerLabel(ConsumerKind k);
+const char* KeyerLabel(KeyerMode k);
+
+}  // namespace bg
+
+#endif  // BG_ENGINE_CONFIG_H
