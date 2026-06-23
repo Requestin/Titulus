@@ -13,6 +13,8 @@
 #include "engine_client.h"
 #include "consumers/consumer.h"
 #include "consumers/null_consumer.h"
+#include "consumers/pipe_consumer.h"
+#include "consumers/preview_writer.h"
 #include "frame_ring.h"
 #include "message_pump.h"
 #include "stats.h"
@@ -68,13 +70,20 @@ void on_ready(bool /*ready*/) {
 
 std::unique_ptr<bg::Consumer> make_consumer() {
     switch (cfg.consumer) {
-        case bg::ConsumerKind::Null: return std::make_unique<bg::NullConsumer>();
-        // pipe / preview / decklink / stream land in Phase 0.4 / 3 / 5.
-        default:
+        case bg::ConsumerKind::Null:
+            return std::make_unique<bg::NullConsumer>();
+        case bg::ConsumerKind::Pipe:
+            return std::make_unique<bg::PipeConsumer>(cfg.pipe_out);
+        case bg::ConsumerKind::Preview:
+            return std::make_unique<bg::PreviewWriter>(cfg.preview_out, cfg.preview_fps);
+        // decklink / stream land in Phase 3 / 5.
+        case bg::ConsumerKind::Decklink:
+        case bg::ConsumerKind::Stream:
             std::fprintf(stderr, "bg_engine: consumer '%s' not built into this binary; "
                                  "using null.\n", bg::ConsumerLabel(cfg.consumer));
             return std::make_unique<bg::NullConsumer>();
     }
+    return std::make_unique<bg::NullConsumer>();
 }
 
 }  // namespace

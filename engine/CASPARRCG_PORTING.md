@@ -39,10 +39,10 @@ Producer (CEF HTML) → [channel-paced pull] → Consumer (decklink / ffmpeg / n
 
 | CasparCG source (relative to `src/`) | Titulus target | Что переносим | Статус | Phase |
 |---|---|---|---|---|
-| `modules/html/html.cpp:171-211` | `engine/src/engine_app.cpp` (`OnBeforeCommandLineProcessing`) | Switches: `disable-gpu`, `disable-gpu-compositing`, `disable-gpu-vsync=gpu`, `ozone-platform=headless` (no DISPLAY), `enable-begin-frame-scheduling`, `autoplay-policy`, `disable-web-security` | ⏳ todo | 0.3 |
-| `modules/html/html.cpp:227-282` | `engine/src/main.cpp` (`CefInitialize`/`CefRunMessageLoop`/`CefShutdown`) | CEF lifecycle: `CefSettings` (`windowless_rendering_enabled=true`, `no_sandbox=true`), per-channel `cache_path`, `CefExecuteProcess` sub-process guard | ⏳ todo | 0.3 |
-| `modules/html/producer/html_producer.cpp:347-399` | `engine/src/engine_client.cpp` (`OnPaint`) | OSR OnPaint: `PET_VIEW` filter, `pixel_format::bgra`, single `memcpy` BGRA (Linux), bounded frame queue | ⏳ todo | 0.3 |
-| `modules/html/producer/html_producer.cpp:657-668` | `engine/src/engine_client.cpp` (browser create) | `CefWindowInfo.SetAsWindowless`, `windowless_rendering_enabled=true`, `windowless_frame_rate=ceil(fps)`, `CefBrowserHost::CreateBrowser` | ⏳ todo | 0.3 |
+| `modules/html/html.cpp:171-211` | `engine/src/engine_app.cpp` (`OnBeforeCommandLineProcessing`) | Switches: `disable-gpu`, `disable-gpu-compositing`, `disable-gpu-vsync=gpu`, `ozone-platform=headless` (no DISPLAY), `enable-begin-frame-scheduling`, `autoplay-policy`, `disable-web-security` | ✅ done | 0.3 |
+| `modules/html/html.cpp:227-282` | `engine/src/main.cpp` (`CefInitialize`/`CefRunMessageLoop`/`CefShutdown`) | CEF lifecycle: `CefSettings` (`windowless_rendering_enabled=true`, `no_sandbox=true`), per-channel `cache_path`, `CefExecuteProcess` sub-process guard | ✅ done | 0.3 |
+| `modules/html/producer/html_producer.cpp:347-399` | `engine/src/engine_client.cpp` (`OnPaint`) | OSR OnPaint: `PET_VIEW` filter, `pixel_format::bgra`, single `memcpy` BGRA (Linux), bounded frame queue | ✅ done | 0.3 |
+| `modules/html/producer/html_producer.cpp:657-668` | `engine/src/engine_client.cpp` (browser create) | `CefWindowInfo.SetAsWindowless`, `windowless_rendering_enabled=true`, `windowless_frame_rate=ceil(fps)`, `CefBrowserHost::CreateBrowser` | ✅ done | 0.3 |
 | `modules/html/producer/html_producer.cpp:~220-280` (`try_pop`, field handling) | `engine/src/engine_client.cpp` / consumer | Field-aware frame pull (delays lone field A) — **для 1080i** | ⏳ todo | 0.3/3 |
 | `modules/html/producer/html_cg_proxy.cpp` | **n/a** (WS protocol) | CasparCG CG add/update/play/stop → у нас WS `take/update/clear` (другой протокол, semantic equivalence) | n/a | — |
 | `modules/decklink/consumer/decklink_consumer.cpp:910-1030` (`ScheduledFrameCompleted`) | `engine/src/consumers/decklink_consumer.cpp` | **Сердце pacing**: callback re-scheduling, `bmdOutputFrameDisplayedLate`→skip-ahead, pop 2 frames for interlace, `schedule_next_video` | ⏳ todo | 3.1 |
@@ -149,8 +149,8 @@ UFF (`bmdUpperFieldFirst`). Titulus: тот же подход — weave в deckl
 
 | Phase | Модули | Статус |
 |---|---|---|
-| 0 | engine skeleton (CEF host + null consumer + stats) | 🔨 in progress |
-| 0 | pipe + preview consumers | ⏳ todo |
+| 0 | engine skeleton (CEF host + null consumer + stats) | ✅ done (PR #3) |
+| 0 | pipe + preview consumers | ✅ done (PR #4) |
 | 1 | runtime TS (JSON→DOM) — **new design**, не port (CasparCG = raw HTML) | ⏳ todo |
 | 2 | backend + frontend control plane — new (cherry-pick sandbox optional) | ⏳ todo |
 | 3 | decklink_consumer port | ⏳ todo (code-complete, validation deferred — no HW) |

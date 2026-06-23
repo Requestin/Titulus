@@ -72,12 +72,15 @@ set(BG_HEADERS
   src/message_pump.h
   src/consumers/consumer.h
   src/consumers/null_consumer.h
+  src/consumers/pipe_consumer.h
+  src/consumers/preview_writer.h
 )
 
 add_executable(bg_engine ${BG_SOURCES} ${BG_HEADERS})
 
 target_include_directories(bg_engine PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
   "${CEF_INCLUDE_PATH}"
 )
 
