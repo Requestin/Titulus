@@ -1,0 +1,143 @@
+<!doctype html>
+<!--
+  bench/bench-alpha.html — mask/alpha performance stress (DEVELOPMENT_PROMPT §11.4).
+
+  A/B scene to measure mask/alpha overhead against the equivalent scene without
+  masks. The acceptance target is <=5% fps drop with masks ON vs OFF (§6.5, §11.4).
+
+  ?masks=0  : same scene, masks disabled (baseline A)
+  ?masks=1  : masks enabled (test B)   (default)
+
+  Scene (1080p):
+    - 2 lower-thirds with gradient + drop-shadow + animated slide (x, opacity)
+    - 1 full-screen alpha PNG-style bug (simulated with rgba + box-shadow)
+    - 1 mask layer (clip-path polygon) clipping animated content beneath
+    - 1 VP9/WebM-style alpha video overlay (simulated; real WebM added in Phase 1)
+
+  Run via:
+    bg_engine --consumer=null --url="file://.../bench-alpha.html?masks=1" --fps=50 --duration=60
+  Compare with ?masks=0; the bench harness reports the fps delta.
+
+  The compositor must keep working each frame (animated x/opacity + clip-path),
+  which is the exact cost path §6.5 warns about.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; }
+  #stage {
+    position: fixed; inset: 0; width: 1920px; height: 1080px;
+    background:
+      radial-gradient(1000px 700px at 70% 30%, #10243a, transparent 60%),
+      linear-gradient(160deg, #060912, #0c1322);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+
+  /* Animated plate beneath the mask — moves horizontally so the mask reveals/
+     hides different content each frame (the expensive path). */
+  .plate {
+    position: absolute; left: 200px; top: 360px; width: 1520px; height: 360px;
+    background: linear-gradient(90deg, #1e3a8a, #7c3aed, #db2777);
+    border-radius: 18px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    will-change: transform;
+    animation: pan 8s ease-in-out infinite;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 48px; font-weight: 700; letter-spacing: 1px;
+  }
+  @keyframes pan {
+    0%, 100% { transform: translateX(-160px); }
+    50%      { transform: translateX(160px);  }
+  }
+
+  /* Mask layer: clips the plate to a polygon window. This is the CPU-path
+     §6.5 cares about — clip-path on a dedicated wrapper, single compositing
+     layer, no filter chains. */
+  .maskwrap {
+    position: absolute; left: 220px; top: 380px; width: 1480px; height: 320px;
+    overflow: hidden;
+    border-radius: 14px;
+    background: rgba(2,6,23,.25);
+  }
+  .maskwrap.enabled {
+    /* Diamond-ish polygon cutout reveals only part of the animated plate. */
+    clip-path: polygon(8% 0, 92% 0, 100% 60%, 92% 100%, 8% 100%, 0 40%);
+  }
+
+  /* Full-screen "bug" with alpha — simulated translucent logo. */
+  #bug {
+    position: absolute; top: 80px; right: 80px; width: 220px; height: 220px;
+    background: radial-gradient(circle, rgba(34,211,238,.85), rgba(34,211,238,0) 70%);
+    /* Large full-frame box-shadow is a §6.5 warning — but kept small here. */
+    box-shadow: 0 0 30px rgba(34,211,238,.5);
+    will-change: opacity;
+    animation: pulse 3s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
+
+  /* Alpha "video" overlay — translucent animated panel (VP9/WebM+alpha lands
+     in Phase 1; here we simulate the same compositing cost). */
+  #vov {
+    position: absolute; left: 120px; bottom: 120px; width: 760px; height: 200px;
+    border-radius: 14px;
+    background:
+      linear-gradient(90deg, rgba(16,185,129,.0), rgba(16,185,129,.55)),
+      repeating-linear-gradient(45deg, rgba(255,255,255,.06) 0 24px, transparent 24px 48px);
+    backdrop-filter: blur(0); /* intentionally no backdrop-filter (§6.5 killer) */
+    will-change: transform, opacity;
+    animation: rise 6s ease-in-out infinite;
+  }
+  @keyframes rise {
+    0%, 100% { transform: translateY(40px); opacity: .3; }
+    20%, 80% { transform: translateY(0);    opacity: .9; }
+  }
+
+  /* A second lower-third for mix parity with bench.html. */
+  .lt2 {
+    position: absolute; right: 120px; bottom: 140px; width: 820px;
+    border-radius: 12px;
+    background: linear-gradient(90deg, rgba(15,23,42,.95), rgba(30,41,59,.8));
+    box-shadow: 0 16px 44px rgba(0,0,0,.5);
+    color: #f1f5f9; padding: 20px 30px;
+    will-change: transform, opacity;
+    animation: slide2 10s ease-in-out infinite;
+  }
+  .lt2 .t { font-size: 38px; font-weight: 700; }
+  .lt2 .s { font-size: 24px; font-weight: 400; color: #94a3b8; }
+  @keyframes slide2 {
+    0%, 100% { transform: translateX(40px); opacity: 0; }
+    15%, 85% { transform: translateX(0);    opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="maskwrap" id="maskwrap">
+    <div class="plate">MASKED CONTENT</div>
+  </div>
+  <div id="bug"></div>
+  <div id="vov"></div>
+  <div class="lt2"><div class="t">SECOND LOWER-THIRD</div><div class="s">alpha + animated transform</div></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const params = new URLSearchParams(location.search);
+  const masks = params.get('masks') !== '0';  // default ON
+  document.getElementById('maskwrap').classList.toggle('enabled', masks);
+
+  // Perpetual rAF heartbeat — keeps CEF external begin-frame painting (§10).
+  // A tiny transform nudge guarantees compositor damage each frame.
+  const stage = document.getElementById('stage');
+  function frame() {
+    stage.style.opacity = (0.999 + Math.random() * 0.001).toString();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

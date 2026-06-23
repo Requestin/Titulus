@@ -1,0 +1,163 @@
+<!doctype html>
+<!--
+  bench/bench.html — bg_engine performance stress scene (DEVELOPMENT_PROMPT §11.1).
+
+  Self-contained 1920x1080 page. Parameterized via ?graphics=N (default 5):
+  N animated lower-thirds (gradient + drop-shadow + corner radius) + a scrolling
+  ticker + a clock + a CSS spinner. Designed to force the CEF compositor to do
+  real work each frame so the bench measures the render pipeline, not idle.
+
+  Run via:
+    bg_engine --consumer=null --url="file://.../bench.html?graphics=5" --fps=50 --duration=60
+  or through bench/run-bench.sh for multi-channel + CPU% capture.
+
+  The perpetual rAF heartbeat below mutates the clock + ticker every frame so
+  CEF's external begin-frame keeps delivering OnPaint (DEVELOPMENT_PROMPT §10).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; background: transparent; }
+  #stage {
+    position: fixed; inset: 0; width: 1920px; height: 1080px;
+    /* Faux studio backdrop so the scene has visible content everywhere. */
+    background:
+      radial-gradient(1200px 800px at 30% 20%, #0b2a4a 0%, transparent 60%),
+      radial-gradient(900px 700px at 80% 80%, #3a0b4a 0%, transparent 55%),
+      linear-gradient(135deg, #050810, #0a0f1c);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+
+  /* Lower third: gradient fill + drop shadow + rounded corners + slide-in. */
+  .lt {
+    position: absolute; left: 90px; width: 980px;
+    border-radius: 10px;
+    background: linear-gradient(90deg, rgba(15,23,42,.94), rgba(30,41,59,.82));
+    box-shadow: 0 14px 40px rgba(0,0,0,.45), 0 2px 0 rgba(255,255,255,.06) inset;
+    color: #f1f5f9;
+    will-change: transform, opacity;
+    animation: slide 14s ease-in-out infinite;
+  }
+  .lt .bar   { height: 6px; border-radius: 10px 10px 0 0; background: linear-gradient(90deg,#22d3ee,#a855f7); }
+  .lt .title { padding: 18px 30px 6px; font-size: 40px; font-weight: 700; letter-spacing: .2px; }
+  .lt .sub   { padding: 0 30px 18px; font-size: 26px; font-weight: 400; color: #94a3b8; }
+  @keyframes slide {
+    0%, 100% { transform: translateX(-30px); opacity: .0; }
+    10%, 90% { transform: translateX(0);     opacity: 1; }
+  }
+
+  /* Scrolling ticker — per-frame translate3d forces compositor damage. */
+  #ticker {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 70px;
+    background: rgba(2,6,23,.92);
+    border-top: 2px solid #22d3ee;
+    overflow: hidden;
+    display: flex; align-items: center;
+  }
+  #ticker .track {
+    white-space: nowrap; padding-left: 1920px;
+    font-size: 30px; font-weight: 600; color: #e2e8f0;
+    will-change: transform;
+  }
+  #ticker .track b { color: #22d3ee; margin: 0 18px; }
+
+  /* Live clock top-right. */
+  #clock {
+    position: absolute; top: 40px; right: 60px;
+    font-size: 64px; font-weight: 700; color: #f8fafc;
+    text-shadow: 0 4px 16px rgba(0,0,0,.6);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* CSS spinner — continuous compositor work. */
+  #spin {
+    position: absolute; top: 48px; left: 60px;
+    width: 64px; height: 64px; border-radius: 50%;
+    border: 6px solid rgba(255,255,255,.15);
+    border-top-color: #22d3ee;
+    animation: rot 1s linear infinite;
+  }
+  @keyframes rot { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="spin"></div>
+  <div id="clock">00:00:00</div>
+  <!-- Lower thirds injected by JS based on ?graphics=N -->
+  <div id="lower-thirds"></div>
+  <div id="ticker"><div class="track" id="track"></div></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const params = new URLSearchParams(location.search);
+  const graphics = Math.max(1, parseInt(params.get('graphics') || '5', 10) || 5);
+
+  // Build N lower thirds, stacked vertically with staggered animation delays.
+  const host = document.getElementById('lower-thirds');
+  const headlines = [
+    ['BREAKING', 'Engine hits target fps on CPU'],
+    ['WEATHER', 'Clear skies across the region'],
+    ['SPORTS',  'Late goal decides the match'],
+    ['MARKETS', 'Indices close at session high'],
+    ['TECH',    'New release ships on schedule'],
+    ['TRAVEL',  'Delays reported at major hubs'],
+    ['HEALTH',  'Tips for a productive week'],
+    ['CULTURE', 'Festival lineup announced today'],
+  ];
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < graphics; i++) {
+    const h = headlines[i % headlines.length];
+    const el = document.createElement('div');
+    el.className = 'lt';
+    el.style.top = (180 + i * 96) + 'px';
+    el.style.animationDelay = (i * 0.8) + 's';
+    el.innerHTML = '<div class="bar"></div>' +
+                   '<div class="title">' + h[0] + '</div>' +
+                   '<div class="sub">'   + h[1] + '</div>';
+    frag.appendChild(el);
+  }
+  host.appendChild(frag);
+
+  // Build a long ticker track.
+  const track = document.getElementById('track');
+  const items = ['TITULUS','bg_engine','CPU-only','HTML5','50fps','1080i50','Fill+Key'];
+  let tickerHtml = '';
+  for (let i = 0; i < 40; i++) {
+    tickerHtml += '<b>•</b> ' + items[i % items.length] + ' benchmark scene frame stream ';
+  }
+  track.innerHTML = tickerHtml;
+
+  const clockEl = document.getElementById('clock');
+  let tickerX = 0;
+  let lastSec = -1;
+
+  // Perpetual rAF heartbeat — required so CEF external begin-frame keeps
+  // delivering OnPaint when content would otherwise be static (§10).
+  function frame() {
+    const now = new Date();
+    const sec = now.getSeconds();
+    // Only touch the DOM text node on a value change to limit reflow cost
+    // (avoids measuring GC/string churn instead of the render pipeline).
+    if (sec !== lastSec) {
+      lastSec = sec;
+      const pad = (n) => String(n).padStart(2, '0');
+      clockEl.textContent =
+        pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+    }
+    // Advance the ticker every frame — translate3d forces compositor damage.
+    tickerX -= 4;
+    if (tickerX < -3000) tickerX = 0;
+    track.style.transform = 'translate3d(' + tickerX + 'px,0,0)';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
