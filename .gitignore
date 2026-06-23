@@ -1,3 +1,8 @@
+# External references (not product code, see DEVELOPMENT_PROMPT §0.3)
+Blackmagic DeckLink SDK 16.0/
+broadcast-graphics/
+CasparCG/
+
 # Logs
 logs
 *.log
@@ -141,3 +146,29 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# === Titulus product (DEVELOPMENT_PROMPT §16) ===
+
+# Runtime data
+data/app.db
+data/app.db-*
+data/uploads/
+
+# Uploads (media transcode workspace)
+uploads/
+
+# Generated runtime bundle (built from runtime/ via esbuild)
+backend/public/bg-runtime.js
+
+# Engine build artifacts
+engine/build/
+engine/third_party/cef/
+engine/third_party/cef_*.tar.bz2
+
+# Preview output (runtime-generated JPEGs)
+/tmp/bg-preview/
+/run/bg/
+
+# Preview thumbnails cache
+data/preview/
+
