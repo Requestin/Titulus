@@ -1,0 +1,301 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://titulus/titulus/template.schema.json",
+  "title": "Titulus Template",
+  "description": "Canonical template domain model (DEVELOPMENT_PROMPT §6.2). Validated by backend /api/templates/validate (ajv). AI-friendly: a conforming JSON renders deterministically through runtime/domRenderer.",
+  "type": "object",
+  "required": ["id", "name", "canvas", "variables", "groups", "layers", "rootStack", "groupStacks", "timeline"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "description": "UUID" },
+    "name": { "type": "string" },
+    "canvas": {
+      "type": "object",
+      "required": ["width", "height", "background"],
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "background": { "type": "string", "description": "'transparent' or a CSS color" }
+      }
+    },
+    "variables": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/variable" }
+    },
+    "groups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/group" }
+    },
+    "layers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/layer" }
+    },
+    "rootStack": {
+      "type": "array",
+      "description": "Top-level z-order; last entry = frontmost.",
+      "items": { "$ref": "#/$defs/stackEntry" }
+    },
+    "groupStacks": {
+      "type": "object",
+      "description": "Per-group child ordering (groupId -> entries).",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/$defs/stackEntry" }
+      }
+    },
+    "timeline": { "$ref": "#/$defs/timeline" }
+  },
+
+  "$defs": {
+    "blendMode": {
+      "type": "string",
+      "enum": ["normal", "multiply", "screen", "add", "overlay", "darken", "lighten"]
+    },
+    "easingType": {
+      "type": "string",
+      "enum": ["linear", "power2.in", "power2.out", "power2.inOut", "bounce.out", "elastic.out"]
+    },
+    "variableBinding": {
+      "type": "object",
+      "required": ["type", "variableId"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "variable" },
+        "variableId": { "type": "string" }
+      }
+    },
+    "stringOrBinding": {
+      "oneOf": [
+        { "type": "string" },
+        { "$ref": "#/$defs/variableBinding" }
+      ]
+    },
+    "transform": {
+      "type": "object",
+      "required": ["x", "y", "width", "height", "rotation", "rotationX", "rotationY", "perspective", "scaleX", "scaleY", "anchorX", "anchorY"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "rotation": { "type": "number" },
+        "rotationX": { "type": "number" },
+        "rotationY": { "type": "number" },
+        "perspective": { "type": "number" },
+        "scaleX": { "type": "number" },
+        "scaleY": { "type": "number" },
+        "anchorX": { "type": "number" },
+        "anchorY": { "type": "number" }
+      }
+    },
+    "variable": {
+      "type": "object",
+      "required": ["id", "name", "label", "type", "defaultValue"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "label": { "type": "string" },
+        "type": { "type": "string", "enum": ["text", "image", "number", "color", "video"] },
+        "defaultValue": { "type": ["string", "number"] }
+      }
+    },
+    "group": {
+      "type": "object",
+      "required": ["id", "name", "parentId", "visible", "locked", "transform"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "parentId": { "type": ["string", "null"] },
+        "visible": { "type": "boolean" },
+        "locked": { "type": "boolean" },
+        "transform": { "$ref": "#/$defs/transform" }
+      }
+    },
+    "stackEntry": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "enum": ["layer", "group"] },
+        "id": { "type": "string" }
+      }
+    },
+    "textStyle": {
+      "type": "object",
+      "required": ["fontFamily", "fontSize", "fontWeight", "fill", "align", "lineHeight", "letterSpacing", "strokeColor", "strokeWidth", "dropShadow", "dropShadowBlur", "dropShadowColor", "dropShadowDistance"],
+      "additionalProperties": false,
+      "properties": {
+        "fontFamily": { "type": "string" },
+        "fontSize": { "type": "number" },
+        "fontWeight": { "type": "string" },
+        "fill": { "$ref": "#/$defs/stringOrBinding" },
+        "align": { "type": "string", "enum": ["left", "center", "right"] },
+        "lineHeight": { "type": "number" },
+        "letterSpacing": { "type": "number" },
+        "strokeColor": { "type": "string" },
+        "strokeWidth": { "type": "number" },
+        "dropShadow": { "type": "boolean" },
+        "dropShadowBlur": { "type": "number" },
+        "dropShadowColor": { "type": "string" },
+        "dropShadowDistance": { "type": "number" }
+      }
+    },
+    "layer": {
+      "type": "object",
+      "required": ["id", "name", "type", "visible", "locked", "opacity", "blendMode", "transform", "groupId"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["text", "rect", "image", "video", "clock", "mask"] },
+        "visible": { "type": "boolean" },
+        "locked": { "type": "boolean" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "blendMode": { "$ref": "#/$defs/blendMode" },
+        "transform": { "$ref": "#/$defs/transform" },
+        "groupId": { "type": ["string", "null"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "text" } } },
+          "then": {
+            "required": ["content", "style"],
+            "properties": {
+              "content": { "$ref": "#/$defs/stringOrBinding" },
+              "style": { "$ref": "#/$defs/textStyle" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "rect" } } },
+          "then": {
+            "required": ["fill", "cornerRadius", "borderColor", "borderWidth"],
+            "properties": {
+              "fill": { "$ref": "#/$defs/stringOrBinding" },
+              "cornerRadius": { "type": "number" },
+              "borderColor": { "type": "string" },
+              "borderWidth": { "type": "number" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "image" } } },
+          "then": {
+            "required": ["src", "cornerRadius", "fit"],
+            "properties": {
+              "src": { "$ref": "#/$defs/stringOrBinding" },
+              "cornerRadius": { "type": "number" },
+              "fit": { "type": "string", "enum": ["stretch", "contain", "cover"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "video" } } },
+          "then": {
+            "required": ["src", "loop", "fit"],
+            "properties": {
+              "src": { "$ref": "#/$defs/stringOrBinding" },
+              "loop": { "type": "boolean" },
+              "fit": { "type": "string", "enum": ["stretch", "contain", "cover"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "clock" } } },
+          "then": {
+            "required": ["mode", "format", "style"],
+            "properties": {
+              "mode": { "type": "string", "enum": ["clock", "countup", "countdown"] },
+              "format": { "type": "string" },
+              "startTime": { "type": "number" },
+              "targetTime": { "type": "number" },
+              "style": { "$ref": "#/$defs/textStyle" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "mask" } } },
+          "then": {
+            "required": ["maskMode", "shape", "fill", "cornerRadius", "borderColor", "borderWidth"],
+            "properties": {
+              "maskMode": { "type": "string", "enum": ["normal", "inverted"] },
+              "shape": { "type": "string", "enum": ["rect", "ellipse"] },
+              "fill": { "$ref": "#/$defs/stringOrBinding" },
+              "cornerRadius": { "type": "number" },
+              "borderColor": { "type": "string" },
+              "borderWidth": { "type": "number" }
+            }
+          }
+        }
+      ]
+    },
+    "bezier": {
+      "type": "object",
+      "required": ["cp1x", "cp1y", "cp2x", "cp2y"],
+      "additionalProperties": false,
+      "properties": {
+        "cp1x": { "type": "number" },
+        "cp1y": { "type": "number" },
+        "cp2x": { "type": "number" },
+        "cp2y": { "type": "number" }
+      }
+    },
+    "keyframe": {
+      "type": "object",
+      "required": ["id", "frame", "layers", "groups", "easing"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "frame": { "type": "integer", "minimum": 0 },
+        "layers": { "type": "object" },
+        "groups": { "type": "object" },
+        "easing": { "$ref": "#/$defs/easingType" },
+        "bezier": { "$ref": "#/$defs/bezier" }
+      }
+    },
+    "director": {
+      "type": "object",
+      "required": ["id", "name", "durationFrames", "offsetFrames", "autostart", "loop", "swing"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "durationFrames": { "type": "integer", "minimum": 1 },
+        "offsetFrames": { "type": "integer", "minimum": 0 },
+        "autostart": { "type": "boolean" },
+        "loop": { "type": "boolean" },
+        "swing": { "type": "boolean" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": ["id", "directorId", "frame", "command", "targetDirectorId", "tag"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "directorId": { "type": "string" },
+        "frame": { "type": "integer", "minimum": 0 },
+        "command": { "type": "string", "enum": ["startDirector", "stopDirector", "setTag"] },
+        "targetDirectorId": { "type": ["string", "null"] },
+        "tag": { "type": ["string", "null"], "enum": ["Stop", "End scene", null] }
+      }
+    },
+    "timeline": {
+      "type": "object",
+      "required": ["fps", "durationFrames", "playbackMode", "directors", "trackDirectors", "keyframes", "actions"],
+      "additionalProperties": false,
+      "properties": {
+        "fps": { "type": "integer", "minimum": 1 },
+        "durationFrames": { "type": "integer", "minimum": 1 },
+        "playbackMode": { "type": "string", "enum": ["bounded", "infinite"] },
+        "directors": { "type": "array", "items": { "$ref": "#/$defs/director" } },
+        "trackDirectors": { "type": "object" },
+        "keyframes": { "type": "array", "items": { "$ref": "#/$defs/keyframe" } },
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/action" } }
+      }
+    }
+  }
+}
