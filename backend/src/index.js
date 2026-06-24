@@ -14,13 +14,19 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
-import { openDb } from './db.js';
+import { openDb, settingsDao } from './db.js';
 import { templatesRouter } from './routes/templates.js';
+import { channelsRouter } from './routes/channels.js';
+import { rundownsRouter } from './routes/rundowns.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, '../..');
 const PUBLIC_DIR = resolve(here, '../public');
-const DATA_DIR = resolve(ROOT, 'data');
+// Data dir (app.db + uploads) is configurable so deployments can point it at a
+// persisted volume (e.g. /var/lib/titulus) and tests at tmpfs.
+const DATA_DIR = process.env.TITULUS_DATA
+  ? resolve(process.env.TITULUS_DATA)
+  : resolve(ROOT, 'data');
 const UPLOADS_DIR = resolve(DATA_DIR, 'uploads');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -40,9 +46,20 @@ mkdirSync(UPLOADS_DIR, { recursive: true });
 app.locals.db = db;
 
 // ---------------------------------------------------------------------------
-// REST: templates (task 2.1). Channels/rundowns land in 2.2.
+// REST: templates / channels / rundowns / settings (§7.3).
 // ---------------------------------------------------------------------------
 app.use('/api/templates', templatesRouter(db));
+app.use('/api/channels', channelsRouter(db));
+app.use('/api/rundowns', rundownsRouter(db));
+
+// Settings: global key-value fallback (GET all / PUT replace).
+app.get('/api/settings', (req, res) => res.json(settingsDao(db).all()));
+app.put('/api/settings', (req, res) => {
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({ error: 'settings object required' });
+  }
+  res.json(settingsDao(db).setAll(req.body));
+});
 
 // Health check.
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'titulus-backend' }));
