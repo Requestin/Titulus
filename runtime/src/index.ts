@@ -10,3 +10,4 @@ export * from './stackOrder.js';
 export * from './timeline.js';
 export * from './clock.js';
 export * from './fonts.js';
+export * from './domRenderer.js';
