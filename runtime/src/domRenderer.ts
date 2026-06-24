@@ -160,6 +160,12 @@ export class TemplateRenderer {
     if (this.root.parentNode) this.root.parentNode.removeChild(this.root);
   }
 
+  /** The template currently rendered, or null. (Used by ChannelClient for live updates.) */
+  getTemplate(): Template | null { return this.template; }
+
+  /** The variable map currently applied. */
+  getVariables(): Record<string, string | number> { return this.variables; }
+
   // -----------------------------------------------------------------------
   // DOM construction
   // -----------------------------------------------------------------------
