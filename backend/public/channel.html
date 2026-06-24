@@ -1,0 +1,152 @@
+<!doctype html>
+<!--
+  backend/public/channel.html — the page bg_engine renders (DEVELOPMENT_PROMPT §10).
+
+  Loaded by:
+    - bg_engine (CEF OSR) with ?engine=1  -> fixed-step playback, host drives tick
+    - browser / OBS·vMix browser source    -> rAF playback (transparent BGRA)
+    - editor preview iframe                -> rAF playback
+
+  Query params (§10):
+    channel=<uuid>     channel id (default "default")
+    engine=1           fixed-step playback at engine_fps (host ticks ChannelClient)
+    engine_fps=50      fixed tick rate (channel fps)
+    w=1920&h=1080      canvas size (stage is sized to this; CEF renders it 1:1)
+    backend=host:port  WebSocket backend override (else page origin)
+    hud=1              debug overlay (fps + WS status + active count)
+    preview=1          browser preview mode (force rAF even if engine=1)
+
+  CRITICAL (§10): a perpetual requestAnimationFrame heartbeat runs even when the
+  template content is static — CEF's external begin-frame only paints on
+  compositor damage, and without the heartbeat OnPaint stops after a static take.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Titulus Channel</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      background: transparent;     /* BGRA alpha carries the key channel */
+      overflow: hidden;
+    }
+    /* The stage holds the canvas-sized render root produced by TemplateRenderer.
+       In engine mode the CEF view is exactly w×h, so we center the stage on it. */
+    #stage {
+      position: fixed; left: 0; top: 0;
+      width: 100%; height: 100%;
+      overflow: hidden;
+    }
+    /* Optional HUD (debug overlay) — never affects layout of the stage. */
+    #hud {
+      position: fixed; left: 8px; top: 8px;
+      font: 12px/1.4 ui-monospace, "SFMono-Regular", Menlo, monospace;
+      color: #22d3ee; background: rgba(0,0,0,.55);
+      padding: 6px 8px; border-radius: 4px;
+      pointer-events: none; display: none;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+  <pre id="hud"></pre>
+
+  <!-- bg-runtime.js is the IIFE bundle of @titulus/runtime (window.BG).
+       Served by the backend at /bg-runtime.js (Vite proxies it in dev). -->
+  <script src="/bg-runtime.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    var BG = window.BG;
+    if (!BG || !BG.ChannelClient) {
+      console.error('[channel.html] window.BG.ChannelClient missing — bg-runtime.js failed to load');
+      return;
+    }
+
+    var qs = new URLSearchParams(location.search);
+    var channelId = qs.get('channel') || 'default';
+    var engineMode = qs.get('engine') === '1' && qs.get('preview') !== '1';
+    var engineFps = parseInt(qs.get('engine_fps') || '50', 10) || 50;
+    var canvasW = parseInt(qs.get('w') || '1920', 10) || 1920;
+    var canvasH = parseInt(qs.get('h') || '1080', 10) || 1080;
+    var backend = qs.get('backend') || '';
+    var hudOn = qs.get('hud') === '1';
+
+    var stage = document.getElementById('stage');
+    var hud = document.getElementById('hud');
+    if (hudOn) hud.style.display = 'block';
+
+    // The TemplateRenderer sizes its canvas root to the template's canvas; we
+    // fit the stage to the engine view. In engine mode the view == canvas size,
+    // so 1:1. In browser mode we letterbox via the renderer's resize().
+
+    var lastStatus = 'disconnected';
+    var lastActive = 0;
+    var client = new BG.ChannelClient({
+      stage: stage,
+      channelId: channelId,
+      backend: backend || null,
+      playbackMode: engineMode ? 'fixed' : 'raf',
+      fixedTickRate: engineFps,
+      onStatus: function (s) { lastStatus = s; paintHud(); },
+      onActiveCount: function (n) { lastActive = n; paintHud(); }
+    });
+    client.connect();
+
+    // --- Engine fixed-step bridge -----------------------------------------
+    // When engineMode, the CEF host wants us to advance the timeline at exactly
+    // engine_fps. We don't have a native "BeginFrame" hook into JS, so we drive
+    // ChannelClient.tick() from a wall-clock interval quantized to engine_fps.
+    // (The host's own frame pacing keeps CEF painting at the channel rate; this
+    // interval only advances the timeline playhead deterministically.)
+    var tickInterval = null;
+    if (engineMode) {
+      var tickMs = Math.round(1000 / engineFps);
+      tickInterval = setInterval(function () { client.tick(); }, tickMs);
+    }
+
+    // --- Perpetual rAF heartbeat (§10) ------------------------------------
+    // CEF's external begin-frame only paints on compositor damage. Without a
+    // heartbeat a static take stops producing OnPaint after the first frame.
+    // We nudge the DOM every frame so the compositor keeps damage alive.
+    var frameCount = 0;
+    var lastHudPaint = 0;
+    function heartbeat(t) {
+      frameCount++;
+      // Sub-pixel opacity nudge forces a compositor frame without a visible
+      // flicker (stays at ~0.999..1.0). Cheaper than re-setting transform.
+      document.body.style.opacity = (0.9995 + (t % 2) * 0.0005).toString();
+      if (hudOn && t - lastHudPaint > 250) {
+        lastHudPaint = t;
+        paintHud(t);
+      }
+      requestAnimationFrame(heartbeat);
+    }
+    requestAnimationFrame(heartbeat);
+
+    function paintHud(t) {
+      if (!hudOn) return;
+      hud.textContent =
+        'channel=' + channelId + ' mode=' + (engineMode ? 'fixed@' + engineFps : 'raf') + '\n' +
+        'ws=' + lastStatus + '  active=' + lastActive + '\n' +
+        'rAF=' + frameCount + (t !== undefined ? '  t=' + Math.round(t) + 'ms' : '');
+    }
+
+    // --- Resize handling --------------------------------------------------
+    function fitStage() {
+      // The renderer handles letterboxing via resize(); we just keep the stage
+      // full-bleed (CSS already does). Provided for future preview scaling.
+    }
+    window.addEventListener('resize', fitStage);
+    fitStage();
+
+    // Expose for debugging in the CEF DevTools (when remote-debugging enabled).
+    window.__titulus = { client: client, stage: stage };
+  })();
+  </script>
+</body>
+</html>
