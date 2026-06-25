@@ -1,0 +1,73 @@
+---
+description: "Портирование bg_engine из CasparCG: что где брать, развилки, CEF/DeckLink/ffmpeg-специфика. Только для engine/ C++."
+globs: "engine/**"
+alwaysApply: false
+---
+# Engine porting: CasparCG → bg_engine (reimplement by reference)
+
+Это правило активируется при работе в `engine/**`. Канонический porting-map — `engine/CASPARRCG_PORTING.md` (обновляй его при реализации). Здесь — сжатая выжимка + развилки.
+
+## Стратегия: reimplement by reference (§0.1)
+
+Изучаем алгоритмы CasparCG (GPLv3+), пишем свой код. **Не копируем дословно** GPL-файлы в закрытый product. Вести `engine/CASPARRCG_PORTING.md` (table `{CasparCG file → наш file → статус}`) + `engine/THIRD_PARTY_NOTICES.md` (GPL-PORT log для legal review).
+
+**CasparCG reference:** `/root/Titulus/CasparCG/server` (trunk `v2.3.3-lts-stable-436-gd603ee91f`, toward 2.6.0 Dev; C++20; CMake 3.16).
+
+## Принципиальная модель bg_engine
+
+`bg_engine` = **reimplementation of one CasparCG channel** (HTML producer + consumers), не новой парадигмы. Model кадра та же:
+```
+Producer (CEF HTML) → [channel-paced pull] → Consumer (decklink/ffmpeg/null/pipe/preview)
+        OnPaint → BGRA frame_ring → consumer schedules output
+```
+
+Отличия от CasparCG (не рендер-существенные): WS протокол вместо AMCP; JSON schema → DOM вместо raw HTML; 1 процесс = 1 канал (vs CasparCG multi-channel server).
+
+## Porting map (актуальный статус — детально в CASPARRCG_PORTING.md §2)
+
+| CasparCG source | Titulus target | Статус |
+|---|---|---|
+| `modules/html/html.cpp:171-211` (switches) | `engine_app.cpp` OnBeforeCommandLineProcessing | ✅ done |
+| `modules/html/html.cpp:227-282` (CEF init) | `main.cpp` EngineInit | ✅ done |
+| `modules/html/producer/html_producer.cpp:347-399` (OnPaint) | `engine_client.cpp` OnPaint | ✅ done |
+| `modules/html/producer/html_producer.cpp:657-668` (browser create) | `engine_client.cpp` | ✅ done |
+| `modules/decklink/consumer/decklink_consumer.cpp:910-1030` (ScheduledFrameCompleted) | `consumers/decklink_consumer.cpp` | ⏳ Phase 3.1 |
+| `modules/decklink/consumer/decklink_consumer.cpp:766-798` (preroll/start) | `consumers/decklink_consumer.cpp` | ⏳ Phase 3.1 |
+| `modules/decklink/consumer/decklink_consumer.cpp:152-198` (keyer) | `consumers/decklink_consumer.cpp` | ⏳ Phase 3.1 |
+| `modules/decklink/consumer/sdr_bgra_strategy.cpp:58-116` (weave) | `consumers/decklink_consumer.cpp` | ⏳ Phase 3.1 |
+| `modules/ffmpeg/consumer/ffmpeg_consumer.cpp` | `consumers/ffmpeg_consumer.cpp` | ⏳ Phase 5.1 |
+| `core/frame/pixel_format.h` (bgra) | `consumers/consumer.h` Frame | ✅ done |
+
+## 5 развилок spec-vs-CasparCG (зафиксированы, НЕ переоткрывать)
+
+1. **Frame pacing:** CasparCG `enable-begin-frame-scheduling` + `windowless_frame_rate=ceil(fps)` + consumer pull. НЕ spec's `SendExternalBeginFrame` push. **Принято: CasparCG-path** (proven в продакшене 24/7). Single-master-clock → Phase 6+ stretch.
+2. **DeckLink keyer:** `IDeckLinkKeyer::Enable/SetLevel` (CasparCG). НЕ 2dfd profile API (его нет и в CasparCG). Spec §REQ-5 про 2dfd — **aspirational gap**, помечено.
+3. **Genlock:** `GetReferenceStatus` polling + scheduled playback (карта тактирует при locked genlock). `GetHardwareReferenceClock` есть в BMD vtable, но CasparCG НЕ вызывает → future enhancement. REQ-7 satisfied callback-pacing при locked genlock.
+4. **No BGRA→ARGB conversion** — оба согласны.
+5. **Weave interlace** — consumer-side line-interleave (CasparCG), не core.
+
+## CEF specifics (CASPARRCG_PORTING.md §3.1)
+
+- CefSettings: `windowless_rendering_enabled=true`, `no_sandbox=true`, per-channel `cache_path`
+- Switches: `disable-gpu`, `disable-gpu-compositing`, `disable-gpu-vsync`, `ozone-platform=headless` (без DISPLAY), `enable-begin-frame-scheduling`, `autoplay-policy=no-user-gesture-required`
+- OSR OnPaint: single `memcpy` BGRA на Linux, PET_VIEW только, `device_scale_factor=1.0`
+- `windowless_frame_rate=ceil(fps)` для channel-paced painting
+- Perpetual rAF heartbeat в channel.html (§10) — критично, без него OnPaint останавливается после static take
+
+## DeckLink specifics (Phase 3 — см. 04-decklink-no-hw.mdc для no-HW контекста)
+
+- Reimplement from `modules/decklink/consumer/decklink_consumer.cpp` + `sdr_bgra_strategy.cpp`
+- `StartScheduledPlayback` + `ScheduledFrameCompleted` — карта сама тактирует
+- Late frame → skip-ahead; weave 1080i UFF line-interleave; `IDeckLinkKeyer` keyer
+- Profile switch → exit 42 → supervisor restart 6s
+- На этом хосте: компилируется, runtime упадёт без платы (ОК, deferred)
+
+## FFmpeg specifics (Phase 5)
+
+- Reimplement from `modules/ffmpeg/consumer/ffmpeg_consumer.cpp`: in-process libavformat/avfilter/libavcodec
+- BGRA source (`AV_PIX_FMT_BGRA`), self-paced (`has_synchronization_clock()=false`)
+- VP9/WebM alpha path — ДОБАВИТЬ (CasparCG не имеет явного)
+
+## Что НЕ переносим
+
+`modules/oal/`, `modules/screen/`, `modules/newtek/`, `modules/artnet/`, `modules/image/`, `modules/flash/`, `modules/bluefish/`, `accelerator/` (GPU mixer), `protocol/` (AMCP), `modules/decklink/producer/` (capture), `modules/decklink/consumer/v210_strategies.cpp` (10-bit post-MVP), `modules/decklink/consumer/vanc*` (ancillary data future), `core/mixer/` native C++ (DOM compositor = наш mixer).

@@ -1,0 +1,85 @@
+---
+description: "TITULUS — источник правды: что это за проект, цели, принципы, иерархия решений. Читай ПЕРВЫМ при любом обращении к коду."
+alwaysApply: true
+---
+# TITULUS — Cloud Broadcast Graphics System (источник правды)
+
+Ты работаешь над **Titulus** — коммерческой облачной титровальной системой для эфирного телевидения (2D-графика уровня новостных выпусков). Проприетарная лицензия, закрытый репозиторий.
+
+**Канонический spec:** `/root/Titulus/DEVELOPMENT_PROMPT.md` (1642 строки). При любом конфликте — этот файл главный. Эти .cursor-правила — сжатая выжимка + наши конкретные решения; DEVELOPMENT_PROMPT.md остаётся авторитетом на уровне выше.
+
+## Что строим
+
+Control plane (свой React-editor + JSON-templates + rundowns + WebSocket) + proprietary render plane `bg_engine` (C++20 + CEF, архитектурно идентичный CasparCG channel).
+
+**Дифференциатор:** собственный `bg_engine` (НЕ форк/не subprocess CasparCG), современный cloud control plane, JSON-schema AI-ready templates, subscription licensing. Render plane должен быть неотличим от CasparCG по качеству эфира.
+
+## Иерархия источников истины (при конфликте — сверху вниз)
+
+1. `DEVELOPMENT_PROMPT.md` (§0.2 принципы + §0.5 Git workflow) + эти .cursor/rules
+2. **CasparCG Server** (`/root/Titulus/CasparCG/server`) — render engine truth (изучаем, портируем by-reference, НЕ линкуем, НЕ шипим)
+3. Cherry-pick из sandbox `broadcast-graphics/` (только validated pieces, см. правило sandbox)
+4. Собственные решения — если 1–3 не покрывают и не ломают CPU-only / CasparCG parity
+
+## 6 принципов (non-negotiable, §0.2)
+
+1. **CPU-only render** — CEF OSR + software rasterization, `--disable-gpu`. GPU — ТОЛЬКО через GPU Gate doc (§0.2.1). Без gate-документа — GPU запрещён, даже «для ускорения».
+2. **HTML5** — единственный template runtime (DOM/CSS через CEF). PIXI/GSAP/WebGL-as-primary ЗАПРЕЩЕНЫ.
+3. **Frame-accurate sync** — hardware reference clock DeckLink — master clock для SDI (REQ-7).
+4. **Per-channel output** — browser / obs_vmix / decklink / stream (REQ-11).
+5. **Свой control plane** — НЕ AMCP, НЕ CasparCG Client.
+6. **Производительность MVP** — ≥3 канала 1080i50 × 4–5 титров, drops <0.1% bare-metal, masks/alpha overhead ≤5%.
+
+## Технические принципы (CasparCG-aligned)
+
+- CasparCG-first render design: перед любой render-задачей изучи CasparCG (`modules/html`, `decklink`, `ffmpeg`, `core/mixer`), портируй в `bg_engine`
+- Producer → Mixer → Consumer — та же модель кадра
+- Один `bg_engine` процесс = один канал = один primary output
+- Один shared runtime — editor, engine, thumbnails, OBS используют одну DOM-реализацию (`@titulus/runtime`)
+- BGRA end-to-end до SDI — без GPU readback, без BGRA→ARGB конверсии
+- Linux-first headless (как CasparCG 2.5+)
+
+## ЧЕГО НЕ ДЕЛАТЬ (категорически)
+
+- Включать GPU без GPU Gate doc
+- Запускать `casparcg-server`/`casparcg-cef` как runtime-зависимость продукта
+- Дублировать render-код в frontend/backend/public
+- PIXI.js / GSAP как core dependencies
+- GPU readback pipeline (WebGL → CPU → SDI)
+- Один Chromium на все каналы (process singleton)
+- Mask/alpha через тяжёлые CSS filter chains или canvas readback (§6.5 perf killer)
+- Слепое копирование из `broadcast-graphics` без сверки с CasparCG и правилом sandbox
+- Работать без Git (см. правило git-workflow)
+- Один giant commit/PR на целую фазу
+
+## Каналы вывода (output modes, §0.2.4)
+
+| Output mode | Consumer / path | Use case |
+|---|---|---|
+| `browser` | `/renderer` или `channel.html?preview=1` | Control panel, QA |
+| `obs_vmix` | Browser Source URL `channel.html?channel=<id>` | Streaming без SDI |
+| `decklink` | `decklink_consumer` — SDI Fill+Key | Broadcast on-prem |
+| `stream` | `ffmpeg_consumer` — SRT/RTMP | Cloud / remote |
+
+## Модели поставки
+
+Cloud SaaS (подписка) + On-prem (lifetime/annual). Один codebase, разные deployment profiles.
+
+## Ключевые артифакты проекта (где что лежит)
+
+- `DEVELOPMENT_PROMPT.md` — канонический spec (читай при сомнениях)
+- `engine/CASPARRCG_PORTING.md` — porting-map CasparCG→bg_engine + зафиксированные развилки
+- `engine/THIRD_PARTY_NOTICES.md` — GPL-compliance log (reimplement-by-reference)
+- `docs/PHASE0_BENCH.md` — bench-результаты (Phase 0 proven)
+- `.cursor/rules/*.mdc` — ЭТИ правила (source of truth для агентов)
+
+## Прочитай также (обязательно при первой работе)
+
+- `.cursor/rules/01-architecture.mdc` — архитектура, frame pipeline, process model
+- `.cursor/rules/02-git-workflow.mdc` — обязательный workflow ветка→PR→merge
+- `.cursor/rules/03-conventions.mdc` — код-стайл, зависимости, лицензирование
+- `.cursor/rules/04-decklink-no-hw.mdc` — текущее ограничение: нет платы/genlock
+- `.cursor/rules/05-sandbox-policy.mdc` — что брать/не брать из broadcast-graphics
+- `.cursor/rules/06-engine-porting.mdc` — CEF/DeckLink/ffmpeg портирование
+- `.cursor/rules/10-development-plan.mdc` — план фаз + что сделано + что дальше
+- `.cursor/rules/99-session-history.mdc` — история диалога, решения, контекст

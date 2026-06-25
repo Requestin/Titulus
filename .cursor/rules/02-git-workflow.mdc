@@ -1,0 +1,123 @@
+---
+description: "ОБЯЗАТЕЛЬНЫЙ Git workflow: ветка→commit→push→PR→merge. Никаких прямых коммитов в main. Имя веток, формат коммитов, тело PR."
+alwaysApply: true
+---
+# Git-driven development (DEVELOPMENT_PROMPT §0.5 — обязательно для каждой задачи)
+
+Каждая логическая задача (фича, фикс, фаза-deliverable, документ) проходит полный цикл версионирования. **Задача не считается выполненной, пока PR НЕ merged в `main`.**
+
+## Цикл задачи (mandatory)
+
+```
+1. PLAN     → описать задачу, scope, exit criteria, имя ветки
+2. BRANCH   → git checkout main && git pull && git checkout -b <branch>
+3. IMPLEMENT→ код + атомарные коммиты (1 логическое изменение = 1 commit)
+4. PUSH     → git push -u origin HEAD
+5. PR       → gh pr create (title + body: Summary/Task/Changes/Test plan/Rollback)
+6. REVIEW   → проверить diff; при несостыковках — fix commits, push
+7. MERGE    → gh pr merge --merge (merge commit как milestone; НЕ squash по умолчанию)
+8. REPORT   → ссылка на PR + hash merge commit
+```
+
+## Session resume (при старте НОВОЙ сессии — ОБЯЗАТЕЛЬНО)
+
+```bash
+cd /root/Titulus
+git fetch origin
+git status
+git branch -a
+gh pr list --state open
+```
+- Незавершённая ветка → продолжить, commit, push, довести PR до merge
+- PR open → проверить конфликты, fix, merge
+- `main` чист → `git pull`, новая задача → новая ветка
+
+## Именование веток
+
+| Pattern | Example | When |
+|---|---|---|
+| `feature/phase-<N>-<short-kebab>` | `feature/phase-2-ws-onair` | Новая фича / deliverable фазы |
+| `fix/<short-kebab>` | `fix/decklink-weave-field-order` | Багфикс |
+| `docs/<short-kebab>` | `docs/runbook-ubuntu-setup` | Только документация |
+| `chore/<short-kebab>` | `chore/gitignore-casparcg` | Инфра, конфиг, без product logic |
+| `bench/<short-kebab>` | `bench/phase0-casparcg-baseline` | Bench/измерения |
+
+## Commit messages (Conventional Commits, адаптированный)
+
+```
+<type>(<scope>): <краткое описание>
+
+<подробное тело: что изменено, зачем, как проверено>
+```
+
+Types: `feat`, `fix`, `docs`, `refactor`, `chore`, `bench`, `engine`.
+
+**Пример:**
+```
+feat(engine): add CEF OSR skeleton with null consumer
+
+- Port CEF init flags from CasparCG modules/html
+- External BeginFrame loop, frame stats
+- Verified: ./engine/build/bg_engine --consumer=null runs 50fps bench scene
+
+Refs: Phase 0, CASPARRCG_PORTING.md §CEF init
+```
+
+## PR body (обязательные секции)
+
+```markdown
+## Summary
+- 1–3 bullet points: что и зачем
+
+## Task / Phase
+- Phase N / конкретная задача
+
+## Changes
+- Список затронутых модулей и ключевых решений
+
+## Test plan
+- [ ] Команды / сценарии проверки
+- [ ] Bench / manual steps
+
+## Rollback
+- Как откатить: `git revert <merge-commit>` или checkout parent of merge
+```
+
+## Merge policy
+
+- Target: **`main`** (default branch)
+- Prefer **`gh pr merge --merge`** (merge commit) — каждая фича = явная точка для rollback
+- **Force push to `main` ЗАПРЕЩЁН**
+- Squash — только если пользователь явно попросил
+- Агент сам создаёт/ревьюит/фиксит/мерджит PR если нет блокеров
+
+## Размер задач
+
+- **Один PR = одна логическая задача** (не вся Phase)
+- Дробить Phase на sub-tasks: `feature/phase-2-cef-skeleton`, `feature/phase-2-bench-harness`
+- Длинная задача: commit + push **ДО** исчерпания context; указать «продолжить в ветке X»
+- **Никогда не накапливать uncommitted changes > 1 логического шага**
+- На конец сессии: ВСЕГДА commit + push (§0.5.6) — не оставлять dirty tree
+
+## Phase exit = merged PR(s)
+
+Каждая Phase завершается merged PR(s) в `main` с тегом `[Phase N]` в title/body. Пример истории:
+```
+* Merge PR #15: [Phase 2] channels + rundowns + settings REST
+* Merge PR #14: [Phase 2] SQLite + Express core + templates REST
+* Merge PR #13: [Phase 1] channel.html engine/browser page
+```
+
+## Что НЕ commit (gitignored)
+
+- `Blackmagic DeckLink SDK 16.0/`, `CasparCG/`, `broadcast-graphics/` (external references)
+- `data/app.db`, `data/uploads/`, `uploads/`
+- `backend/public/bg-runtime.js` (generated — rebuild via `cd runtime && npm run build`)
+- `engine/build/`, `engine/third_party/cef/` (CEF dist)
+- `node_modules/`
+
+## ВАЖНО про окружение sandbox (детально в 04-decklink-no-hw.mdc)
+
+- При тестировании backend/engine всегда задавай `TITULUS_DATA=/tmp/...` (data-путь конфигурируем) — `/root/Titulus/data` нестабилен (SQLITE_IOERR).
+- Запуск backend: `cd /root/Titulus/backend && PORT=<port> TITULUS_DATA=/tmp/... node src/index.js` — НЕ из subshell `( )` (сбрасывает CWD).
+- Kill backend после теста: `pkill -f "PORT=<port>"`.

@@ -1,0 +1,64 @@
+---
+description: "Политика sandbox broadcast-graphics: что можно заимствовать, что НЕЛЬЗЯ. Render plane НЕ брать, control plane — только validated domain-части."
+alwaysApply: true
+---
+# Sandbox `broadcast-graphics/` — политика заимствования
+
+`/root/Titulus/broadcast-graphics/` — «проба пера» (Vasily113/broadcast-graphics). Read-only reference. **Агент сам решает**, что подходит — по критериям ниже. При сомнении: **CasparCG wins**.
+
+## Контекст
+
+В sandbox есть полезные идеи, НО также плохая оптимизация, нестабильный render, legacy-решения. Главный принцип (DEVELOPMENT_PROMPT §0.4): **sandbox совместим как reference для control plane и schema; НЕ совместим как render authority**. Titulus render plane MUST converge к CasparCG.
+
+## Решение заказчика (зафиксировано)
+
+> «Render plane — чистый clean-room на основе CasparCG (reimplement by reference). Sandbox-реализацию рендера (`broadcast-graphics/engine/`) **НЕ берём**. Control plane — своё. Из sandbox опциональный cherry-pick только удачных domain-частей (data model, WS-протокол) с ревизией; не как архитектурный авторитет.»
+
+> «Из sandbox что-то можно брать, но предпочтительнее сделать по новой (из sandbox бери только самые удачные части, при этом ты должен быть уверен, что они таковыми являются).»
+
+## ✅ МОЖНО заимствовать (control plane & domain model — с ревизией)
+
+| Area | Path / idea | Why OK |
+|---|---|---|
+| JSON template schema | `shared/template.schema.json`, `runtime/src/schema.ts` | AI-ready domain model (мы уже написали свой по этому образцу) |
+| Timeline engine concept | `runtime/src/timeline.ts` | Directors, keyframes, easing — хорошая база (мы написали свой) |
+| WS protocol | take / clear / update, replay on connect | Простая operator protocol семантика |
+| SQLite on-air persistence | `backend/src/db.js` pattern | Production requirement |
+| Media transcode idea | VP9/WebM+alpha via ffmpeg | CEF-compatible video |
+| Editor UI structure | `frontend/src/features/editor/*` | Panels, layers, properties — UX baseline (НЕ копировать код, только идею) |
+
+## ❌ НЕ КОПИРОВАТЬ (render / perf / legacy)
+
+| Area | Why reject |
+|---|---|
+| `engine/` C++ без полного CasparCG port | Недостаточная оптимизация; НЕ parity с CasparCG — перепортировать из `CasparCG/server` |
+| Performance numbers / bench conclusions | Sandbox не прошёл CasparCG parity bar — re-benchmark on Titulus |
+| Любой Electron / `decklink-out/` | Антипаттерн, deprecated |
+| PIXI / GSAP paths | Violates HTML5/CPU-only |
+| DOM mask/filter tricks from sandbox | Могут убивать FPS — re-bench §11.4, prefer CasparCG mixer semantics |
+| Duplicate render code | Sandbox исторически имел дубли — Titulus: one runtime only |
+| README legacy sections | Устарели; follow DEVELOPMENT_PROMPT |
+| `ops/casparcg-test` experimental stack | Только как reference для VP9 pipe-bridge, не как core design |
+
+## Decision flow для агента
+
+```
+Нужна feature X
+  → Есть в CasparCG/server? → Port/adapt from CasparCG (primary)
+  → Else есть в broadcast-graphics sandbox?
+       → Попадает в ✅ table? → Cherry-pick ИДЕИ + refactor + bench (НЕ копировать код вслепую)
+       → Попадает в ❌ table? → Reject; design from CasparCG principles
+  → Else → Design new, но CPU-only + HTML5 + CasparCG pipeline compatible
+```
+
+## Третьесторонние либы в sandbox (нейтральные)
+
+| Lib | License | Что с ней |
+|---|---|---|
+| stb_image_write.h | Public Domain | Можно взять (мы уже скопировали v1.16 в `engine/third_party/`) |
+
+Такие neutral third-party libs — ОК (это не product code, лицензия позволяет).
+
+## Верdict
+
+Sandbox — **reference only**. Render plane должен сойтись с CasparCG. Control plane идеи — cherry-pick с осторожностью. Никогда не treat sandbox как spec/authority.

@@ -1,0 +1,135 @@
+---
+description: "ИСТОРИЯ workspace: контекст диалога, принятые решения, найденные проблемы, ход разработки. Контекст для нового агента."
+alwaysApply: true
+---
+# История workspace Titulus — контекст для нового агента
+
+Этот файл фиксирует **контекст диалога с заказчиком**, принятые ключевые решения, обнаруженные технические проблемы и общую траекторию разработки. Источник «почему так, а не иначе».
+
+## Заказчик и модель работы
+
+- Заказчик: Karen Darchiniants (k.darchiniants@gyhyry.com), репозиторий `github.com/Requestin/Titulus`
+- AI-агент (ZCode) ведёт разработку итеративно, Git-first (каждая задача = ветка→PR→merge)
+- Разработка идёт на dev-сервере `/root/Titulus` (Ubuntu 24.04, 16 cores, 31GB RAM, NVIDIA GPU + EGL)
+
+## Ключевые решения заказчика (приняты в начале)
+
+1. **Render plane — clean-room на основе CasparCG** (reimplement by reference). Sandbox-реализацию рендера (`broadcast-graphics/engine/`) **НЕ брать**. Из sandbox — только «самые удачные части» control plane, желательно fresh.
+2. **Control plane — своё.** Опциональный cherry-pick domain-частей из sandbox (data model, WS-протокол) с ревизией; не архитектурный авторитет.
+3. **Scope плана — полный (фазы 0–6+).**
+4. **DeckLink HW отсутствует** → Phase 3 = code-complete + отложенный тест. Разрабатывать так, чтобы потом запустилось на железе.
+5. **GPL compliance — reimplement by reference.** Не копировать CasparCG дословно.
+6. **Git-first delivery** — каждая задача = merged PR, история пригодна для rollback/resume.
+
+## Хронология разработки (что произошло)
+
+### Phase 0 (engine skeleton + bench + CasparCG study) — DONE
+- Создано дерево продукта (`engine/ runtime/ backend/ frontend/ shared/ bench/ docs/ data/ fonts/`), `.gitignore`, `LICENSE.md`, `start.sh`/`stop.sh`
+- Изучен CasparCG trunk (`v2.3.3-lts-stable-436-gd603ee91f` toward 2.6.0), создан `engine/CASPARRCG_PORTING.md` с porting-map + 5 развилками spec-vs-CasparCG
+- Написан `bg_engine` (C++20 + CEF 149 OSR), reimplement by reference из CasparCG modules/html. CPU-only switches, OSR OnPaint, FrameRing SPSC, MessagePump, Stats (SUMMARY формат для bench)
+- Consumers: null (bench), pipe (raw BGRA), preview (JPEG stb)
+- Bench harness: `bench.html` (5 lower-thirds), `bench-alpha.html` (mask/alpha A/B), `run-bench.sh` (taskset disjoint cores)
+- **Результат Phase 0:** 3ch 60s avg 47.88fps, **0 late, 0% drops**, p99≈21.4ms; mask/alpha overhead **0.7%** (цель ≤5%). **Render plane proven.**
+- CasparCG baseline: PLAY подтверждён (`202 PLAY OK`, html producer 1920×1080@50), но формальный fps/drops отложен — CEF GPU-subprocess instability на headless (`FATAL: GPU process isn't usable`) + fps-метрики в OSC (нужен OSC-capture). Deferred до Phase 3 SDI или OSC.
+
+### Phase 1 (shared runtime + channel page) — DONE
+- `@titulus/runtime` TS package: schema.ts (6 layer types, timeline, variables), timeline.ts (directors/keyframes/actions), easing.ts (linear/power2/bounce/elastic/cubic-bezier), transform.ts (anchor-aware CSS), stackOrder.ts (DFS flatten), clock.ts (strftime-like), fonts.ts (CSS Font Loading), domRenderer.ts (class TemplateRenderer), channelClient.ts (class ChannelClient WS)
+- esbuild → IIFE `bg-runtime.js` (window.BG, 17.5KB)
+- `backend/public/channel.html`: query params, BG.ChannelClient, perpetual rAF heartbeat (§10 CRITICAL), engine fixed-step bridge (setInterval tick)
+- **Результат Phase 1:** bg_engine грузит channel.html end-to-end (233 frames/10s). Caveat: без backend WS, ChannelClient reconnect-storm даёт ~46% drops в test-env (НЕ renderer regression — bench.html держит ~48fps). Разрешится в Phase 2 с backend WS.
+
+### Phase 2 (control plane) — В РАБОТЕ
+- 2.1 ✅ backend core: SQLite WAL schema (templates/channels/rundowns/settings/on_air) + DAOs, Express app, templates REST CRUD + ajv validation (422 на bad schema)
+- 2.2 ✅ channels (max 8, output_mode/keyer/device validation) + rundowns (reorder) + settings REST. Data-путь конфигурируем через `TITULUS_DATA`
+- **2.3 🔨 код написан, НЕ закоммичен/НЕ полностью протестирован:** `backend/src/onair.js` (OnAirManager: in-memory + SQLite on_air persistence + replay-on-connect + fan-out), `backend/src/routes/ws.js` (`/ws/control`, `/ws/renderer`). Тест блокировался sandbox-CWD-проблемой (см. «Найденные проблемы»).
+
+## Найденные технические проблемы (ВАЖНО для нового агента)
+
+### 1. `/root/Titulus/data` нестабилен для SQLite (SQLITE_IOERR_SHORT_READ)
+- Симптом: `disk I/O error` / `SQLITE_IOERR_SHORT_READ` на `db.pragma('journal_mode = WAL')`
+- Причина: overlay-fs/spread-issue в репо-каталоге после множества операций
+- **Решение (внедрено):** data-путь конфигурируем через `process.env.TITULUS_DATA`. Для тестов → `TITULUS_DATA=/tmp/...` (tmpfs чистый). Продакшен → `/var/lib/titulus`.
+
+### 2. Bash subshell `( )` сбрасывает CWD
+- Симптом: `(cd backend && node src/index.js)` или `(PORT=... node src/index.js &)` → `node` запускается из `/root/Titulus`, не `backend/` → `Cannot find module '/root/Titulus/src/index.js'`
+- **Решение:** НЕ использовать subshell для запуска. Использовать `cd /root/Titulus/backend && PORT=... node src/index.js` (в одной команде, `&&`). Для background: `cd backend && node src/index.js > log 2>&1 &` (без окружающих `()`).
+
+### 3. CasparCG CEF 142 GPU-subprocess instability на headless
+- Симптом: `FATAL: GPU process isn't usable. Goodbye.` (trace/breakpoint trap) на длинных прогонах
+- Влияет только на CasparCG baseline-замеры, НЕ на Titulus bg_engine (CPU-only, 0 крашей)
+- Формальный CasparCG baseline отложен до OSC-capture или bare-metal SDI
+
+### 4. CJS-dep импорты в ESM backend
+- `import { WebSocket } from 'ws'` — НЕ работает (обёрнуто в `{WebSocket}=pkg`)
+- **Решение:** `import WebSocket from 'ws'` (default import) или `import pkg from 'ws'; const { WebSocket } = pkg;` (зависит от версии)
+
+### 5. CEF `LOG(severity)` конфликтует с нашим макросом
+- В engine C++, CEF header `cef_logging.h` определяет `LOG(severity)` — наш `LOG()` ломается
+- **Решение:** используем `BG_LOG()` или иные имена
+
+### 6. CEF subprocess guard порядок
+- `CefExecuteProcess` ДО своего arg-parse (helper processes re-exec с `--type=`)
+
+### 7. Write-tool сбрасывает executable bit
+- После Write `.sh` файлов — `chmod +x` обязательно (Bash `Permission denied` иначе)
+
+## Проверенные подходы (что работает)
+
+- Engine smoke: `bg_engine --consumer=null --url=file:///tmp/...test.html --fps=50 --duration=N --cache-dir=/tmp/...` → SUMMARY парсится bench
+- Engine на channel.html: http-сервер в `backend/public` (`python3 -m http.server 3939`), затем `bg_engine --url=http://localhost:3939/channel.html?engine=1&...`
+- Backend test: `cd backend && PORT=<port> TITULUS_DATA=/tmp/<dir> node src/index.js &` + curl/ws-client + `pkill -f "PORT=<port>"`
+- Runtime pure-logic test: `cd runtime && npx tsx test.mjs` (jsdom для DOM, `pretendToBeVisual: true`, shim rAF)
+- Runtime typecheck: `cd runtime && npx tsc --noEmit`
+- CEF download: `engine/third_party/fetch-cef.sh` (latest stable linux64 minimal)
+
+## Полный тест-скрипт WS flow (для завершения задачи 2.3)
+
+При завершении 2.3 используй этот test (положить в `backend/test_ws.mjs`, `cd backend && node test_ws.mjs`):
+
+```javascript
+import WebSocket from 'ws';
+const API = 'ws://127.0.0.1:3097/ws';
+const tpl = (id) => ({id,name:id,canvas:{width:1920,height:1080,background:'#000'},variables:[],groups:[],layers:[],rootStack:[],groupStacks:{},timeline:{fps:50,durationFrames:1,playbackMode:'bounded',directors:[{id:'default',name:'d',durationFrames:1,offsetFrames:0,autostart:true,loop:false,swing:false}],trackDirectors:{},keyframes:[],actions:[]}});
+const received = [];
+const ren = new WebSocket(`${API}/renderer?channel=ch1`);
+await new Promise((r) => ren.on('open', r));
+ren.on('message', (d) => received.push(JSON.parse(d.toString())));
+const ctrl = new WebSocket(`${API}/control`);
+await new Promise((r) => ctrl.on('open', r));
+ctrl.send(JSON.stringify({type:'take', templateId:'T1', channelId:'ch1', template:tpl('T1'), variables:{}}));
+await new Promise(r => setTimeout(r, 400));
+console.log('1. take T1 -> renderer received:', received.map(m=>m.type+':'+m.templateId), '(expect take:T1)');
+ctrl.send(JSON.stringify({type:'update', templateId:'T1', channelId:'ch1', variables:{name:'X'}}));
+await new Promise(r => setTimeout(r, 300));
+console.log('2. update T1 -> last:', received[received.length-1].type, 'vars=', JSON.stringify(received[received.length-1].variables));
+ctrl.send(JSON.stringify({type:'clear', templateId:'T1', channelId:'ch1'}));
+await new Promise(r => setTimeout(r, 300));
+console.log('3. clear T1 -> last:', received[received.length-1].type+':'+received[received.length-1].templateId), '(expect clear:T1)');
+let onair = await (await fetch('http://127.0.0.1:3097/api/onair')).json();
+console.log('4. /api/onair after clear:', JSON.stringify(onair), '(expect {})');
+ctrl.send(JSON.stringify({type:'take', templateId:'T2', channelId:'ch1', template:tpl('T2'), variables:{}}));
+await new Promise(r => setTimeout(r, 200));
+const ren2Rec = [];
+const ren2 = new WebSocket(`${API}/renderer?channel=ch1`);
+await new Promise((r) => ren2.on('open', r));
+ren2.on('message', (d) => ren2Rec.push(JSON.parse(d.toString())));
+await new Promise(r => setTimeout(r, 500));
+console.log('5. NEW renderer replay on connect:', ren2Rec.map(m=>m.type+':'+m.templateId), '(expect take:T2)');
+ren.close(); ren2.close(); ctrl.close();
+console.log('ALL OK');
+```
+
+## Соглашения, выработанные в диалоге
+
+- Коммиты на русском+английском (тело коммита и PR — детальные, с техн. комментариями)
+- PR body секции: Summary / Task / Phase / Changes / Test plan / Rollback / (Notes)
+- Честность в отчётах: НЕ фабриковать цифры (CasparCG baseline честно помечен pending; VM-jitter документирован)
+- Каждый PR = merge commit (не squash), для revert-точек
+- TodoWrite ведётся активно для tracking задач
+
+## Контактные точки для нового агента
+
+- **С чего начать:** `git status` → ветка `feature/phase-2-ws-onair` с незакоммиченными файлами 2.3 → дочитать этот файл + `10-development-plan.mdc` → завершить 2.3 (тест + commit/PR/merge) → двигаться по плану (2.4 media, потом 2.5-2.8 frontend)
+- **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
+- **Текущая ветка работы:** `feature/phase-2-ws-onair`
+- **Последний merged:** PR #15 (channels+rundowns+settings)
