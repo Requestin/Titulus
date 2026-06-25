@@ -10,15 +10,17 @@ alwaysApply: true
 
 - **Phase 0:** ✅ DONE (PRs #1-#7, render plane proven)
 - **Phase 1:** ✅ DONE (PRs #8-#13, runtime + channel page)
-- **Phase 2:** 🔨 В РАБОТЕ — **задача 2.3 на ветке `feature/phase-2-ws-onair` (код написан, НЕ закоммичен/НЕ протестирован полностью)**
+- **Phase 2:** 🔨 В РАБОТЕ — 2.1/2.2/2.3 ✅ DONE (PRs #14, #15, #17); 2.4-2.8 ⏳ todo
 - **Phase 3-6+:** ⏳ не начаты
 
-**СЛЕДУЮЩАЯ ЗАДАЧА:** завершить 2.3 (WS on-air) — см. ниже «Немедленное продолжение».
+**СЛЕДУЮЩАЯ ЗАДАЧА:** 2.4 — media transcode (ffmpeg VP9/WebM+alpha, poster, `/api/uploads` multer + `/api/uploads/jobs/:id`). См. §7.5 «Media pipeline» в `DEVELOPMENT_PROMPT.md` и ниже «Немедленное продолжение».
 
 ## Git история (merged PRs в main)
 
 ```
-#15 [Phase 2] channels + rundowns + settings REST        ← последний merged
+#17 [Phase 2] WS hubs + on-air persistence + /api/onair  ← последний merged
+#16 [Phase 2] .cursor/rules/*.mdc (источник правды для агентов; docs-only)
+#15 [Phase 2] channels + rundowns + settings REST
 #14 [Phase 2] SQLite + Express core + templates REST
 #13 [Phase 1] channel.html engine/browser page
 #12 [Phase 1] build.mjs esbuild IIFE bg-runtime.js
@@ -37,41 +39,24 @@ alwaysApply: true
 
 ---
 
-## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: задача 2.3 (WS + on-air)
+## ✅ ЗАДАЧА 2.3 (WS + on-air) — DONE (PR #17)
 
-**Состояние:** ветка `feature/phase-2-ws-onair` уже создана и содержит незакоммиченные файлы:
-- `backend/src/onair.js` (новый) — OnAirManager class
-- `backend/src/routes/ws.js` (новый) — `/ws/control`, `/ws/renderer`
-- `backend/src/index.js` (изменён) — mount WS router + `/api/onair` + `OnAirManager` init
+`backend/src/onair.js` (`OnAirManager`), `backend/src/routes/ws.js` (`/ws/control`, `/ws/renderer`) и интеграция в `backend/src/index.js` (`/api/onair` + mount `/ws`) — закоммичены и протестированы (throwaway WS smoke client, не коммитим). Проверено: take/update/clear fan-out, `/api/onair`, replay-on-connect, CLEAR ALL fan-out, и **on-air переживает рестарт backend** (replay из SQLite). `express-ws` патчит `express.Router` → `router.ws()` работает при `app.use('/ws', router)`.
 
-**Что нужно сделать новому агенту:**
+## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: задача 2.4 (media transcode)
 
-1. `git status` — увидит незакоммиченные файлы на ветке `feature/phase-2-ws-onair`
-2. **Протестировать WS flow** (КОД НАПИСАН, тест блокировался sandbox-CWD-проблемой):
-   ```bash
-   # Запуск backend (ОБЯЗАТЕЛЬНО с cd и TITULUS_DATA=/tmp, НЕ из subshell):
-   cd /root/Titulus/backend
-   rm -rf /tmp/titulus-test-data && mkdir -p /tmp/titulus-test-data/uploads
-   PORT=3097 HOST=127.0.0.1 TITULUS_DATA=/tmp/titulus-test-data node src/index.js > /tmp/be.log 2>&1 &
-   sleep 2 && head -1 /tmp/be.log  # должно показать "listening on http://..."
-   ```
-   Затем WS-клиент test (см. тест ниже в «Тест WS flow»)
-3. Если тест проходит → commit + push + PR + merge (см. 02-git-workflow.mdc)
-4. Если не проходит → debug, фикс, тест, затем commit/push/PR/merge
+**Цель:** загрузка видео → транскод в CEF-совместимый VP9/WebM с alpha + poster; REST по §7.3/§7.5.
 
-**Тест WS flow** (положить в `backend/test_ws.mjs`, запустить `node test_ws.mjs` из `backend/`):
-```javascript
-import WebSocket from 'ws';  // default import (CJS в ESM)
-// Подключить renderer на channel=ch1, control WS, отправить take T1, проверить:
-//   1. renderer получает take:T1
-//   2. update T1 → renderer получает update с variables
-//   3. clear T1 → renderer получает clear:T1
-//   4. /api/onair → {} после clear
-//   5. NEW renderer подключается ПОСЛЕ take T2 → получает replay take:T2 (replay-on-connect)
-// Полный шаблон test-скрипта см. в истории задачи 2.3 (99-session-history.mdc)
-```
+**Что сделать:**
+1. Новая ветка от `main`: `git checkout main && git pull && git checkout -b feature/phase-2-media`
+2. `backend/src/media.js` — очередь транскод-джобов (ffmpeg child process): сохранить оригинал в `data/uploads/`, транскодить в VP9/WebM (alpha через `yuva420p`/`libvpx-vp9`), сгенерить poster (первый кадр PNG), статус джобы in-memory (+ опц. персист).
+3. `backend/src/routes/uploads.js` — `POST /api/uploads` (multer, multipart), `GET /api/uploads/jobs/:id` (статус), смонтировать в `index.js`.
+4. Тест: upload MP4 → дождаться job done → проверить `<video>`-playable WebM + alpha (ffprobe pix_fmt `yuva420p`). ffmpeg должен быть в PATH (проверить `ffmpeg -version`).
+5. commit → push → PR `[Phase 2] media transcode (VP9/WebM alpha + uploads)` → merge.
 
-**Известный подводный камень:** при тесте backend запускать ОБЯЗАТЕЛЬНО `cd /root/Titulus/backend && ...` (subshell `( )` сбрасывает CWD → `node src/index.js` ищет в `/root/Titulus/src/`). И `TITULUS_DATA=/tmp/...` (repо-dir нестабилен для SQLite). После теста `pkill -f "PORT=3097"`.
+**Подводные камни запуска backend (проверено в 2.3):**
+- Запуск ТОЛЬКО `cd /root/Titulus/backend && PORT=<port> HOST=127.0.0.1 TITULUS_DATA=/tmp/<dir> node src/index.js > /tmp/be.log 2>&1 &` (НЕ subshell `( )` — сбрасывает CWD; `TITULUS_DATA=/tmp/...` — repo-dir нестабилен для SQLite).
+- **Kill backend: НЕ `pkill -f "PORT=<port>"`** — `PORT` это env var, его нет в argv процесса `node src/index.js`, pkill матчит обёртки-shell (включая себя). Убивай слушателя по PID: `PID=$(ss -ltnp | grep ':<port>' | grep -oP 'pid=\K[0-9]+' | head -1); kill "$PID"`.
 
 ---
 
@@ -114,7 +99,7 @@ import WebSocket from 'ws';  // default import (CJS в ESM)
 |---|---|---|
 | 2.1 | backend core (SQLite + Express + templates REST + ajv validation) | ✅ #14 |
 | 2.2 | channels (max 8) + rundowns (reorder) + settings REST | ✅ #15 |
-| **2.3** | **WS hubs + on-air persistence (take/clear/update + replay + /api/onair)** | **🔨 код написан, НЕ закоммичен/тест pending** |
+| 2.3 | WS hubs + on-air persistence (take/clear/update + replay + /api/onair) | ✅ #17 |
 | 2.4 | media transcode (ffmpeg VP9/WebM alpha, poster, /api/uploads multer) | ⏳ todo |
 | 2.5 | frontend shell (Vite+React18+TS+Router+Zustand+zundo+Tailwind) | ⏳ todo |
 | 2.6 | frontend editor (CanvasArea DOM preview, Layers/Properties/Variables/Timeline) | ⏳ todo |
