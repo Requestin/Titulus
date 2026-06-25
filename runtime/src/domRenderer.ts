@@ -136,6 +136,21 @@ export class TemplateRenderer {
   }
 
   /**
+   * Seek to an absolute frame and apply state, without playing (editor scrub /
+   * preview). Does not fire cue actions (scrubbing is not a linear playthrough).
+   */
+  seek(frame: number): void {
+    this.frame = Math.max(0, Math.round(frame));
+    this.lastFrameSampled = null;
+    this.applyState(this.frame);
+  }
+
+  /** Current playhead frame. */
+  getFrame(): number {
+    return this.frame;
+  }
+
+  /**
    * Advance exactly one frame. Engine mode ('fixed') only. Called by the host
    * at the channel fps (DEVELOPMENT_PROMPT §6.3 fixed-step tick).
    */

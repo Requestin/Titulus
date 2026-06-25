@@ -5,7 +5,7 @@
 // handles. Live drag manipulates the DOM directly and commits one undoable
 // transform on pointer-up (so a drag is a single history step).
 
-import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { TemplateRenderer, resolveVariableMap, type Transform } from '@runtime';
 import { useEditor } from './store';
 
@@ -74,8 +74,18 @@ export function CanvasArea() {
   const zoom = useEditor((s) => s.zoom);
   const gridSnap = useEditor((s) => s.gridSnap);
   const gridSize = useEditor((s) => s.gridSize);
+  const playhead = useEditor((s) => s.playhead);
+  const playing = useEditor((s) => s.playing);
+  const setPlayhead = useEditor((s) => s.setPlayhead);
+  const setPlaying = useEditor((s) => s.setPlaying);
   const select = useEditor((s) => s.select);
   const updateTransform = useEditor((s) => s.updateTransform);
+
+  function globalFrame(local: number): number {
+    const st = useEditor.getState();
+    const d = st.template?.timeline.directors.find((x) => x.id === st.activeDirectorId);
+    return (d?.offsetFrames ?? 0) + local;
+  }
 
   const stageRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -122,6 +132,7 @@ export function CanvasArea() {
     if (!r || !template) return;
     r.syncTemplate(template, resolveVariableMap(template));
     r.resize(cw * zoom, ch * zoom);
+    r.seek(globalFrame(useEditor.getState().playhead));
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template, zoom, cw, ch]);
@@ -130,6 +141,49 @@ export function CanvasArea() {
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection]);
+
+  // Scrub: seek when the playhead changes and we're not actively playing.
+  useLayoutEffect(() => {
+    const r = rendererRef.current;
+    if (!r || playing) return;
+    r.seek(globalFrame(playhead));
+    recomputeBox();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playhead, playing]);
+
+  // Playback: advance the playhead at fps, seek each frame (WYSIWYG preview).
+  useEffect(() => {
+    if (!playing) return;
+    const r = rendererRef.current;
+    const t = useEditor.getState().template;
+    if (!r || !t) return;
+    const dir = t.timeline.directors.find((d) => d.id === useEditor.getState().activeDirectorId);
+    const fps = t.timeline.fps || 50;
+    const dur = dir?.durationFrames ?? t.timeline.durationFrames;
+    const offset = dir?.offsetFrames ?? 0;
+    let local = useEditor.getState().playhead;
+    let last = performance.now();
+    let raf = 0;
+    const loop = (now: number) => {
+      local += ((now - last) / 1000) * fps;
+      last = now;
+      if (local >= dur) {
+        if (dir?.loop) {
+          local %= dur;
+        } else {
+          r.seek(offset + dur);
+          setPlayhead(dur);
+          setPlaying(false);
+          return;
+        }
+      }
+      r.seek(offset + local);
+      setPlayhead(local);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, setPlayhead, setPlaying]);
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (!template) return;
