@@ -4,22 +4,28 @@ alwaysApply: true
 ---
 # План разработки Titulus — фазы, статус, следующая задача
 
-**Это — навигационная карта для нового агента.** Читай ПЕРВЫМ после `00-project-overview.mdc`. Здесь: что сделано, где точно остановились, что делать следующим.
+**Это — навигационная карта для нового агента.** Читай ПЕРВЫМ после `00-project-overview.mdc`. Здесь: что сделано, где точно остановились, что делать следующим. **Какой Agent Skill применять под задачу/фазу — см. `.cursor/rules/11-skills-map.mdc`.**
 
 ## ГДЕ МЫ СЕЙЧАС (snapshot)
 
 - **Phase 0:** ✅ DONE (PRs #1-#7, render plane proven)
 - **Phase 1:** ✅ DONE (PRs #8-#13, runtime + channel page)
-- **Phase 2:** 🔨 В РАБОТЕ — 2.1/2.2/2.3 ✅ DONE (PRs #14, #15, #17); 2.4-2.8 ⏳ todo
-- **Phase 3-6+:** ⏳ не начаты
+- **Phase 2:** ✅ DONE (PRs #14-#23, control plane + media + frontend + output modes)
+- **Phase 3-6+:** ⏳ Phase 3 — следующая (DeckLink SDI code-complete; validation deferred без HW)
 
-**СЛЕДУЮЩАЯ ЗАДАЧА:** 2.4 — media transcode (ffmpeg VP9/WebM+alpha, poster, `/api/uploads` multer + `/api/uploads/jobs/:id`). См. §7.5 «Media pipeline» в `DEVELOPMENT_PROMPT.md` и ниже «Немедленное продолжение».
+**СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 3 — DeckLink SDI consumer (reimplement from CasparCG). См. ниже «Немедленное продолжение» и `04-decklink-no-hw.mdc`.
 
 ## Git история (merged PRs в main)
 
 ```
-#17 [Phase 2] WS hubs + on-air persistence + /api/onair  ← последний merged
-#16 [Phase 2] .cursor/rules/*.mdc (источник правды для агентов; docs-only)
+#23 [Phase 2] output modes settings + run-engines.sh supervisor   ← последний merged
+#22 [Phase 2] operator control panel — TAKE/UPDATE/CLEAR
+#21 [Phase 2] full timeline editor
+#20 [Phase 2] template editor core — WYSIWYG canvas
+#19 [Phase 2] frontend shell — Vite/React/TS/Tailwind
+#18 [Phase 2] media transcode (VP9/WebM alpha) + /api/uploads
+#17 [Phase 2] WS hubs + on-air persistence + /api/onair
+#16 [Phase 2] .cursor/rules/*.mdc (docs-only)
 #15 [Phase 2] channels + rundowns + settings REST
 #14 [Phase 2] SQLite + Express core + templates REST
 #13 [Phase 1] channel.html engine/browser page
@@ -39,24 +45,19 @@ alwaysApply: true
 
 ---
 
-## ✅ ЗАДАЧА 2.3 (WS + on-air) — DONE (PR #17)
+## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Phase 3 (DeckLink SDI)
 
-`backend/src/onair.js` (`OnAirManager`), `backend/src/routes/ws.js` (`/ws/control`, `/ws/renderer`) и интеграция в `backend/src/index.js` (`/api/onair` + mount `/ws`) — закоммичены и протестированы (throwaway WS smoke client, не коммитим). Проверено: take/update/clear fan-out, `/api/onair`, replay-on-connect, CLEAR ALL fan-out, и **on-air переживает рестарт backend** (replay из SQLite). `express-ws` патчит `express.Router` → `router.ws()` работает при `app.use('/ws', router)`.
-
-## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: задача 2.4 (media transcode)
-
-**Цель:** загрузка видео → транскод в CEF-совместимый VP9/WebM с alpha + poster; REST по §7.3/§7.5.
+**Цель:** production SDI Fill+Key на Linux — parity с CasparCG. На dev-хосте: **code-complete + compile/link**; runtime SDI-тест отложен (нет платы/genlock). См. `04-decklink-no-hw.mdc`.
 
 **Что сделать:**
-1. Новая ветка от `main`: `git checkout main && git pull && git checkout -b feature/phase-2-media`
-2. `backend/src/media.js` — очередь транскод-джобов (ffmpeg child process): сохранить оригинал в `data/uploads/`, транскодить в VP9/WebM (alpha через `yuva420p`/`libvpx-vp9`), сгенерить poster (первый кадр PNG), статус джобы in-memory (+ опц. персист).
-3. `backend/src/routes/uploads.js` — `POST /api/uploads` (multer, multipart), `GET /api/uploads/jobs/:id` (статус), смонтировать в `index.js`.
-4. Тест: upload MP4 → дождаться job done → проверить `<video>`-playable WebM + alpha (ffprobe pix_fmt `yuva420p`). ffmpeg должен быть в PATH (проверить `ffmpeg -version`).
-5. commit → push → PR `[Phase 2] media transcode (VP9/WebM alpha + uploads)` → merge.
+1. `git checkout main && git pull && git checkout -b feature/phase-3-decklink-consumer`
+2. `engine/src/consumers/decklink_consumer.{cpp,h}` — reimplement by reference из CasparCG (`ScheduledFrameCompleted`, keyer, weave UFF, telemetry, exit 42)
+3. CMake conditional DeckLink SDK include + build guard
+4. `docs/phase3-decklink-validation-deferred.md` — чек-лист для железа
+5. Verify: компилируется/линкуется против SDK 16.0; `run-engines.sh --dry-run` с `output_mode=decklink` показывает `--consumer=decklink`
+6. commit → push → PR `[Phase 3] decklink consumer (code-complete)` → merge
 
-**Подводные камни запуска backend (проверено в 2.3):**
-- Запуск ТОЛЬКО `cd /root/Titulus/backend && PORT=<port> HOST=127.0.0.1 TITULUS_DATA=/tmp/<dir> node src/index.js > /tmp/be.log 2>&1 &` (НЕ subshell `( )` — сбрасывает CWD; `TITULUS_DATA=/tmp/...` — repo-dir нестабилен для SQLite).
-- **Kill backend: НЕ `pkill -f "PORT=<port>"`** — `PORT` это env var, его нет в argv процесса `node src/index.js`, pkill матчит обёртки-shell (включая себя). Убивай слушателя по PID: `PID=$(ss -ltnp | grep ':<port>' | grep -oP 'pid=\K[0-9]+' | head -1); kill "$PID"`.
+**Phase 3 exit (code):** компилируется/линкуется. **Exit (validation — DEFERRED):** 8h soak, genlock locked, CasparCG parity на bare-metal с DeckLink.
 
 ---
 
@@ -91,22 +92,22 @@ alwaysApply: true
 | 1.5 | build.mjs esbuild IIFE | #12 |
 | 1.6 | channel.html engine/browser page | #13 |
 
-## Phase 2 — Backend + Frontend (control plane) + output modes 🔨 В РАБОТЕ
+## Phase 2 — Backend + Frontend (control plane) + output modes ✅ DONE
 
-**Goal:** полный operator workflow; per-channel output selection; backend restart не теряет on-air.
+**Goal (достигнут):** полный operator workflow; per-channel output selection; backend restart не теряет on-air.
 
-| # | Задача | Статус |
+| # | Задача | PR |
 |---|---|---|
-| 2.1 | backend core (SQLite + Express + templates REST + ajv validation) | ✅ #14 |
-| 2.2 | channels (max 8) + rundowns (reorder) + settings REST | ✅ #15 |
-| 2.3 | WS hubs + on-air persistence (take/clear/update + replay + /api/onair) | ✅ #17 |
-| 2.4 | media transcode (ffmpeg VP9/WebM alpha, poster, /api/uploads multer) | ⏳ todo |
-| 2.5 | frontend shell (Vite+React18+TS+Router+Zustand+zundo+Tailwind) | ⏳ todo |
-| 2.6 | frontend editor (CanvasArea DOM preview, Layers/Properties/Variables/Timeline) | ⏳ todo |
-| 2.7 | frontend control panel (Templates|Rundowns, TAKE/CLEAR/UPDATE, ProgramMonitor, Browser Source URL) | ⏳ todo |
-| 2.8 | output modes Settings + run-engines.sh reads config | ⏳ todo |
+| 2.1 | backend core (SQLite + Express + templates REST + ajv validation) | #14 |
+| 2.2 | channels (max 8) + rundowns (reorder) + settings REST | #15 |
+| 2.3 | WS hubs + on-air persistence (take/clear/update + replay + /api/onair) | #17 |
+| 2.4 | media transcode (ffmpeg VP9/WebM alpha, poster, /api/uploads multer) | #18 |
+| 2.5 | frontend shell (Vite+React18+TS+Router+Zustand+zundo+Tailwind) | #19 |
+| 2.6 | frontend editor (CanvasArea WYSIWYG, Layers/Properties/Variables/Timeline) | #20, #21 |
+| 2.7 | frontend control panel (Templates\|Rundowns, TAKE/CLEAR/UPDATE, ProgramMonitor) | #22 |
+| 2.8 | output modes Settings + run-engines.sh reads config | #23 |
 
-**Phase 2 Exit:** operator loop (TAKE/UPDATE/CLEAR через WS), switch output без redeploy, editor preview = engine output (WYSIWYG), backend restart preserves on-air.
+**Phase 2 Exit (достигнут):** operator loop (TAKE/UPDATE/CLEAR через WS), output switch via Settings без redeploy, editor preview = `@runtime` WYSIWYG, backend restart preserves on-air (NFR-1), `run-engines.sh --dry-run` reads `/api/channels`.
 
 ## Phase 3 — DeckLink SDI (CasparCG port) — CODE-COMPLETE, VALIDATION DEFERRED ⏳
 
@@ -114,14 +115,14 @@ alwaysApply: true
 
 - 3.1 `consumers/decklink_consumer.{cpp,h}` — reimplement (ScheduledFrameCompleted, keyer, weave UFF, telemetry, exit 42)
 - 3.2 CMake conditional DeckLink SDK include + build guard
-- 3.3 `run-engines.sh` (taskset disjoint, exit-42→6s, crash→3s) + systemd unit
+- 3.3 systemd unit (`engine/systemd/bg-engine@.service` уже есть skeleton; supervisor `run-engines.sh` ✅ в Phase 2)
 - 3.4 `docs/phase3-decklink-validation-deferred.md`
 
 **Phase 3 Exit (code):** компилируется/линкуется против SDK. **Exit (validation — DEFERRED до железа):** 8h soak, genlock locked, CasparCG parity.
 
 ## Phase 4 — Backend hardening ⏳
 
-- 4.1 on-air persistence hardened (kill/restart backend → restored)
+- 4.1 on-air persistence hardened (kill/restart backend → restored) — базово ✅ в 2.3; hardening todo
 - 4.2 media robust (error handling, retry, 200MB, MIME, CORS)
 - 4.3 `/api/templates/validate` ajv structured errors
 - 4.4 remove dead code/legacy; security baseline (NFR-3)

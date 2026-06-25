@@ -38,11 +38,16 @@ alwaysApply: true
 - `backend/public/channel.html`: query params, BG.ChannelClient, perpetual rAF heartbeat (§10 CRITICAL), engine fixed-step bridge (setInterval tick)
 - **Результат Phase 1:** bg_engine грузит channel.html end-to-end (233 frames/10s). Caveat: без backend WS, ChannelClient reconnect-storm даёт ~46% drops в test-env (НЕ renderer regression — bench.html держит ~48fps). Разрешится в Phase 2 с backend WS.
 
-### Phase 2 (control plane) — В РАБОТЕ
-- 2.1 ✅ backend core: SQLite WAL schema (templates/channels/rundowns/settings/on_air) + DAOs, Express app, templates REST CRUD + ajv validation (422 на bad schema)
-- 2.2 ✅ channels (max 8, output_mode/keyer/device validation) + rundowns (reorder) + settings REST. Data-путь конфигурируем через `TITULUS_DATA`
-- 2.3 ✅ **DONE (PR #17):** `backend/src/onair.js` (OnAirManager: in-memory + SQLite on_air persistence + replay-on-connect + fan-out), `backend/src/routes/ws.js` (`/ws/control`, `/ws/renderer`), интеграция в `index.js` (`/api/onair` + mount `/ws`). Протестировано throwaway WS smoke client: take/update/clear fan-out, `/api/onair`, replay-on-connect, CLEAR ALL fan-out, **on-air переживает рестарт backend** (replay из SQLite). Также пофикшен CLEAR ALL (раньше чистил state, но не слал clear рендерерам). **Важно:** PR #16 (ветка `feature/phase-2-ws-onair`) был **docs-only** (.cursor/rules), код 2.3 туда НЕ попал; его доставила отдельная ветка `feature/phase-2-ws-hub` (PR #17).
-- 2.4–2.8 ⏳ todo (media, frontend shell/editor/control/output modes)
+### Phase 2 (control plane) — DONE
+- 2.1 ✅ backend core (#14): SQLite WAL schema + DAOs, templates REST CRUD + ajv validation
+- 2.2 ✅ channels + rundowns + settings REST (#15). `TITULUS_DATA` конфигурируем
+- 2.3 ✅ WS + on-air (#17): `OnAirManager`, `/ws/control`, `/ws/renderer`, `/api/onair`; replay-on-connect; CLEAR ALL fan-out; on-air переживает рестарт backend
+- 2.4 ✅ media transcode (#18): `backend/src/media.js` + `/api/uploads` (VP9/WebM alpha, poster)
+- 2.5 ✅ frontend shell (#19): Vite/React18/TS/Tailwind, dark design system (`PRODUCT.md`/`DESIGN.md`), app shell, api/ws clients
+- 2.6 ✅ editor (#20, #21): WYSIWYG CanvasArea via `@runtime`, Layers/Properties/Variables, full timeline/curve editor
+- 2.7 ✅ control panel (#22): TAKE/UPDATE(debounced)/CLEAR/CLEAR ALL, ProgramMonitor iframe, Browser Source URL, Rundowns reorder
+- 2.8 ✅ output modes (#23): SettingsPage channel CRUD + `engine/run-engines.sh` / `run-channel.sh` supervisor (taskset, dry-run)
+- **Phase 2 exit:** operator loop через WS; output switch в Settings; editor = runtime WYSIWYG; NFR-1 on-air persistence; `run-engines.sh --dry-run` читает `/api/channels`
 
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
@@ -135,7 +140,7 @@ console.log('ALL OK');
 
 ## Контактные точки для нового агента
 
-- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → `main` чист → новая ветка `feature/phase-2-media` → дочитать этот файл + `10-development-plan.mdc` → делать 2.4 (media transcode) → дальше по плану 2.5-2.8 frontend
+- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → `main` чист → новая ветка `feature/phase-3-decklink-consumer` → дочитать этот файл + `10-development-plan.mdc` + `04-decklink-no-hw.mdc` → Phase 3 decklink consumer
 - **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
-- **Текущая ветка работы:** `main` (2.3 смержена в PR #17)
-- **Последний merged:** PR #17 (WS hubs + on-air persistence + /api/onair)
+- **Текущая ветка работы:** `main` (Phase 2 DONE, PRs #14-#23)
+- **Последний merged:** PR #23 (output modes + run-engines.sh)
