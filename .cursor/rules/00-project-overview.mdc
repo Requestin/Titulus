@@ -82,4 +82,5 @@ Cloud SaaS (подписка) + On-prem (lifetime/annual). Один codebase, р
 - `.cursor/rules/05-sandbox-policy.mdc` — что брать/не брать из broadcast-graphics
 - `.cursor/rules/06-engine-porting.mdc` — CEF/DeckLink/ffmpeg портирование
 - `.cursor/rules/10-development-plan.mdc` — план фаз + что сделано + что дальше
+- `.cursor/rules/11-skills-map.mdc` — карта Agent Skills → задачи/фазы (какой skill применять)
 - `.cursor/rules/99-session-history.mdc` — история диалога, решения, контекст
