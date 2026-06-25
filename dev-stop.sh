@@ -35,8 +35,14 @@ if pgrep -f "$ROOT/engine/run-channel.sh" >/dev/null 2>&1; then
   pkill -f "$ROOT/engine/run-channel.sh" 2>/dev/null || true
 fi
 
+# Stray vite from a prior run (may have fallen back to 3012 if 3011 was busy)
+if pgrep -f "$ROOT/frontend/node_modules/.bin/vite" >/dev/null 2>&1; then
+  log "killing vite dev server ..."
+  pkill -f "$ROOT/frontend/node_modules/.bin/vite" 2>/dev/null || true
+fi
+
 # Fallback: listeners on dev ports (do NOT use pkill -f PORT=...) -------------
-for port in "$FE_PORT" "$BE_PORT"; do
+for port in "$FE_PORT" "$BE_PORT" 3012; do
   pids="$(ss -ltnp 2>/dev/null | awk -v p=":$port" '$4 ~ p {print $7}' | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | sort -u)"
   for pid in $pids; do
     if [[ -n "${pid:-}" ]] && kill -0 "$pid" 2>/dev/null; then

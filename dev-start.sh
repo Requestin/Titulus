@@ -77,17 +77,19 @@ done
 log "starting frontend on ${HOST}:${FE_PORT} (proxy -> backend :${BE_PORT}) ..."
 cd "$ROOT/frontend"
 VITE_BACKEND="http://${HOST}:${BE_PORT}" \
-  npm run dev -- --port "$FE_PORT" --host "$HOST" > "$LOG_DIR/frontend.log" 2>&1 &
+  npm run dev -- --port "$FE_PORT" --host "$HOST" --strictPort > "$LOG_DIR/frontend.log" 2>&1 &
 echo $! > "$PID_DIR/frontend.pid"
 cd "$ROOT"
 
 for i in $(seq 1 40); do
-  if curl -sf "http://${HOST}:${FE_PORT}/" >/dev/null 2>&1; then
+  if curl -sf "http://${HOST}:${FE_PORT}/" >/dev/null 2>&1 \
+    && ! curl -sI "http://${HOST}:${FE_PORT}/" 2>/dev/null | grep -qi 'x-powered-by: express'; then
     break
   fi
   if [[ "$i" -eq 40 ]]; then
-    log "WARN: frontend slow to start — see $LOG_DIR/frontend.log"
-    break
+    log "ERROR: frontend did not start on :${FE_PORT} — see $LOG_DIR/frontend.log"
+    log "       (is another process bound to :${FE_PORT}? run ./dev-stop.sh)"
+    exit 1
   fi
   sleep 0.25
 done

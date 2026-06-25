@@ -21,6 +21,8 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    // nginx forwards the public Host header; allow our dev domain.
+    allowedHosts: ['graphics.gyhyry.com', 'localhost', '127.0.0.1'],
     proxy: {
       '/api': BACKEND,
       '/uploads': BACKEND,
