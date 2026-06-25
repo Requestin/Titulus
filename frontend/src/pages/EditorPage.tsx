@@ -14,6 +14,7 @@ import { CanvasArea } from '@/editor/CanvasArea';
 import { LayersPanel } from '@/editor/panels/LayersPanel';
 import { PropertiesPanel } from '@/editor/panels/PropertiesPanel';
 import { VariablesPanel } from '@/editor/panels/VariablesPanel';
+import { TimelinePanel } from '@/editor/panels/TimelinePanel';
 
 export function EditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -112,8 +113,8 @@ export function EditorPage() {
           <div className="min-h-0 flex-1">
             <CanvasArea />
           </div>
-          <div className="flex h-9 shrink-0 items-center border-t border-border bg-surface px-3 text-[12px] text-ink-faint">
-            Timeline
+          <div className="h-64 shrink-0 border-t border-border">
+            <TimelinePanel />
           </div>
         </div>
 

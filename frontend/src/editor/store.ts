@@ -7,11 +7,44 @@
 
 import { create, useStore } from 'zustand';
 import { temporal } from 'zundo';
-import type { Template, Layer, LayerType, Variable, Transform, RootStackEntry } from '@runtime';
+import type {
+  Template, Layer, LayerType, Variable, Transform, RootStackEntry,
+  TimelineDirector, TimelineKeyframe, AnimatableProp, EasingType,
+} from '@runtime';
 import { createDefaultTransform } from '@runtime';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
+export type Target = { kind: 'layer' | 'group'; id: string };
+
+function baseValue(t: Template, target: Target, prop: AnimatableProp): number {
+  if (target.kind === 'layer') {
+    const l = t.layers.find((x) => x.id === target.id);
+    if (!l) return 0;
+    if (prop === 'opacity') return l.opacity;
+    return (l.transform as unknown as Record<string, number>)[prop] ?? 0;
+  }
+  const g = t.groups.find((x) => x.id === target.id);
+  if (!g) return prop === 'opacity' ? 1 : 0;
+  if (prop === 'opacity') return 1;
+  return (g.transform as unknown as Record<string, number>)[prop] ?? 0;
+}
+
+function kfAt(t: Template, frame: number): TimelineKeyframe {
+  let kf = t.timeline.keyframes.find((k) => k.frame === frame);
+  if (!kf) {
+    kf = { id: crypto.randomUUID(), frame, layers: {}, groups: {}, easing: 'power2.out' };
+    t.timeline.keyframes.push(kf);
+    t.timeline.keyframes.sort((a, b) => a.frame - b.frame);
+  }
+  return kf;
+}
+
+function pruneKf(t: Template, kf: TimelineKeyframe): void {
+  if (Object.keys(kf.layers).length === 0 && Object.keys(kf.groups).length === 0) {
+    t.timeline.keyframes = t.timeline.keyframes.filter((k) => k !== kf);
+  }
+}
 
 interface EditorState {
   template: Template | null;
@@ -44,6 +77,24 @@ interface EditorState {
   addVariable: () => void;
   updateVariable: (id: string, partial: Partial<Variable>) => void;
   removeVariable: (id: string) => void;
+
+  // timeline + playback (playhead/playing/activeDirectorId are transient)
+  playhead: number;
+  playing: boolean;
+  activeDirectorId: string;
+  setPlayhead: (frame: number) => void;
+  setPlaying: (playing: boolean) => void;
+  setActiveDirector: (id: string) => void;
+  setTimelineMeta: (partial: { fps?: number; durationFrames?: number; playbackMode?: 'bounded' | 'infinite' }) => void;
+  addDirector: () => void;
+  updateDirector: (id: string, partial: Partial<TimelineDirector>) => void;
+  removeDirector: (id: string) => void;
+  assignTrack: (targetId: string, directorId: string) => void;
+  setKeyframeValue: (target: Target, frame: number, prop: AnimatableProp, value: number) => void;
+  movePoint: (target: Target, prop: AnimatableProp, fromFrame: number, toFrame: number) => void;
+  deletePoint: (target: Target, prop: AnimatableProp, frame: number) => void;
+  setKeyframeEasing: (frame: number, easing: EasingType) => void;
+  addTrackAtPlayhead: (target: Target, prop: AnimatableProp) => void;
 }
 
 function clone(t: Template): Template {
@@ -74,9 +125,19 @@ export const useEditor = create<EditorState>()(
       zoom: 0.45,
       gridSnap: true,
       gridSize: 8,
+      playhead: 0,
+      playing: false,
+      activeDirectorId: 'default',
 
       load: (t) => {
-        set({ template: t, selection: null, dirty: false });
+        set({
+          template: t,
+          selection: null,
+          dirty: false,
+          playhead: 0,
+          playing: false,
+          activeDirectorId: t.timeline.directors[0]?.id ?? 'default',
+        });
         useEditor.temporal.getState().clear();
       },
       markSaved: () => set({ dirty: false }),
@@ -228,6 +289,106 @@ export const useEditor = create<EditorState>()(
 
       removeVariable: (id) =>
         get().patch((t) => { t.variables = t.variables.filter((v) => v.id !== id); }),
+
+      // --- timeline + playback ---
+      setPlayhead: (frame) => set({ playhead: Math.max(0, Math.round(frame)) }),
+      setPlaying: (playing) => set({ playing }),
+      setActiveDirector: (id) => set({ activeDirectorId: id, playhead: 0, playing: false }),
+
+      setTimelineMeta: (partial) => get().patch((t) => { Object.assign(t.timeline, partial); }),
+
+      addDirector: () => {
+        const t0 = get().template;
+        if (!t0) return;
+        const n = t0.timeline.directors.length + 1;
+        const id = crypto.randomUUID();
+        get().patch((t) => {
+          t.timeline.directors.push({
+            id, name: `Director ${n}`,
+            durationFrames: t.timeline.durationFrames, offsetFrames: 0,
+            autostart: true, loop: false, swing: false,
+          });
+        });
+        set({ activeDirectorId: id, playhead: 0 });
+      },
+
+      updateDirector: (id, partial) =>
+        get().patch((t) => {
+          const d = t.timeline.directors.find((x) => x.id === id);
+          if (d) Object.assign(d, partial);
+        }),
+
+      removeDirector: (id) => {
+        const t0 = get().template;
+        if (!t0 || t0.timeline.directors.length <= 1) return;
+        get().patch((t) => {
+          t.timeline.directors = t.timeline.directors.filter((d) => d.id !== id);
+          for (const k of Object.keys(t.timeline.trackDirectors)) {
+            if (t.timeline.trackDirectors[k] === id) delete t.timeline.trackDirectors[k];
+          }
+          t.timeline.actions = t.timeline.actions.filter((a) => a.directorId !== id);
+        });
+        if (get().activeDirectorId === id) {
+          set({ activeDirectorId: get().template?.timeline.directors[0]?.id ?? 'default', playhead: 0 });
+        }
+      },
+
+      assignTrack: (targetId, directorId) =>
+        get().patch((t) => { t.timeline.trackDirectors[targetId] = directorId; }),
+
+      setKeyframeValue: (target, frame, prop, value) =>
+        get().patch((t) => {
+          const kf = kfAt(t, Math.round(frame));
+          const sec = target.kind === 'layer' ? kf.layers : kf.groups;
+          (sec[target.id] ??= {})[prop] = value;
+          if (!t.timeline.trackDirectors[target.id]) t.timeline.trackDirectors[target.id] = get().activeDirectorId;
+        }),
+
+      movePoint: (target, prop, fromFrame, toFrame) => {
+        if (fromFrame === toFrame) return;
+        get().patch((t) => {
+          const from = t.timeline.keyframes.find((k) => k.frame === fromFrame);
+          if (!from) return;
+          const sec = target.kind === 'layer' ? from.layers : from.groups;
+          const bag = sec[target.id];
+          if (!bag || bag[prop] === undefined) return;
+          const val = bag[prop] as number;
+          delete bag[prop];
+          if (Object.keys(bag).length === 0) delete sec[target.id];
+          pruneKf(t, from);
+          const to = kfAt(t, Math.round(toFrame));
+          const tsec = target.kind === 'layer' ? to.layers : to.groups;
+          (tsec[target.id] ??= {})[prop] = val;
+        });
+      },
+
+      deletePoint: (target, prop, frame) =>
+        get().patch((t) => {
+          const kf = t.timeline.keyframes.find((k) => k.frame === frame);
+          if (!kf) return;
+          const sec = target.kind === 'layer' ? kf.layers : kf.groups;
+          const bag = sec[target.id];
+          if (!bag) return;
+          delete bag[prop];
+          if (Object.keys(bag).length === 0) delete sec[target.id];
+          pruneKf(t, kf);
+        }),
+
+      setKeyframeEasing: (frame, easing) =>
+        get().patch((t) => {
+          const kf = t.timeline.keyframes.find((k) => k.frame === frame);
+          if (kf) { kf.easing = easing; delete kf.bezier; }
+        }),
+
+      addTrackAtPlayhead: (target, prop) => {
+        const ph = get().playhead;
+        get().patch((t) => {
+          const kf = kfAt(t, ph);
+          const sec = target.kind === 'layer' ? kf.layers : kf.groups;
+          (sec[target.id] ??= {})[prop] = baseValue(t, target, prop);
+          if (!t.timeline.trackDirectors[target.id]) t.timeline.trackDirectors[target.id] = get().activeDirectorId;
+        });
+      },
     }),
     {
       limit: 100,
