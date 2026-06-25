@@ -1,0 +1,106 @@
+---
+description: "Архитектура Titulus: frame pipeline, process model, layout. Что куда подключается."
+alwaysApply: true
+---
+# Архитектура Titulus (DEVELOPMENT_PROMPT §4)
+
+## High-level
+
+```
+┌─ CONTROL PLANE (наш продукт) ───────────────────┐     ┌─ RENDER PLANE ≈ CasparCG Channel ─────────────┐
+│  frontend (React + Vite) :3000                  │     │  bg_engine (C++20 + CEF) — OUR binary         │
+│    /templates  /editor/:id  /control  /settings │     │  ┌─ HTML Producer (CEF OSR) ──────────────┐  │
+│                                                 │     │  │ channel.html + bg-runtime.js           │  │
+│  backend (Express + WS + SQLite) :3001          │◀───▶│  │ DOM mixer (multi-template stack)       │  │
+│    REST /api/*                                  │ WS  │  │ OnPaint → BGRA                         │  │
+│    WS  /ws/control  /ws/renderer                │     │  └────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────┘     │           ↓                                   │
+                                                        │  ┌─ Consumers ───────────────────────────┐  │
+                                                        │  │ decklink → SDI Fill+Key (scheduled)   │  │
+                                                        │  │ ffmpeg   → SRT/RTMP/VP9 pipe           │  │
+                                                        │  │ preview  → JPEG (operator monitor)     │  │
+                                                        │  │ null     → benchmark                   │  │
+                                                        │  └────────────────────────────────────────┘  │
+                                                        └──────────────────────────────────────────────┘
+
+         ┌─ SHARED RUNTIME (HTML template logic — JSON→DOM) ──────┐
+         │  @titulus/runtime (TS): schema · timeline · domRenderer │
+         │  · channelClient · easing · transform · clock · fonts   │
+         │  bundled → backend/public/bg-runtime.js (IIFE, window.BG)│
+         └──────────────────────────────────────────────────────────┘
+```
+
+## Frame pipeline (CasparCG-aligned критический путь)
+
+```
+Control WS: take / update / clear
+  → backend OnAirManager (in-memory + SQLite on_air + fan-out)
+  → /ws/renderer?channel=<id> → ChannelClient (bg-runtime.js)
+  → TemplateRenderer × N (DOM/CSS mixer — z-order, transforms, blend, masks)
+  → CEF HTML Producer compositor (CPU Skia raster, channel-paced rAF)
+  → CefRenderHandler::OnPaint(BGRA)
+  → FrameRing (SPSC latest-frame)
+  → Consumer(s): DeckLink (scheduled) | ffmpeg | preview | null
+```
+
+**Почему это соответствует CasparCG-перфу:** та же фундаментальная цепочка CEF OSR → raw pixels → DeckLink scheduled playback. Нет Electron GPU readback/IPC. BGRA native для DeckLink. 1080i50: progressive render @ 50fps → interlaced weave (UFF). Channel-synced animation clock.
+
+## Process model (§4.3)
+
+| Process | Count | Role |
+|---|---|---|
+| `backend` | 1 | API, WS hub, DB, media jobs |
+| `frontend` (dev) / static (prod) | 1 | UI |
+| `bg_engine` | 1 per channel | CEF render + output |
+| `ffmpeg` (child) | 0–1 per engine | только если stream consumer active |
+
+**CPU affinity:** каждый `bg_engine` pinned к non-overlapping core set через `taskset`/`CPUAffinity`. **Правило: 2 dedicated физических cores на канал** (минимум), без SCHED_RR/RT priority (RT throttling делает хуже — §11.3).
+
+## Repository layout (§5)
+
+```
+Titulus/
+├── DEVELOPMENT_PROMPT.md           (canon)
+├── engine/                         ← НАШ C++ render host (clean-room из CasparCG)
+│   ├── CASPARRCG_PORTING.md        (porting-map + развилки)
+│   ├── THIRD_PARTY_NOTICES.md      (GPL-compliance)
+│   ├── CMakeLists.txt
+│   ├── src/ (main.cpp, engine_app.*, engine_client.*, config.*, stats.*,
+│   │         frame_ring.h, message_pump.h,
+│   │         consumers/ [consumer.h, null, pipe, preview_writer,
+│   │                         decklink(Phase3), ffmpeg(Phase5)])
+│   ├── third_party/ (cef/ [download], stb_image_write.h)
+│   ├── run-engines.sh, run-channel.sh, systemd/bg-engine@.service
+├── runtime/                        ← @titulus/runtime (TS JSON→DOM, render logic truth)
+│   ├── src/ (schema.ts, timeline.ts, domRenderer.ts, channelClient.ts,
+│   │         stackOrder.ts, transform.ts, easing.ts, clock.ts, fonts.ts)
+│   ├── build.mjs                   (esbuild → IIFE bg-runtime.js)
+├── backend/                        ← Express + WS + SQLite
+│   ├── src/ (index.js, db.js, onair.js, media.js, templateValidation.js, routes/)
+│   └── public/ (channel.html, bg-runtime.js [built, gitignored])
+├── frontend/                       ← React + Vite SPA
+│   └── src/ (pages/, features/, core/)
+├── shared/template.schema.json     ← JSON Schema (AI + validation)
+├── bench/                          ← bench.html, bench-alpha.html, run-bench.sh
+├── docs/                           ← ARCHITECTURE.md, RUNBOOK.md, PHASE0_BENCH.md
+├── data/ (app.db, uploads/)        # gitignored
+└── LICENSE.md                      ← Proprietary
+```
+
+**Reference (ВНЕ git, .gitignore содержит):**
+- `CasparCG/server` — porting source (GPLv3+, reference only)
+- `CasparCG/*.deb` — CasparCG 2.5 + CEF 142 для baseline bench
+- `Blackmagic DeckLink SDK 16.0/Linux/include/DeckLinkAPI.h` — присутствует
+- `broadcast-graphics/` — sandbox, read-only (см. правило sandbox)
+
+## Control plane ↔ Render plane контракт
+
+- WS protocol `take/update/clear` (§7.4) — см. `runtime/src/channelClient.ts`
+- Backend `OnAirManager` (`backend/src/onair.js`): in-memory state + SQLite `on_air` persistence + replay-on-connect (NFR-1)
+- Channel page (`backend/public/channel.html`) грузит `/bg-runtime.js`, создаёт `BG.ChannelClient`
+- Engine tick bridge: engine-mode → `setInterval(1000/fps)` → `client.tick()` (детерминированный playhead)
+- Perpetual rAF heartbeat (§10 CRITICAL): без него CEF external begin-frame перестаёт OnPaint после static take
+
+## Что реализовано (актуальный статус — см. 10-development-plan.mdc)
+
+Phase 0 (render plane proven) + Phase 1 (runtime + channel page) — DONE. Phase 2 (control plane) — в работе (backend core/channels/rundowns done; WS+media pending; frontend todo).

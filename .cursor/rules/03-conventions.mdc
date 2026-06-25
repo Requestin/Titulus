@@ -1,0 +1,90 @@
+---
+description: "Код-стайл, зависимости, лицензирование, тестирование для каждого языка/пакета Titulus."
+alwaysApply: true
+---
+# Код-конвенции Titulus (DEVELOPMENT_PROMPT §16)
+
+## Общие
+
+- **Proprietary LICENSE** — никакого MIT на product code. `LICENSE.md` уже proprietary (Karen Darchiniants).
+- `.gitignore`: node_modules, CEF dist, DeckLink SDK, CasparCG, broadcast-graphics, build/, data/app.db, uploads/, bg-runtime.js (generated)
+- Комментарии — только non-obvious business logic; не комментируй очевидное
+- Не добавляй тесты, если не просят — НО bench-скрипты обязательны (§16)
+
+## TypeScript (frontend/ + runtime/)
+
+- **strict mode** (`"strict": true`) — обязательно во всех tsconfig
+- Single quotes, 2-space indent (match existing)
+- `exactOptionalPropertyTypes: false` (для прагматичности DOM-типов)
+- `moduleResolution: "Bundler"`, `target: "ES2020"`, lib включает DOM
+- **Запрещён `any`** — `unknown` + type narrowing. Если тип действительно любой — `// eslint-disable` с причиной.
+- `enum` НЕ использовать — `const` объекты с `as const`
+- **Не изобретать новый render engine в frontend** — всегда импорт из `@runtime` (или `@titulus/runtime`)
+- No PIXI, no GSAP, no WebGL-as-primary, no Canvas2D readback loops (§0.2.2)
+- Imports: explicit `.js` extensions в ESM re-exports (`export * from './schema.js'`)
+
+### runtime/ (shared TS package — @titulus/runtime)
+
+- Источник правды для render logic. Один implementation — engine/editor/thumbnails/OBS все используют его.
+- Build: esbuild → IIFE `bg-runtime.js` exposed as `window.BG` (см. `runtime/build.mjs`)
+- Zero runtime deps (pure DOM). devDeps: esbuild, typescript
+- Два playback mode: `'fixed'` (engine tick) / `'raf'` (editor/browser)
+
+### frontend/ (React SPA)
+
+- React 18 + TypeScript 5 + Vite 5 (dev :3000, backend :3001)
+- React Router 6, Zustand + zundo (undo/redo), Tailwind CSS 3, @dnd-kit
+- Routes: `/templates`, `/editor/:id`, `/control`, `/settings`, `/renderer`
+- Vite proxy: `/api`, `/uploads`, `/fonts`, `/channel.html`, `/bg-runtime.js`, `/ws`
+
+## JavaScript (backend/ — Node.js 20+, ESM `"type": "module"`)
+
+- ESM (`import`/`export`), НЕ CommonJS
+- Express 4 + express-ws, better-sqlite3 (WAL mode), multer, ajv + ajv-formats, uuid
+- CJS-dep импорты в ESM: `import pkg from 'cjs-lib'; const { X } = pkg;` (для `ws` и подобных)
+- DAOs в `db.js` — factory-стиль: `templatesDao(db)` возвращает объект с методами
+- Routes в `routes/*.js` — `export function xxxRouter(db) { const r = Router(); ...; return r; }`
+- **Data dir конфигурируем**: `process.env.TITULUS_DATA` (default `<repo>/data`). Продакшен → `/var/lib/titulus`, тесты → tmpfs `/tmp/...`
+
+## C++ (engine/ — bg_engine)
+
+- **C++20**, CMake ≥ 3.21
+- Минимум deps, **no exceptions в hot path** (§16)
+- `target_compile_features(... PRIVATE cxx_std_20)`
+- Включай языки `C CXX` в `project()` (CEF's cmake использует `CHECK_C_COMPILER_FLAG`)
+- Структура: один `.cpp/.h` на модуль; consumers в `consumers/`
+- CEF linkage: `find_package(CEF)` + `add_subdirectory(libcef_dll)` + link `libcef.so` per-config (`$<$<CONFIG:Release>:${CEF_LIB_RELEASE}>`) + `libcef_dll_wrapper`
+- RPATH `$ORIGIN` — libcef.so должна находиться рядом с binary
+- CEF switch `LOG(severity)` конфликтует с нашим `LOG()` — используй `BG_LOG` или иные имена
+- CEF subprocess guard: `CefExecuteProcess` ДО своего arg-parse (helper processes re-exec с `--type=`)
+- `--no-missing-field-initializers` — CEF's headers триггерят это; подавляй
+- CEF download: `engine/third_party/fetch-cef.sh` (latest stable linux64 minimal, sha1 verify)
+
+### CEF OSR критические моменты
+
+- `windowless_rendering_enabled=true`, `no_sandbox=true`, per-channel `cache_path` (ОБЯЗАТЕЛЬНО уникальный)
+- Switches: `disable-gpu`, `disable-gpu-compositing`, `disable-gpu-vsync`, `ozone-platform=headless` (без DISPLAY), `enable-begin-frame-scheduling`, `autoplay-policy=no-user-gesture-required`
+- `OnPaint`: только `PET_VIEW`, single `memcpy` BGRA на Linux (tbb parallel_for не нужен), `device_scale_factor=1.0`
+- НЕ использовать `--headless` (Chromium shell mode ломает CEF Alloy OSR)
+
+## Bench/тестирование
+
+- `bench/run-bench.sh [ch] [dur] [graphics]` — multi-channel, taskset disjoint cores, парсит SUMMARY из engine
+- `bench/run-casparcg-baseline.sh` — CasparCG reference (PLAY подтверждение)
+- Engine SUMMARY формат — контракт с bench-скриптом (см. `engine/src/stats.cpp`): не ломай без обновления bench
+- Всякое изменение engine performance — re-bench + обновить `docs/PHASE0_BENCH.md`
+
+## Лицензирование third-party
+
+- **Reimplement by reference** для CasparCG (GPLv3+) — НЕ копируем дословно. Вести `engine/CASPARRCG_PORTING.md` + `engine/THIRD_PARTY_NOTICES.md`
+- CEF: BSD-3, stb: public domain, DeckLink SDK: Blackmagic proprietary (header only), ffmpeg: LGPL
+- Перед commercial release: legal review всех `GPL-PORT:` entries в THIRD_PARTY_NOTICES
+
+## Чего избегать (common pitfalls)
+
+- BGRA→ARGB конверсия — DeckLink принимает BGRA напрямую (CasparCG тоже)
+- SCHED_RR/RT priority для engine — делает ХУЖЕ (RT throttling, §11.3)
+- VM jitter ≠ engine bug — финальная SDI acceptance на bare-metal
+- Electron + Node addon для SDI — антипаттерн (CasparCG никогда так не делал)
+- `--headless` для CEF — ломает Alloy OSR
+- Один Chromium multi-tab multi-channel — process singleton + contention
