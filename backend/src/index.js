@@ -15,9 +15,11 @@ import { dirname, resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
 import { openDb, settingsDao } from './db.js';
+import { OnAirManager } from './onair.js';
 import { templatesRouter } from './routes/templates.js';
 import { channelsRouter } from './routes/channels.js';
 import { rundownsRouter } from './routes/rundowns.js';
+import { wsRouter } from './routes/ws.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, '../..');
@@ -44,6 +46,8 @@ const db = openDb(resolve(DATA_DIR, 'app.db'));
 mkdirSync(UPLOADS_DIR, { recursive: true });
 
 app.locals.db = db;
+const onAir = new OnAirManager(db);
+app.locals.onAir = onAir;
 
 // ---------------------------------------------------------------------------
 // REST: templates / channels / rundowns / settings (§7.3).
@@ -51,6 +55,13 @@ app.locals.db = db;
 app.use('/api/templates', templatesRouter(db));
 app.use('/api/channels', channelsRouter(db));
 app.use('/api/rundowns', rundownsRouter(db));
+
+// On-air snapshot for the control panel (§7.4). Separate from the WS router so
+// it sits under /api alongside the other REST endpoints.
+app.get('/api/onair', (req, res) => res.json(onAir.onAirTemplateIds()));
+
+// WebSocket hubs (§7.4): /ws/control (panel -> backend), /ws/renderer (engine).
+app.use('/ws', wsRouter(db, onAir));
 
 // Settings: global key-value fallback (GET all / PUT replace).
 app.get('/api/settings', (req, res) => res.json(settingsDao(db).all()));

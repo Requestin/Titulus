@@ -41,7 +41,8 @@ alwaysApply: true
 ### Phase 2 (control plane) — В РАБОТЕ
 - 2.1 ✅ backend core: SQLite WAL schema (templates/channels/rundowns/settings/on_air) + DAOs, Express app, templates REST CRUD + ajv validation (422 на bad schema)
 - 2.2 ✅ channels (max 8, output_mode/keyer/device validation) + rundowns (reorder) + settings REST. Data-путь конфигурируем через `TITULUS_DATA`
-- **2.3 🔨 код написан, НЕ закоммичен/НЕ полностью протестирован:** `backend/src/onair.js` (OnAirManager: in-memory + SQLite on_air persistence + replay-on-connect + fan-out), `backend/src/routes/ws.js` (`/ws/control`, `/ws/renderer`). Тест блокировался sandbox-CWD-проблемой (см. «Найденные проблемы»).
+- 2.3 ✅ **DONE (PR #17):** `backend/src/onair.js` (OnAirManager: in-memory + SQLite on_air persistence + replay-on-connect + fan-out), `backend/src/routes/ws.js` (`/ws/control`, `/ws/renderer`), интеграция в `index.js` (`/api/onair` + mount `/ws`). Протестировано throwaway WS smoke client: take/update/clear fan-out, `/api/onair`, replay-on-connect, CLEAR ALL fan-out, **on-air переживает рестарт backend** (replay из SQLite). Также пофикшен CLEAR ALL (раньше чистил state, но не слал clear рендерерам). **Важно:** PR #16 (ветка `feature/phase-2-ws-onair`) был **docs-only** (.cursor/rules), код 2.3 туда НЕ попал; его доставила отдельная ветка `feature/phase-2-ws-hub` (PR #17).
+- 2.4–2.8 ⏳ todo (media, frontend shell/editor/control/output modes)
 
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
@@ -73,18 +74,23 @@ alwaysApply: true
 ### 7. Write-tool сбрасывает executable bit
 - После Write `.sh` файлов — `chmod +x` обязательно (Bash `Permission denied` иначе)
 
+### 8. `pkill -f "PORT=<port>"` НЕ убивает backend (найдено в 2.3)
+- Симптом: `pkill -f "PORT=3097"` не убивает `node src/index.js`; зато матчит shell-обёртки (включая собственную команду) → команда «убивает сама себя», backend остаётся жив на порту.
+- Причина: `PORT=3097` — это env var, его НЕТ в argv процесса `node src/index.js` (`/proc/pid/cmdline`). `pkill -f` матчит по cmdline, не по environment.
+- **Решение:** убивать слушателя по PID порта: `PID=$(ss -ltnp | grep ':<port>' | grep -oP 'pid=\K[0-9]+' | head -1); kill "$PID"`. (НЕ `pkill -f "src/index.js"` — это снова матчит shell-обёртку с этой строкой в argv.)
+
 ## Проверенные подходы (что работает)
 
 - Engine smoke: `bg_engine --consumer=null --url=file:///tmp/...test.html --fps=50 --duration=N --cache-dir=/tmp/...` → SUMMARY парсится bench
 - Engine на channel.html: http-сервер в `backend/public` (`python3 -m http.server 3939`), затем `bg_engine --url=http://localhost:3939/channel.html?engine=1&...`
-- Backend test: `cd backend && PORT=<port> TITULUS_DATA=/tmp/<dir> node src/index.js &` + curl/ws-client + `pkill -f "PORT=<port>"`
+- Backend test: `cd backend && PORT=<port> TITULUS_DATA=/tmp/<dir> node src/index.js > /tmp/be.log 2>&1 &` + curl/ws-client; kill по PID порта (см. найденную проблему #8, НЕ `pkill -f "PORT=..."`)
 - Runtime pure-logic test: `cd runtime && npx tsx test.mjs` (jsdom для DOM, `pretendToBeVisual: true`, shim rAF)
 - Runtime typecheck: `cd runtime && npx tsc --noEmit`
 - CEF download: `engine/third_party/fetch-cef.sh` (latest stable linux64 minimal)
 
-## Полный тест-скрипт WS flow (для завершения задачи 2.3)
+## Полный тест-скрипт WS flow (использован для 2.3, прошёл — reference)
 
-При завершении 2.3 используй этот test (положить в `backend/test_ws.mjs`, `cd backend && node test_ws.mjs`):
+Этот throwaway WS smoke client валидировал 2.3 (положить в `backend/test_ws.mjs`, `cd backend && node test_ws.mjs`, потом удалить — тесты не коммитим). Базовая версия; в 2.3 дополнительно проверены CLEAR ALL fan-out и persistence через рестарт backend:
 
 ```javascript
 import WebSocket from 'ws';
@@ -129,7 +135,7 @@ console.log('ALL OK');
 
 ## Контактные точки для нового агента
 
-- **С чего начать:** `git status` → ветка `feature/phase-2-ws-onair` с незакоммиченными файлами 2.3 → дочитать этот файл + `10-development-plan.mdc` → завершить 2.3 (тест + commit/PR/merge) → двигаться по плану (2.4 media, потом 2.5-2.8 frontend)
+- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → `main` чист → новая ветка `feature/phase-2-media` → дочитать этот файл + `10-development-plan.mdc` → делать 2.4 (media transcode) → дальше по плану 2.5-2.8 frontend
 - **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
-- **Текущая ветка работы:** `feature/phase-2-ws-onair`
-- **Последний merged:** PR #15 (channels+rundowns+settings)
+- **Текущая ветка работы:** `main` (2.3 смержена в PR #17)
+- **Последний merged:** PR #17 (WS hubs + on-air persistence + /api/onair)
