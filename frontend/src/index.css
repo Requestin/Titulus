@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens (DESIGN.md). OKLCH "L C H" triplets consumed by Tailwind as
+   oklch(var(--token) / <alpha-value>) so opacity utilities keep working. */
+@layer base {
+  :root {
+    --bg: 0.165 0.010 274;
+    --surface: 0.205 0.012 274;
+    --surface-2: 0.235 0.014 274;
+    --border: 0.305 0.016 274;
+    --overlay: 0.140 0.010 274;
+
+    --ink: 0.972 0.004 274;
+    --ink-muted: 0.740 0.012 274;
+    --ink-faint: 0.560 0.012 274;
+
+    --primary: 0.640 0.170 285;
+    --primary-ink: 0.985 0.004 285;
+    --ring: 0.720 0.150 285;
+
+    --live: 0.605 0.224 25;
+    --success: 0.700 0.150 150;
+    --warning: 0.800 0.150 80;
+    --danger: 0.605 0.224 25;
+    --info: 0.700 0.120 230;
+
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  /* Numeric readouts (timecode, frame counters, channel numbers, fps). */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  *:focus-visible {
+    outline: 2px solid oklch(var(--ring));
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(var(--border));
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
