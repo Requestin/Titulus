@@ -19,6 +19,9 @@ PID_DIR="$LOG_DIR/dev"
 
 log() { printf '[dev-start] %s\n' "$*"; }
 
+DEFAULT_ENGINE_BIN="$ROOT/engine/build/Release/bg_engine"
+ENGINE_BIN="${ENGINE_BIN:-$DEFAULT_ENGINE_BIN}"
+
 mkdir -p "$PID_DIR" "$DATA_DIR/uploads"
 
 port_busy() {
@@ -53,6 +56,46 @@ if [[ ! -f backend/public/bg-runtime.js ]]; then
   log "building @titulus/runtime -> backend/public/bg-runtime.js ..."
   (cd runtime && npm run build)
 fi
+
+# bg_engine (cmake + CEF) — build if missing ----------------------------------
+ensure_engine() {
+  if [[ -x "$ENGINE_BIN" ]]; then
+    return 0
+  fi
+  if [[ "$ENGINE_BIN" != "$DEFAULT_ENGINE_BIN" ]]; then
+    log "WARN: ENGINE_BIN=$ENGINE_BIN not found/executable — skip auto-build"
+    return 1
+  fi
+
+  local engine_dir="$ROOT/engine"
+  local fetch_script="$engine_dir/third_party/fetch-cef.sh"
+
+  log "bg_engine not found — building (Release) ..."
+
+  if ! ls -d "$engine_dir"/third_party/cef/cef_binary_*_linux64_minimal >/dev/null 2>&1; then
+    log "fetching CEF (first build; may take a few minutes) ..."
+    if [[ ! -x "$fetch_script" ]]; then
+      chmod +x "$fetch_script"
+    fi
+    "$fetch_script"
+  fi
+
+  if ! command -v cmake >/dev/null 2>&1; then
+    log "ERROR: cmake not found — install cmake (>= 3.21) to build bg_engine"
+    return 1
+  fi
+
+  cmake -S "$engine_dir" -B "$engine_dir/build" -DCMAKE_BUILD_TYPE=Release
+  cmake --build "$engine_dir/build" -j"$(nproc)"
+
+  if [[ ! -x "$ENGINE_BIN" ]]; then
+    log "ERROR: build finished but $ENGINE_BIN is missing"
+    return 1
+  fi
+  log "bg_engine built: $ENGINE_BIN"
+}
+
+ensure_engine || true
 
 # Backend ---------------------------------------------------------------------
 log "starting backend on ${HOST}:${BE_PORT} (data: ${DATA_DIR}) ..."
@@ -94,15 +137,14 @@ for i in $(seq 1 40); do
   sleep 0.25
 done
 
-# Render engines (optional — needs bg_engine binary + channels in Settings) ----
-ENGINE_BIN="${ENGINE_BIN:-$ROOT/engine/build/Release/bg_engine}"
+# Render engines (needs bg_engine binary + channels in Settings) ------------
 if [[ -x "$ENGINE_BIN" ]]; then
   log "starting run-engines.sh (BACKEND_URL=http://${HOST}:${BE_PORT}) ..."
   BACKEND_URL="http://${HOST}:${BE_PORT}" ENGINE_BIN="$ENGINE_BIN" \
     "$ROOT/engine/run-engines.sh" > "$LOG_DIR/engines.log" 2>&1 &
   echo $! > "$PID_DIR/engines.pid"
 else
-  log "skip run-engines: bg_engine not found at $ENGINE_BIN (build engine/ first)"
+  log "skip run-engines: bg_engine not available at $ENGINE_BIN"
 fi
 
 log ""
