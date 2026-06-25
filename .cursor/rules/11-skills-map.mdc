@@ -1,0 +1,73 @@
+---
+description: "КАРТА СКИЛЛОВ → ЗАДАЧИ Titulus: какой установленный Agent Skill применять на каждой области/фазе. 24 skills (23 в .agents/skills + impeccable в .cursor/skills)."
+alwaysApply: true
+---
+# Карта скиллов Titulus — skill → задача
+
+Установлено **24 Agent Skills**. Этот файл говорит агенту, **какой скилл применять под какую задачу**, чтобы выжимать из них максимум.
+
+## Где лежат
+- `.agents/skills/<name>/` — все 24 скилла (включая impeccable; open standard, читаются Cursor)
+- `.cursor/hooks.json` — pre-edit UI-детектор impeccable → `.agents/skills/impeccable/scripts/hook-before-edit.mjs`
+- Дубль: `~/.agents/skills/impeccable` (global) — избыточен; основной — в `.agents/skills/`
+
+## Как применять
+- Скиллы авто-срабатывают по `description`; можно явно — `/<skill-name>` в чате.
+- **ИЕРАРХИЯ ГЛАВНЕЕ СКИЛЛОВ:** при конфликте `DEVELOPMENT_PROMPT.md` + `.cursor/rules/*.mdc` > любой generic skill. Скиллы — это «как делать», правила Titulus — «что и почему».
+
+## engine/ — C++20 `bg_engine` (Phase 0 / 3 / 5)
+| Skill | Когда применять |
+|---|---|
+| `cpp-coding-standards` | Писать/ревьюить C++ (consumers, frame_ring, message_pump). C++ Core Guidelines, no-exceptions в hot path (§16). |
+| `latency-critical-systems` | Frame pipeline, p50/p99, drops <0.1%, FrameRing SPSC, DeckLink scheduled pacing, bench-анализ. Ядро render-перфа. |
+| `cpp-testing` | ⚠ ТОЛЬКО когда явно просят тесты/GoogleTest/CTest/sanitizers. По умолчанию (правило 03) — bench обязателен, юнит-тесты нет. |
+| `search-first` | Перед портом из CasparCG: изучить reference (`CasparCG/server`) до написания (CasparCG-first). |
+| `oracle` | Сложные развилки: weave UFF, keyer, genlock, frame pacing — второе мнение. |
+
+## runtime/ + frontend/ — UI (Phase 1 / 2.5–2.7)
+| Skill | Когда применять |
+|---|---|
+| `impeccable` | Основной design language: `/impeccable craft·polish·audit`. Требует `PRODUCT.md` (`/impeccable init` при первой UI-задаче). |
+| `make-interfaces-feel-better` | Микро-детали: concentric radius, shadows>borders, **tabular-nums (таймкод/счётчики)**, stagger, optical alignment. |
+| `transitions-dev` | Конкретные CSS-переходы: modals, dropdowns, tabs, **icon swap (TAKE/CLEAR)**, number pop-in, accordion. `transitions review/apply`. |
+| `react-patterns` | React 18 компоненты, hooks, Zustand+zundo state, формы editor/control panel. |
+| `react-performance` | Re-render, bundle, тяжёлые CanvasArea preview / Timeline / Layers. |
+| `vite-patterns` | `vite.config.ts`, proxy (`/api /ws /uploads /channel.html /bg-runtime.js /fonts`), HMR, build. |
+| `frontend-a11y` | React a11y: ARIA, focus management, формы, keyboard nav для operator UI. |
+| `accessibility` | WCAG 2.2 аудит (web-часть; iOS/Android разделы игнорировать). |
+| `error-handling` | Error boundaries, user-facing ошибки в editor/control panel. |
+⚠ Render-логика — всегда `@titulus/runtime`, НЕ изобретать в frontend (правило 03). Motion на CEF: без тяжёлых blur/filter chains на channel.html (§6.5 perf).
+
+## backend/ — Express + WS + SQLite (Phase 2.x / 4)
+| Skill | Когда применять |
+|---|---|
+| `api-design` | REST `/api/*` (templates/channels/rundowns/uploads/onair): naming, status codes, pagination, error shape, 422-валидация ajv. |
+| `error-handling` | Typed errors, retries (media-джобы), circuit breakers, user-facing сообщения. |
+| `security-review` | Upload (MIME/size/path-traversal), input validation, secrets, auth (SaaS Phase 6). ⚠ Дублирует встроенный `review-security` subagent — хватит одного. |
+| `latency-critical-systems` | WS fan-out, on-air replay-on-connect, backend pacing под NFR-1. |
+
+## Workflow / Git / PR — все фазы
+| Skill | Когда применять |
+|---|---|
+| `github-ops` | `gh` CLI: PR create/merge, CI status, releases, issues. |
+| `github-deep-review` | Глубокий evidence-first review PR (своих/чужих) перед merge. |
+| `github-project-triage` | Триаж очереди issue/PR, blockers, CI, next actions. |
+| `agent-transcript` | Безопасная вставка agent-transcript в PR/issue (redact secrets). |
+| `create-cli` | Спеки CLI: `bench/run-bench.sh`, `run-engines.sh`, `run-channel.sh`, engine-флаги (`--consumer/--url/--fps`), dry-run/help. |
+| `git-workflow` | Общие branching/commit/merge практики. ⚠ При конфликте `02-git-workflow.mdc` (обязательный branch→PR→merge, **merge-commit не squash**) ГЛАВНЕЕ. |
+
+## Meta / research / review — все фазы
+| Skill | Когда применять |
+|---|---|
+| `search-first` | Research до кода: найти готовое (CasparCG/ffmpeg/lib) прежде чем писать своё. |
+| `oracle` | Second-model review сложного debug/refactor/design. |
+| `verification-loop` | Проверка после изменений: bench/manual/ffprobe (НЕ навязывать юнит-тесты — правило 03). |
+| `tdd-workflow` | ⚠ ТОЛЬКО когда пользователь явно просит тесты/TDD/coverage. Иначе по правилу 03 — bench + verification. |
+
+## Текущая задача 2.4 — media transcode (цепочка скиллов)
+`search-first` (ffmpeg VP9/WebM+alpha `yuva420p`/`libvpx-vp9` флаги) → `api-design` (`POST /api/uploads`, `GET /api/uploads/jobs/:id`) → `error-handling` (retry/ошибки джоб) → `security-review` (multipart MIME/size/path) → `verification-loop` (ffprobe pix_fmt `yuva420p`, `<video>` playable) → `git-workflow`+`github-ops` (branch→PR→merge).
+
+## Гигиена
+- Удалить избыточный global дубль: `rm -rf ~/.agents/skills/impeccable` (основной — в `.agents/skills/`).
+- Обновление всех: `npx skills update` из корня репо (`skills-lock.json`).
+- Конфликт UI-bias: для operator dashboard приоритет `impeccable` + `make-interfaces-feel-better` + `transitions-dev`; landing/portfolio-скиллы (taste-skill и т.п.) НЕ ставить — другой scope.
