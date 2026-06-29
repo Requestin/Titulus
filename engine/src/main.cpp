@@ -12,6 +12,7 @@
 #include "engine_app.h"
 #include "engine_client.h"
 #include "consumers/consumer.h"
+#include "consumers/ffmpeg_consumer.h"
 #include "consumers/null_consumer.h"
 #include "consumers/pipe_consumer.h"
 #include "consumers/preview_writer.h"
@@ -88,9 +89,7 @@ std::unique_ptr<bg::Consumer> make_consumer() {
             return std::make_unique<bg::NullConsumer>();
 #endif
         case bg::ConsumerKind::Stream:
-            std::fprintf(stderr, "bg_engine: consumer '%s' not built into this binary; "
-                                 "using null.\n", bg::ConsumerLabel(cfg.consumer));
-            return std::make_unique<bg::NullConsumer>();
+            return std::make_unique<bg::FfmpegConsumer>(cfg.stream_url);
     }
     return std::make_unique<bg::NullConsumer>();
 }
