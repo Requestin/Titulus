@@ -14,17 +14,20 @@ alwaysApply: true
 - **Phase 3:** ✅ CODE-COMPLETE (DeckLink SDI consumer implemented; hardware validation deferred без HW)
 - **Phase 4:** ✅ DONE (backend hardening complete)
 - **Phase 5:** ✅ DONE (stream output + schema + architecture/runbook docs)
-- **Phase 6:** ⏳ IN PROGRESS (auth/RBAC + billing/audit baseline delivered)
+- **Phase 6:** ⏳ IN PROGRESS (6.4 hardware execution pending on external host)
+- **Phase 7:** ✅ DONE (docs/rules consolidation + historical report Phase 1-7)
 
 **СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 6.4 hardware execution — прогон checklist на host с DeckLink+genlock (external dependency).
 
 ## Git история (merged PRs в main)
 
 ```
-#33 [Phase 5.2] finalize shared template schema (AI-ready)
-#32 [Phase 5.1] ffmpeg stream consumer for bg_engine
+#37 [Phase 6.4] decklink hardware handoff evidence tooling
+#36 [Phase 6.2/6.3] auth boundaries + billing audit baseline
 #35 [Phase 6.1] license activation foundation (backend + settings UI)
 #34 [Phase 5.3] architecture and runbook documentation
+#33 [Phase 5.2] finalize shared template schema (AI-ready)
+#32 [Phase 5.1] ffmpeg stream consumer for bg_engine
 #31 [Phase 4.4] cleanup + backend security baseline
 #30 [Phase 4.3] structured template validation API
 #29 [Phase 4.2] media robustness for uploads pipeline
@@ -148,6 +151,12 @@ alwaysApply: true
 - 6.2 Tenant/auth boundary (RBAC baseline) — ✅ DONE (auth tokens/sessions, operator/admin roles, guarded routes, login/logout UI)
 - 6.3 Billing/entitlement hooks + audit events — ✅ DONE (entitlements API + billing hook skeleton + persisted audit log + settings visibility)
 - 6.4 DeckLink deferred HW validation closure (external dependency: hardware host) — ⚠ HANDOFF READY, WAITING HW EXECUTION
+
+## Phase 7 — Documentation consolidation ✅ DONE
+
+- Синхронизированы `.cursor/rules/*.mdc` со статусом Phase 6 и актуальным workflow.
+- Актуализированы core docs/readmes (`README`, `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md`, package-level README).
+- Добавлен подробный исторический отчёт `docs/PHASE_REPORT_PHASE1_TO_PHASE7.md`.
 
 ## Phase 6+ (future, НЕ MVP) ⏸
 

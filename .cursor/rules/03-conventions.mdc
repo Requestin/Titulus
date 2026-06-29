@@ -32,7 +32,7 @@ alwaysApply: true
 
 ### frontend/ (React SPA)
 
-- React 18 + TypeScript 5 + Vite 5 (dev :3000, backend :3001)
+- React 18 + TypeScript 5 + Vite 5 (classic dev: :3000/:3001, `dev-start.sh`: :3011/:3002)
 - React Router 6, Zustand + zundo (undo/redo), Tailwind CSS 3, @dnd-kit
 - Routes: `/templates`, `/editor/:id`, `/control`, `/settings`, `/renderer`
 - Vite proxy: `/api`, `/uploads`, `/fonts`, `/channel.html`, `/bg-runtime.js`, `/ws`

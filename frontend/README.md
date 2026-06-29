@@ -1,8 +1,25 @@
-# `frontend/` — React SPA (DEVELOPMENT_PROMPT §8)
+# `frontend/` - React SPA (operator + editor shell)
 
-React 18 + TypeScript 5, Vite 5 (dev :3000), React Router 6, Zustand + zundo,
-Tailwind CSS 3, @dnd-kit. **No PIXI, no GSAP.**
+Stack:
 
-Routes: `/templates`, `/editor/:id`, `/control`, `/settings`, `/renderer`.
+- React 18 + TypeScript 5
+- Vite 5
+- React Router 6
+- Zustand + zundo
+- Tailwind CSS 3
+- `@dnd-kit` for rundown interactions
 
-Populated in **Phase 2** (`feature/phase-2-frontend-*`). Not yet implemented.
+## Current routes
+
+- `/login` - auth entry
+- `/templates` - template list/CRUD entrypoint
+- `/editor/:id` - WYSIWYG template editor
+- `/control` - operator TAKE/UPDATE/CLEAR workflow
+- `/settings` - admin-only channels/license/entitlements/audit
+- `/renderer` - render surface (no app chrome)
+
+## Notes
+
+- Render logic is imported from `@runtime` (single source of truth with engine).
+- Control WS connects with auth token to `/ws/control`.
+- Settings route is role-guarded (`admin`).

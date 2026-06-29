@@ -1,154 +1,159 @@
 # Titulus Architecture
 
-Titulus is a cloud broadcast graphics system with two planes:
+Titulus is a dual-plane broadcast graphics system:
 
-- **Control plane**: template editing, operator control, channels/rundowns/settings, REST + WebSocket.
-- **Render plane**: one `bg_engine` process per channel, CEF OSR render, pluggable output consumers.
+- **Control plane**: authoring + operator workflow (`frontend` + `backend`)
+- **Render plane**: per-channel native engine (`bg_engine`)
 
-The architecture follows CasparCG channel semantics (producer -> mixer -> consumer), but is implemented as proprietary clean-room code.
+Render behavior is CasparCG-aligned (producer -> mixer -> consumer), implemented
+as proprietary clean-room code.
 
-## 1. High-Level Topology
+## 1) High-level topology
 
 ```text
-frontend (React/Vite) <-> backend (Express/WS/SQLite) <-> bg_engine (C++/CEF)
-                                                       -> consumers: null|pipe|preview|decklink|stream
+frontend (React/Vite)
+  <-> backend (Express/WS/SQLite)
+  <-> bg_engine (C++/CEF OSR, 1 process per channel)
+  -> consumers: null | pipe | preview | decklink | stream
 ```
 
-- `frontend` provides `/templates`, `/editor/:id`, `/control`, `/settings`, `/renderer`.
-- `backend` provides REST (`/api/*`), WS (`/ws/control`, `/ws/renderer`), and static assets (`/channel.html`, `/bg-runtime.js`, `/uploads`, `/fonts`).
-- `bg_engine` loads `channel.html` in CEF OSR and pushes BGRA frames to one primary consumer per channel.
+- Frontend routes: `/login`, `/templates`, `/editor/:id`, `/control`, `/settings`, `/renderer`
+- Backend surface: `/api/*`, `/ws/control`, `/ws/renderer`, static (`/channel.html`, `/bg-runtime.js`, `/uploads`, `/fonts`)
+- Engine loads `channel.html` and emits BGRA frames to one primary consumer.
 
-## 2. Repository Layout
+## 2) Repository layout
 
 ```text
-engine/    C++ render host + consumers + supervisor scripts
+engine/    native render host + consumers + supervisor scripts
 runtime/   shared TS render logic (@titulus/runtime)
-backend/   Node.js API/WS + SQLite + media pipeline
-frontend/  React SPA (editor/control/settings)
+backend/   API/WS/auth/billing/audit + SQLite + media pipeline
+frontend/  operator/editor SPA
 shared/    JSON schema contracts (template.schema.json)
 bench/     performance harness
-docs/      architecture, runbook, benchmark artifacts
+docs/      architecture, runbook, validation/handoff docs
 ```
 
-## 3. Control Plane
+## 3) Control plane
 
-### 3.1 Backend (`backend/src/index.js`)
+### 3.1 Backend core
 
-- Node.js 20+, ESM, Express 4 + `express-ws`.
-- SQLite via `better-sqlite3` (WAL).
-- Security baseline headers:
-  - `X-Content-Type-Options: nosniff`
-  - `X-Frame-Options: SAMEORIGIN`
-  - `Referrer-Policy: no-referrer`
-  - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
-- Error normalization:
-  - `400 INVALID_JSON` for malformed JSON body.
-  - `500 INTERNAL_ERROR` fallback for unhandled failures.
+- Node.js 20+, ESM, Express 4 + `express-ws`
+- SQLite via `better-sqlite3` (WAL)
+- Security headers baseline + structured error normalization (`INVALID_JSON`, `INTERNAL_ERROR`)
 
-### 3.2 REST API
+### 3.2 Auth / RBAC
 
-- `/api/templates` CRUD, `/api/templates/schema`, `/api/templates/validate`
-- `/api/channels` CRUD (supports `output_mode`, `device_index`, `display_mode`, `keyer_mode`, `stream_url`)
-- `/api/rundowns` CRUD/reorder
-- `/api/uploads` + `/api/uploads/jobs/:id` media ingest/transcode lifecycle
-- `/api/onair` current on-air snapshot
-- `/api/settings` global settings blob
-- `/api/health` health probe
+- Token sessions (`users`, `sessions`, `tenants`)
+- Roles: `admin`, `operator`
+- Protected REST endpoints via auth middleware
+- `/ws/control` requires valid auth token (query/header)
 
-### 3.3 WebSocket Hubs
+### 3.3 REST API groups
 
-- `/ws/control`: operator commands (`take`, `update`, `clear`), payload validation, size cap, structured WS errors.
-- `/ws/renderer`: channel runtime connections for replay-on-connect and live fan-out.
+- Auth: `/api/auth/*` (`login`, `logout`, `me`, user management)
+- Templates/channels/rundowns/settings
+- On-air snapshot: `/api/onair`
+- Upload pipeline: `/api/uploads`, `/api/uploads/jobs/:id`
+- Licensing: `/api/license/*`
+- Billing/entitlements: `/api/billing/entitlements`, `/api/billing/hook`
+- Audit: `/api/audit/events`
+- Health: `/api/health`
 
-### 3.4 Persistence Model
+### 3.4 WebSocket hubs
 
-- `templates`, `channels`, `rundowns`, `settings`, `on_air` in SQLite.
-- `on_air.order_index` preserves deterministic replay order after backend restart.
-- Upload artifacts are stored under `${TITULUS_DATA}/uploads`.
+- `/ws/control` - validated operator commands (`take/update/clear`)
+- `/ws/renderer` - runtime subscriptions, replay-on-connect
 
-## 4. Shared Runtime (`runtime/`)
+### 3.5 Persistence
 
-`@titulus/runtime` is the single render-logic implementation used by:
+SQLite tables include:
 
-- engine runtime page (`backend/public/channel.html`)
-- frontend editor preview (WYSIWYG parity)
-- future thumbnail/auxiliary render paths
+- content/state: `templates`, `channels`, `rundowns`, `settings`, `on_air`
+- licensing/auth: `license_state`, `users`, `sessions`, `tenants`
+- observability/compliance: `audit_events`
 
-Main modules:
+`on_air.order_index` keeps deterministic replay order after backend restart.
 
-- `schema.ts`: canonical domain types
-- `timeline.ts`: directors/keyframes/actions playback model
-- `domRenderer.ts`: JSON template -> DOM scene graph
-- `channelClient.ts`: WS client (`take/update/clear`) + replay behavior
+## 4) Shared runtime (`runtime/`)
+
+`@titulus/runtime` is the single render implementation used by engine and editor.
+
+Core modules:
+
+- `schema.ts`, `timeline.ts`, `domRenderer.ts`, `channelClient.ts`
 - `easing.ts`, `transform.ts`, `stackOrder.ts`, `clock.ts`, `fonts.ts`
 
 Build output:
 
-- `runtime/build.mjs` bundles to `backend/public/bg-runtime.js` (IIFE, `window.BG`).
+- `runtime/build.mjs` -> `backend/public/bg-runtime.js` (`window.BG`)
 
-## 5. Render Plane (`engine/`)
+## 5) Render plane (`engine/`)
 
-### 5.1 Engine Host
+### 5.1 Engine host
 
-- C++20 + CEF OSR (`engine_app.*`, `engine_client.*`, `main.cpp`).
-- CPU-only policy (`disable-gpu`, `disable-gpu-compositing`, headless ozone path).
-- One process = one channel = one primary consumer.
-- BGRA end-to-end from CEF `OnPaint` to consumer input.
+- C++20 + CEF OSR
+- CPU-only policy (`disable-gpu`, `disable-gpu-compositing`)
+- BGRA end-to-end path
+- One process = one channel = one primary output
 
-### 5.2 Frame Pipeline
+### 5.2 Frame pipeline
 
 ```text
 channel.html + bg-runtime.js
- -> CEF OSR paint (BGRA)
- -> frame ring (latest-frame handoff)
+ -> CEF OnPaint (BGRA)
+ -> frame ring
  -> consumer OnFrame()
 ```
 
-Stats are emitted as periodic progress + final `SUMMARY` line (`frames`, `fps`, p50/p99/p999 interval, late/drops).
+Engine reports interval/fps/drop statistics via periodic logs and final `SUMMARY`.
 
 ### 5.3 Consumers
 
-- `null`: benchmark/discard
-- `pipe`: raw BGRA output for debug
-- `preview`: JPEG snapshots for monitoring
-- `decklink`: SDI Fill+Key (code-complete, hardware validation deferred without board/genlock)
-- `stream` (`ffmpeg_consumer`): BGRA rawvideo -> ffmpeg child via stdin -> SRT/RTMP/UDP output
+- `null` (bench)
+- `pipe` (raw BGRA debug)
+- `preview` (JPEG monitor output)
+- `decklink` (code-complete, hardware validation deferred)
+- `stream` (`ffmpeg_consumer`, SRT/RTMP/UDP)
 
-### 5.4 Channel Supervision
+### 5.4 Supervision
 
-- `engine/run-engines.sh`: fetches channels from backend, assigns per-channel CPU affinity, launches one supervisor per channel.
-- `engine/run-channel.sh`: maps `output_mode` -> consumer flags and restarts channel process after exit.
+- `engine/run-engines.sh`:
+  - fetches channel config from backend,
+  - assigns CPU affinity,
+  - launches one supervisor per channel,
+  - supports auth-aware backend access.
+- `engine/run-channel.sh` maps `output_mode` to consumer flags and restarts workers.
 
-## 6. Template Contract (AI-Ready)
+## 6) Template contract
 
 Source of truth: `shared/template.schema.json`.
 
-Key properties:
+Key points:
 
-- Deterministic render payload (`canvas`, `variables`, `groups`, `layers`, stacks, timeline).
-- AI/operator metadata extensions (`schemaVersion`, `description`, `tags`, `metadata`).
-- Stronger validation for timeline/action payload shapes and type-aware variable defaults.
-- Backend validation endpoint: `POST /api/templates/validate`.
+- deterministic render payload structure,
+- AI/operator metadata fields (`schemaVersion`, `description`, `tags`, `metadata`),
+- strict variable/timeline validation,
+- backend contract: `POST /api/templates/validate`.
 
-## 7. Output Modes
+## 7) Output modes
 
-Per-channel `output_mode`:
+- `browser`
+- `obs_vmix`
+- `decklink`
+- `stream`
 
-- `browser`: preview via browser route
-- `obs_vmix`: Browser Source mode via `channel.html`
-- `decklink`: SDI output via DeckLink consumer
-- `stream`: network stream via ffmpeg consumer (`stream_url`)
+Configured per channel via `/api/channels` and consumed by engine supervisors.
 
-## 8. Deployment Profiles
+## 8) Operational profiles
 
-- **Cloud SaaS**: control plane + stream/browser outputs.
-- **On-prem broadcast**: same codebase, DeckLink SDI enabled when hardware is present.
+- **Cloud SaaS**: browser/stream outputs + auth/billing/audit foundations
+- **On-prem broadcast**: same codebase, DeckLink SDI path on hardware host
 
-## 9. Reliability and Performance Constraints
+## 9) Reliability / performance constraints
 
-- CPU-only render path by default.
-- Channel isolation with dedicated cores (`taskset`).
-- Upload/transcode robustness: strict MIME + extension checks, retry/timeout semantics.
-- Structured error contracts for REST and WS control paths.
-- Validation on bare-metal + genlock required for final SDI acceptance.
+- CPU-only rendering by default
+- Per-channel process + CPU affinity isolation
+- Strict validation and bounded payload handling for REST/WS
+- Upload/transcode robustness (MIME/extension checks, timeout/retry)
+- Final SDI acceptance requires DeckLink + genlock host execution
 

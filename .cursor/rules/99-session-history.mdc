@@ -124,6 +124,11 @@ alwaysApply: true
 - RUNBOOK обновлён ссылкой на Phase 6.4 handoff flow.
 - Финальный acceptance всё ещё external-blocked: нужен host с DeckLink + genlock.
 
+### Phase 7 (Docs/rules consolidation + historical report) — DONE
+- Полностью синхронизированы `.cursor/rules` с фактическим статусом проекта (Phase 6.2/6.3 done, 6.4 external-blocked).
+- Актуализированы `README.md`, `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md` и package-level README.
+- Добавлен детальный отчёт `docs/PHASE_REPORT_PHASE1_TO_PHASE7.md` (хронология, deliverables, PR milestones, остаточные риски).
+
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
 ### 1. `/root/Titulus/data` нестабилен для SQLite (SQLITE_IOERR_SHORT_READ)
@@ -215,7 +220,7 @@ console.log('ALL OK');
 
 ## Контактные точки для нового агента
 
-- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → выполнить Phase 6.4 hardware run на host с DeckLink/genlock по `docs/phase6-decklink-validation-closure.md` → дочитать этот файл + `10-development-plan.mdc`
+- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → при наличии hardware выполнить Phase 6.4 run по `docs/phase6-decklink-validation-closure.md`; иначе держать документацию и runbook в sync.
 - **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
-- **Текущая ветка работы:** `main` (Phase 6.2/6.3 merged; 6.4 handoff tooling in progress)
-- **Последний merged:** PR #36 (`[Phase 6.2/6.3] auth boundaries + billing audit baseline`)
+- **Текущая ветка работы:** `main` (Phase 6.4 handoff ready, Phase 7 docs consolidation delivered)
+- **Последний merged:** PR #37 (`[Phase 6.4] decklink hardware handoff evidence tooling`)

@@ -1,10 +1,10 @@
 # Titulus Runbook (Ubuntu 24.04+)
 
-This runbook describes a fresh setup and operational flow for Titulus control plane + render plane.
+Operational setup and run flow for Titulus control plane + render plane.
 
 ## 1. Prerequisites
 
-Install base tooling:
+Install system dependencies:
 
 ```bash
 sudo apt-get update
@@ -15,7 +15,7 @@ sudo apt-get install -y \
   libxkbcommon-dev libdrm-dev
 ```
 
-Install Node.js 20+ (example with nvm):
+Install Node.js 20+ (example with `nvm`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
@@ -24,7 +24,7 @@ nvm install 20
 nvm use 20
 ```
 
-## 2. Clone and Bootstrap
+## 2. Clone and bootstrap
 
 ```bash
 git clone https://github.com/Requestin/Titulus.git
@@ -40,7 +40,7 @@ cd ../frontend && npm install
 cd ..
 ```
 
-Build runtime bundle (`backend/public/bg-runtime.js`):
+Build runtime bundle:
 
 ```bash
 cd runtime && npm run build
@@ -49,7 +49,7 @@ cd ..
 
 ## 3. Build `bg_engine`
 
-Download CEF runtime:
+Fetch CEF (one-time):
 
 ```bash
 ./engine/third_party/fetch-cef.sh
@@ -64,7 +64,7 @@ cmake --build build -j"$(nproc)"
 cd ..
 ```
 
-Optional DeckLink compile enablement (if SDK headers are present):
+Optional DeckLink-enabled build (when SDK headers are available):
 
 ```bash
 cd engine
@@ -76,42 +76,57 @@ cmake --build build -j"$(nproc)"
 cd ..
 ```
 
-## 4. Start Control Plane (Dev)
+## 4. Start stack (recommended dev flow)
 
-Recommended startup (explicit data dir, avoids overlay-fs SQLite issues):
+One-command startup:
 
 ```bash
-cd /root/Titulus/backend
-PORT=3001 TITULUS_DATA=/tmp/titulus-data node src/index.js
+./dev-start.sh
 ```
 
-In another terminal:
+Default endpoints:
+
+- frontend: `http://127.0.0.1:3011`
+- backend: `http://127.0.0.1:3002`
+
+Health check:
 
 ```bash
-cd /root/Titulus/frontend
-npm run dev
+curl -s http://127.0.0.1:3002/api/health
 ```
 
-Open:
+## 5. Authentication baseline
 
-- frontend: `http://127.0.0.1:3000`
-- backend health: `http://127.0.0.1:3001/api/health`
+Default bootstrap credentials:
 
-Alternative convenience script:
+- username: `admin`
+- password: `admin123`
 
-```bash
-./start.sh
-```
-
-## 5. Configure Channels
-
-Create/update channels in UI (`/settings`) or via REST.
-
-Example channel create (stream mode):
+Get token:
 
 ```bash
-curl -s -X POST http://127.0.0.1:3001/api/channels \
+curl -s -X POST http://127.0.0.1:3002/api/auth/login \
   -H 'content-type: application/json' \
+  -d '{"username":"admin","password":"admin123"}'
+```
+
+Use bearer token for protected API calls:
+
+```bash
+TOKEN="<token>"
+curl -s http://127.0.0.1:3002/api/channels -H "Authorization: Bearer ${TOKEN}" | jq
+```
+
+## 6. Configure channels
+
+Preferred: Settings UI (`/settings`, admin only).
+
+REST example (`stream` mode):
+
+```bash
+curl -s -X POST http://127.0.0.1:3002/api/channels \
+  -H 'content-type: application/json' \
+  -H "Authorization: Bearer ${TOKEN}" \
   -d '{
     "name":"Ch1",
     "output_mode":"stream",
@@ -122,27 +137,27 @@ curl -s -X POST http://127.0.0.1:3001/api/channels \
   }'
 ```
 
-Validate channel list:
+## 7. Start render plane
+
+Dry-run:
 
 ```bash
-curl -s http://127.0.0.1:3001/api/channels | jq
+BACKEND_URL=http://127.0.0.1:3002 \
+TITULUS_API_USER=admin \
+TITULUS_API_PASSWORD=admin123 \
+./engine/run-engines.sh --dry-run
 ```
 
-## 6. Start Render Plane
-
-Dry-run channel launch plan:
+Launch:
 
 ```bash
-BACKEND_URL=http://127.0.0.1:3001 ./engine/run-engines.sh --dry-run
+BACKEND_URL=http://127.0.0.1:3002 \
+TITULUS_API_USER=admin \
+TITULUS_API_PASSWORD=admin123 \
+./engine/run-engines.sh
 ```
 
-Start all configured channels:
-
-```bash
-BACKEND_URL=http://127.0.0.1:3001 ./engine/run-engines.sh
-```
-
-Single channel run (manual):
+Single-channel manual run:
 
 ```bash
 ./engine/run-channel.sh \
@@ -152,19 +167,18 @@ Single channel run (manual):
   --stream-url="srt://127.0.0.1:9999?mode=caller"
 ```
 
-## 7. Operational Smoke Checks
+## 8. Smoke checks
 
-### 7.1 Template validation
+### 8.1 Template validation
 
 ```bash
-curl -s -X POST http://127.0.0.1:3001/api/templates/validate \
+curl -s -X POST http://127.0.0.1:3002/api/templates/validate \
+  -H "Authorization: Bearer ${TOKEN}" \
   -H 'content-type: application/json' \
   -d '{"id":"t","name":"T","canvas":{"width":1920,"height":1080,"background":"transparent"},"variables":[],"groups":[],"layers":[],"rootStack":[],"groupStacks":{},"timeline":{"fps":50,"durationFrames":1,"playbackMode":"bounded","directors":[{"id":"d","name":"D","durationFrames":1,"offsetFrames":0,"autostart":true,"loop":false,"swing":false}],"trackDirectors":{},"keyframes":[],"actions":[]}}'
 ```
 
-Expected: `{"valid":true,...}`.
-
-### 7.2 Stream output check (local SRT receiver)
+### 8.2 Stream output
 
 Receiver:
 
@@ -172,53 +186,66 @@ Receiver:
 ffplay "srt://127.0.0.1:9999?mode=listener"
 ```
 
-Engine sender: channel configured with matching `stream_url`.
-
-### 7.3 Upload pipeline check
+### 8.3 Upload/transcode
 
 ```bash
-curl -s -X POST http://127.0.0.1:3001/api/uploads \
+curl -s -X POST http://127.0.0.1:3002/api/uploads \
+  -H "Authorization: Bearer ${TOKEN}" \
   -F 'file=@/path/to/video.mp4;type=video/mp4'
 ```
 
-Poll job:
+## 9. DeckLink hardware validation handoff
+
+For final SDI acceptance (Phase 6.4), use:
+
+- `docs/phase6-decklink-validation-closure.md`
+- `engine/collect-decklink-evidence.sh`
+
+Evidence bundle example:
 
 ```bash
-curl -s http://127.0.0.1:3001/api/uploads/jobs/<job-id> | jq
+OUT_ROOT=/var/log/titulus \
+BACKEND_URL=http://127.0.0.1:3001 \
+TITULUS_API_USER=admin \
+TITULUS_API_PASSWORD='***' \
+./engine/collect-decklink-evidence.sh
 ```
 
-## 8. Shutdown
+## 10. Shutdown
 
-If started manually, stop processes by PID or port.
-
-Example by ports:
+Recommended:
 
 ```bash
-for port in 3000 3001; do
-  for p in $(ss -ltnp | grep ":$port" | sed -n 's/.*pid=\([0-9]\+\).*/\1/p'); do
-    kill "$p"
-  done
-done
+./dev-stop.sh
 ```
 
-Convenience:
+Legacy stack scripts:
 
 ```bash
+./start.sh
 ./stop.sh
 ```
 
-## 9. Troubleshooting
+## 11. Troubleshooting
 
 - **`SQLITE_IOERR_SHORT_READ` in repo-local `data/`**  
-  Use `TITULUS_DATA=/tmp/...` for dev/test, persistent path like `/var/lib/titulus` in deployment.
+  Use `TITULUS_DATA=/tmp/...` for dev/test and persistent `/var/lib/titulus` in deployment.
+
+- **Protected API returns `401`**  
+  Ensure valid bearer token from `/api/auth/login`.
+
+- **Protected API returns `403`**  
+  Current role lacks permission (admin-only endpoints like `/api/settings` and `/api/license`).
+
+- **`run-engines.sh` cannot fetch channels**  
+  Provide `TITULUS_API_TOKEN` or valid `TITULUS_API_USER/TITULUS_API_PASSWORD`.
 
 - **Stream channel restarts immediately**  
-  Check `stream_url`, ffmpeg presence (`ffmpeg -version`), and firewall/receiver availability.
+  Validate `stream_url`, ffmpeg availability (`ffmpeg -version`), and receiver/firewall state.
 
 - **`run-channel.sh: output_mode=stream requires --stream-url`**  
-  Set `stream_url` in channel settings or pass `--stream-url` directly.
+  Set `stream_url` in channel config or pass `--stream-url` explicitly.
 
-- **DeckLink runtime unavailable**  
-  Expected on hosts without card/driver. Use `browser` or `stream` mode until hardware validation host is available.  
-  For final SDI acceptance procedure and evidence pack use `docs/phase6-decklink-validation-closure.md` and run `engine/collect-decklink-evidence.sh` on the HW host.
+- **DeckLink runtime unavailable on dev host**  
+  Expected without card/driver. Use `browser`/`stream` until hardware host validation.
 

@@ -64,8 +64,9 @@ alwaysApply: true
 | `verification-loop` | Проверка после изменений: bench/manual/ffprobe (НЕ навязывать юнит-тесты — правило 03). |
 | `tdd-workflow` | ⚠ ТОЛЬКО когда пользователь явно просит тесты/TDD/coverage. Иначе по правилу 03 — bench + verification. |
 
-## Текущая задача 2.4 — media transcode (цепочка скиллов)
-`search-first` (ffmpeg VP9/WebM+alpha `yuva420p`/`libvpx-vp9` флаги) → `api-design` (`POST /api/uploads`, `GET /api/uploads/jobs/:id`) → `error-handling` (retry/ошибки джоб) → `security-review` (multipart MIME/size/path) → `verification-loop` (ffprobe pix_fmt `yuva420p`, `<video>` playable) → `git-workflow`+`github-ops` (branch→PR→merge).
+## Текущая задача — Phase 6.4 + Phase 7 docs consolidation
+- **Phase 6.4 hardware execution (external):** `create-cli` (операционный script UX) + `verification-loop` (evidence checklist) + `github-ops` (handoff PR/docs sync).
+- **Phase 7 documentation hardening:** `github-deep-review` (consistency audit), `search-first` (найти устаревшие места), `git-workflow` + `github-ops` (batch docs PR/merge).
 
 ## Гигиена
 - Удалить избыточный global дубль: `rm -rf ~/.agents/skills/impeccable` (основной — в `.agents/skills/`).
