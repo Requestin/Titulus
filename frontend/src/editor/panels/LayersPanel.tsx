@@ -4,7 +4,7 @@
 // via @dnd-kit, visibility/lock/select/rename/delete, add layer, new group.
 // Display is reversed so the frontmost layer (last in stack) sits on top.
 
-import { useState } from 'react';
+import { useState, type ComponentType } from 'react';
 import {
   DndContext, PointerSensor, useSensor, useSensors, closestCenter,
   type DragEndEvent,
@@ -14,7 +14,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  Type, Square, Image as ImageIcon, Video, Clock, Crop, Folder,
+  Type, Square, Image as ImageIcon, Video, Clock, Folder,
   Eye, EyeOff, Lock, Unlock, GripVertical, ChevronRight, ChevronDown,
   Plus, FolderPlus,
 } from 'lucide-react';
@@ -23,9 +23,19 @@ import { useEditor } from '../store';
 import { LAYER_TYPES, LAYER_LABEL } from '../factories';
 import { cn } from '@/lib/cn';
 
-const LAYER_ICON: Record<LayerType, typeof Type> = {
-  text: Type, rect: Square, image: ImageIcon, video: Video, clock: Clock, mask: Crop,
+const LAYER_ICON: Record<LayerType, ComponentType<{ className?: string }>> = {
+  text: Type, rect: Square, image: ImageIcon, video: Video, clock: Clock, mask: MaskIcon,
 };
+
+/** Square outline with «M» — same footprint as lucide Square (h-4 w-4). */
+function MaskIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} aria-hidden fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="2" y="2" width="12" height="12" rx="1" />
+      <text x="8" y="11.5" textAnchor="middle" fontSize="7" fontWeight="700" fill="currentColor" stroke="none">M</text>
+    </svg>
+  );
+}
 
 export function LayersPanel() {
   const template = useEditor((s) => s.template);

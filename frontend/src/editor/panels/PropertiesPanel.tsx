@@ -54,14 +54,18 @@ export function PropertiesPanel() {
         <Field label="Name">
           <Input value={layer.name} onChange={(e) => updateLayer(layer.id, (l) => { l.name = e.target.value; })} />
         </Field>
-        <Field label="Opacity">
-          <NumberInput value={layer.opacity} min={0} max={1} step={0.05} onChange={(v) => updateLayer(layer.id, (l) => { l.opacity = Math.min(1, Math.max(0, v)); })} />
-        </Field>
-        <Field label="Blend">
-          <Select value={layer.blendMode} onChange={(e) => updateLayer(layer.id, (l) => { l.blendMode = e.target.value as BlendMode; })}>
-            {BLEND_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
-          </Select>
-        </Field>
+        {layer.type !== 'mask' && (
+          <>
+            <Field label="Opacity">
+              <NumberInput value={layer.opacity} min={0} max={1} step={0.05} onChange={(v) => updateLayer(layer.id, (l) => { l.opacity = Math.min(1, Math.max(0, v)); })} />
+            </Field>
+            <Field label="Blend">
+              <Select value={layer.blendMode} onChange={(e) => updateLayer(layer.id, (l) => { l.blendMode = e.target.value as BlendMode; })}>
+                {BLEND_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+              </Select>
+            </Field>
+          </>
+        )}
         <Field label="Group">
           <Select
             value={layer.groupId ?? ''}
@@ -135,41 +139,44 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
         </>
       );
     case 'rect':
-    case 'mask':
       return (
-        <Section title={layer.type === 'mask' ? 'Mask' : 'Rectangle'}>
-          {layer.type === 'mask' && (
-            <>
-              <Field label="Mode">
-                <Select value={layer.maskMode} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.maskMode = e.target.value as 'normal' | 'inverted'; })}>
-                  <option value="normal">normal</option>
-                  <option value="inverted">inverted</option>
-                </Select>
-              </Field>
-              <Field label="Shape">
-                <Select value={layer.shape} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.shape = e.target.value as 'rect' | 'ellipse'; })}>
-                  <option value="rect">rect</option>
-                  <option value="ellipse">ellipse</option>
-                </Select>
-              </Field>
-            </>
-          )}
+        <Section title="Rectangle">
           <Field label="Fill">
             <BindableField
               kind="color"
               value={layer.fill}
               variables={variables}
-              onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' || l.type === 'mask') l.fill = v; })}
+              onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.fill = v; })}
             />
           </Field>
           <Field label="Radius">
-            <NumberInput value={layer.cornerRadius} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' || l.type === 'mask') l.cornerRadius = v; })} />
+            <NumberInput value={layer.cornerRadius} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.cornerRadius = v; })} />
           </Field>
           <Field label="Border">
-            <NumberInput value={layer.borderWidth} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' || l.type === 'mask') l.borderWidth = v; })} />
+            <NumberInput value={layer.borderWidth} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.borderWidth = v; })} />
           </Field>
           <Field label="Border color">
-            <ColorInput value={layer.borderColor} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' || l.type === 'mask') l.borderColor = v; })} />
+            <ColorInput value={layer.borderColor} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.borderColor = v; })} />
+          </Field>
+        </Section>
+      );
+    case 'mask':
+      return (
+        <Section title="Mask">
+          <Field label="Mode">
+            <Select value={layer.maskMode} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.maskMode = e.target.value as 'normal' | 'inverted'; })}>
+              <option value="normal">normal</option>
+              <option value="inverted">inverted</option>
+            </Select>
+          </Field>
+          <Field label="Shape">
+            <Select value={layer.shape} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.shape = e.target.value as 'rect' | 'ellipse'; })}>
+              <option value="rect">rect</option>
+              <option value="ellipse">ellipse</option>
+            </Select>
+          </Field>
+          <Field label="Radius">
+            <NumberInput value={layer.cornerRadius} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.cornerRadius = v; })} />
           </Field>
         </Section>
       );

@@ -274,7 +274,7 @@
         {
           "if": { "properties": { "type": { "const": "mask" } } },
           "then": {
-            "required": ["maskMode", "shape", "fill", "cornerRadius", "borderColor", "borderWidth"],
+            "required": ["maskMode", "shape", "cornerRadius"],
             "properties": {
               "maskMode": { "type": "string", "enum": ["normal", "inverted"] },
               "shape": { "type": "string", "enum": ["rect", "ellipse"] },
