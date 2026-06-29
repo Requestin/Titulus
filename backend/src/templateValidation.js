@@ -28,9 +28,25 @@ export function validateTemplate(template) {
   const errors = (validateFn.errors || []).map((e) => ({
     path: e.instancePath || e.schemaPath || '/',
     message: e.message || 'invalid',
+    keyword: e.keyword,
+    schemaPath: e.schemaPath,
     params: e.params,
   }));
   return { valid: false, errors };
+}
+
+export function templateValidationErrorPayload(errors, {
+  code = 'TEMPLATE_VALIDATION_FAILED',
+  message = 'template validation failed',
+} = {}) {
+  return {
+    code,
+    message,
+    details: {
+      count: Array.isArray(errors) ? errors.length : 0,
+      errors: Array.isArray(errors) ? errors : [],
+    },
+  };
 }
 
 export { schema };
