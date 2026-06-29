@@ -58,12 +58,13 @@ export class OnAirManager {
       case 'take':   return this.applyTake(cmd);
       case 'update': return this.applyUpdate(cmd);
       case 'clear':  return this.applyClear(cmd);
+      default:       return;
     }
   }
 
   applyTake(cmd) {
     if (!cmd.templateId || !cmd.template) return;
-    this.dao.set(cmd);                         // persist
+    this.dao.set(cmd, { bringToFront: true }); // persist with z-order bump
     if (!this.state[cmd.channelId]) this.state[cmd.channelId] = [];
     // Replace any existing take of the same templateId.
     this.state[cmd.channelId] = this.state[cmd.channelId].filter((c) => c.templateId !== cmd.templateId);
@@ -75,10 +76,10 @@ export class OnAirManager {
     if (!cmd.templateId) return;
     // Update mutates variables live: persist only the variables delta is not
     // enough — re-stitch the stored take command with new variables and persist.
-    const stored = this.dao.forChannel(cmd.channelId).find((c) => c.templateId === cmd.templateId);
+    const stored = this.dao.get(cmd.channelId, cmd.templateId);
     if (!stored) return; // update for something not on air -> ignore
     const next = { ...stored, variables: { ...(stored.variables || {}), ...(cmd.variables || {}) } };
-    this.dao.set(next);
+    this.dao.set(next, { bringToFront: false });
     const arr = this.state[cmd.channelId] || [];
     const idx = arr.findIndex((c) => c.templateId === cmd.templateId);
     if (idx >= 0) arr[idx] = next; else arr.push(next);
