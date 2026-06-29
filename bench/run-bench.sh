@@ -13,8 +13,7 @@
 #
 # Acceptance (§11.2): 3 channels @ 1080p50, interval p50 = 20ms, drops < 0.1%
 # bare-metal, fps >= CasparCG CPU baseline. Mask/alpha A/B is separate
-# Mask/alpha A/B is separate (bench-alpha.html).
-# Phase 9 2.5D/mask runtime benches: bench-25d.html, bench-mask-stack.html
+# (bench-alpha.html). Phase 9 benches: bench-25d.html, bench-mask-stack.html
 # (see docs/phase9-25d-masks.md).
 
 set -euo pipefail
