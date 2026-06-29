@@ -1,0 +1,94 @@
+<!doctype html>
+<!--
+  bench/bench-mask-stack.html — stack-scoped mask clip stress via @titulus/runtime.
+
+  Uses TemplateRenderer with mask + animated sibling rect (normal + inverted).
+  Perpetual rAF keeps CEF OnPaint active (§10).
+
+  Build runtime first: cd runtime && npm run build
+
+  Run:
+    bg_engine --consumer=null --url="file://.../bench/bench-mask-stack.html" --fps=50 --duration=60
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  #host { width: 1920px; height: 1080px; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script src="../backend/public/bg-runtime.js"></script>
+<script>
+(function () {
+  const tpl = {
+    id: 'bench-mask', name: 'bench-mask-stack',
+    canvas: { width: 1920, height: 1080, background: '#0a0f1c' },
+    variables: [], groups: [],
+    rootStack: [
+      { kind: 'layer', id: 'bg' },
+      { kind: 'layer', id: 'mask1' },
+      { kind: 'layer', id: 'plate' },
+      { kind: 'layer', id: 'mask2' },
+      { kind: 'layer', id: 'plate2' },
+    ],
+    groupStacks: {},
+    layers: [
+      {
+        id: 'bg', name: 'BG', type: 'rect', visible: true, locked: false, groupId: null,
+        opacity: 1, blendMode: 'normal',
+        transform: { x: 0, y: 0, width: 1920, height: 1080, rotation: 0, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0, anchorY: 0 },
+        fill: '#0f172a', cornerRadius: 0, borderColor: '#000', borderWidth: 0,
+      },
+      {
+        id: 'mask1', name: 'Mask', type: 'mask', visible: true, locked: false, groupId: null,
+        opacity: 1, blendMode: 'normal',
+        transform: { x: 200, y: 280, width: 900, height: 420, rotation: 0, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0.5, anchorY: 0.5 },
+        maskMode: 'normal', shape: 'rect', fill: '#000', cornerRadius: 24, borderColor: '#000', borderWidth: 0,
+      },
+      {
+        id: 'plate', name: 'Plate', type: 'rect', visible: true, locked: false, groupId: null,
+        opacity: 1, blendMode: 'normal',
+        transform: { x: 120, y: 200, width: 1680, height: 520, rotation: 0, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0, anchorY: 0 },
+        fill: '#7c3aed', cornerRadius: 12, borderColor: '#000', borderWidth: 0,
+      },
+      {
+        id: 'mask2', name: 'MaskInv', type: 'mask', visible: true, locked: false, groupId: null,
+        opacity: 1, blendMode: 'normal',
+        transform: { x: 1100, y: 120, width: 640, height: 360, rotation: 12, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0.5, anchorY: 0.5 },
+        maskMode: 'inverted', shape: 'rect', fill: '#000', cornerRadius: 16, borderColor: '#000', borderWidth: 0,
+      },
+      {
+        id: 'plate2', name: 'Plate2', type: 'rect', visible: true, locked: false, groupId: null,
+        opacity: 1, blendMode: 'normal',
+        transform: { x: 900, y: 80, width: 920, height: 480, rotation: 0, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0, anchorY: 0 },
+        fill: '#22d3ee', cornerRadius: 8, borderColor: '#000', borderWidth: 0,
+      },
+    ],
+    timeline: {
+      fps: 50, durationFrames: 250, playbackMode: 'bounded',
+      directors: [{ id: 'd', name: 'd', durationFrames: 250, offsetFrames: 0, autostart: true, loop: true, swing: false }],
+      trackDirectors: {},
+      keyframes: [
+        { id: 'k1', frame: 0, easing: 'linear', layers: { plate: { x: 120 } }, groups: {} },
+        { id: 'k2', frame: 125, easing: 'linear', layers: { plate: { x: 40 } }, groups: {} },
+        { id: 'k3', frame: 250, easing: 'linear', layers: { plate: { x: 120 } }, groups: {} },
+      ],
+      actions: [],
+    },
+  };
+
+  const host = document.getElementById('host');
+  const r = new BG.TemplateRenderer(host, { playbackMode: 'raf' });
+  r.syncTemplate(tpl, {});
+  r.play();
+
+  (function heartbeat() {
+    requestAnimationFrame(heartbeat);
+  })();
+})();
+</script>
+</body>
+</html>

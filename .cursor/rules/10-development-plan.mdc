@@ -17,6 +17,7 @@ alwaysApply: true
 - **Phase 6:** ⏳ IN PROGRESS (6.4 hardware execution pending on external host)
 - **Phase 7:** ✅ DONE (docs/rules consolidation + historical report Phase 1-7)
 - **Phase 8:** ✅ DONE (Rundown mechanism v2: slot-aware playout workflow)
+- **Phase 9:** ✅ DONE (2.5D transforms + stack-scoped masks)
 
 **СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 6.4 hardware execution — прогон checklist на host с DeckLink+genlock (external dependency).
 
@@ -169,6 +170,17 @@ alwaysApply: true
 - On-air индикация стала slot-aware (один template может идти параллельно через разные slotId).
 - Program Monitor синхронизирован с channel binding активного rundown без ломки Templates workflow.
 - Добавлен acceptance документ: `docs/phase8-rundown-acceptance.md`.
+
+## Phase 9 — 2.5D + stack-scoped masks ✅ DONE
+
+- 9.1 `RenderStats` + dirty-check в `TemplateRenderer` (#41)
+- 9.2 Compiled timeline tracks (#42)
+- 9.3 Stack-scoped masks 2D + mask UI (#43)
+- 9.4 rotationX/Y editor + anchor pivot (#44)
+- 9.5 preserve-3d + perspective inheritance (#45)
+- 9.6 Projected clip-path для rotated/tilted masks (#46)
+- 9.7 Bench scenes + `docs/phase9-25d-masks.md` (#47)
+- Документация: `docs/phase9-25d-masks.md`; bench: `bench/bench-25d.html`, `bench/bench-mask-stack.html`
 
 ## Phase 6+ (future, НЕ MVP) ⏸
 
