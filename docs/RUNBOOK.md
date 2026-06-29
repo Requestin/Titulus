@@ -220,5 +220,5 @@ Convenience:
 
 - **DeckLink runtime unavailable**  
   Expected on hosts without card/driver. Use `browser` or `stream` mode until hardware validation host is available.  
-  For final SDI acceptance procedure and evidence pack use `docs/phase6-decklink-validation-closure.md`.
+  For final SDI acceptance procedure and evidence pack use `docs/phase6-decklink-validation-closure.md` and run `engine/collect-decklink-evidence.sh` on the HW host.
 

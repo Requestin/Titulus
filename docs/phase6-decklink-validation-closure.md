@@ -72,6 +72,13 @@ BACKEND_URL=http://127.0.0.1:3001 \
 TITULUS_API_USER=admin \
 TITULUS_API_PASSWORD='***' \
 ./engine/run-engines.sh
+
+# 4) Prepare evidence bundle folder for this run
+OUT_ROOT=/var/log/titulus \
+BACKEND_URL=http://127.0.0.1:3001 \
+TITULUS_API_USER=admin \
+TITULUS_API_PASSWORD='***' \
+./engine/collect-decklink-evidence.sh
 ```
 
 ## Exit Condition
