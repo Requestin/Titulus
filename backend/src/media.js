@@ -22,6 +22,9 @@ import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 const VIDEO_MIME = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
+const MAX_TRANSCODE_ATTEMPTS = 2;
+const TRANSCODE_TIMEOUT_MS = 12 * 60 * 1000; // 12 minutes per attempt
+const MAX_ERROR_TAIL = 1200;
 
 /** Map a MIME type to our media kind, or null if unsupported. */
 export function mediaTypeFor(mime) {
@@ -57,14 +60,19 @@ export class MediaJobs {
   ingest(file) {
     const id = randomUUID();
     const type = mediaTypeFor(file.mimetype);
+    const size = typeof file.size === 'number' ? file.size : 0;
 
     if (type === 'image') {
       const job = {
         id, type, status: 'ready',
         originalName: file.originalname,
+        sourceMime: file.mimetype,
+        sourceSizeBytes: size,
         src: this._publicUrl(file.filename),
         url: this._publicUrl(file.filename),
         posterUrl: this._publicUrl(file.filename),
+        attempts: 0,
+        maxAttempts: 0,
         error: null, createdAt: nowIso(), updatedAt: nowIso(),
       };
       this.jobs.set(id, job);
@@ -77,17 +85,30 @@ export class MediaJobs {
     const job = {
       id, type, status: 'pending',
       originalName: file.originalname,
+      sourceMime: file.mimetype,
+      sourceSizeBytes: size,
       src: this._publicUrl(file.filename),
       url: this._publicUrl(outName),
       posterUrl: this._publicUrl(posterName),
+      attempts: 0,
+      maxAttempts: MAX_TRANSCODE_ATTEMPTS,
       error: null, createdAt: nowIso(), updatedAt: nowIso(),
     };
     this.jobs.set(id, job);
+    if (size <= 0) {
+      this._fail(job, {
+        code: 'EMPTY_UPLOAD',
+        message: 'uploaded file is empty',
+      });
+      return job;
+    }
     this._transcode(job, file.path, resolve(this.uploadsDir, outName), resolve(this.uploadsDir, posterName));
     return job;
   }
 
   _transcode(job, srcPath, outPath, posterPath) {
+    const attempt = (job.attempts || 0) + 1;
+    job.attempts = attempt;
     job.status = 'processing';
     job.updatedAt = nowIso();
 
@@ -105,10 +126,33 @@ export class MediaJobs {
 
     const ff = spawn('ffmpeg', args);
     let stderr = '';
-    ff.stderr.on('data', (d) => { stderr += d.toString(); });
-    ff.on('error', (err) => this._fail(job, `ffmpeg spawn failed: ${err.message}`));
+    const timeout = setTimeout(() => {
+      ff.kill('SIGKILL');
+    }, TRANSCODE_TIMEOUT_MS);
+
+    ff.stderr.on('data', (d) => {
+      stderr += d.toString();
+      if (stderr.length > MAX_ERROR_TAIL * 2) {
+        stderr = stderr.slice(-MAX_ERROR_TAIL * 2);
+      }
+    });
+    ff.on('error', (err) => {
+      clearTimeout(timeout);
+      this._retryOrFail(job, {
+        code: 'FFMPEG_SPAWN_ERROR',
+        message: `ffmpeg spawn failed: ${err.message}`,
+        details: this._errorTail(stderr),
+      }, { attempt, srcPath, outPath, posterPath });
+    });
     ff.on('close', (code) => {
-      if (code !== 0) return this._fail(job, `ffmpeg exited ${code}: ${stderr.slice(-500)}`);
+      clearTimeout(timeout);
+      if (code !== 0) {
+        return this._retryOrFail(job, {
+          code: 'FFMPEG_TRANSCODE_FAILED',
+          message: `ffmpeg exited with code ${code}`,
+          details: this._errorTail(stderr),
+        }, { attempt, srcPath, outPath, posterPath });
+      }
       // Poster is best-effort: a missing poster must not fail the job.
       const pp = spawn('ffmpeg', [
         '-y', '-hide_banner', '-loglevel', 'error',
@@ -119,14 +163,39 @@ export class MediaJobs {
     });
   }
 
+  _retryOrFail(job, errObj, ctx) {
+    if ((ctx.attempt || 1) < MAX_TRANSCODE_ATTEMPTS) {
+      job.status = 'pending';
+      job.updatedAt = nowIso();
+      job.error = {
+        ...errObj,
+        retriable: true,
+        attempt: ctx.attempt,
+      };
+      this._transcode(job, ctx.srcPath, ctx.outPath, ctx.posterPath);
+      return;
+    }
+    this._fail(job, {
+      ...errObj,
+      retriable: false,
+      attempts: ctx.attempt,
+    });
+  }
+
+  _errorTail(stderr) {
+    if (!stderr) return '';
+    return stderr.slice(-MAX_ERROR_TAIL);
+  }
+
   _ready(job) {
     job.status = 'ready';
+    job.error = null;
     job.updatedAt = nowIso();
   }
 
-  _fail(job, msg) {
+  _fail(job, errObj) {
     job.status = 'error';
-    job.error = msg;
+    job.error = errObj;
     job.updatedAt = nowIso();
   }
 }
