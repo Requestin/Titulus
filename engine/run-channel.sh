@@ -85,6 +85,10 @@ case "$OUTPUT_MODE" in
     ;;
   stream)
     CONSUMER="stream"
+    if [[ -z "$STREAM_URL" ]]; then
+      echo "run-channel.sh: output_mode=stream requires --stream-url" >&2
+      exit 1
+    fi
     EXTRA_ARGS+=(--stream-url="$STREAM_URL")
     ;;
   *)

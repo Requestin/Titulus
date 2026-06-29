@@ -73,7 +73,12 @@ set(BG_HEADERS
   src/consumers/consumer.h
   src/consumers/null_consumer.h
   src/consumers/pipe_consumer.h
+  src/consumers/ffmpeg_consumer.h
   src/consumers/preview_writer.h
+)
+
+list(APPEND BG_SOURCES
+  src/consumers/ffmpeg_consumer.cpp
 )
 
 add_executable(bg_engine ${BG_SOURCES} ${BG_HEADERS})

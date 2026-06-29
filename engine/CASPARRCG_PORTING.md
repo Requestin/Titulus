@@ -56,8 +56,8 @@ Producer (CEF HTML) → [channel-paced pull] → Consumer (decklink / ffmpeg / n
 | `modules/decklink/util/util.h` (`get_device`, format maps) | `engine/src/consumers/decklink_consumer.cpp` | Device enumeration by index, BMD display-mode mapping | ✅ done | 3.1 |
 | `modules/decklink/consumer/monitor.{h,cpp}` | `engine/src/consumers/decklink_consumer.cpp` | State reporting → telemetry counters (completed/late/dropped/flushed/overwrite) | ✅ done | 3.1 |
 | `modules/decklink/interop/`, `linux_interop/` | **n/a** (use SDK header directly) | CasparCG bundles BMD COM dispatch headers; мы линкуем системный `DeckLinkAPI.h` (SDK 16.0) | n/a | — |
-| `modules/ffmpeg/consumer/ffmpeg_consumer.cpp` (708 lines) | `engine/src/consumers/ffmpeg_consumer.cpp` | In-process libavformat/avfilter/avcodec, BGRA source (`AV_PIX_FMT_BGRA`), args parse (regex `-r 25 -c:v ...`), self-paced (`has_synchronization_clock()=false`) | ⏳ todo | 5.1 |
-| `modules/ffmpeg/util/av_util.{h,cpp}` (`make_av_video_frame`) | `engine/src/consumers/ffmpeg_consumer.cpp` | BGRA → `AVFrame` bridge | ⏳ todo | 5.1 |
+| `modules/ffmpeg/consumer/ffmpeg_consumer.cpp` (708 lines) | `engine/src/consumers/ffmpeg_consumer.cpp` | BGRA stream consumer semantics (`has_synchronization_clock()=false`): realtime path с bounded latest-frame buffer, non-blocking render thread, ffmpeg lifecycle supervision | ✅ done (adapted) | 5.1 |
+| `modules/ffmpeg/util/av_util.{h,cpp}` (`make_av_video_frame`) | `engine/src/consumers/ffmpeg_consumer.cpp` | BGRA frame bridge: rawvideo stdin (`-pix_fmt bgra`, `-video_size`, `-framerate`) into ffmpeg encoder/muxer path | ✅ done (adapted) | 5.1 |
 | `core/frame/pixel_format.h` (`pixel_format::bgra`) | `engine/src/consumers/consumer.h` (frame struct) | BGRA canonical: single plane, width*height*4 stride | ⏳ todo | 0.3 |
 | `core/frame/frame.{h,cpp}` | `engine/src/consumers/consumer.h` / `frame_ring.h` | Flat BGRA buffer + (future) audio | ⏳ partial | 0.3 |
 | `core/frame/draw_frame.{h,cpp}` (`over`/`mask`) | **n/a** (DOM compositing) | CasparCG native C++ mixer; у нас composition в DOM (`runtime/domRenderer`), CEF compositor = mixer | n/a | — |

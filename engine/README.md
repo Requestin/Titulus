@@ -28,7 +28,7 @@ deferred until HW/genlock host):
 | `consumers/null_consumer.h` | ✅ |
 | `consumers/pipe_consumer.*`, `consumers/preview_writer.*` | ✅ |
 | `consumers/decklink_consumer.*` | ✅ code-complete (HW validation deferred) |
-| `consumers/ffmpeg_consumer.*` | ⏳ Phase 5 |
+| `consumers/ffmpeg_consumer.*` | ✅ done (raw BGRA -> ffmpeg stream child) |
 | `run-engines.sh`, `run-channel.sh`, `systemd/bg-engine@.service` | ✅ |
 
 ## CLI (target, per §9.5)
