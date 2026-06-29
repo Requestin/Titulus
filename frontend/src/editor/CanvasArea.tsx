@@ -6,7 +6,7 @@
 // transform on pointer-up (so a drag is a single history step).
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { TemplateRenderer, resolveVariableMap, type Transform } from '@runtime';
+import { TemplateRenderer, resolveVariableMap, applyTransform, type Transform } from '@runtime';
 import { useEditor } from './store';
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -240,14 +240,16 @@ export function CanvasArea() {
     d.moved = true;
     const dx = (e.clientX - d.startPX) / zoom;
     const dy = (e.clientY - d.startPY) / zoom;
-    const t = computeDrag(d.mode, d.start, dx, dy);
-    if (d.el) {
-      d.el.style.left = `${t.x}px`;
-      d.el.style.top = `${t.y}px`;
-      d.el.style.width = `${t.width}px`;
-      d.el.style.height = `${t.height}px`;
+    const layer = template?.layers.find((l) => l.id === d.id);
+    const partial = computeDrag(d.mode, d.start, dx, dy);
+    if (d.el && layer) {
+      const at = applyTransform({ ...layer.transform, ...partial }, undefined);
+      d.el.style.left = `${at.left}px`;
+      d.el.style.top = `${at.top}px`;
+      d.el.style.width = `${at.width}px`;
+      d.el.style.height = `${at.height}px`;
+      setBox({ left: at.left * zoom, top: at.top * zoom, width: at.width * zoom, height: at.height * zoom });
     }
-    setBox({ left: t.x * zoom, top: t.y * zoom, width: t.width * zoom, height: t.height * zoom });
   }
 
   function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {

@@ -5,6 +5,7 @@
 
 import { Braces } from 'lucide-react';
 import type { Layer, Variable, VariableBinding, BlendMode } from '@runtime';
+import { anchorCompensatedUpdate } from '@runtime';
 import { useEditor } from '../store';
 import { MediaUploadButton } from '../MediaUploadButton';
 import { Field, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
@@ -101,11 +102,13 @@ function TransformSection({
         <LabeledNum label="W" value={t.width} onChange={(v) => set({ width: v })} />
         <LabeledNum label="H" value={t.height} onChange={(v) => set({ height: v })} />
         <LabeledNum label="Rotate" value={t.rotation} onChange={(v) => set({ rotation: v })} />
+        <LabeledNum label="Tilt X" value={t.rotationX} onChange={(v) => set({ rotationX: v })} />
+        <LabeledNum label="Tilt Y" value={t.rotationY} onChange={(v) => set({ rotationY: v })} />
         <LabeledNum label="Persp" value={t.perspective} onChange={(v) => set({ perspective: v })} />
         <LabeledNum label="Scale X" value={t.scaleX} step={0.05} onChange={(v) => set({ scaleX: v })} />
         <LabeledNum label="Scale Y" value={t.scaleY} step={0.05} onChange={(v) => set({ scaleY: v })} />
-        <LabeledNum label="Anchor X" value={t.anchorX} step={0.05} onChange={(v) => set({ anchorX: v })} />
-        <LabeledNum label="Anchor Y" value={t.anchorY} step={0.05} onChange={(v) => set({ anchorY: v })} />
+        <LabeledNum label="Anchor X" value={t.anchorX} step={0.05} onChange={(v) => set(anchorCompensatedUpdate(t, { anchorX: v }))} />
+        <LabeledNum label="Anchor Y" value={t.anchorY} step={0.05} onChange={(v) => set(anchorCompensatedUpdate(t, { anchorY: v }))} />
       </div>
     </Section>
   );
