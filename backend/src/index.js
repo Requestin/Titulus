@@ -20,6 +20,7 @@ import { templatesRouter } from './routes/templates.js';
 import { channelsRouter } from './routes/channels.js';
 import { rundownsRouter } from './routes/rundowns.js';
 import { uploadsRouter } from './routes/uploads.js';
+import { licenseRouter } from './routes/license.js';
 import { wsRouter } from './routes/ws.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -86,6 +87,7 @@ app.use('/api/templates', templatesRouter(db));
 app.use('/api/channels', channelsRouter(db));
 app.use('/api/rundowns', rundownsRouter(db));
 app.use('/api/uploads', uploadsCors, uploadsRouter(media, UPLOADS_DIR));
+app.use('/api/license', licenseRouter(db));
 
 // On-air snapshot for the control panel (§7.4). Separate from the WS router so
 // it sits under /api alongside the other REST endpoints.

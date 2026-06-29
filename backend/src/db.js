@@ -3,7 +3,7 @@
 // SQLite (better-sqlite3, WAL mode) schema + DAOs for the Titulus control plane
 // (DEVELOPMENT_PROMPT §7.2).
 //
-// Tables: templates, channels, rundowns, settings, on_air.
+// Tables: templates, channels, rundowns, settings, on_air, license_state.
 // On-air persistence (§NFR-1): the on_air table stores the full take command so
 // a backend restart can replay the picture to every /ws/renderer client.
 
@@ -59,6 +59,21 @@ CREATE TABLE IF NOT EXISTS on_air (
   taken_at     TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (channel_id, template_id)
 );
+
+-- License activation state (Phase 6 foundation).
+CREATE TABLE IF NOT EXISTS license_state (
+  id              INTEGER PRIMARY KEY CHECK (id = 1),
+  license_key     TEXT NOT NULL DEFAULT '',
+  status          TEXT NOT NULL DEFAULT 'unlicensed', -- unlicensed|active|expired|invalid
+  plan            TEXT NOT NULL DEFAULT 'none',
+  holder          TEXT NOT NULL DEFAULT '',
+  activated_at    TEXT,
+  expires_at      TEXT,
+  last_checked_at TEXT,
+  last_error      TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 /**
@@ -73,6 +88,7 @@ export function openDb(dbPath) {
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
   ensureOnAirOrderIndex(db);
+  ensureLicenseRow(db);
   return db;
 }
 
@@ -83,6 +99,14 @@ function ensureOnAirOrderIndex(db) {
   if (!hasOrderIndex) {
     db.exec(`ALTER TABLE on_air ADD COLUMN order_index INTEGER NOT NULL DEFAULT 0`);
   }
+}
+
+/** @param {Database} db */
+function ensureLicenseRow(db) {
+  db.prepare(
+    `INSERT INTO license_state (id) VALUES (1)
+     ON CONFLICT(id) DO NOTHING`,
+  ).run();
 }
 
 // ---------------------------------------------------------------------------
@@ -244,6 +268,59 @@ export const settingsDao = (db) => ({
     });
     tx(Object.entries(obj));
     return this.all();
+  },
+});
+
+// ---------------------------------------------------------------------------
+// license_state (phase 6 foundation)
+// ---------------------------------------------------------------------------
+
+export const licenseDao = (db) => ({
+  get() {
+    return db.prepare('SELECT * FROM license_state WHERE id = 1').get();
+  },
+  activate({ licenseKey, holder, plan, expiresAt }) {
+    db.prepare(
+      `UPDATE license_state
+       SET license_key=?,
+           status='active',
+           holder=?,
+           plan=?,
+           activated_at=datetime('now'),
+           expires_at=?,
+           last_checked_at=datetime('now'),
+           last_error='',
+           updated_at=datetime('now')
+       WHERE id=1`,
+    ).run(licenseKey, holder ?? '', plan ?? 'starter', expiresAt ?? null);
+    return this.get();
+  },
+  deactivate() {
+    db.prepare(
+      `UPDATE license_state
+       SET license_key='',
+           status='unlicensed',
+           holder='',
+           plan='none',
+           activated_at=NULL,
+           expires_at=NULL,
+           last_checked_at=datetime('now'),
+           last_error='',
+           updated_at=datetime('now')
+       WHERE id=1`,
+    ).run();
+    return this.get();
+  },
+  markChecked({ status, error }) {
+    db.prepare(
+      `UPDATE license_state
+       SET status=?,
+           last_checked_at=datetime('now'),
+           last_error=?,
+           updated_at=datetime('now')
+       WHERE id=1`,
+    ).run(status, error ?? '');
+    return this.get();
   },
 });
 
