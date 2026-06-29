@@ -21,25 +21,55 @@ import type {
   AnimatableValues,
   AnimatableProp,
 } from './schema.js';
-import { getEasing, makeBezierEasing, lerp } from './easing.js';
+import { getEasing, makeBezierEasing, lerp, type EasingFn } from './easing.js';
 
 /**
- * A normalized timeline, ready for O(1)-ish sampling. Keyframes are indexed per
- * target id (layer or group) and sorted by frame.
+ * One target's animation track entry, precompiled at normalize time. Holds the
+ * keyframe's animated bag for this target plus the resolved easing function so
+ * the per-frame hot path avoids re-resolving easing (and re-allocating bezier
+ * solvers) every frame.
+ */
+interface CompiledTrackEntry {
+  frame: number;
+  bag: AnimatableValues;
+  easing: EasingFn;
+}
+
+/**
+ * Per-target compiled tracks. A target is animated either as a layer or as a
+ * group (never both); `isLayer` records which bag contributed so the sampler
+ * can route the result without rescanning the keyframes each frame. Sorted by
+ * `frame` at compile time.
+ */
+interface CompiledTargetTracks {
+  entries: CompiledTrackEntry[];
+  isLayer: boolean;
+}
+
+/** Precompiled per-director index: targetId -> sorted compiled track. */
+interface CompiledDirector {
+  /** Sorted keyframes that belong to this director (kept for actionsCrossed, etc.). */
+  keyframes: TimelineKeyframe[];
+  /** targetId -> compiled track (layers OR groups, deduced at compile). */
+  tracks: Map<string, CompiledTargetTracks>;
+  /** Target ids owned by this director (set built once at compile). */
+  targetIds: string[];
+}
+
+/**
+ * A normalized timeline, ready for O(1)-ish sampling. Per-target keyframe lists
+ * are precompiled into CompiledDirector.tracks (sorted by frame, with easing
+ * resolved once), so per-frame sampling is a Map lookup + binary search instead
+ * of a full filter+sort over every keyframe.
  */
 export interface NormalizedTimeline {
-  /** directorId -> sorted keyframes that belong to that director */
-  directors: Record<string, TimelineKeyframe[]>;
+  /** directorId -> compiled director (per-target sorted tracks + eased entries). */
+  directors: Record<string, CompiledDirector>;
   directorList: TimelineDirector[];
   /** directorId -> actions, sorted by frame */
   actions: Record<string, TimelineAction[]>;
   fps: number;
   durationFrames: number;
-}
-
-/** Sort keyframes by frame. */
-function sortKfs(kfs: TimelineKeyframe[]): TimelineKeyframe[] {
-  return [...kfs].sort((a, b) => a.frame - b.frame);
 }
 
 /**
@@ -60,8 +90,9 @@ export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
     directorTargets[directorId].add(targetId);
   }
 
-  const directors: Record<string, TimelineKeyframe[]> = {};
-  for (const d of tl.directors) directors[d.id] = [];
+  // Partition raw keyframes per director (same semantics as before).
+  const rawByDirector: Record<string, TimelineKeyframe[]> = {};
+  for (const d of tl.directors) rawByDirector[d.id] = [];
 
   for (const kf of tl.keyframes) {
     const allTargets = new Set([...Object.keys(kf.layers), ...Object.keys(kf.groups)]);
@@ -69,17 +100,43 @@ export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
     let assigned = false;
     for (const target of allTargets) {
       const did = tl.trackDirectors[target];
-      if (did && directors[did]) {
-        directors[did].push(kf);
+      if (did && rawByDirector[did]) {
+        rawByDirector[did].push(kf);
         assigned = true;
       }
     }
-    if (!assigned && directors['default']) {
-      directors['default'].push(kf);
+    if (!assigned && rawByDirector['default']) {
+      rawByDirector['default'].push(kf);
     }
   }
+  for (const did of Object.keys(rawByDirector)) {
+    rawByDirector[did].sort((a, b) => a.frame - b.frame);
+  }
 
-  for (const did of Object.keys(directors)) directors[did] = sortKfs(directors[did]);
+  // Compile per-target tracks from the sorted keyframes. For each target we
+  // gather every keyframe that touches it (with its layer OR group bag) plus
+  // the resolved easing function, keeping the result sorted by frame. A target
+  // is animated either as a layer or as a group, so we record which bag it came
+  // from on the track to let the sampler route cheaply.
+  const directors: Record<string, CompiledDirector> = {};
+  for (const d of tl.directors) {
+    const kfs = rawByDirector[d.id] ?? [];
+    const tracks = new Map<string, CompiledTargetTracks>();
+    for (const kf of kfs) {
+      const easing = kf.bezier ? makeBezierEasing(kf.bezier) : getEasing(kf.easing);
+      for (const [tid, bag] of Object.entries(kf.layers)) {
+        pushEntry(tracks, tid, kf.frame, bag, easing, true);
+      }
+      for (const [tid, bag] of Object.entries(kf.groups)) {
+        pushEntry(tracks, tid, kf.frame, bag, easing, false);
+      }
+    }
+    directors[d.id] = {
+      keyframes: kfs,
+      tracks,
+      targetIds: [...tracks.keys()],
+    };
+  }
 
   const actions: Record<string, TimelineAction[]> = {};
   for (const a of tl.actions) {
@@ -95,6 +152,19 @@ export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
     fps: tl.fps,
     durationFrames: tl.durationFrames,
   };
+}
+
+function pushEntry(
+  tracks: Map<string, CompiledTargetTracks>,
+  tid: string,
+  frame: number,
+  bag: AnimatableValues,
+  easing: EasingFn,
+  isLayer: boolean,
+): void {
+  let t = tracks.get(tid);
+  if (!t) { t = { entries: [], isLayer }; tracks.set(tid, t); }
+  t.entries.push({ frame, bag, easing });
 }
 
 /**
@@ -119,50 +189,43 @@ export function directorLocalFrame(d: TimelineDirector, globalFrame: number): nu
   return rel;
 }
 
-/** Interpolate animated values for one target across a sorted keyframe list. */
-function sampleTarget(
-  targetId: string,
-  section: 'layers' | 'groups',
-  kfs: TimelineKeyframe[],
+/** Interpolate animated values for one target from its compiled track. */
+function sampleTargetTrack(
+  track: CompiledTargetTracks,
   localFrame: number,
 ): AnimatableValues {
-  if (kfs.length === 0) return {};
-
-  // Collect only keyframes that actually animate this target, with their value
-  // bags for it. (A keyframe entry for a target may be partial.)
-  const relevant = kfs.filter((k) => {
-    const bag = section === 'layers' ? k.layers : k.groups;
-    return bag[targetId] !== undefined;
-  });
-  if (relevant.length === 0) return {};
+  const entries = track.entries;
+  const n = entries.length;
+  if (n === 0) return {};
 
   // Before first / after last keyframe: hold the boundary value.
-  if (localFrame <= relevant[0].frame) return { ...relevant[0][section][targetId] };
-  if (localFrame >= relevant[relevant.length - 1].frame) {
-    return { ...relevant[relevant.length - 1][section][targetId] };
+  if (localFrame <= entries[0].frame) return { ...entries[0].bag };
+  if (localFrame >= entries[n - 1].frame) return { ...entries[n - 1].bag };
+
+  // Binary-search the bracketing pair. Entries are sorted by frame at compile
+  // time, so this is O(log n) per frame instead of the previous linear scan.
+  let lo = 0;
+  let hi = n - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (entries[mid].frame <= localFrame) lo = mid;
+    else hi = mid;
   }
+  const a = entries[lo];
+  const b = entries[hi];
 
-  // Find the bracketing pair.
-  let i = 0;
-  while (i < relevant.length - 1 && relevant[i + 1].frame < localFrame) i++;
-  const a = relevant[i];
-  const b = relevant[i + 1];
-
-  const aBag = a[section][targetId];
-  const bBag = b[section][targetId];
   const span = b.frame - a.frame || 1;
   const rawT = (localFrame - a.frame) / span;
-  const easing = a.bezier ? makeBezierEasing(a.bezier) : getEasing(a.easing);
-  const eased = easing(rawT);
+  const eased = a.easing(rawT);
 
   const out: AnimatableValues = {};
   const props = new Set<AnimatableProp>([
-    ...(Object.keys(aBag) as AnimatableProp[]),
-    ...(Object.keys(bBag) as AnimatableProp[]),
+    ...(Object.keys(a.bag) as AnimatableProp[]),
+    ...(Object.keys(b.bag) as AnimatableProp[]),
   ]);
   for (const p of props) {
-    const va = aBag[p];
-    const vb = bBag[p];
+    const va = a.bag[p];
+    const vb = b.bag[p];
     if (va === undefined) out[p] = vb;
     else if (vb === undefined) out[p] = va;
     else out[p] = lerp(va, vb, eased);
@@ -191,7 +254,8 @@ export interface TimelineSample {
 
 /**
  * Sample the full animated state at a global frame: for each director, compute
- * its local frame (or skip if inactive), then interpolate each target's values.
+ * its local frame (or skip if inactive), then interpolate each target's values
+ * from its precompiled track.
  */
 export function sampleAt(
   norm: NormalizedTimeline,
@@ -206,20 +270,18 @@ export function sampleAt(
     const active = local !== null;
     const ds: DirectorSample = { layers: {}, groups: {}, active };
     if (active) {
-      const kfs = norm.directors[d.id] || [];
-      const targets = norm.directorList.length === 1
-        // Single-director common case: every target in trackDirectors.
-        ? Object.keys(norm.directors[d.id].length ? collectTargets(kfs) : {})
-        : Object.keys(targetSet(norm, d.id));
-      for (const tid of targets) {
-        // Try layers first, then groups (a target is one or the other).
-        let vals = sampleTarget(tid, 'layers', kfs, local!);
-        if (Object.keys(vals).length) {
-          ds.layers[tid] = vals;
-          mergedLayers[tid] = { ...(mergedLayers[tid] || {}), ...vals };
-        } else {
-          vals = sampleTarget(tid, 'groups', kfs, local!);
-          if (Object.keys(vals).length) {
+      const compiled = norm.directors[d.id];
+      const tracks = compiled?.tracks;
+      if (tracks) {
+        for (const tid of compiled.targetIds) {
+          const track = tracks.get(tid);
+          if (!track) continue;
+          const vals = sampleTargetTrack(track, local!);
+          if (Object.keys(vals).length === 0) continue;
+          if (track.isLayer) {
+            ds.layers[tid] = vals;
+            mergedLayers[tid] = { ...(mergedLayers[tid] || {}), ...vals };
+          } else {
             ds.groups[tid] = vals;
             mergedGroups[tid] = { ...(mergedGroups[tid] || {}), ...vals };
           }
@@ -230,21 +292,6 @@ export function sampleAt(
   }
 
   return { directors: perDirector, layers: mergedLayers, groups: mergedGroups };
-}
-
-function collectTargets(kfs: TimelineKeyframe[]): Record<string, true> {
-  const set: Record<string, true> = {};
-  for (const k of kfs) {
-    for (const id of Object.keys(k.layers)) set[id] = true;
-    for (const id of Object.keys(k.groups)) set[id] = true;
-  }
-  return set;
-}
-
-function targetSet(norm: NormalizedTimeline, directorId: string): Record<string, true> {
-  // Targets owned by a director, from the normalized keyframes (already
-  // partitioned by director in normalizeTimeline).
-  return collectTargets(norm.directors[directorId] || []);
 }
 
 /**
