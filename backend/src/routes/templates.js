@@ -7,11 +7,12 @@
 //   PUT    /api/templates/:id        update
 //   DELETE /api/templates/:id        delete
 //   GET    /api/templates/schema      the JSON Schema
-//   POST   /api/templates/validate    validate a body, return {valid, errors}
+//   POST   /api/templates/validate    validate a body, return 200 {valid:true}
+//                                     or 422 {valid:false,error:{code,message,details}}
 
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
-import { validateTemplate, schema } from '../templateValidation.js';
+import { validateTemplate, schema, templateValidationErrorPayload } from '../templateValidation.js';
 
 export function templatesRouter(db) {
   const dao = templatesRouterDao(db);
@@ -24,14 +25,16 @@ export function templatesRouter(db) {
   router.post('/', (req, res) => {
     const { name, data } = req.body ?? {};
     if (!name || typeof name !== 'string') {
-      return res.status(400).json({ error: 'name required' });
+      return res.status(400).json({ error: { code: 'NAME_REQUIRED', message: 'name required' } });
     }
     if (!data || typeof data !== 'object') {
-      return res.status(400).json({ error: 'data (Template object) required' });
+      return res.status(400).json({
+        error: { code: 'TEMPLATE_DATA_REQUIRED', message: 'data (Template object) required' },
+      });
     }
     const { valid, errors } = validateTemplate(data);
     if (!valid) {
-      return res.status(422).json({ error: 'template validation failed', errors });
+      return res.status(422).json({ error: templateValidationErrorPayload(errors) });
     }
     const id = data.id || uuid();
     const created = dao.create({ id, name, data });
@@ -43,8 +46,22 @@ export function templatesRouter(db) {
   });
 
   router.post('/validate', (req, res) => {
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({
+        error: {
+          code: 'VALIDATION_BODY_REQUIRED',
+          message: 'template object required as request body',
+        },
+      });
+    }
     const { valid, errors } = validateTemplate(req.body);
-    res.json({ valid, errors });
+    if (valid) {
+      return res.status(200).json({ valid: true, errors: [] });
+    }
+    return res.status(422).json({
+      valid: false,
+      error: templateValidationErrorPayload(errors),
+    });
   });
 
   router.get('/:id', (req, res) => {
@@ -58,7 +75,7 @@ export function templatesRouter(db) {
     if (data !== undefined) {
       const { valid, errors } = validateTemplate(data);
       if (!valid) {
-        return res.status(422).json({ error: 'template validation failed', errors });
+        return res.status(422).json({ error: templateValidationErrorPayload(errors) });
       }
     }
     const updated = dao.update(req.params.id, { name, data });

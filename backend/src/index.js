@@ -113,6 +113,31 @@ app.use('/uploads', uploadsCors, express.static(UPLOADS_DIR, {
 app.use('/fonts', express.static(resolve(ROOT, 'fonts')));
 app.use(express.static(PUBLIC_DIR)); // channel.html, bg-runtime.js
 
+// Normalize JSON parser failures and unexpected handler errors into API-safe
+// payloads (instead of default HTML error pages).
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({
+      error: {
+        code: 'INVALID_JSON',
+        message: 'invalid JSON body',
+      },
+    });
+  }
+  return next(err);
+});
+
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  console.error('[titulus-backend] unhandled error', err);
+  return res.status(500).json({
+    error: {
+      code: 'INTERNAL_ERROR',
+      message: 'internal server error',
+    },
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Listen
 // ---------------------------------------------------------------------------
