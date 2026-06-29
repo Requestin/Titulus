@@ -1,6 +1,6 @@
 # Titulus
 
-Titulus is a proprietary cloud/on-prem broadcast graphics system:
+Titulus is a proprietary cloud/on-prem broadcast graphics system.
 
 ## License
 
