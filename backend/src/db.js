@@ -8,6 +8,7 @@
 // a backend restart can replay the picture to every /ws/renderer client.
 
 import Database from 'better-sqlite3';
+import { randomBytes, randomUUID, scryptSync } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -74,6 +75,51 @@ CREATE TABLE IF NOT EXISTS license_state (
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Multi-tenant auth baseline (Phase 6.2).
+CREATE TABLE IF NOT EXISTS tenants (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id            TEXT PRIMARY KEY,
+  tenant_id     TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  username      TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  password_salt TEXT NOT NULL,
+  role          TEXT NOT NULL DEFAULT 'operator', -- operator|admin
+  is_active     INTEGER NOT NULL DEFAULT 1,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token         TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tenant_id     TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  expires_at    TEXT NOT NULL,
+  revoked_at    TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  last_seen_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS audit_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  tenant_id   TEXT,
+  user_id     TEXT,
+  username    TEXT,
+  role        TEXT,
+  event_type  TEXT NOT NULL,
+  method      TEXT NOT NULL,
+  path        TEXT NOT NULL,
+  status      INTEGER NOT NULL,
+  ip          TEXT NOT NULL DEFAULT '',
+  user_agent  TEXT NOT NULL DEFAULT '',
+  details     TEXT NOT NULL DEFAULT '{}',
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 /**
@@ -89,6 +135,7 @@ export function openDb(dbPath) {
   db.exec(SCHEMA);
   ensureOnAirOrderIndex(db);
   ensureLicenseRow(db);
+  ensureAuthBootstrap(db);
   return db;
 }
 
@@ -107,6 +154,31 @@ function ensureLicenseRow(db) {
     `INSERT INTO license_state (id) VALUES (1)
      ON CONFLICT(id) DO NOTHING`,
   ).run();
+}
+
+function hashPassword(password, saltHex) {
+  return scryptSync(password, Buffer.from(saltHex, 'hex'), 64).toString('hex');
+}
+
+/** @param {Database} db */
+function ensureAuthBootstrap(db) {
+  const defaultTenantId = 'default';
+  db.prepare(
+    `INSERT INTO tenants (id, name) VALUES (?, ?)
+     ON CONFLICT(id) DO NOTHING`,
+  ).run(defaultTenantId, 'Default Tenant');
+
+  const existingAdmin = db.prepare('SELECT id FROM users WHERE role = ? LIMIT 1').get('admin');
+  if (!existingAdmin) {
+    const username = (process.env.TITULUS_ADMIN_USER || 'admin').trim();
+    const password = process.env.TITULUS_ADMIN_PASSWORD || 'admin123';
+    const salt = randomBytes(16).toString('hex');
+    const passwordHash = hashPassword(password, salt);
+    db.prepare(
+      `INSERT INTO users (id, tenant_id, username, password_hash, password_salt, role, is_active)
+       VALUES (?, ?, ?, ?, ?, 'admin', 1)`,
+    ).run(randomUUID(), defaultTenantId, username, passwordHash, salt);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +393,153 @@ export const licenseDao = (db) => ({
        WHERE id=1`,
     ).run(status, error ?? '');
     return this.get();
+  },
+});
+
+// ---------------------------------------------------------------------------
+// auth (phase 6.2 baseline)
+// ---------------------------------------------------------------------------
+
+export const authDao = (db) => ({
+  findUserByUsername(username) {
+    return db.prepare(
+      `SELECT u.id, u.tenant_id, u.username, u.password_hash, u.password_salt, u.role, u.is_active
+       FROM users u
+       WHERE u.username = ?`,
+    ).get(username);
+  },
+  getUserById(id) {
+    return db.prepare(
+      `SELECT u.id, u.tenant_id, u.username, u.role, u.is_active, u.created_at, u.updated_at
+       FROM users u
+       WHERE u.id = ?`,
+    ).get(id);
+  },
+  listUsers() {
+    return db.prepare(
+      `SELECT u.id, u.tenant_id, u.username, u.role, u.is_active, u.created_at, u.updated_at
+       FROM users u
+       ORDER BY u.created_at ASC`,
+    ).all();
+  },
+  createUser({ tenantId, username, passwordHash, passwordSalt, role }) {
+    const id = randomUUID();
+    db.prepare(
+      `INSERT INTO users (id, tenant_id, username, password_hash, password_salt, role, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+    ).run(id, tenantId, username, passwordHash, passwordSalt, role);
+    return this.getUserById(id);
+  },
+  setUserActive(id, isActive) {
+    db.prepare(
+      `UPDATE users
+       SET is_active = ?, updated_at = datetime('now')
+       WHERE id = ?`,
+    ).run(isActive ? 1 : 0, id);
+    return this.getUserById(id);
+  },
+  createSession({ token, userId, tenantId, expiresAt }) {
+    db.prepare(
+      `INSERT INTO sessions (token, user_id, tenant_id, expires_at)
+       VALUES (?, ?, ?, ?)`,
+    ).run(token, userId, tenantId, expiresAt);
+  },
+  getSessionWithUser(token) {
+    return db.prepare(
+      `SELECT s.token, s.user_id, s.tenant_id, s.expires_at, s.revoked_at,
+              u.username, u.role, u.is_active
+       FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.token = ?`,
+    ).get(token);
+  },
+  touchSession(token) {
+    db.prepare(
+      `UPDATE sessions
+       SET last_seen_at = datetime('now')
+       WHERE token = ?`,
+    ).run(token);
+  },
+  revokeSession(token) {
+    db.prepare(
+      `UPDATE sessions
+       SET revoked_at = datetime('now')
+       WHERE token = ?`,
+    ).run(token);
+  },
+  revokeSessionsByUser(userId) {
+    db.prepare(
+      `UPDATE sessions
+       SET revoked_at = datetime('now')
+       WHERE user_id = ? AND revoked_at IS NULL`,
+    ).run(userId);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// audit (phase 6.3 baseline)
+// ---------------------------------------------------------------------------
+
+export const auditDao = (db) => ({
+  create({
+    tenantId, userId, username, role, eventType, method, path, status, ip, userAgent, details,
+  }) {
+    db.prepare(
+      `INSERT INTO audit_events
+       (tenant_id, user_id, username, role, event_type, method, path, status, ip, user_agent, details)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      tenantId ?? null,
+      userId ?? null,
+      username ?? null,
+      role ?? null,
+      eventType,
+      method,
+      path,
+      status,
+      ip ?? '',
+      userAgent ?? '',
+      JSON.stringify(details ?? {}),
+    );
+  },
+  list({ tenantId, limit = 100, eventType } = {}) {
+    const safeLimit = Math.min(Math.max(limit, 1), 500);
+    const where = [];
+    const args = [];
+    if (tenantId) {
+      where.push('tenant_id = ?');
+      args.push(tenantId);
+    }
+    if (eventType) {
+      where.push('event_type = ?');
+      args.push(eventType);
+    }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    return db.prepare(
+      `SELECT id, tenant_id, user_id, username, role, event_type, method, path, status, ip, user_agent, details, created_at
+       FROM audit_events
+       ${whereSql}
+       ORDER BY id DESC
+       LIMIT ?`,
+    ).all(...args, safeLimit).map((row) => {
+      let parsed = {};
+      try { parsed = JSON.parse(row.details); } catch { parsed = {}; }
+      return {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        user_id: row.user_id,
+        username: row.username,
+        role: row.role,
+        event_type: row.event_type,
+        method: row.method,
+        path: row.path,
+        status: row.status,
+        ip: row.ip,
+        user_agent: row.user_agent,
+        details: parsed,
+        created_at: row.created_at,
+      };
+    });
   },
 });
 

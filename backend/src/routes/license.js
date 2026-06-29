@@ -37,6 +37,7 @@ export function licenseRouter(db) {
   // Phase 6 foundation: local activation contract.
   // External licensing provider integration is intentionally deferred.
   router.post('/activate', (req, res) => {
+    req.auditEventType = 'license.activate';
     const body = req.body ?? {};
     const licenseKey = typeof body.licenseKey === 'string'
       ? body.licenseKey.trim().toUpperCase()
@@ -63,11 +64,13 @@ export function licenseRouter(db) {
   });
 
   router.post('/deactivate', (req, res) => {
+    req.auditEventType = 'license.deactivate';
     const row = dao.deactivate();
     res.json(toPublicState(row));
   });
 
   router.post('/check', (req, res) => {
+    req.auditEventType = 'license.check';
     const body = req.body ?? {};
     const status = typeof body.status === 'string' ? body.status : '';
     const lastError = typeof body.lastError === 'string' ? body.lastError : '';

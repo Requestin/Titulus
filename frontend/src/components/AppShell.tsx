@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LayoutTemplate, SlidersHorizontal, Settings, MonitorPlay } from 'lucide-react';
+import { LayoutTemplate, SlidersHorizontal, Settings, MonitorPlay, LogOut } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import type { AuthUser } from '@/core/api';
 import { WsStatus } from './WsStatus';
 import { Toaster } from './Toaster';
 
@@ -17,7 +18,7 @@ function pageTitle(pathname: string): string {
   return 'Templates';
 }
 
-export function AppShell() {
+export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const { pathname } = useLocation();
 
   return (
@@ -59,6 +60,17 @@ export function AppShell() {
           <MonitorPlay className="h-4 w-4 shrink-0" aria-hidden />
           Open renderer
         </a>
+        <div className="mx-2 mb-2 rounded-md border border-border bg-surface px-3 py-2 text-[12px] text-ink-muted">
+          <div className="truncate font-medium text-ink">{user.username}</div>
+          <div className="mt-0.5 tnum text-[11px] uppercase tracking-wide">{user.role}</div>
+          <button
+            onClick={onLogout}
+            className="mt-2 flex items-center gap-1.5 text-[12px] text-ink-muted hover:text-ink"
+          >
+            <LogOut className="h-3.5 w-3.5" aria-hidden />
+            Logout
+          </button>
+        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

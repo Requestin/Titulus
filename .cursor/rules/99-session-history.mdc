@@ -99,11 +99,24 @@ alwaysApply: true
 - Runbook покрывает: fresh Ubuntu bootstrap, runtime/backend/frontend setup, engine build, channel config, stream/decklink notes, smoke checks, shutdown и troubleshooting.
 - Architecture doc фиксирует текущий control-plane/render-plane контракт и Phase 5 состояния.
 
-### Phase 6.1 (License activation foundation) — IN PROGRESS
+### Phase 6.1 (License activation foundation) — DONE
 - Начат enterprise/SaaS трек: backend license state persistence (`license_state`) + DAO groundwork.
 - Добавлен license API foundation (`/api/license`, `/activate`, `/deactivate`, `/check`) со структурированными ошибками.
 - Settings UI расширен license-секцией (status, key mask, activate/deactivate) для операторской проверки состояния лицензии.
 - Это intentional local foundation без внешнего license provider; внешняя проверка/entitlement sync — следующий этап.
+
+### Phase 6.2 (Auth + RBAC baseline) — DONE
+- Добавлен backend auth слой: `users/sessions/tenants` таблицы, bootstrap admin-user, token login/logout/me.
+- Введены роли `admin|operator`; mutating/admin-sensitive REST маршруты защищены (`/api/channels`, `/api/license`, `/api/settings` и др.).
+- `/ws/control` теперь требует валидный auth token (query/header), что закрывает неаутентифицированный эфирный control path.
+- Frontend: login page + session token storage + guarded routes; Settings доступен только admin.
+- `engine/run-engines.sh` обновлён для auth-aware backend (`TITULUS_API_TOKEN` либо auto-login через user/password).
+
+### Phase 6.3 (Billing/entitlements hooks + audit) — DONE
+- Добавлен persisted audit trail (`audit_events`) с redaction-sensitive payload sanitization.
+- Добавлены endpoints: `/api/audit/events`, `/api/billing/entitlements`, `/api/billing/hook` (secret-protected webhook skeleton).
+- Billing entitlements связаны с license plan (`none/starter/pro/enterprise`) и отображаются в Settings.
+- Settings расширен блоком recent audit events (admin observability).
 
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
@@ -196,7 +209,7 @@ console.log('ALL OK');
 
 ## Контактные точки для нового агента
 
-- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → продолжить Phase 6.2 (tenant/auth boundary) → дочитать этот файл + `10-development-plan.mdc`
+- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → продолжить Phase 6.4 (DeckLink deferred HW validation closure docs/handoff) → дочитать этот файл + `10-development-plan.mdc`
 - **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
-- **Текущая ветка работы:** `main` (Phase 6 started)
-- **Последний merged:** PR #34 (`[Phase 5.3] architecture and runbook documentation`)
+- **Текущая ветка работы:** `main` (Phase 6.1 complete; 6.2/6.3 in active implementation branch)
+- **Последний merged:** PR #35 (`[Phase 6.1] license activation foundation`)

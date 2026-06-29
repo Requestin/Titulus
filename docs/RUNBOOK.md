@@ -219,5 +219,6 @@ Convenience:
   Set `stream_url` in channel settings or pass `--stream-url` directly.
 
 - **DeckLink runtime unavailable**  
-  Expected on hosts without card/driver. Use `browser` or `stream` mode until hardware validation host is available.
+  Expected on hosts without card/driver. Use `browser` or `stream` mode until hardware validation host is available.  
+  For final SDI acceptance procedure and evidence pack use `docs/phase6-decklink-validation-closure.md`.
 

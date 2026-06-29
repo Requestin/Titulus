@@ -5,8 +5,17 @@
 // and stream URL. Used by run-engines.sh to pick consumer per channel.
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Trash2, Loader2, Radio, Save, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-react';
-import { api, ApiError, type Channel, type KeyerMode, type OutputMode, type LicenseState } from '@/core/api';
+import { Plus, Trash2, Loader2, Radio, Save, RefreshCw, ShieldCheck, ShieldOff, ClipboardList } from 'lucide-react';
+import {
+  api,
+  ApiError,
+  type Channel,
+  type KeyerMode,
+  type OutputMode,
+  type LicenseState,
+  type Entitlements,
+  type AuditEvent,
+} from '@/core/api';
 import { Button } from '@/components/ui/Button';
 import { Field, Input, Select } from '@/components/ui/form';
 import { toast } from '@/core/toast';
@@ -48,9 +57,12 @@ export function SettingsPage() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [license, setLicense] = useState<LicenseState | null>(null);
+  const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
+  const [events, setEvents] = useState<AuditEvent[]>([]);
   const [licenseKey, setLicenseKey] = useState('');
   const [holder, setHolder] = useState('');
   const [licenseBusy, setLicenseBusy] = useState(false);
+  const [eventsBusy, setEventsBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -75,6 +87,31 @@ export function SettingsPage() {
   }, []);
 
   useEffect(() => { void loadLicense(); }, [loadLicense]);
+
+  const loadEntitlements = useCallback(async () => {
+    try {
+      setEntitlements(await api.billing.entitlements());
+    } catch (e) {
+      toast.error(`Failed to load entitlements: ${(e as Error).message}`);
+      setEntitlements(null);
+    }
+  }, []);
+
+  useEffect(() => { void loadEntitlements(); }, [loadEntitlements]);
+
+  const loadEvents = useCallback(async () => {
+    setEventsBusy(true);
+    try {
+      setEvents(await api.audit.events({ limit: 20 }));
+    } catch (e) {
+      toast.error(`Failed to load audit events: ${(e as Error).message}`);
+      setEvents([]);
+    } finally {
+      setEventsBusy(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadEvents(); }, [loadEvents]);
 
   useEffect(() => {
     if (!channels) return;
@@ -161,6 +198,7 @@ export function SettingsPage() {
         holder: holder.trim() || undefined,
       });
       setLicense(state);
+      await Promise.all([loadEntitlements(), loadEvents()]);
       setLicenseKey('');
       toast.success('License activated');
     } catch (e) {
@@ -177,6 +215,7 @@ export function SettingsPage() {
     try {
       const state = await api.license.deactivate();
       setLicense(state);
+      await Promise.all([loadEntitlements(), loadEvents()]);
       toast.success('License deactivated');
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : (e as Error).message;
@@ -337,7 +376,7 @@ export function SettingsPage() {
                 <Button
                   variant="neutral"
                   size="sm"
-                  onClick={() => void loadLicense()}
+                  onClick={() => void Promise.all([loadLicense(), loadEntitlements(), loadEvents()])}
                   disabled={licenseBusy}
                 >
                   <RefreshCw className={cn('h-4 w-4', licenseBusy && 'animate-spin')} aria-hidden />
@@ -354,6 +393,15 @@ export function SettingsPage() {
                 {license?.lastError ? (
                   <div className="text-warning">Last error: {license.lastError}</div>
                 ) : null}
+              </div>
+
+              <div className="rounded-md border border-border bg-surface-2 p-3 text-[12px] text-ink-muted">
+                <div className="mb-1 font-medium text-ink">Entitlements</div>
+                <div>Plan resolved: <span className="text-ink">{entitlements?.plan ?? 'none'}</span></div>
+                <div>Max channels: <span className="text-ink">{entitlements?.limits.maxChannels ?? 0}</span></div>
+                <div>DeckLink enabled: <span className="text-ink">{entitlements?.limits.decklink ? 'yes' : 'no'}</span></div>
+                <div>Stream enabled: <span className="text-ink">{entitlements?.limits.stream ? 'yes' : 'no'}</span></div>
+                <div>Users: <span className="text-ink">{entitlements?.limits.users ?? 1}</span></div>
               </div>
 
               <Field label="License key">
@@ -381,6 +429,36 @@ export function SettingsPage() {
                   Deactivate
                 </Button>
               </div>
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="flex items-center gap-2 text-sm font-semibold">
+                  <ClipboardList className="h-4 w-4 text-info" aria-hidden />
+                  Audit events
+                </h4>
+                <Button variant="neutral" size="sm" onClick={() => void loadEvents()} disabled={eventsBusy}>
+                  {eventsBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+                  Refresh
+                </Button>
+              </div>
+              {events.length === 0 ? (
+                <p className="text-[12px] text-ink-faint">No events yet.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {events.slice(0, 12).map((ev) => (
+                    <li key={ev.id} className="rounded-md border border-border bg-surface-2 px-2.5 py-2 text-[12px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-medium text-ink">{ev.eventType}</span>
+                        <span className="tnum text-ink-faint">{ev.status}</span>
+                      </div>
+                      <div className="mt-0.5 truncate text-ink-muted">
+                        {ev.method} {ev.path} · {ev.username || 'system'} · {ev.createdAt}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         )}
