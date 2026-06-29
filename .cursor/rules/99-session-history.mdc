@@ -56,6 +56,14 @@ alwaysApply: true
 - `engine/CMakeLists.txt` дополнен DeckLink build guard: consumer собирается при наличии SDK headers, runtime грузится через `dlopen(libDeckLinkAPI.so)`.
 - Создан `docs/phase3-decklink-validation-deferred.md` с hardware checklist (genlock lock, 8h soak, A/B parity vs CasparCG).
 
+### Phase 4.1 (On-air persistence hardening) — DONE
+- `backend/src/db.js`: добавлен `on_air.order_index` (с runtime migration через `PRAGMA table_info`) для детерминированного порядка replay после рестарта.
+- `onAirDao.set()` теперь управляет `bringToFront` и хранит стабильный z-order; `forChannel/all` реплеят с сортировкой по `order_index`.
+- `onAirDao.get()` добавлен для точечного update без полного скана channel rows.
+- JSON parse в `on_air` чтении hardened: malformed rows skip без падения backend startup/replay.
+- `backend/src/onair.js`: `applyTake`/`applyUpdate` используют новый DAO контракт (`bringToFront=true/false`) чтобы порядок TAKE/UPDATE совпадал до и после рестарта.
+- `backend/src/routes/ws.js`: обработка control WS команд обёрнута в try/catch; ошибка не валит backend process, клиент получает `{type:'error', error:...}`.
+
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
 ### 1. `/root/Titulus/data` нестабилен для SQLite (SQLITE_IOERR_SHORT_READ)

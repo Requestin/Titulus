@@ -23,7 +23,18 @@ export function wsRouter(db, onAir) {
       } catch {
         return; // ignore malformed
       }
-      onAir.handleControlCommand(msg);
+      try {
+        onAir.handleControlCommand(msg);
+      } catch (err) {
+        // Keep WS hub alive on command processing errors; never crash backend
+        // from a single malformed or failing control payload.
+        const reason = err instanceof Error ? err.message : 'on-air command failed';
+        try {
+          ws.send(JSON.stringify({ type: 'error', error: reason }));
+        } catch {
+          // no-op
+        }
+      }
     });
   });
 

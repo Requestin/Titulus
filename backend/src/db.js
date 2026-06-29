@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS on_air (
   channel_id   TEXT NOT NULL,
   template_id  TEXT NOT NULL,
   command_json TEXT NOT NULL,
+  order_index  INTEGER NOT NULL DEFAULT 0,
   taken_at     TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (channel_id, template_id)
 );
@@ -71,7 +72,17 @@ export function openDb(dbPath) {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+  ensureOnAirOrderIndex(db);
   return db;
+}
+
+/** @param {Database} db */
+function ensureOnAirOrderIndex(db) {
+  const cols = db.prepare(`PRAGMA table_info(on_air)`).all();
+  const hasOrderIndex = cols.some((c) => c.name === 'order_index');
+  if (!hasOrderIndex) {
+    db.exec(`ALTER TABLE on_air ADD COLUMN order_index INTEGER NOT NULL DEFAULT 0`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -243,25 +254,71 @@ export const settingsDao = (db) => ({
 export const onAirDao = (db) => ({
   /** All current take commands, keyed by channelId -> array of command objects. */
   all() {
-    const rows = db.prepare('SELECT channel_id, template_id, command_json FROM on_air').all();
+    const rows = db.prepare(
+      `SELECT channel_id, template_id, command_json
+       FROM on_air
+       ORDER BY channel_id ASC, order_index ASC, taken_at ASC, template_id ASC`,
+    ).all();
     const map = {};
     for (const r of rows) {
       if (!map[r.channel_id]) map[r.channel_id] = [];
-      map[r.channel_id].push(JSON.parse(r.command_json));
+      try {
+        map[r.channel_id].push(JSON.parse(r.command_json));
+      } catch {
+        // Skip malformed persisted payloads instead of crashing backend startup.
+      }
     }
     return map;
   },
   /** Commands for a single channel (for replay to a renderer that just connected). */
   forChannel(channelId) {
-    return db.prepare('SELECT command_json FROM on_air WHERE channel_id = ?').all(channelId)
-      .map((r) => JSON.parse(r.command_json));
+    const rows = db.prepare(
+      `SELECT command_json
+       FROM on_air
+       WHERE channel_id = ?
+       ORDER BY order_index ASC, taken_at ASC, template_id ASC`,
+    ).all(channelId);
+    const out = [];
+    for (const r of rows) {
+      try {
+        out.push(JSON.parse(r.command_json));
+      } catch {
+        // Skip malformed row to keep reconnect flow alive.
+      }
+    }
+    return out;
+  },
+  /** Single persisted command (or null) for channel/template key. */
+  get(channelId, templateId) {
+    const row = db.prepare(
+      'SELECT command_json FROM on_air WHERE channel_id = ? AND template_id = ?',
+    ).get(channelId, templateId);
+    if (!row) return null;
+    try {
+      return JSON.parse(row.command_json);
+    } catch {
+      return null;
+    }
   },
   /** Persist a take. */
-  set(command) {
+  set(command, { bringToFront = true } = {}) {
+    const existing = db.prepare(
+      'SELECT order_index FROM on_air WHERE channel_id = ? AND template_id = ?',
+    ).get(command.channelId, command.templateId);
+    const max = db.prepare(
+      'SELECT COALESCE(MAX(order_index), 0) AS n FROM on_air WHERE channel_id = ?',
+    ).get(command.channelId).n;
+    const orderIndex = bringToFront
+      ? (max + 1)
+      : (existing ? existing.order_index : (max + 1));
     db.prepare(
-      `INSERT INTO on_air (channel_id, template_id, command_json) VALUES (?, ?, ?)
-       ON CONFLICT(channel_id, template_id) DO UPDATE SET command_json = excluded.command_json, taken_at = datetime('now')`,
-    ).run(command.channelId, command.templateId, JSON.stringify(command));
+      `INSERT INTO on_air (channel_id, template_id, command_json, order_index)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(channel_id, template_id) DO UPDATE SET
+         command_json = excluded.command_json,
+         order_index = excluded.order_index,
+         taken_at = datetime('now')`,
+    ).run(command.channelId, command.templateId, JSON.stringify(command), orderIndex);
   },
   /** Remove a clear. */
   remove(channelId, templateId) {
