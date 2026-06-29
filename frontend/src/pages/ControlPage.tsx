@@ -7,12 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  DndContext, PointerSensor, useSensor, useSensors, closestCenter, type DragEndEvent,
-} from '@dnd-kit/core';
-import { SortableContext, useSortable, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { Copy, Check, X, Radio, GripVertical, Trash2 } from 'lucide-react';
+import { Copy, Check, X, Radio, Trash2 } from 'lucide-react';
 import { api, type Channel, type TemplateSummary, type TemplateRecord, type Rundown } from '@/core/api';
 import { useControlWs, type WsStatus } from '@/core/controlWs';
 import { toast } from '@/core/toast';
@@ -21,6 +16,7 @@ import { Select } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { ProgramMonitor } from '@/control/ProgramMonitor';
 import { VariableValues } from '@/control/VariableValues';
+import { RundownTab } from '@/control/RundownTab';
 
 export function ControlPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -29,6 +25,7 @@ export function ControlPage() {
   const [rundowns, setRundowns] = useState<Rundown[]>([]);
   const [onAir, setOnAir] = useState<Record<string, string[]>>({});
   const [tab, setTab] = useState<'templates' | 'rundowns'>('templates');
+  const [rundownMonitorChannel, setRundownMonitorChannel] = useState<string>('');
 
   const status = useControlWs((s) => s.status);
   const connect = useControlWs((s) => s.connect);
@@ -44,7 +41,7 @@ export function ControlPage() {
         ]);
         setChannels(ch);
         setTemplates(tpl);
-        setRundowns(rd);
+        setRundowns(rd.map(normalizeRundown));
         setOnAir(air);
         if (ch.length && !channelId) setChannelId(ch[0].id);
       } catch (e) {
@@ -55,6 +52,10 @@ export function ControlPage() {
   }, []);
 
   const live = onAir[channelId] ?? [];
+  const monitorChannelId = tab === 'rundowns'
+    ? (rundownMonitorChannel || channelId || 'default')
+    : (channelId || 'default');
+  const monitorLive = onAir[monitorChannelId] ?? [];
 
   const markTaken = useCallback((tid: string) => {
     setOnAir((prev) => ({ ...prev, [channelId]: Array.from(new Set([...(prev[channelId] ?? []), tid])) }));
@@ -76,13 +77,20 @@ export function ControlPage() {
     send({ type: 'clear', channelId, templateId });
     markCleared(templateId);
   }
+  function clearFromChannel(targetChannelId: string, templateId: string) {
+    send({ type: 'clear', channelId: targetChannelId, templateId });
+    setOnAir((prev) => ({
+      ...prev,
+      [targetChannelId]: (prev[targetChannelId] ?? []).filter((x) => x !== templateId),
+    }));
+  }
   function clearAll() {
     if (!channelId) return;
     send({ type: 'clear', channelId });
     setOnAir((prev) => ({ ...prev, [channelId]: [] }));
   }
 
-  const browserSourceUrl = channelId ? `${location.origin}/channel.html?channel=${channelId}` : '';
+  const browserSourceUrl = monitorChannelId ? `${location.origin}/channel.html?channel=${monitorChannelId}` : '';
 
   if (channels.length === 0) {
     return (
@@ -107,9 +115,11 @@ export function ControlPage() {
         <WsBadge status={status} />
         <div className="ml-auto flex items-center gap-2">
           <BrowserSourceUrl url={browserSourceUrl} />
-          <Button variant="danger" size="sm" onClick={clearAll} disabled={live.length === 0}>
-            <Trash2 className="h-4 w-4" aria-hidden /> Clear all
-          </Button>
+          {tab === 'templates' && (
+            <Button variant="danger" size="sm" onClick={clearAll} disabled={live.length === 0}>
+              <Trash2 className="h-4 w-4" aria-hidden /> Clear all
+            </Button>
+          )}
         </div>
       </div>
 
@@ -133,23 +143,35 @@ export function ControlPage() {
           <div className="min-h-0 flex-1 overflow-auto">
             {tab === 'templates'
               ? <TemplatesTab templates={templates} live={live} onTake={take} onUpdate={update} onClear={clear} />
-              : <RundownsTab rundowns={rundowns} channelId={channelId} setRundowns={setRundowns} live={live} onTake={take} onClear={clear} />}
+              : (
+                <RundownTab
+                  channels={channels}
+                  templates={templates}
+                  rundowns={rundowns}
+                  setRundowns={setRundowns}
+                  onAir={onAir}
+                  setOnAir={setOnAir}
+                  fallbackChannelId={channelId || 'default'}
+                  send={send}
+                  onPreferredChannelChange={setRundownMonitorChannel}
+                />
+              )}
           </div>
         </div>
 
         {/* Right: monitor + on-air */}
         <div className="flex min-h-0 flex-col gap-4 overflow-auto p-4">
-          {channelId && <ProgramMonitor channelId={channelId} />}
+          {monitorChannelId && <ProgramMonitor channelId={monitorChannelId} />}
           <div>
-            <h3 className="mb-2 text-[12px] font-semibold text-ink-muted">On air ({live.length})</h3>
-            {live.length === 0 ? (
+            <h3 className="mb-2 text-[12px] font-semibold text-ink-muted">On air ({monitorLive.length})</h3>
+            {monitorLive.length === 0 ? (
               <p className="text-[12px] text-ink-faint">Nothing on air.</p>
             ) : (
               <ul className="space-y-1">
-                {live.map((tid) => (
+                {monitorLive.map((tid) => (
                   <li key={tid} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
-                    <span className="min-w-0 flex-1 truncate text-[13px]">{templates.find((t) => t.id === tid)?.name ?? tid}</span>
-                    <button onClick={() => clear(tid)} className="text-ink-faint hover:text-danger" aria-label="Clear"><X className="h-4 w-4" /></button>
+                    <span className="min-w-0 flex-1 truncate text-[13px]">{displayOnAirName(tid, templates, rundowns) ?? tid}</span>
+                    <button onClick={() => clearFromChannel(monitorChannelId, tid)} className="text-ink-faint hover:text-danger" aria-label="Clear"><X className="h-4 w-4" /></button>
                   </li>
                 ))}
               </ul>
@@ -281,103 +303,29 @@ function TemplatesTab({
   );
 }
 
-function RundownsTab({
-  rundowns, channelId, setRundowns, live, onTake, onClear,
-}: {
-  rundowns: Rundown[];
-  channelId: string;
-  setRundowns: (r: Rundown[]) => void;
-  live: string[];
-  onTake: (rec: TemplateRecord, values: Record<string, string | number>) => void;
-  onClear: (templateId: string) => void;
-}) {
-  const forChannel = rundowns.filter((r) => !r.channel_id || r.channel_id === channelId);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-
-  async function takeSlot(templateId: string, vars?: Record<string, string | number>) {
-    try {
-      const rec = await api.templates.get(templateId);
-      const values: Record<string, string | number> = {};
-      for (const v of rec.data.variables) values[v.id] = v.defaultValue;
-      onTake(rec, { ...values, ...(vars ?? {}) });
-    } catch (e) {
-      toast.error(`Take failed: ${(e as Error).message}`);
-    }
-  }
-
-  async function reorder(rundown: Rundown, e: DragEndEvent) {
-    const { active, over } = e;
-    if (!over || active.id === over.id) return;
-    const ids = rundown.slots.map((s) => s.id);
-    const from = ids.indexOf(String(active.id));
-    const to = ids.indexOf(String(over.id));
-    const slots = arrayMove(rundown.slots, from, to);
-    setRundowns(rundowns.map((r) => (r.id === rundown.id ? { ...r, slots } : r)));
-    try {
-      await api.rundowns.update(rundown.id, { slots });
-    } catch (e2) {
-      toast.error(`Reorder failed: ${(e2 as Error).message}`);
-    }
-  }
-
-  if (forChannel.length === 0) {
-    return <p className="p-6 text-center text-[13px] text-ink-faint">No rundowns for this channel.</p>;
-  }
-
-  return (
-    <div className="space-y-4 p-3">
-      {forChannel.map((r) => (
-        <div key={r.id} className="rounded-lg border border-border">
-          <div className="border-b border-border px-3 py-2 text-[13px] font-medium">{r.name}</div>
-          {r.slots.length === 0 ? (
-            <p className="px-3 py-3 text-[12px] text-ink-faint">No slots.</p>
-          ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => reorder(r, e)}>
-              <SortableContext items={r.slots.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-                <ul className="divide-y divide-border">
-                  {r.slots.map((s) => (
-                    <SlotRow
-                      key={s.id}
-                      id={s.id}
-                      label={s.label ?? s.templateId}
-                      live={live.includes(s.templateId)}
-                      onTake={() => takeSlot(s.templateId, s.variables)}
-                      onClear={() => onClear(s.templateId)}
-                    />
-                  ))}
-                </ul>
-              </SortableContext>
-            </DndContext>
-          )}
-        </div>
-      ))}
-    </div>
-  );
+function normalizeRundown(rundown: Rundown): Rundown {
+  const slots = Array.isArray(rundown.slots) ? rundown.slots : [];
+  return {
+    ...rundown,
+    slots: slots.map((slot, idx) => {
+      const vars = slot.vars ?? slot.variables ?? {};
+      const name = slot.name ?? slot.label ?? `Slot ${idx + 1}`;
+      return {
+        ...slot,
+        slotId: slot.slotId ?? slot.id ?? crypto.randomUUID(),
+        name,
+        vars,
+      };
+    }),
+  };
 }
 
-function SlotRow({
-  id, label, live, onTake, onClear,
-}: {
-  id: string;
-  label: string;
-  live: boolean;
-  onTake: () => void;
-  onClear: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  return (
-    <li
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn('flex items-center gap-2 px-2 py-1.5', isDragging && 'opacity-60')}
-    >
-      <button {...attributes} {...listeners} className="cursor-grab text-ink-faint" aria-label="Reorder">
-        <GripVertical className="h-4 w-4" />
-      </button>
-      {live && <span className="h-2 w-2 shrink-0 rounded-full bg-live" aria-label="on air" />}
-      <span className="min-w-0 flex-1 truncate text-[13px]">{label}</span>
-      <Button variant="danger" size="sm" onClick={onTake}>TAKE</Button>
-      <Button variant="neutral" size="sm" onClick={onClear} disabled={!live}>CLEAR</Button>
-    </li>
-  );
+function displayOnAirName(id: string, templates: TemplateSummary[], rundowns: Rundown[]): string {
+  const tpl = templates.find((t) => t.id === id);
+  if (tpl) return tpl.name;
+  for (const rundown of rundowns) {
+    const slot = rundown.slots.find((s) => s.slotId === id);
+    if (slot) return `${rundown.name} / ${slot.name}`;
+  }
+  return id;
 }

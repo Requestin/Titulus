@@ -194,6 +194,29 @@ curl -s -X POST http://127.0.0.1:3002/api/uploads \
   -F 'file=@/path/to/video.mp4;type=video/mp4'
 ```
 
+### 8.4 Rundown v2 (slot-aware) smoke
+
+1. Открой `http://127.0.0.1:3011/control`, вкладка `Rundowns`.
+2. Создай rundown, добавь 2+ slot'а (можно с одним и тем же template).
+3. Назначь channel binding (или оставь default).
+4. Проверь transport:
+   - `PREV` / `NEXT` фокусируют и TAKE-ят соответствующий slot,
+   - `Space` = TAKE focused slot + переход к следующему,
+   - `ArrowUp/ArrowDown` меняют фокус,
+   - `Delete/Backspace` clear focused on-air slot.
+5. Разверни slot и измени vars — для on-air slot изменения должны уйти как `update`.
+6. Reload страницы: on-air статус slot'ов должен восстановиться из `/api/onair`.
+
+REST smoke для rundown API:
+
+```bash
+curl -s http://127.0.0.1:3002/api/rundowns \
+  -H "Authorization: Bearer ${TOKEN}" | jq
+
+curl -s http://127.0.0.1:3002/api/rundowns/<id> \
+  -H "Authorization: Bearer ${TOKEN}" | jq
+```
+
 ## 9. DeckLink hardware validation handoff
 
 For final SDI acceptance (Phase 6.4), use:
@@ -248,4 +271,8 @@ Legacy stack scripts:
 
 - **DeckLink runtime unavailable on dev host**  
   Expected without card/driver. Use `browser`/`stream` until hardware host validation.
+
+- **Rundown slots from old DB look inconsistent**  
+  Open/modify/save rundown once: backend applies soft normalization from legacy
+  slot shape (`id/label/variables`) to canonical (`slotId/name/vars`).
 
