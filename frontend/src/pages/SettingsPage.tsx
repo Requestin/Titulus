@@ -5,8 +5,8 @@
 // and stream URL. Used by run-engines.sh to pick consumer per channel.
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Trash2, Loader2, Radio, Save } from 'lucide-react';
-import { api, ApiError, type Channel, type KeyerMode, type OutputMode } from '@/core/api';
+import { Plus, Trash2, Loader2, Radio, Save, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-react';
+import { api, ApiError, type Channel, type KeyerMode, type OutputMode, type LicenseState } from '@/core/api';
 import { Button } from '@/components/ui/Button';
 import { Field, Input, Select } from '@/components/ui/form';
 import { toast } from '@/core/toast';
@@ -47,6 +47,10 @@ export function SettingsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [license, setLicense] = useState<LicenseState | null>(null);
+  const [licenseKey, setLicenseKey] = useState('');
+  const [holder, setHolder] = useState('');
+  const [licenseBusy, setLicenseBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -60,6 +64,17 @@ export function SettingsPage() {
   }, [selectedId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const loadLicense = useCallback(async () => {
+    try {
+      setLicense(await api.license.get());
+    } catch (e) {
+      toast.error(`Failed to load license: ${(e as Error).message}`);
+      setLicense(null);
+    }
+  }, []);
+
+  useEffect(() => { void loadLicense(); }, [loadLicense]);
 
   useEffect(() => {
     if (!channels) return;
@@ -131,6 +146,43 @@ export function SettingsPage() {
       await load();
     } catch (e) {
       toast.error(`Delete failed: ${(e as Error).message}`);
+    }
+  }
+
+  async function activateLicense() {
+    if (!licenseKey.trim()) {
+      toast.error('License key is required');
+      return;
+    }
+    setLicenseBusy(true);
+    try {
+      const state = await api.license.activate({
+        licenseKey: licenseKey.trim(),
+        holder: holder.trim() || undefined,
+      });
+      setLicense(state);
+      setLicenseKey('');
+      toast.success('License activated');
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : (e as Error).message;
+      toast.error(msg);
+    } finally {
+      setLicenseBusy(false);
+    }
+  }
+
+  async function deactivateLicense() {
+    if (!window.confirm('Deactivate current license?')) return;
+    setLicenseBusy(true);
+    try {
+      const state = await api.license.deactivate();
+      setLicense(state);
+      toast.success('License deactivated');
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : (e as Error).message;
+      toast.error(msg);
+    } finally {
+      setLicenseBusy(false);
     }
   }
 
@@ -265,6 +317,70 @@ export function SettingsPage() {
                   <Trash2 className="h-4 w-4" aria-hidden /> Delete
                 </Button>
               )}
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="flex items-center gap-2 text-sm font-semibold">
+                    {license?.status === 'active' ? (
+                      <ShieldCheck className="h-4 w-4 text-success" aria-hidden />
+                    ) : (
+                      <ShieldOff className="h-4 w-4 text-warning" aria-hidden />
+                    )}
+                    License
+                  </h4>
+                  <p className="text-[12px] text-ink-muted">
+                    Phase 6 foundation: local activation state for SaaS/on-prem licensing.
+                  </p>
+                </div>
+                <Button
+                  variant="neutral"
+                  size="sm"
+                  onClick={() => void loadLicense()}
+                  disabled={licenseBusy}
+                >
+                  <RefreshCw className={cn('h-4 w-4', licenseBusy && 'animate-spin')} aria-hidden />
+                  Refresh
+                </Button>
+              </div>
+
+              <div className="grid gap-2 text-[12px] text-ink-muted">
+                <div>Status: <span className="font-medium text-ink">{license?.status ?? 'unknown'}</span></div>
+                <div>Plan: <span className="font-medium text-ink">{license?.plan ?? 'none'}</span></div>
+                <div>Holder: <span className="font-medium text-ink">{license?.holder || '—'}</span></div>
+                <div>Key: <span className="font-medium text-ink">{license?.hasKey ? license?.keyMasked : 'not set'}</span></div>
+                <div>Expires: <span className="font-medium text-ink">{license?.expiresAt ?? '—'}</span></div>
+                {license?.lastError ? (
+                  <div className="text-warning">Last error: {license.lastError}</div>
+                ) : null}
+              </div>
+
+              <Field label="License key">
+                <Input
+                  value={licenseKey}
+                  placeholder="TIT-XXXX-XXXX-XXXX-XXXX"
+                  onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+                />
+              </Field>
+
+              <Field label="Holder (optional)">
+                <Input
+                  value={holder}
+                  placeholder="Company / owner"
+                  onChange={(e) => setHolder(e.target.value)}
+                />
+              </Field>
+
+              <div className="flex items-center gap-2">
+                <Button variant="primary" onClick={() => void activateLicense()} disabled={licenseBusy}>
+                  {licenseBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+                  Activate
+                </Button>
+                <Button variant="ghost" onClick={() => void deactivateLicense()} disabled={licenseBusy || !license?.hasKey}>
+                  Deactivate
+                </Button>
+              </div>
             </div>
           </div>
         )}

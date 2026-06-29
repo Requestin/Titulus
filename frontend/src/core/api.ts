@@ -60,9 +60,23 @@ export interface UploadJob {
   updatedAt?: string;
 }
 
+export interface LicenseState {
+  status: 'unlicensed' | 'active' | 'expired' | 'invalid';
+  plan: string;
+  holder: string;
+  hasKey: boolean;
+  keyMasked: string;
+  activatedAt: string | null;
+  expiresAt: string | null;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+}
+
 export interface ValidationError {
   path: string;
   message: string;
+  keyword?: string;
+  schemaPath?: string;
   params?: unknown;
 }
 
@@ -90,9 +104,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text();
   const body = text ? safeJson(text) : null;
   if (!res.ok) {
-    const msg = (body && typeof body === 'object' && 'error' in body
-      ? String((body as { error: unknown }).error)
-      : `${res.status} ${res.statusText}`);
+    const msg = errorMessageFromBody(body, `${res.status} ${res.statusText}`);
     throw new ApiError(res.status, msg, body);
   }
   return body as T;
@@ -104,6 +116,18 @@ function safeJson(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+function errorMessageFromBody(body: unknown, fallback: string): string {
+  if (!body || typeof body !== 'object') return fallback;
+  if (!('error' in body)) return fallback;
+  const err = (body as { error: unknown }).error;
+  if (typeof err === 'string') return err;
+  if (err && typeof err === 'object' && 'message' in err) {
+    const msg = (err as { message: unknown }).message;
+    if (typeof msg === 'string' && msg.trim()) return msg;
+  }
+  return fallback;
 }
 
 export const api = {
@@ -158,6 +182,14 @@ export const api = {
   },
   onair: {
     get: () => req<OnAirSnapshot>('/api/onair'),
+  },
+  license: {
+    get: () => req<LicenseState>('/api/license'),
+    activate: (body: { licenseKey: string; holder?: string; plan?: string }) =>
+      req<LicenseState>('/api/license/activate', { method: 'POST', body: JSON.stringify(body) }),
+    deactivate: () => req<LicenseState>('/api/license/deactivate', { method: 'POST' }),
+    check: (body: { status?: LicenseState['status']; lastError?: string }) =>
+      req<LicenseState>('/api/license/check', { method: 'POST', body: JSON.stringify(body) }),
   },
   health: () => req<{ ok: boolean; service: string }>('/api/health'),
 };

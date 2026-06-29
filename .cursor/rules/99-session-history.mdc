@@ -99,6 +99,12 @@ alwaysApply: true
 - Runbook покрывает: fresh Ubuntu bootstrap, runtime/backend/frontend setup, engine build, channel config, stream/decklink notes, smoke checks, shutdown и troubleshooting.
 - Architecture doc фиксирует текущий control-plane/render-plane контракт и Phase 5 состояния.
 
+### Phase 6.1 (License activation foundation) — IN PROGRESS
+- Начат enterprise/SaaS трек: backend license state persistence (`license_state`) + DAO groundwork.
+- Добавлен license API foundation (`/api/license`, `/activate`, `/deactivate`, `/check`) со структурированными ошибками.
+- Settings UI расширен license-секцией (status, key mask, activate/deactivate) для операторской проверки состояния лицензии.
+- Это intentional local foundation без внешнего license provider; внешняя проверка/entitlement sync — следующий этап.
+
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
 ### 1. `/root/Titulus/data` нестабилен для SQLite (SQLITE_IOERR_SHORT_READ)
@@ -190,7 +196,7 @@ console.log('ALL OK');
 
 ## Контактные точки для нового агента
 
-- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → проверить deferred DeckLink HW validation status (Phase 3) → дочитать этот файл + `10-development-plan.mdc`
+- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → продолжить Phase 6.2 (tenant/auth boundary) → дочитать этот файл + `10-development-plan.mdc`
 - **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
-- **Текущая ветка работы:** `main` (Phase 5 DONE)
-- **Последний merged:** PR #33 (`[Phase 5.2] finalize shared template schema`) + PR #32 (`[Phase 5.1] ffmpeg stream consumer`)
+- **Текущая ветка работы:** `main` (Phase 6 started)
+- **Последний merged:** PR #34 (`[Phase 5.3] architecture and runbook documentation`)

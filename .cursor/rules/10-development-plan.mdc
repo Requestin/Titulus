@@ -14,9 +14,9 @@ alwaysApply: true
 - **Phase 3:** ✅ CODE-COMPLETE (DeckLink SDI consumer implemented; hardware validation deferred без HW)
 - **Phase 4:** ✅ DONE (backend hardening complete)
 - **Phase 5:** ✅ DONE (stream output + schema + architecture/runbook docs)
-- **Phase 6+:** ⏳ NEXT (future roadmap)
+- **Phase 6:** ⏳ IN PROGRESS (license activation foundation started)
 
-**СЛЕДУЮЩАЯ ЗАДАЧА:** Deferred DeckLink hardware validation (Phase 3 validation exit) на хосте с DeckLink+genlock; затем Phase 6+ roadmap tasks.
+**СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 6.2 — multi-tenant auth/billing foundation (tenant-aware auth boundaries, audit trail).
 
 ## Git история (merged PRs в main)
 
@@ -54,18 +54,18 @@ alwaysApply: true
 
 ---
 
-## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Deferred HW validation (Phase 3 exit)
+## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Phase 6.2 (multi-tenant auth/billing foundation)
 
-**Цель:** закрыть отложенную hardware-валидацию SDI path на bare-metal с DeckLink/genlock и зафиксировать parity против CasparCG.
+**Цель:** продолжить SaaS/enterprise roadmap после license foundation: добавить tenant-aware auth boundaries без ломки текущего operator workflow.
 
 **Что сделать:**
-1. Запустить `decklink` consumer на хосте с платой и внешним sync.
-2. Проверить `bmdReferenceLocked`, Fill+Key, weave UFF/LFF визуально и по счётчикам.
-3. Прогнать 8h soak без sustained drops.
-4. Провести A/B parity check `bg_engine` vs CasparCG на одинаковых шаблонах.
-5. Обновить `docs/phase3-decklink-validation*.md` и закрыть deferred статус.
+1. Ввести backend auth layer (token/session) без регресса локальной dev-сборки.
+2. Добавить tenant/user таблицы и минимальный RBAC каркас (operator/admin).
+3. Привязать CRUD mutating routes к auth context + audit log (who/when/what).
+4. Обновить frontend shell для auth entry/logout и guarded routes.
+5. PR `[Phase 6.2] auth+tenant foundation` → merge.
 
-**Exit:** Phase 3 hardware-validation DONE (снято deferred ограничение).
+**Phase 6.2 exit:** auth boundaries и tenant context включены, текущий control-loop сохраняет работоспособность.
 
 ---
 
@@ -140,6 +140,13 @@ alwaysApply: true
 - 5.1 `ffmpeg_consumer` (SRT/RTMP stream output in `bg_engine`) — ✅ DONE (#32)
 - 5.2 `shared/template.schema.json` final complete, AI-ready (REQ-9) — ✅ DONE (#33)
 - 5.3 `docs/ARCHITECTURE.md` + `docs/RUNBOOK.md` — ✅ DONE
+
+## Phase 6 — SaaS readiness / enterprise foundations ⏳ IN PROGRESS
+
+- 6.1 License activation foundation (`/api/license` + persistence + settings UI) — ⏳ in progress
+- 6.2 Tenant/auth boundary (RBAC baseline)
+- 6.3 Billing/entitlement hooks + audit events
+- 6.4 DeckLink deferred HW validation closure (external dependency: hardware host)
 
 ## Phase 6+ (future, НЕ MVP) ⏸
 
