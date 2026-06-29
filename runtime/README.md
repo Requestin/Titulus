@@ -1,9 +1,27 @@
-# `runtime/` — shared TypeScript render-logic package (SOURCE OF TRUTH)
+# `runtime/` - shared TypeScript render logic (source of truth)
 
-JSON template schema → DOM renderer. Loaded inside the CEF engine page, the
-editor preview, and thumbnails — one implementation everywhere (DEVELOPMENT_PROMPT §6).
+`@titulus/runtime` converts JSON template payloads into deterministic DOM output.
+It is reused by:
 
-Built by `build.mjs` (esbuild → IIFE) into `backend/public/bg-runtime.js`,
-exposed as `window.BG`.
+- engine runtime page (`channel.html` in CEF),
+- frontend editor preview (WYSIWYG),
+- monitoring/auxiliary rendering paths.
 
-Populated in **Phase 1** (`feature/phase-1-runtime-*`). Not yet implemented.
+## Key modules
+
+- `schema.ts`
+- `timeline.ts`
+- `domRenderer.ts`
+- `channelClient.ts`
+- `easing.ts`, `transform.ts`, `stackOrder.ts`, `clock.ts`, `fonts.ts`
+
+## Build
+
+```bash
+cd runtime
+npm run build
+```
+
+Output:
+
+- `backend/public/bg-runtime.js` (IIFE, `window.BG`)

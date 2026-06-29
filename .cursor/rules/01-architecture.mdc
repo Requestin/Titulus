@@ -8,11 +8,11 @@ alwaysApply: true
 
 ```
 ┌─ CONTROL PLANE (наш продукт) ───────────────────┐     ┌─ RENDER PLANE ≈ CasparCG Channel ─────────────┐
-│  frontend (React + Vite) :3000                  │     │  bg_engine (C++20 + CEF) — OUR binary         │
-│    /templates  /editor/:id  /control  /settings │     │  ┌─ HTML Producer (CEF OSR) ──────────────┐  │
+│  frontend (React + Vite) :3000/3011             │     │  bg_engine (C++20 + CEF) — OUR binary         │
+│    /login /templates /editor/:id /control /settings │ │  ┌─ HTML Producer (CEF OSR) ──────────────┐  │
 │                                                 │     │  │ channel.html + bg-runtime.js           │  │
-│  backend (Express + WS + SQLite) :3001          │◀───▶│  │ DOM mixer (multi-template stack)       │  │
-│    REST /api/*                                  │ WS  │  │ OnPaint → BGRA                         │  │
+│  backend (Express + WS + SQLite) :3001/3002     │◀───▶│  │ DOM mixer (multi-template stack)       │  │
+│    REST /api/* + auth/billing/audit             │ WS  │  │ OnPaint → BGRA                         │  │
 │    WS  /ws/control  /ws/renderer                │     │  └────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘     │           ↓                                   │
                                                         │  ┌─ Consumers ───────────────────────────┐  │
@@ -103,4 +103,6 @@ Titulus/
 
 ## Что реализовано (актуальный статус — см. 10-development-plan.mdc)
 
-Phase 0 (render plane proven) + Phase 1 (runtime + channel page) — DONE. Phase 2 (control plane) — в работе (backend core/channels/rundowns done; WS+media pending; frontend todo).
+Phase 0-5 — DONE.  
+Phase 6.1-6.3 — DONE (license + auth/RBAC + billing/audit baseline).  
+Phase 6.4 — handoff-ready, ждёт hardware execution на host с DeckLink+genlock.

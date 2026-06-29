@@ -120,4 +120,4 @@ Refs: Phase 0, CASPARRCG_PORTING.md §CEF init
 
 - При тестировании backend/engine всегда задавай `TITULUS_DATA=/tmp/...` (data-путь конфигурируем) — `/root/Titulus/data` нестабилен (SQLITE_IOERR).
 - Запуск backend: `cd /root/Titulus/backend && PORT=<port> TITULUS_DATA=/tmp/... node src/index.js` — НЕ из subshell `( )` (сбрасывает CWD).
-- Kill backend после теста: `pkill -f "PORT=<port>"`.
+- Kill backend после теста: по PID слушателя порта (`ss -ltnp | rg ':<port>'`) и `kill <pid>`.

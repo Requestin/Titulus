@@ -17,8 +17,8 @@ channel.html + bg-runtime.js  →  CEF HTML Producer (OSR)
 
 ## Status
 
-**Phase 0-3 code path is implemented** (runtime SDI validation for DeckLink is
-deferred until HW/genlock host):
+**Phase 0-6 code path is implemented** (DeckLink runtime acceptance still
+depends on HW/genlock host execution):
 
 | Component | Status |
 |---|---|
@@ -30,6 +30,7 @@ deferred until HW/genlock host):
 | `consumers/decklink_consumer.*` | ✅ code-complete (HW validation deferred) |
 | `consumers/ffmpeg_consumer.*` | ✅ done (raw BGRA -> ffmpeg stream child) |
 | `run-engines.sh`, `run-channel.sh`, `systemd/bg-engine@.service` | ✅ |
+| `collect-decklink-evidence.sh` (Phase 6.4 handoff) | ✅ |
 
 ## CLI (target, per §9.5)
 
@@ -53,3 +54,9 @@ make -j
 CEF distribution is downloaded into `third_party/cef/` by a bootstrap script
 (gitignored). DeckLink SDK header is read from `../../Blackmagic DeckLink SDK 16.0/`
 on the dev server (gitignored, conditional compile in Phase 3).
+
+## Operational notes
+
+- `run-engines.sh` is auth-aware (backend token or login credentials required).
+- Final SDI hardware closure uses `collect-decklink-evidence.sh` +
+  `docs/phase6-decklink-validation-closure.md`.
