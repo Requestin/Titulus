@@ -72,12 +72,42 @@ function normalizeControlMessage(msg) {
   };
 }
 
-export function wsRouter(onAir) {
+function parseControlToken(req) {
+  const q = typeof req.query?.token === 'string' ? req.query.token.trim() : '';
+  if (q) return q;
+  const header = req.headers.authorization || '';
+  const match = /^Bearer\s+(.+)$/.exec(header);
+  return match ? match[1].trim() : '';
+}
+
+export function wsRouter(onAir, auth) {
   const router = Router();
 
   // Control panel -> backend. Multiple control clients may connect; all are
   // pure senders (we don't push anything back here — status comes via REST).
   router.ws('/control', (ws, req) => {
+    const token = parseControlToken(req);
+    const session = auth?.authenticateToken ? auth.authenticateToken(token) : null;
+    if (!session) {
+      wsSendError(ws, 'AUTH_INVALID', 'valid auth token required');
+      try {
+        ws.close(4401, 'unauthorized');
+      } catch {
+        // ignore close errors
+      }
+      return;
+    }
+    const canControl = session.role === 'admin' || session.role === 'operator';
+    if (!canControl) {
+      wsSendError(ws, 'FORBIDDEN', 'insufficient role');
+      try {
+        ws.close(4403, 'forbidden');
+      } catch {
+        // ignore close errors
+      }
+      return;
+    }
+
     ws.on('message', (raw) => {
       const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw ?? '');
       if (Buffer.byteLength(text, 'utf8') > MAX_WS_CONTROL_BYTES) {

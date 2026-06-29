@@ -4,6 +4,7 @@
 // All paths are relative and proxied to the backend by Vite (§8.5).
 
 import type { Template } from '@runtime';
+import { getSessionToken } from '@/core/session';
 
 export interface TemplateSummary {
   id: string;
@@ -72,6 +73,47 @@ export interface LicenseState {
   lastError: string | null;
 }
 
+export type UserRole = 'operator' | 'admin';
+
+export interface AuthUser {
+  id: string;
+  tenantId: string;
+  username: string;
+  role: UserRole;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Entitlements {
+  status: 'unlicensed' | 'active' | 'expired' | 'invalid';
+  plan: 'none' | 'starter' | 'pro' | 'enterprise';
+  holder: string;
+  expiresAt: string | null;
+  limits: {
+    maxChannels: number;
+    decklink: boolean;
+    stream: boolean;
+    users: number;
+  };
+}
+
+export interface AuditEvent {
+  id: number;
+  tenantId: string | null;
+  userId: string | null;
+  username: string | null;
+  role: UserRole | null;
+  eventType: string;
+  method: string;
+  path: string;
+  status: number;
+  ip: string;
+  userAgent: string;
+  details: unknown;
+  createdAt: string;
+}
+
 export interface ValidationError {
   path: string;
   message: string;
@@ -95,10 +137,15 @@ export class ApiError extends Error {
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers ?? {});
+  const token = getSessionToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (init?.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
   const res = await fetch(path, {
-    headers: init?.body && !(init.body instanceof FormData)
-      ? { 'Content-Type': 'application/json', ...(init?.headers ?? {}) }
-      : init?.headers,
+    headers,
     ...init,
   });
   const text = await res.text();
@@ -131,6 +178,30 @@ function errorMessageFromBody(body: unknown, fallback: string): string {
 }
 
 export const api = {
+  auth: {
+    login: (username: string, password: string) =>
+      req<{ token: string; expiresAt: string; user: AuthUser }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      }),
+    logout: () => req<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
+    me: () => req<{ user: AuthUser; tenantId: string; role: UserRole }>('/api/auth/me'),
+    listUsers: () => req<AuthUser[]>('/api/auth/users'),
+    createUser: (body: { username: string; password: string; role?: UserRole }) =>
+      req<AuthUser>('/api/auth/users', { method: 'POST', body: JSON.stringify(body) }),
+  },
+  billing: {
+    entitlements: () => req<Entitlements>('/api/billing/entitlements'),
+  },
+  audit: {
+    events: (params?: { limit?: number; eventType?: string }) => {
+      const query = new URLSearchParams();
+      if (params?.limit) query.set('limit', String(params.limit));
+      if (params?.eventType) query.set('eventType', params.eventType);
+      const suffix = query.toString();
+      return req<AuditEvent[]>(`/api/audit/events${suffix ? `?${suffix}` : ''}`);
+    },
+  },
   templates: {
     list: () => req<TemplateSummary[]>('/api/templates'),
     get: (id: string) => req<TemplateRecord>(`/api/templates/${id}`),

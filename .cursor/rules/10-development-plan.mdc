@@ -14,15 +14,17 @@ alwaysApply: true
 - **Phase 3:** ✅ CODE-COMPLETE (DeckLink SDI consumer implemented; hardware validation deferred без HW)
 - **Phase 4:** ✅ DONE (backend hardening complete)
 - **Phase 5:** ✅ DONE (stream output + schema + architecture/runbook docs)
-- **Phase 6:** ⏳ IN PROGRESS (license activation foundation started)
+- **Phase 6:** ⏳ IN PROGRESS (auth/RBAC + billing/audit baseline delivered)
 
-**СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 6.2 — multi-tenant auth/billing foundation (tenant-aware auth boundaries, audit trail).
+**СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 6.4 — DeckLink deferred HW validation closure (runbook + handoff, requires hardware host for final acceptance).
 
 ## Git история (merged PRs в main)
 
 ```
 #33 [Phase 5.2] finalize shared template schema (AI-ready)
 #32 [Phase 5.1] ffmpeg stream consumer for bg_engine
+#35 [Phase 6.1] license activation foundation (backend + settings UI)
+#34 [Phase 5.3] architecture and runbook documentation
 #31 [Phase 4.4] cleanup + backend security baseline
 #30 [Phase 4.3] structured template validation API
 #29 [Phase 4.2] media robustness for uploads pipeline
@@ -54,18 +56,18 @@ alwaysApply: true
 
 ---
 
-## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Phase 6.2 (multi-tenant auth/billing foundation)
+## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Phase 6.4 (DeckLink deferred HW validation closure)
 
-**Цель:** продолжить SaaS/enterprise roadmap после license foundation: добавить tenant-aware auth boundaries без ломки текущего operator workflow.
+**Цель:** закрыть Phase 6 operationally: подготовить complete handoff/checklist для host с DeckLink+genlock и зафиксировать acceptance evidence format.
 
 **Что сделать:**
-1. Ввести backend auth layer (token/session) без регресса локальной dev-сборки.
-2. Добавить tenant/user таблицы и минимальный RBAC каркас (operator/admin).
-3. Привязать CRUD mutating routes к auth context + audit log (who/when/what).
-4. Обновить frontend shell для auth entry/logout и guarded routes.
-5. PR `[Phase 6.2] auth+tenant foundation` → merge.
+1. Зафиксировать hardware validation matrix (genlock lock, 8h soak, Fill+Key parity vs CasparCG).
+2. Добавить команды/скрипты и expected evidence (logs, scopes, screenshots/waveform captures).
+3. Обновить RUNBOOK/phase docs с пошаговой процедурой и rollback.
+4. Провести dry-run в dev-host режиме (без платы) и пометить блокеры как external dependency.
+5. PR `[Phase 6.4] decklink validation closure docs` → merge.
 
-**Phase 6.2 exit:** auth boundaries и tenant context включены, текущий control-loop сохраняет работоспособность.
+**Phase 6.4 exit:** handoff пакет готов; final acceptance remains blocked only by hardware availability.
 
 ---
 
@@ -143,10 +145,10 @@ alwaysApply: true
 
 ## Phase 6 — SaaS readiness / enterprise foundations ⏳ IN PROGRESS
 
-- 6.1 License activation foundation (`/api/license` + persistence + settings UI) — ⏳ in progress
-- 6.2 Tenant/auth boundary (RBAC baseline)
-- 6.3 Billing/entitlement hooks + audit events
-- 6.4 DeckLink deferred HW validation closure (external dependency: hardware host)
+- 6.1 License activation foundation (`/api/license` + persistence + settings UI) — ✅ DONE (#35)
+- 6.2 Tenant/auth boundary (RBAC baseline) — ✅ DONE (auth tokens/sessions, operator/admin roles, guarded routes, login/logout UI)
+- 6.3 Billing/entitlement hooks + audit events — ✅ DONE (entitlements API + billing hook skeleton + persisted audit log + settings visibility)
+- 6.4 DeckLink deferred HW validation closure (external dependency: hardware host) — ⏳ NEXT
 
 ## Phase 6+ (future, НЕ MVP) ⏸
 

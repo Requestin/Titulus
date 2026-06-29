@@ -14,8 +14,13 @@ import { dirname, resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
 import { openDb, settingsDao } from './db.js';
+import { createAuth } from './auth.js';
+import { createAudit } from './audit.js';
 import { OnAirManager } from './onair.js';
 import { MediaJobs } from './media.js';
+import { authRouter } from './routes/auth.js';
+import { auditRouter } from './routes/audit.js';
+import { billingRouter } from './routes/billing.js';
 import { templatesRouter } from './routes/templates.js';
 import { channelsRouter } from './routes/channels.js';
 import { rundownsRouter } from './routes/rundowns.js';
@@ -75,6 +80,10 @@ const db = openDb(resolve(DATA_DIR, 'app.db'));
 mkdirSync(UPLOADS_DIR, { recursive: true });
 
 app.locals.db = db;
+const auth = createAuth(db);
+app.locals.auth = auth;
+const audit = createAudit(db);
+app.locals.audit = audit;
 const onAir = new OnAirManager(db);
 app.locals.onAir = onAir;
 const media = new MediaJobs(UPLOADS_DIR);
@@ -83,22 +92,26 @@ app.locals.media = media;
 // ---------------------------------------------------------------------------
 // REST: templates / channels / rundowns / settings (§7.3).
 // ---------------------------------------------------------------------------
-app.use('/api/templates', templatesRouter(db));
-app.use('/api/channels', channelsRouter(db));
-app.use('/api/rundowns', rundownsRouter(db));
-app.use('/api/uploads', uploadsCors, uploadsRouter(media, UPLOADS_DIR));
-app.use('/api/license', licenseRouter(db));
+app.use('/api', audit.appendAudit);
+app.use('/api/auth', authRouter(auth));
+app.use('/api/billing', billingRouter(db, auth));
+app.use('/api/audit', auth.requireAuth, auth.requireRole('admin'), auditRouter(audit));
+app.use('/api/templates', auth.requireAuth, templatesRouter(db));
+app.use('/api/channels', auth.requireAuth, auth.requireRole('admin'), channelsRouter(db));
+app.use('/api/rundowns', auth.requireAuth, rundownsRouter(db));
+app.use('/api/uploads', auth.requireAuth, uploadsCors, uploadsRouter(media, UPLOADS_DIR));
+app.use('/api/license', auth.requireAuth, auth.requireRole('admin'), licenseRouter(db));
 
 // On-air snapshot for the control panel (§7.4). Separate from the WS router so
 // it sits under /api alongside the other REST endpoints.
-app.get('/api/onair', (req, res) => res.json(onAir.onAirTemplateIds()));
+app.get('/api/onair', auth.requireAuth, (req, res) => res.json(onAir.onAirTemplateIds()));
 
 // WebSocket hubs (§7.4): /ws/control (panel -> backend), /ws/renderer (engine).
-app.use('/ws', wsRouter(onAir));
+app.use('/ws', wsRouter(onAir, auth));
 
 // Settings: global key-value fallback (GET all / PUT replace).
-app.get('/api/settings', (req, res) => res.json(settingsDao(db).all()));
-app.put('/api/settings', (req, res) => {
+app.get('/api/settings', auth.requireAuth, (req, res) => res.json(settingsDao(db).all()));
+app.put('/api/settings', auth.requireAuth, auth.requireRole('admin'), (req, res) => {
   if (!req.body || typeof req.body !== 'object') {
     return res.status(400).json({ error: 'settings object required' });
   }

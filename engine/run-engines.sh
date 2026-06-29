@@ -11,6 +11,9 @@
 #   BACKEND_URL   default http://127.0.0.1:3001
 #   ENGINE_BIN    default engine/build/Release/bg_engine
 #   CACHE_ROOT    default /tmp/titulus-engines
+#   TITULUS_API_TOKEN     optional bearer token for protected API
+#   TITULUS_API_USER      default admin (used when token absent)
+#   TITULUS_API_PASSWORD  default admin123 (used when token absent)
 
 set -euo pipefail
 
@@ -19,6 +22,7 @@ RUN_CHANNEL="${ROOT}/engine/run-channel.sh"
 BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:3001}"
 ENGINE_BIN="${ENGINE_BIN:-${ROOT}/engine/build/Release/bg_engine}"
 CACHE_ROOT="${CACHE_ROOT:-/tmp/titulus-engines}"
+API_TOKEN="${TITULUS_API_TOKEN:-}"
 DRY_RUN=0
 
 usage() {
@@ -40,7 +44,8 @@ Maps output_mode -> consumer:
 Supervisor (run-channel.sh): exit 42 -> 6s restart; crash -> 3s backoff.
 CPU affinity: 2 dedicated physical cores per channel (taskset).
 
-Environment: BACKEND_URL, ENGINE_BIN, CACHE_ROOT
+Environment: BACKEND_URL, ENGINE_BIN, CACHE_ROOT, TITULUS_API_TOKEN,
+             TITULUS_API_USER, TITULUS_API_PASSWORD
 EOF
 }
 
@@ -69,7 +74,23 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 echo "[run-engines] fetching channels from ${BACKEND_URL}/api/channels"
-JSON="$(curl -sf "${BACKEND_URL}/api/channels")" || {
+
+if [[ -z "${API_TOKEN}" ]]; then
+  API_USER="${TITULUS_API_USER:-admin}"
+  API_PASSWORD="${TITULUS_API_PASSWORD:-admin123}"
+  login_payload="$(API_USER="$API_USER" API_PASSWORD="$API_PASSWORD" python3 -c "import json, os; print(json.dumps({'username': os.environ['API_USER'], 'password': os.environ['API_PASSWORD']}))")"
+  login_resp="$(curl -sf -H 'Content-Type: application/json' -d "$login_payload" "${BACKEND_URL}/api/auth/login" || true)"
+  if [[ -n "$login_resp" ]]; then
+    API_TOKEN="$(python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))" <<<"$login_resp" 2>/dev/null || true)"
+  fi
+fi
+
+if [[ -z "${API_TOKEN}" ]]; then
+  echo "run-engines.sh: missing API token; set TITULUS_API_TOKEN or TITULUS_API_USER/TITULUS_API_PASSWORD" >&2
+  exit 1
+fi
+
+JSON="$(curl -sf -H "Authorization: Bearer ${API_TOKEN}" "${BACKEND_URL}/api/channels")" || {
   echo "run-engines.sh: failed to fetch channels (is backend running at ${BACKEND_URL}?)" >&2
   exit 1
 }

@@ -5,6 +5,7 @@
 // + fans them out to renderers. Auto-reconnects every 3s. Vite proxies /ws.
 
 import { create } from 'zustand';
+import { getSessionToken } from '@/core/session';
 
 export type WsStatus = 'disconnected' | 'connecting' | 'connected';
 
@@ -26,7 +27,9 @@ interface ControlWsState {
 
 function wsUrl(): string {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${location.host}/ws/control`;
+  const token = getSessionToken();
+  const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+  return `${proto}://${location.host}/ws/control${suffix}`;
 }
 
 export const useControlWs = create<ControlWsState>((set, get) => ({
