@@ -13,14 +13,21 @@ alwaysApply: true
 - **Phase 2:** ✅ DONE (PRs #14-#23, control plane + media + frontend + output modes)
 - **Phase 3:** ✅ CODE-COMPLETE (DeckLink SDI consumer implemented; hardware validation deferred без HW)
 - **Phase 4:** ✅ DONE (backend hardening complete)
-- **Phase 5-6+:** ⏳ Phase 5 — следующая
+- **Phase 5:** ✅ DONE (stream output + schema + architecture/runbook docs)
+- **Phase 6+:** ⏳ NEXT (future roadmap)
 
-**СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 5.1 — `ffmpeg_consumer` (libavformat/avfilter/avcodec, BGRA, srt/rtmp).
+**СЛЕДУЮЩАЯ ЗАДАЧА:** Deferred DeckLink hardware validation (Phase 3 validation exit) на хосте с DeckLink+genlock; затем Phase 6+ roadmap tasks.
 
 ## Git история (merged PRs в main)
 
 ```
-#23 [Phase 2] output modes settings + run-engines.sh supervisor   ← последний merged
+#33 [Phase 5.2] finalize shared template schema (AI-ready)
+#32 [Phase 5.1] ffmpeg stream consumer for bg_engine
+#31 [Phase 4.4] cleanup + backend security baseline
+#30 [Phase 4.3] structured template validation API
+#29 [Phase 4.2] media robustness for uploads pipeline
+#28 [Phase 4.1] on-air persistence hardening
+#23 [Phase 2] output modes settings + run-engines.sh supervisor
 #22 [Phase 2] operator control panel — TAKE/UPDATE/CLEAR
 #21 [Phase 2] full timeline editor
 #20 [Phase 2] template editor core — WYSIWYG canvas
@@ -47,18 +54,18 @@ alwaysApply: true
 
 ---
 
-## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Phase 5.1 (`ffmpeg_consumer`)
+## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Deferred HW validation (Phase 3 exit)
 
-**Цель:** добавить production stream output path (SRT/RTMP) в `bg_engine`, CasparCG-aligned producer->consumer pipeline с BGRA source.
+**Цель:** закрыть отложенную hardware-валидацию SDI path на bare-metal с DeckLink/genlock и зафиксировать parity против CasparCG.
 
 **Что сделать:**
-1. Добавить `engine/src/consumers/ffmpeg_consumer.{h,cpp}` (in-process ffmpeg path)
-2. Поддержать `--consumer=stream --stream-url=...` в `main.cpp/config`
-3. Реализовать BGRA → AVFrame bridge + lifecycle + telemetry
-4. Прогнать smoke на localhost stream sink + зафиксировать в docs
-5. PR `[Phase 5.1] ffmpeg consumer` → merge
+1. Запустить `decklink` consumer на хосте с платой и внешним sync.
+2. Проверить `bmdReferenceLocked`, Fill+Key, weave UFF/LFF визуально и по счётчикам.
+3. Прогнать 8h soak без sustained drops.
+4. Провести A/B parity check `bg_engine` vs CasparCG на одинаковых шаблонах.
+5. Обновить `docs/phase3-decklink-validation*.md` и закрыть deferred статус.
 
-**Phase 5.1 exit:** `stream` consumer стабильно запускается, отправляет поток и корректно завершает lifecycle.
+**Exit:** Phase 3 hardware-validation DONE (снято deferred ограничение).
 
 ---
 
@@ -128,11 +135,11 @@ alwaysApply: true
 - 4.3 `/api/templates/validate` ajv structured errors — ✅ DONE
 - 4.4 remove dead code/legacy; security baseline (NFR-3) — ✅ DONE
 
-## Phase 5 — Cloud outputs + AI foundation + docs ⏳
+## Phase 5 — Cloud outputs + AI foundation + docs ✅ DONE
 
-- 5.1 `ffmpeg_consumer` (libavformat/avfilter/avcodec, BGRA, srt/rtmp; VP9/WebM alpha)
-- 5.2 `shared/template.schema.json` final complete, AI-ready (REQ-9)
-- 5.3 `docs/ARCHITECTURE.md` + `docs/RUNBOOK.md`
+- 5.1 `ffmpeg_consumer` (SRT/RTMP stream output in `bg_engine`) — ✅ DONE (#32)
+- 5.2 `shared/template.schema.json` final complete, AI-ready (REQ-9) — ✅ DONE (#33)
+- 5.3 `docs/ARCHITECTURE.md` + `docs/RUNBOOK.md` — ✅ DONE
 
 ## Phase 6+ (future, НЕ MVP) ⏸
 
