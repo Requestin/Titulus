@@ -3,15 +3,9 @@
 // Anchor-aware transform math + CSS transform-string builder
 // (DEVELOPMENT_PROMPT §6.2 layer transforms).
 //
-// A layer is laid out as:
-//   - top-left at (x, y) in canvas px
-//   - sized width × height
-//   - rotated/scaled around an anchor that is a 0..1 pivot inside the box
-//   - optional 3D rotation (rotationX/Y) when perspective > 0
-//
-// We position the element with left/top (so the box origin is the top-left) and
-// apply rotation/scale via a transform-origin set to the anchor, which keeps the
-// CSS transform matrix simple and matches what the editor selection box shows.
+// A layer's transform stores the **pivot (anchor) position** in parent space as
+// `x`/`y`. The DOM top-left is derived: left = x - width*anchorX, etc.
+// Rotation and scale apply around that pivot via transform-origin on the box.
 
 import type { Transform } from './schema.js';
 
@@ -57,14 +51,36 @@ export function applyTransform(
   }
 
   return {
-    left: t.x,
-    top: t.y,
+    left: t.x - originX,
+    top: t.y - originY,
     width: t.width,
     height: t.height,
     originX,
     originY,
     transform: parts.length ? parts.join(' ') : 'none',
   };
+}
+
+/**
+ * Adjust x/y when the user moves the anchor pivot so the unrotated visual
+ * placement stays fixed. `x`/`y` are the pivot position in parent space.
+ */
+export function anchorCompensatedUpdate(
+  t: Transform,
+  next: Partial<Pick<Transform, 'anchorX' | 'anchorY'>>,
+): Partial<Transform> {
+  const newAx = next.anchorX ?? t.anchorX;
+  const newAy = next.anchorY ?? t.anchorY;
+  return {
+    ...next,
+    x: t.x + (newAx - t.anchorX) * t.width,
+    y: t.y + (newAy - t.anchorY) * t.height,
+  };
+}
+
+/** True when the transform uses 2.5D (tilt or explicit perspective). */
+export function transformHas3D(t: Transform): boolean {
+  return t.rotationX !== 0 || t.rotationY !== 0 || t.perspective > 0;
 }
 
 /** CSS blend-mode string for a layer. */
