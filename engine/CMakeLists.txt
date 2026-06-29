@@ -85,17 +85,19 @@ target_include_directories(bg_engine PRIVATE
 )
 
 # The DeckLink consumer (Phase 3) compiles conditionally when the Blackmagic
-# SDK header is reachable. Until then we ship the null/pipe/preview consumers
-# only — no DeckLink linkage.
+# SDK header is reachable. Runtime is resolved via dlopen(libDeckLinkAPI.so),
+# so build hosts do not need the DeckLink runtime library installed.
 set(DECKLINK_SDK_INCLUDE "" CACHE PATH
   "Path to 'Blackmagic DeckLink SDK .../Linux/include' (enables decklink consumer)")
 option(BG_ENABLE_DECKLINK "Build the DeckLink consumer (requires DeckLink SDK)" OFF)
 if(BG_ENABLE_DECKLINK AND DECKLINK_SDK_INCLUDE AND EXISTS "${DECKLINK_SDK_INCLUDE}/DeckLinkAPI.h")
   message(STATUS "bg_engine: DeckLink consumer ENABLED (SDK: ${DECKLINK_SDK_INCLUDE})")
+  message(STATUS "bg_engine: DeckLink runtime is resolved via dlopen(libDeckLinkAPI.so)")
   target_sources(bg_engine PRIVATE
     src/consumers/decklink_consumer.cpp
     src/consumers/decklink_consumer.h)
   target_include_directories(bg_engine PRIVATE "${DECKLINK_SDK_INCLUDE}")
+  target_link_libraries(bg_engine PRIVATE dl)
   target_compile_definitions(bg_engine PRIVATE BG_ENABLE_DECKLINK=1)
 else()
   message(STATUS "bg_engine: DeckLink consumer disabled (code-complete in Phase 3, needs SDK + HW)")

@@ -53,6 +53,11 @@ class Consumer {
 
     // Human-readable label for logs (e.g. "decklink[0]", "pipe", "null").
     virtual const char* Label() const = 0;
+
+    // Optional non-zero process exit code requested by the consumer.
+    // DeckLink uses this to ask the supervisor for a controlled restart
+    // (e.g. profile switch -> exit 42). Most consumers always return 0.
+    virtual int PollExitCode() const { return 0; }
 };
 
 }  // namespace bg

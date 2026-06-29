@@ -49,6 +49,13 @@ alwaysApply: true
 - 2.8 ✅ output modes (#23): SettingsPage channel CRUD + `engine/run-engines.sh` / `run-channel.sh` supervisor (taskset, dry-run)
 - **Phase 2 exit:** operator loop через WS; output switch в Settings; editor = runtime WYSIWYG; NFR-1 on-air persistence; `run-engines.sh --dry-run` читает `/api/channels`
 
+### Phase 3 (DeckLink SDI) — CODE-COMPLETE, HW VALIDATION DEFERRED
+- Добавлен `engine/src/consumers/decklink_consumer.{h,cpp}` (clean-room reimplement by reference): callback-driven scheduling через `ScheduledFrameCompleted`, keyer (`external|internal|fill_only`), interlaced weave (UFF/LFF), telemetry counters.
+- Добавлен restart-контракт: consumer может запросить `exit 42` (через profile-change callback) для supervisor restart в `run-channel.sh`.
+- `engine/src/consumers/consumer.h` расширен `PollExitCode()`; `engine/src/main.cpp` propagates non-zero consumer exit code.
+- `engine/CMakeLists.txt` дополнен DeckLink build guard: consumer собирается при наличии SDK headers, runtime грузится через `dlopen(libDeckLinkAPI.so)`.
+- Создан `docs/phase3-decklink-validation-deferred.md` с hardware checklist (genlock lock, 8h soak, A/B parity vs CasparCG).
+
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
 ### 1. `/root/Titulus/data` нестабилен для SQLite (SQLITE_IOERR_SHORT_READ)
@@ -140,7 +147,7 @@ console.log('ALL OK');
 
 ## Контактные точки для нового агента
 
-- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → `main` чист → новая ветка `feature/phase-3-decklink-consumer` → дочитать этот файл + `10-development-plan.mdc` + `04-decklink-no-hw.mdc` → Phase 3 decklink consumer
+- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → `main` чист → новая ветка под Phase 4 → дочитать этот файл + `10-development-plan.mdc`
 - **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
 - **Текущая ветка работы:** `main` (Phase 2 DONE, PRs #14-#23)
 - **Последний merged:** PR #23 (output modes + run-engines.sh)

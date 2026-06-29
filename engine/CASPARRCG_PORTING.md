@@ -45,16 +45,16 @@ Producer (CEF HTML) → [channel-paced pull] → Consumer (decklink / ffmpeg / n
 | `modules/html/producer/html_producer.cpp:657-668` | `engine/src/engine_client.cpp` (browser create) | `CefWindowInfo.SetAsWindowless`, `windowless_rendering_enabled=true`, `windowless_frame_rate=ceil(fps)`, `CefBrowserHost::CreateBrowser` | ✅ done | 0.3 |
 | `modules/html/producer/html_producer.cpp:~220-280` (`try_pop`, field handling) | `engine/src/engine_client.cpp` / consumer | Field-aware frame pull (delays lone field A) — **для 1080i** | ⏳ todo | 0.3/3 |
 | `modules/html/producer/html_cg_proxy.cpp` | **n/a** (WS protocol) | CasparCG CG add/update/play/stop → у нас WS `take/update/clear` (другой протокол, semantic equivalence) | n/a | — |
-| `modules/decklink/consumer/decklink_consumer.cpp:910-1030` (`ScheduledFrameCompleted`) | `engine/src/consumers/decklink_consumer.cpp` | **Сердце pacing**: callback re-scheduling, `bmdOutputFrameDisplayedLate`→skip-ahead, pop 2 frames for interlace, `schedule_next_video` | ⏳ todo | 3.1 |
-| `modules/decklink/consumer/decklink_consumer.cpp:766-798` (preroll + start) | `engine/src/consumers/decklink_consumer.cpp` | Preroll N black frames + audio preroll, `wait_for_reference_lock`, `StartScheduledPlayback(0, time_scale, 1.0)` | ⏳ todo | 3.1 |
-| `modules/decklink/consumer/decklink_consumer.cpp:152-198` (`set_keyer`) | `engine/src/consumers/decklink_consumer.cpp` | `IDeckLinkKeyer::Enable(external/internal)` + `SetLevel(255)` | ⏳ todo | 3.1 |
-| `modules/decklink/consumer/decklink_consumer.cpp:102-118,163-174` | `engine/src/consumers/decklink_consumer.cpp` | `DoesSupportVideoMode` + keying capability flag (`bmdSupportedVideoModeKeying`) | ⏳ todo | 3.1 |
-| `modules/decklink/consumer/decklink_consumer.cpp:809-849` (`wait_for_reference_lock`) | `engine/src/consumers/decklink_consumer.cpp` | `GetReferenceStatus` → `bmdReferenceLocked` polling | ⏳ todo | 3.1 |
-| `modules/decklink/consumer/sdr_bgra_strategy.cpp:58-91, 94-116` | `engine/src/consumers/decklink_consumer.cpp` (weave) | **Weave 1080i UFF**: line-interleave 2 field-frames, `bmdFormat8BitBGRA`, key-only extract | ⏳ todo | 3.1 |
+| `modules/decklink/consumer/decklink_consumer.cpp:910-1030` (`ScheduledFrameCompleted`) | `engine/src/consumers/decklink_consumer.cpp` | **Сердце pacing**: callback re-scheduling, `bmdOutputFrameDisplayedLate`→skip-ahead, pop 2 frames for interlace, `schedule_next_video` | ✅ done | 3.1 |
+| `modules/decklink/consumer/decklink_consumer.cpp:766-798` (preroll + start) | `engine/src/consumers/decklink_consumer.cpp` | Preroll N black frames + `wait_for_reference_lock`, `StartScheduledPlayback(0, time_scale, 1.0)` | ✅ done | 3.1 |
+| `modules/decklink/consumer/decklink_consumer.cpp:152-198` (`set_keyer`) | `engine/src/consumers/decklink_consumer.cpp` | `IDeckLinkKeyer::Enable(external/internal)` + `SetLevel(255)` | ✅ done | 3.1 |
+| `modules/decklink/consumer/decklink_consumer.cpp:102-118,163-174` | `engine/src/consumers/decklink_consumer.cpp` | `DoesSupportVideoMode` + keying capability flag (`bmdSupportedVideoModeKeying`) | ✅ done | 3.1 |
+| `modules/decklink/consumer/decklink_consumer.cpp:809-849` (`wait_for_reference_lock`) | `engine/src/consumers/decklink_consumer.cpp` | `GetReferenceStatus` → `bmdReferenceLocked` polling | ✅ done | 3.1 |
+| `modules/decklink/consumer/sdr_bgra_strategy.cpp:58-91, 94-116` | `engine/src/consumers/decklink_consumer.cpp` (weave) | **Weave 1080i UFF**: line-interleave 2 field-frames, `bmdFormat8BitBGRA` | ✅ done | 3.1 |
 | `modules/decklink/consumer/v210_strategies.cpp` | *deferred* | 10-bit v210 (SDR/HDR) — post-MVP; MVP = 8-bit BGRA only | ⏸ deferred | 6+ |
-| `modules/decklink/consumer/config.{h,cpp}` | `engine/src/config.cpp` (DeckLink portion) | keyer/latency/duplex/pixel_format parse | ⏳ todo | 3.1 |
-| `modules/decklink/util/util.h` (`get_device`, format maps) | `engine/src/consumers/decklink_consumer.cpp` | Device enumeration by index, BMD format tables | ⏳ todo | 3.1 |
-| `modules/decklink/consumer/monitor.{h,cpp}` | `engine/src/stats.cpp` (decklink telemetry) | State reporting → наш stats counters (completed/late/dropped/flushed) | ⏳ todo | 3.1 |
+| `modules/decklink/consumer/config.{h,cpp}` | `engine/src/config.cpp` (DeckLink portion) | keyer/display-mode/device-index parse | ✅ done | 3.1 |
+| `modules/decklink/util/util.h` (`get_device`, format maps) | `engine/src/consumers/decklink_consumer.cpp` | Device enumeration by index, BMD display-mode mapping | ✅ done | 3.1 |
+| `modules/decklink/consumer/monitor.{h,cpp}` | `engine/src/consumers/decklink_consumer.cpp` | State reporting → telemetry counters (completed/late/dropped/flushed/overwrite) | ✅ done | 3.1 |
 | `modules/decklink/interop/`, `linux_interop/` | **n/a** (use SDK header directly) | CasparCG bundles BMD COM dispatch headers; мы линкуем системный `DeckLinkAPI.h` (SDK 16.0) | n/a | — |
 | `modules/ffmpeg/consumer/ffmpeg_consumer.cpp` (708 lines) | `engine/src/consumers/ffmpeg_consumer.cpp` | In-process libavformat/avfilter/avcodec, BGRA source (`AV_PIX_FMT_BGRA`), args parse (regex `-r 25 -c:v ...`), self-paced (`has_synchronization_clock()=false`) | ⏳ todo | 5.1 |
 | `modules/ffmpeg/util/av_util.{h,cpp}` (`make_av_video_frame`) | `engine/src/consumers/ffmpeg_consumer.cpp` | BGRA → `AVFrame` bridge | ⏳ todo | 5.1 |
@@ -157,7 +157,7 @@ UFF (`bmdUpperFieldFirst`). Titulus: тот же подход — weave в deckl
 | 0 | **Phase 0 exit** | ✅ **render plane proven** — see docs/PHASE0_BENCH.md |
 | 1 | runtime TS (JSON→DOM) — **new design**, не port (CasparCG = raw HTML) | ⏳ todo |
 | 2 | backend + frontend control plane — new (cherry-pick sandbox optional) | ⏳ todo |
-| 3 | decklink_consumer port | ⏳ todo (code-complete, validation deferred — no HW) |
+| 3 | decklink_consumer port | ✅ code-complete, validation deferred — no HW |
 | 4 | backend hardening | ⏳ todo |
 | 5 | ffmpeg_consumer port + docs | ⏳ todo |
 | 6+ | NDI, GPU (Gate), single-master-clock, SaaS | ⏸ future |

@@ -11,9 +11,10 @@ alwaysApply: true
 - **Phase 0:** ✅ DONE (PRs #1-#7, render plane proven)
 - **Phase 1:** ✅ DONE (PRs #8-#13, runtime + channel page)
 - **Phase 2:** ✅ DONE (PRs #14-#23, control plane + media + frontend + output modes)
-- **Phase 3-6+:** ⏳ Phase 3 — следующая (DeckLink SDI code-complete; validation deferred без HW)
+- **Phase 3:** ✅ CODE-COMPLETE (DeckLink SDI consumer implemented; hardware validation deferred без HW)
+- **Phase 4-6+:** ⏳ Phase 4 — следующая
 
-**СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 3 — DeckLink SDI consumer (reimplement from CasparCG). См. ниже «Немедленное продолжение» и `04-decklink-no-hw.mdc`.
+**СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 4 — backend hardening (on-air/media robustness + validation endpoint + security baseline).
 
 ## Git история (merged PRs в main)
 
@@ -45,19 +46,18 @@ alwaysApply: true
 
 ---
 
-## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Phase 3 (DeckLink SDI)
+## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Phase 4 (Backend hardening)
 
-**Цель:** production SDI Fill+Key на Linux — parity с CasparCG. На dev-хосте: **code-complete + compile/link**; runtime SDI-тест отложен (нет платы/genlock). См. `04-decklink-no-hw.mdc`.
+**Цель:** укрепить control plane перед production (устойчивость рестартов/ошибок, strict API validation, security baseline).
 
 **Что сделать:**
-1. `git checkout main && git pull && git checkout -b feature/phase-3-decklink-consumer`
-2. `engine/src/consumers/decklink_consumer.{cpp,h}` — reimplement by reference из CasparCG (`ScheduledFrameCompleted`, keyer, weave UFF, telemetry, exit 42)
-3. CMake conditional DeckLink SDK include + build guard
-4. `docs/phase3-decklink-validation-deferred.md` — чек-лист для железа
-5. Verify: компилируется/линкуется против SDK 16.0; `run-engines.sh --dry-run` с `output_mode=decklink` показывает `--consumer=decklink`
-6. commit → push → PR `[Phase 3] decklink consumer (code-complete)` → merge
+1. 4.1 hardening on-air persistence (kill/restart resilience, race guards)
+2. 4.2 media robustness (`/api/uploads`: MIME/size/cors/error handling/retry)
+3. 4.3 add `/api/templates/validate` with structured AJV errors
+4. 4.4 remove dead paths + security baseline checks (NFR-3)
+5. Verification loop + PR `[Phase 4] backend hardening` → merge
 
-**Phase 3 exit (code):** компилируется/линкуется. **Exit (validation — DEFERRED):** 8h soak, genlock locked, CasparCG parity на bare-metal с DeckLink.
+**Phase 4 exit:** backend survives restart/failure scenarios; media/template validation gives stable structured errors; baseline security risks closed.
 
 ---
 
@@ -109,7 +109,7 @@ alwaysApply: true
 
 **Phase 2 Exit (достигнут):** operator loop (TAKE/UPDATE/CLEAR через WS), output switch via Settings без redeploy, editor preview = `@runtime` WYSIWYG, backend restart preserves on-air (NFR-1), `run-engines.sh --dry-run` reads `/api/channels`.
 
-## Phase 3 — DeckLink SDI (CasparCG port) — CODE-COMPLETE, VALIDATION DEFERRED ⏳
+## Phase 3 — DeckLink SDI (CasparCG port) — ✅ CODE-COMPLETE, VALIDATION DEFERRED
 
 **Goal:** production SDI Fill+Key на Linux — parity с CasparCG. Сейчас: код полный, тест невозможен (нет платы/genlock). См. `04-decklink-no-hw.mdc`.
 
@@ -120,7 +120,7 @@ alwaysApply: true
 
 **Phase 3 Exit (code):** компилируется/линкуется против SDK. **Exit (validation — DEFERRED до железа):** 8h soak, genlock locked, CasparCG parity.
 
-## Phase 4 — Backend hardening ⏳
+## Phase 4 — Backend hardening ⏳ NEXT
 
 - 4.1 on-air persistence hardened (kill/restart backend → restored) — базово ✅ в 2.3; hardening todo
 - 4.2 media robust (error handling, retry, 200MB, MIME, CORS)

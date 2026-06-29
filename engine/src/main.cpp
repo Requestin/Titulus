@@ -15,6 +15,9 @@
 #include "consumers/null_consumer.h"
 #include "consumers/pipe_consumer.h"
 #include "consumers/preview_writer.h"
+#if defined(BG_ENABLE_DECKLINK)
+#include "consumers/decklink_consumer.h"
+#endif
 #include "frame_ring.h"
 #include "message_pump.h"
 #include "stats.h"
@@ -76,8 +79,14 @@ std::unique_ptr<bg::Consumer> make_consumer() {
             return std::make_unique<bg::PipeConsumer>(cfg.pipe_out);
         case bg::ConsumerKind::Preview:
             return std::make_unique<bg::PreviewWriter>(cfg.preview_out, cfg.preview_fps);
-        // decklink / stream land in Phase 3 / 5.
         case bg::ConsumerKind::Decklink:
+#if defined(BG_ENABLE_DECKLINK)
+            return std::make_unique<bg::DecklinkConsumer>(cfg.device_index, cfg.display_mode, cfg.keyer);
+#else
+            std::fprintf(stderr, "bg_engine: consumer '%s' not built into this binary; "
+                                 "using null.\n", bg::ConsumerLabel(cfg.consumer));
+            return std::make_unique<bg::NullConsumer>();
+#endif
         case bg::ConsumerKind::Stream:
             std::fprintf(stderr, "bg_engine: consumer '%s' not built into this binary; "
                                  "using null.\n", bg::ConsumerLabel(cfg.consumer));
@@ -139,6 +148,7 @@ int main(int argc, char** argv) {
     const uint64_t expected_us = pump.target_interval_us();
     const auto start = std::chrono::steady_clock::now();
     uint64_t last_stats_report = 0;
+    int exit_code = 0;
 
     // Main loop: pump CEF, deliver latest frame to consumer, record cadence.
     while (true) {
@@ -180,6 +190,17 @@ int main(int argc, char** argv) {
             break;
         }
 
+        // Consumer requested a controlled process restart (e.g. DeckLink profile
+        // switch). Non-zero code is propagated to run-channel.sh supervisor.
+        if (consumer) {
+            const int requested = consumer->PollExitCode();
+            if (requested != 0) {
+                exit_code = requested;
+                BG_LOG("consumer requested exit code " + std::to_string(exit_code));
+                break;
+            }
+        }
+
         if (sleep_us > 0) std::this_thread::sleep_for(std::chrono::microseconds(sleep_us));
     }
 
@@ -192,5 +213,5 @@ int main(int argc, char** argv) {
     if (consumer) consumer->Stop();
     BG_LOG(stats.Summary());
     bg::EngineShutdown();
-    return 0;
+    return exit_code;
 }
