@@ -22,6 +22,7 @@ alwaysApply: true
 ## Git история (merged PRs в main)
 
 ```
+#38 [Phase 7] docs and rules consolidation + phase report
 #37 [Phase 6.4] decklink hardware handoff evidence tooling
 #36 [Phase 6.2/6.3] auth boundaries + billing audit baseline
 #35 [Phase 6.1] license activation foundation (backend + settings UI)
@@ -157,6 +158,7 @@ alwaysApply: true
 - Синхронизированы `.cursor/rules/*.mdc` со статусом Phase 6 и актуальным workflow.
 - Актуализированы core docs/readmes (`README`, `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md`, package-level README).
 - Добавлен подробный исторический отчёт `docs/PHASE_REPORT_PHASE1_TO_PHASE7.md`.
+- Мilestone merge: PR #38.
 
 ## Phase 6+ (future, НЕ MVP) ⏸
 

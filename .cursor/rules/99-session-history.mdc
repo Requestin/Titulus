@@ -128,6 +128,7 @@ alwaysApply: true
 - Полностью синхронизированы `.cursor/rules` с фактическим статусом проекта (Phase 6.2/6.3 done, 6.4 external-blocked).
 - Актуализированы `README.md`, `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md` и package-level README.
 - Добавлен детальный отчёт `docs/PHASE_REPORT_PHASE1_TO_PHASE7.md` (хронология, deliverables, PR milestones, остаточные риски).
+- Merge milestone: PR #38 (`[Phase 7] docs and rules consolidation + phase report`).
 
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
@@ -223,4 +224,4 @@ console.log('ALL OK');
 - **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → при наличии hardware выполнить Phase 6.4 run по `docs/phase6-decklink-validation-closure.md`; иначе держать документацию и runbook в sync.
 - **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
 - **Текущая ветка работы:** `main` (Phase 6.4 handoff ready, Phase 7 docs consolidation delivered)
-- **Последний merged:** PR #37 (`[Phase 6.4] decklink hardware handoff evidence tooling`)
+- **Последний merged:** PR #38 (`[Phase 7] docs and rules consolidation + phase report`)
