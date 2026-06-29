@@ -59,6 +59,12 @@ docs/      architecture, runbook, validation/handoff docs
 - Audit: `/api/audit/events`
 - Health: `/api/health`
 
+Rundown-specific routes:
+
+- `GET /api/rundowns` + `GET /api/rundowns/:id`
+- `POST /api/rundowns` / `PUT /api/rundowns/:id` / `DELETE /api/rundowns/:id`
+- `POST /api/rundowns/reorder`
+
 ### 3.4 WebSocket hubs
 
 - `/ws/control` - validated operator commands (`take/update/clear`)
@@ -73,6 +79,24 @@ SQLite tables include:
 - observability/compliance: `audit_events`
 
 `on_air.order_index` keeps deterministic replay order after backend restart.
+
+### 3.6 Rundown mechanism v2 (slot-aware playout)
+
+Rundown now acts as a scenario-oriented operator workflow:
+
+- Each slot has stable identity `slotId` (separate from template id).
+- Slot payload is canonical: `{ slotId, templateId, name, vars }`.
+- On-air identity for rundown playout uses `slotId`, so one template can be taken
+  multiple times in parallel through different slots.
+- Backend DAO normalizes legacy slots (`id/label/variables`) to canonical shape
+  automatically on read/write (soft migration, no manual DB migration step).
+
+Control workflow inside `/control` Rundown tab:
+
+- active rundown selection,
+- slot CRUD/reorder + variable editing,
+- transport PREV / TAKE / NEXT + hotkeys,
+- live UPDATE for slot variables when slot is already on-air.
 
 ## 4) Shared runtime (`runtime/`)
 
@@ -156,4 +180,5 @@ Configured per channel via `/api/channels` and consumed by engine supervisors.
 - Strict validation and bounded payload handling for REST/WS
 - Upload/transcode robustness (MIME/extension checks, timeout/retry)
 - Final SDI acceptance requires DeckLink + genlock host execution
+- Rundown playout remains on the same `/ws/control` command path (no parallel WS protocol)
 

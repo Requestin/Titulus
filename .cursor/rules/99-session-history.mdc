@@ -130,6 +130,15 @@ alwaysApply: true
 - Добавлен детальный отчёт `docs/PHASE_REPORT_PHASE1_TO_PHASE7.md` (хронология, deliverables, PR milestones, остаточные риски).
 - Merge milestone: PR #38 (`[Phase 7] docs and rules consolidation + phase report`).
 
+### Phase 8 (Rundown mechanism v2, function-first) — DONE
+- В backend `rundowns` добавлена мягкая миграция slot-контракта: legacy slots (`id/label/variables`) автоматически нормализуются в canonical (`slotId/name/vars`) на чтении/записи.
+- `backend/src/routes/rundowns.js` усилен под операторские сценарии: `GET /api/rundowns/:id`, defaults для create, строгая validation для `slots`, безопасный `reorder` (full-list + no-duplicates + unknown-id checks), совместимость `channel_id`/`channelId`.
+- Frontend API контракты обновлены: `RundownSlot` теперь slot-aware (`slotId`, `name`, `vars`) с legacy aliases для type-level compatibility.
+- Добавлен `frontend/src/control/RundownTab.tsx` и интеграция в `ControlPage`: активный rundown sidebar CRUD/duplicate/import/export, slot CRUD/reorder, transport PREV/TAKE/NEXT, hotkeys (стрелки/space/delete), inline slot vars editing с debounce live update.
+- TAKE/CLEAR/UPDATE для rundown выполняются по `slotId`, что позволяет держать один и тот же template одновременно в эфире как разные rundown slots.
+- Program monitor привязан к channel binding активного rundown (preview-context), при этом Templates tab поведение не деградирует.
+- Документация Phase 8 добавлена: `docs/phase8-rundown-acceptance.md`; `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md`, `.cursor/rules/10-development-plan.mdc` обновлены под новый workflow.
+
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
 ### 1. `/root/Titulus/data` нестабилен для SQLite (SQLITE_IOERR_SHORT_READ)
@@ -221,7 +230,7 @@ console.log('ALL OK');
 
 ## Контактные точки для нового агента
 
-- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → при наличии hardware выполнить Phase 6.4 run по `docs/phase6-decklink-validation-closure.md`; иначе держать документацию и runbook в sync.
+- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → при наличии hardware выполнить Phase 6.4 run по `docs/phase6-decklink-validation-closure.md`; для control-plane продолжать развитие поверх slot-aware rundown v2 (`docs/phase8-rundown-acceptance.md`).
 - **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
-- **Текущая ветка работы:** `main` (Phase 6.4 handoff ready, Phase 7 docs consolidation delivered)
-- **Последний merged:** PR #38 (`[Phase 7] docs and rules consolidation + phase report`)
+- **Текущая ветка работы:** `main` (Phase 6.4 handoff ready + Phase 8 rundown v2 delivered)
+- **Последний merged:** PR #38 (`[Phase 7] docs and rules consolidation + phase report`) — следующий milestone: Phase 8.

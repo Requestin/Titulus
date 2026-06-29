@@ -16,6 +16,7 @@ alwaysApply: true
 - **Phase 5:** ✅ DONE (stream output + schema + architecture/runbook docs)
 - **Phase 6:** ⏳ IN PROGRESS (6.4 hardware execution pending on external host)
 - **Phase 7:** ✅ DONE (docs/rules consolidation + historical report Phase 1-7)
+- **Phase 8:** ✅ DONE (Rundown mechanism v2: slot-aware playout workflow)
 
 **СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 6.4 hardware execution — прогон checklist на host с DeckLink+genlock (external dependency).
 
@@ -159,6 +160,15 @@ alwaysApply: true
 - Актуализированы core docs/readmes (`README`, `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md`, package-level README).
 - Добавлен подробный исторический отчёт `docs/PHASE_REPORT_PHASE1_TO_PHASE7.md`.
 - Мilestone merge: PR #38.
+
+## Phase 8 — Rundown mechanism v2 ✅ DONE
+
+- Введён slot-aware data contract для rundowns (`slotId` как эфирная identity) с мягкой миграцией legacy `id/label/variables`.
+- Backend API усилен для сценарного workflow (`GET /api/rundowns/:id`, строгая валидация slots/reorder, defaults create).
+- `ControlPage` Rundown tab переписан в operator-mode: active rundown, CRUD/duplicate/import/export, slot CRUD/reorder, PREV/NEXT/TAKE transport, hotkeys, live slot vars update.
+- On-air индикация стала slot-aware (один template может идти параллельно через разные slotId).
+- Program Monitor синхронизирован с channel binding активного rundown без ломки Templates workflow.
+- Добавлен acceptance документ: `docs/phase8-rundown-acceptance.md`.
 
 ## Phase 6+ (future, НЕ MVP) ⏸
 
