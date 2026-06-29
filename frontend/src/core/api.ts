@@ -32,8 +32,12 @@ export interface Channel {
 }
 
 export interface RundownSlot {
-  id: string;
+  slotId: string;
   templateId: string;
+  name: string;
+  vars: Record<string, string | number>;
+  // legacy aliases for older persisted data (normalized on backend read).
+  id?: string;
   label?: string;
   variables?: Record<string, string | number>;
 }
@@ -227,9 +231,13 @@ export const api = {
   },
   rundowns: {
     list: () => req<Rundown[]>('/api/rundowns'),
-    create: (body: { name: string; channel_id?: string | null; slots?: RundownSlot[] }) =>
+    get: (id: string) => req<Rundown>(`/api/rundowns/${id}`),
+    create: (body: { name?: string; channel_id?: string | null; channelId?: string | null; slots?: RundownSlot[] }) =>
       req<Rundown>('/api/rundowns', { method: 'POST', body: JSON.stringify(body) }),
-    update: (id: string, patch: Partial<Pick<Rundown, 'name' | 'channel_id' | 'slots'>>) =>
+    update: (
+      id: string,
+      patch: Partial<Pick<Rundown, 'name' | 'channel_id' | 'slots'>> & { channelId?: string | null },
+    ) =>
       req<Rundown>(`/api/rundowns/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
     remove: (id: string) => req<{ ok: true }>(`/api/rundowns/${id}`, { method: 'DELETE' }),
     reorder: (ids: string[]) =>
