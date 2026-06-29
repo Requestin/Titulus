@@ -23,7 +23,9 @@ import type {
 } from './schema.js';
 import { resolveBinding } from './schema.js';
 import { applyTransform, blendModeCss, opacityCss, type AppliedTransform } from './transform.js';
-import { computeStackOrder, groupMap, type FlatEntry } from './stackOrder.js';
+import { computeStackOrder, groupMap } from './stackOrder.js';
+import { computeMaskScopes, maskClipStyle, type MaskScope } from './maskScopes.js';
+import type { RootStackEntry } from './schema.js';
 import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
 import { formatClock } from './clock.js';
 import { ensureFonts, collectFonts } from './fonts.js';
@@ -53,6 +55,17 @@ interface GroupNode {
   cache: Record<string, string>;
 }
 
+/** DOM nodes for a stack-scoped mask (маска.txt). */
+interface MaskScopeNode {
+  scopeEl: HTMLElement;
+  clipHost: HTMLElement;
+  maskLayerId: string;
+  /** Parent mask when nested; clipHost position is relative to parent clip. */
+  parentMaskId: string | null;
+  containerId: string | null;
+  cache: Record<string, string>;
+}
+
 const NO_VARS: Record<string, string | number> = {};
 
 export class TemplateRenderer {
@@ -64,6 +77,10 @@ export class TemplateRenderer {
   // DOM bookkeeping
   private layerEls = new Map<string, LayerNode>();
   private groupEls = new Map<string, GroupNode>();
+  private maskScopeEls = new Map<string, MaskScopeNode>();
+  /** entry id -> innermost mask layer id (for position offset inside clipHost). */
+  private entryMaskOrigin = new Map<string, string>();
+  private maskScopes: MaskScope[] = [];
   private norm: NormalizedTimeline | null = null;
 
   // Render stats accumulator: reset per applyState call, snapshotted into onFrame.
@@ -183,6 +200,8 @@ export class TemplateRenderer {
     this.stopTimeline();
     this.layerEls.clear();
     this.groupEls.clear();
+    this.maskScopeEls.clear();
+    this.entryMaskOrigin.clear();
     if (this.root.parentNode) this.root.parentNode.removeChild(this.root);
   }
 
@@ -200,9 +219,14 @@ export class TemplateRenderer {
     if (!this.template) return;
     const t = this.template;
     const seen = new Set<string>();
+    const seenMasks = new Set<string>();
 
-    const groups = groupMap(t.groups);
+    groupMap(t.groups);
     const order = computeStackOrder(t);
+    const zById = new Map(order.map((e) => [e.id, e.z]));
+
+    this.maskScopes = computeMaskScopes(t);
+    this.entryMaskOrigin.clear();
 
     // Groups first (they are positioning contexts for their children).
     for (const g of t.groups) {
@@ -219,7 +243,6 @@ export class TemplateRenderer {
         this.groupEls.set(g.id, node);
       }
       node.el.style.display = g.visible ? 'block' : 'none';
-      this.root.appendChild(node.el); // appendChild reorders to end if already present
     }
 
     // Layers.
@@ -228,38 +251,180 @@ export class TemplateRenderer {
       this.ensureLayerNode(layer);
     }
 
-    // Assign z-index + parent according to the flattened stack order.
-    for (const e of order) {
-      if (e.kind === 'layer') {
-        const node = this.layerEls.get(e.id);
-        if (node) {
-          node.el.style.zIndex = String(e.z);
-          this.parentFor(e).appendChild(node.el);
-        }
-      } else {
-        const node = this.groupEls.get(e.id);
-        if (node) {
-          node.el.style.zIndex = String(e.z);
-          this.parentFor({ ...e, kind: 'group' } as FlatEntry).appendChild(node.el);
-        }
+    // Mount stack trees with mask scope wrappers (root + per-group).
+    this.mountStack(this.root, null, t.rootStack, zById, seenMasks, null);
+
+    for (const g of t.groups) {
+      const node = this.groupEls.get(g.id);
+      if (node) {
+        const entries = t.groupStacks[g.id];
+        node.el.style.zIndex = String(zById.get(g.id) ?? 1);
+        this.parentForGroup(g.id).appendChild(node.el);
+        this.mountStack(node.el, g.id, entries, zById, seenMasks, null);
       }
     }
 
-    // Remove stale elements (layers/groups no longer in the template).
+    // Remove stale elements.
     for (const [id, node] of this.layerEls) {
       if (!seen.has(id)) { node.el.remove(); this.layerEls.delete(id); }
     }
     for (const [id, node] of this.groupEls) {
       if (!seen.has(id)) { node.el.remove(); this.groupEls.delete(id); }
     }
-    void groups;
+    for (const [id, node] of this.maskScopeEls) {
+      if (!seenMasks.has(id)) { node.scopeEl.remove(); this.maskScopeEls.delete(id); }
+    }
   }
 
-  /** Resolve which container a stack entry renders into (root or its group parent). */
-  private parentFor(e: FlatEntry): HTMLElement {
-    if (e.ancestorGroups.length === 0) return this.root;
-    const gid = e.ancestorGroups[e.ancestorGroups.length - 1];
-    return this.groupEls.get(gid)?.el ?? this.root;
+  /**
+   * Walk a stack container in order. When a mask layer is hit, mount it and put
+   * all subsequent siblings into a mask scope clipHost (recursive for nested masks).
+   */
+  private mountStack(
+    containerEl: HTMLElement,
+    containerId: string | null,
+    entries: RootStackEntry[] | undefined,
+    zById: Map<string, number>,
+    seenMasks: Set<string>,
+    parentMaskId: string | null,
+  ): void {
+    if (!entries || !this.template) return;
+    const layerById = new Map(this.template.layers.map((l) => [l.id, l]));
+
+    let i = 0;
+    while (i < entries.length) {
+      const e = entries[i];
+      const layer = e.kind === 'layer' ? layerById.get(e.id) : undefined;
+      if (e.kind === 'layer' && layer?.type === 'mask') {
+        if (parentMaskId) this.entryMaskOrigin.set(e.id, parentMaskId);
+        this.mountEntry(e, containerEl, zById);
+        const affected = entries.slice(i + 1);
+        if (affected.length > 0) {
+          const scope = this.ensureMaskScope(layer.id, containerEl, containerId, parentMaskId, seenMasks);
+          this.mountStackContents(scope, layer.id, containerId, affected, zById, seenMasks);
+        }
+        return;
+      }
+      if (parentMaskId) this.entryMaskOrigin.set(e.id, parentMaskId);
+      this.mountEntry(e, containerEl, zById);
+      i++;
+    }
+  }
+
+  /** Mount siblings below a mask inside its clipHost (supports nested masks). */
+  private mountStackContents(
+    scope: MaskScopeNode,
+    maskLayerId: string,
+    containerId: string | null,
+    entries: RootStackEntry[],
+    zById: Map<string, number>,
+    seenMasks: Set<string>,
+  ): void {
+    if (!this.template) return;
+    const layerById = new Map(this.template.layers.map((l) => [l.id, l]));
+    const clipHost = scope.clipHost;
+
+    let i = 0;
+    while (i < entries.length) {
+      const e = entries[i];
+      const layer = e.kind === 'layer' ? layerById.get(e.id) : undefined;
+      if (e.kind === 'layer' && layer?.type === 'mask') {
+        this.entryMaskOrigin.set(e.id, maskLayerId);
+        this.mountEntry(e, clipHost, zById);
+        const affected = entries.slice(i + 1);
+        if (affected.length > 0) {
+          const nested = this.ensureMaskScope(layer.id, clipHost, containerId, maskLayerId, seenMasks);
+          this.mountStackContents(nested, layer.id, containerId, affected, zById, seenMasks);
+        }
+        return;
+      }
+      this.entryMaskOrigin.set(e.id, maskLayerId);
+      if (e.kind === 'group') {
+        const gNode = this.groupEls.get(e.id);
+        if (gNode) {
+          gNode.el.style.zIndex = String(zById.get(e.id) ?? 1);
+          clipHost.appendChild(gNode.el);
+          const sub = this.template.groupStacks[e.id];
+          this.mountStack(gNode.el, containerId, sub, zById, seenMasks, maskLayerId);
+        }
+      } else {
+        this.mountEntry(e, clipHost, zById);
+      }
+      i++;
+    }
+  }
+
+  private mountEntry(e: RootStackEntry, parent: HTMLElement, zById: Map<string, number>): void {
+    if (e.kind === 'layer') {
+      const node = this.layerEls.get(e.id);
+      if (node) {
+        node.el.style.zIndex = String(zById.get(e.id) ?? 1);
+        parent.appendChild(node.el);
+      }
+    } else {
+      const node = this.groupEls.get(e.id);
+      if (node) {
+        node.el.style.zIndex = String(zById.get(e.id) ?? 1);
+        parent.appendChild(node.el);
+      }
+    }
+  }
+
+  private ensureMaskScope(
+    maskLayerId: string,
+    parentEl: HTMLElement,
+    containerId: string | null,
+    parentMaskId: string | null,
+    seenMasks: Set<string>,
+  ): MaskScopeNode {
+    seenMasks.add(maskLayerId);
+    let node = this.maskScopeEls.get(maskLayerId);
+    if (!node) {
+      const scopeEl = document.createElement('div');
+      scopeEl.className = 'titulus-mask-scope';
+      scopeEl.dataset.maskScope = maskLayerId;
+      const clipHost = document.createElement('div');
+      clipHost.className = 'titulus-mask-clip';
+      clipHost.dataset.maskClip = maskLayerId;
+      scopeEl.appendChild(clipHost);
+      node = { scopeEl, clipHost, maskLayerId, parentMaskId, containerId, cache: {} };
+      this.maskScopeEls.set(maskLayerId, node);
+    } else {
+      node.parentMaskId = parentMaskId;
+      node.containerId = containerId;
+    }
+    Object.assign(node.scopeEl.style, {
+      position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
+      overflow: 'visible', pointerEvents: 'none',
+    } as Partial<CSSStyleDeclaration>);
+    Object.assign(node.clipHost.style, {
+      position: 'absolute', left: '0', top: '0', boxSizing: 'border-box',
+      pointerEvents: 'auto',
+    } as Partial<CSSStyleDeclaration>);
+    parentEl.appendChild(node.scopeEl);
+    return node;
+  }
+
+  private parentForGroup(gid: string): HTMLElement {
+    const t = this.template;
+    if (!t) return this.root;
+    for (const [containerId, entries] of Object.entries({ root: t.rootStack, ...t.groupStacks })) {
+      const idx = entries?.findIndex((e) => e.kind === 'group' && e.id === gid) ?? -1;
+      if (idx < 0) continue;
+      // Check if gid is below a mask in this container
+      for (let i = idx - 1; i >= 0; i--) {
+        const e = entries![i];
+        if (e.kind === 'layer') {
+          const layer = t.layers.find((l) => l.id === e.id);
+          if (layer?.type === 'mask') {
+            return this.maskScopeEls.get(layer.id)?.clipHost ?? this.root;
+          }
+        }
+      }
+      if (containerId === 'root') return this.root;
+      return this.groupEls.get(containerId)?.el ?? this.root;
+    }
+    return this.root;
   }
 
   private ensureLayerNode(layer: Layer): LayerNode {
@@ -356,12 +521,14 @@ export class TemplateRenderer {
     // Apply animated overrides per layer/group.
     for (const layer of this.template.layers) {
       const anim = sample.layers[layer.id];
-      this.applyLayerState(layer, anim);
+      this.applyLayerState(layer, anim, sample);
     }
     for (const g of this.template.groups) {
       const anim = sample.groups[g.id];
       this.applyGroupState(g, anim);
     }
+
+    this.applyMaskScopes(sample);
 
     this.stats.frameTimeMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startWall;
 
@@ -408,25 +575,109 @@ export class TemplateRenderer {
     void acts;
   }
 
-  private applyLayerState(layer: Layer, anim: AnimatableValues | undefined): void {
+  private applyLayerState(
+    layer: Layer,
+    anim: AnimatableValues | undefined,
+    sample: TimelineSample,
+  ): void {
     const node = this.layerEls.get(layer.id);
     if (!node) return;
     const el = node.el;
     const cache = node.cache;
+    const isMask = layer.type === 'mask';
 
     this.setStyle(el, cache, 'display', layer.visible ? 'block' : 'none');
-    this.setStyle(el, cache, 'opacity', opacityCss(anim?.opacity ?? layer.opacity));
-    this.setStyle(el, cache, 'mixBlendMode', blendModeCss(layer.blendMode));
+    if (isMask) {
+      this.setStyle(el, cache, 'opacity', '1');
+      this.setStyle(el, cache, 'mixBlendMode', 'normal');
+    } else {
+      this.setStyle(el, cache, 'opacity', opacityCss(anim?.opacity ?? layer.opacity));
+      this.setStyle(el, cache, 'mixBlendMode', blendModeCss(layer.blendMode));
+    }
 
-    const at: AppliedTransform = applyTransform(layer.transform, anim as Partial<import('./schema.js').Transform> | undefined);
-    this.setStyle(el, cache, 'left', `${at.left}px`);
-    this.setStyle(el, cache, 'top', `${at.top}px`);
+    const at: AppliedTransform = applyTransform(
+      layer.transform,
+      anim as Partial<import('./schema.js').Transform> | undefined,
+    );
+    let left = at.left;
+    let top = at.top;
+    const originMaskId = this.entryMaskOrigin.get(layer.id);
+    if (originMaskId && this.template) {
+      const maskLayer = this.template.layers.find((l) => l.id === originMaskId);
+      if (maskLayer) {
+        const maskAnim = sample.layers[originMaskId];
+        const mat = applyTransform(
+          maskLayer.transform,
+          maskAnim as Partial<import('./schema.js').Transform> | undefined,
+        );
+        left -= mat.left;
+        top -= mat.top;
+      }
+    }
+    this.setStyle(el, cache, 'left', `${left}px`);
+    this.setStyle(el, cache, 'top', `${top}px`);
     this.setStyle(el, cache, 'width', `${at.width}px`);
     this.setStyle(el, cache, 'height', `${at.height}px`);
     this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
     this.setStyle(el, cache, 'transform', at.transform);
 
     this.paintLayerContent(layer, node);
+  }
+
+  /** Update mask clip hosts from each mask layer's animated geometry (§6.5). */
+  private applyMaskScopes(sample: TimelineSample): void {
+    if (!this.template) return;
+    const t = this.template;
+    const cw = t.canvas.width;
+    const ch = t.canvas.height;
+
+    for (const scope of this.maskScopes) {
+      const node = this.maskScopeEls.get(scope.maskLayerId);
+      const layer = t.layers.find((l) => l.id === scope.maskLayerId);
+      if (!node || !layer || layer.type !== 'mask') continue;
+
+      const anim = sample.layers[layer.id];
+      const at = applyTransform(
+        layer.transform,
+        anim as Partial<import('./schema.js').Transform> | undefined,
+      );
+      const cache = node.cache;
+
+      let containerW = cw;
+      let containerH = ch;
+      let clipAt = at;
+
+      if (node.parentMaskId) {
+        const parent = t.layers.find((l) => l.id === node.parentMaskId);
+        if (parent?.type === 'mask') {
+          const pAnim = sample.layers[parent.id];
+          const pat = applyTransform(
+            parent.transform,
+            pAnim as Partial<import('./schema.js').Transform> | undefined,
+          );
+          containerW = pat.width;
+          containerH = pat.height;
+          clipAt = { ...at, left: at.left - pat.left, top: at.top - pat.top };
+        }
+      }
+
+      const clip = maskClipStyle(layer, clipAt, containerW, containerH);
+
+      if (layer.maskMode === 'normal') {
+        this.setStyle(node.clipHost, cache, 'left', `${clipAt.left}px`);
+        this.setStyle(node.clipHost, cache, 'top', `${clipAt.top}px`);
+        this.setStyle(node.clipHost, cache, 'width', `${clipAt.width}px`);
+        this.setStyle(node.clipHost, cache, 'height', `${clipAt.height}px`);
+      } else {
+        this.setStyle(node.clipHost, cache, 'left', '0');
+        this.setStyle(node.clipHost, cache, 'top', '0');
+        this.setStyle(node.clipHost, cache, 'width', `${containerW}px`);
+        this.setStyle(node.clipHost, cache, 'height', `${containerH}px`);
+      }
+      this.setStyle(node.clipHost, cache, 'overflow', clip.overflow);
+      this.setStyle(node.clipHost, cache, 'clipPath', clip.clipPath);
+      this.setStyle(node.clipHost, cache, 'borderRadius', clip.borderRadius);
+    }
   }
 
   private applyGroupState(group: LayerGroup, anim: AnimatableValues | undefined): void {
@@ -446,8 +697,7 @@ export class TemplateRenderer {
     const v = this.variables;
     const cache = node.cache;
     switch (layer.type) {
-      case 'rect':
-      case 'mask': {
+      case 'rect': {
         const fill = String(resolveBinding(layer.fill, v));
         this.setStyle(el, cache, 'background', fill);
         this.setStyle(el, cache, 'borderRadius', `${layer.cornerRadius}px`);
@@ -455,23 +705,16 @@ export class TemplateRenderer {
           ? `${layer.borderWidth}px solid ${layer.borderColor}`
           : 'none';
         this.setStyle(el, cache, 'border', border);
-        if (layer.type === 'mask') {
-          // §6.5: clip-path on this layer's box. For 'rect' shape use inset();
-          // for 'ellipse' use ellipse(). Inverted mask = clip everything outside.
-          // NOTE: this clips the mask's own div only; stack-aware clipping is
-          // implemented in Phase 9.3.
-          const inset = `0 0 0 0 round ${layer.cornerRadius}px`;
-          const clip =
-            layer.shape === 'ellipse'
-              ? layer.maskMode === 'inverted'
-                ? `polygon(0 0, 100% 0, 100% 100%, 0 100%)`
-                : `ellipse(50% 50% at 50% 50%)`
-              : layer.maskMode === 'inverted'
-                ? 'none'
-                : `inset(${inset})`;
-          this.setStyle(el, cache, 'clipPath', clip);
-          this.setStyle(el, cache, 'background', layer.maskMode === 'inverted' ? 'transparent' : fill);
-        }
+        break;
+      }
+      case 'mask': {
+        // Mask geometry drives clipHost in applyMaskScopes; the mask layer itself
+        // is invisible on air (editor selection overlay shows bounds).
+        this.setStyle(el, cache, 'background', 'transparent');
+        this.setStyle(el, cache, 'border', 'none');
+        this.setStyle(el, cache, 'borderRadius', '0');
+        this.setStyle(el, cache, 'clipPath', 'none');
+        this.setStyle(el, cache, 'pointerEvents', 'none');
         break;
       }
       case 'text':
