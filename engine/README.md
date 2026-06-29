@@ -17,18 +17,19 @@ channel.html + bg-runtime.js  →  CEF HTML Producer (OSR)
 
 ## Status
 
-**Phase 0 — in progress.** Not yet buildable. Populated by tasks 0.3–0.4:
+**Phase 0-3 code path is implemented** (runtime SDI validation for DeckLink is
+deferred until HW/genlock host):
 
 | Component | Status |
 |---|---|
-| `CMakeLists.txt`, CEF download | ⏳ Phase 0.3 |
-| `src/main.cpp`, `engine_app.*`, `engine_client.*` (CEF OSR host) | ⏳ Phase 0.3 |
-| `src/config.*` (CLI), `src/stats.*` (interval/fps/drops), `src/frame_ring.h`, `src/message_pump.h` | ⏳ Phase 0.3 |
-| `consumers/null_consumer.h` | ⏳ Phase 0.3 |
-| `consumers/pipe_consumer.*`, `consumers/preview_writer.*` | ⏳ Phase 0.4 |
-| `consumers/decklink_consumer.*` | ⏳ Phase 3 (code-complete, validation deferred — no DeckLink HW) |
+| `CMakeLists.txt`, CEF download | ✅ |
+| `src/main.cpp`, `engine_app.*`, `engine_client.*` (CEF OSR host) | ✅ |
+| `src/config.*` (CLI), `src/stats.*` (interval/fps/drops), `src/frame_ring.h`, `src/message_pump.h` | ✅ |
+| `consumers/null_consumer.h` | ✅ |
+| `consumers/pipe_consumer.*`, `consumers/preview_writer.*` | ✅ |
+| `consumers/decklink_consumer.*` | ✅ code-complete (HW validation deferred) |
 | `consumers/ffmpeg_consumer.*` | ⏳ Phase 5 |
-| `run-engines.sh`, `run-channel.sh`, `systemd/bg-engine@.service` | ⏳ Phase 3 |
+| `run-engines.sh`, `run-channel.sh`, `systemd/bg-engine@.service` | ✅ |
 
 ## CLI (target, per §9.5)
 
