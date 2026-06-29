@@ -22,7 +22,7 @@ import type {
   Template, Layer, LayerGroup, AnimatableValues,
 } from './schema.js';
 import { resolveBinding } from './schema.js';
-import { applyTransform, blendModeCss, opacityCss, type AppliedTransform } from './transform.js';
+import { applyTransform, blendModeCss, opacityCss, transformHas3D, type AppliedTransform } from './transform.js';
 import { computeStackOrder, groupMap } from './stackOrder.js';
 import { computeMaskScopes, maskClipStyle, type MaskScope } from './maskScopes.js';
 import type { RootStackEntry } from './schema.js';
@@ -82,6 +82,7 @@ export class TemplateRenderer {
   private entryMaskOrigin = new Map<string, string>();
   private maskScopes: MaskScope[] = [];
   private norm: NormalizedTimeline | null = null;
+  private rootCache: Record<string, string> = {};
 
   // Render stats accumulator: reset per applyState call, snapshotted into onFrame.
   private stats: RenderStats = emptyRenderStats();
@@ -530,6 +531,9 @@ export class TemplateRenderer {
 
     this.applyMaskScopes(sample);
 
+    const any3d = this.templateHas3D();
+    this.setStyle(this.root, this.rootCache, 'transformStyle', any3d ? 'preserve-3d' : 'flat');
+
     this.stats.frameTimeMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startWall;
 
     if (this.onFrame) {
@@ -598,6 +602,7 @@ export class TemplateRenderer {
     const at: AppliedTransform = applyTransform(
       layer.transform,
       anim as Partial<import('./schema.js').Transform> | undefined,
+      { skipPerspective: this.parentPerspective(layer) > 0 },
     );
     let left = at.left;
     let top = at.top;
@@ -620,6 +625,12 @@ export class TemplateRenderer {
     this.setStyle(el, cache, 'height', `${at.height}px`);
     this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
     this.setStyle(el, cache, 'transform', at.transform);
+    const layerT = anim ? { ...layer.transform, ...anim } : layer.transform;
+    if (transformHas3D(layerT)) {
+      this.setStyle(el, cache, 'transformStyle', 'preserve-3d');
+    } else {
+      this.setStyle(el, cache, 'transformStyle', 'flat');
+    }
 
     this.paintLayerContent(layer, node);
   }
@@ -686,9 +697,65 @@ export class TemplateRenderer {
     const el = node.el;
     const cache = node.cache;
     this.setStyle(el, cache, 'display', group.visible ? 'block' : 'none');
-    const at = applyTransform(group.transform, anim as Partial<import('./schema.js').Transform> | undefined);
+    const gt = anim ? { ...group.transform, ...anim } : group.transform;
+    const at = applyTransform(
+      group.transform,
+      anim as Partial<import('./schema.js').Transform> | undefined,
+      { skipPerspective: this.parentPerspectiveForGroup(group.parentId) > 0 },
+    );
     this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
     this.setStyle(el, cache, 'transform', at.transform);
+    this.setStyle(el, cache, 'perspective', gt.perspective > 0 ? `${gt.perspective}px` : 'none');
+    const needs3d = transformHas3D(gt) || this.groupSubtreeHas3D(group.id);
+    this.setStyle(el, cache, 'transformStyle', needs3d ? 'preserve-3d' : 'flat');
+  }
+
+  /** Nearest ancestor group perspective (for inheritance). */
+  private parentPerspective(layer: Layer): number {
+    return this.parentPerspectiveForGroup(layer.groupId);
+  }
+
+  private parentPerspectiveForGroup(groupId: string | null): number {
+    if (!this.template || !groupId) return 0;
+    for (const gid of this.ancestorGroupIds(groupId)) {
+      const g = this.template.groups.find((x) => x.id === gid);
+      if (g && g.transform.perspective > 0) return g.transform.perspective;
+    }
+    return 0;
+  }
+
+  private ancestorGroupIds(startId: string): string[] {
+    const ids: string[] = [];
+    let gid: string | null = startId;
+    while (gid && this.template) {
+      ids.push(gid);
+      const g = this.template.groups.find((x) => x.id === gid);
+      gid = g?.parentId ?? null;
+    }
+    return ids;
+  }
+
+  private templateHas3D(): boolean {
+    if (!this.template) return false;
+    if (this.template.groups.some((g) => transformHas3D(g.transform))) return true;
+    return this.template.layers.some((l) => transformHas3D(l.transform));
+  }
+
+  /** True if this group or any descendant layer/group uses 3D transforms. */
+  private groupSubtreeHas3D(gid: string): boolean {
+    if (!this.template) return false;
+    const entries = this.template.groupStacks[gid];
+    if (!entries) return false;
+    for (const e of entries) {
+      if (e.kind === 'layer') {
+        const l = this.template.layers.find((x) => x.id === e.id);
+        if (l && transformHas3D(l.transform)) return true;
+      } else {
+        const g = this.template.groups.find((x) => x.id === e.id);
+        if (g && (transformHas3D(g.transform) || this.groupSubtreeHas3D(e.id))) return true;
+      }
+    }
+    return false;
   }
 
   /** Paint the type-specific content (text/media/fill/mask) for a layer. */

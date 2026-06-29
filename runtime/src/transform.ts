@@ -29,6 +29,7 @@ export interface AppliedTransform {
 export function applyTransform(
   base: Transform,
   anim: Partial<Transform> | undefined,
+  opts?: { skipPerspective?: boolean },
 ): AppliedTransform {
   const t: Transform = anim ? { ...base, ...anim } : base;
 
@@ -40,7 +41,9 @@ export function applyTransform(
   const originY = t.height * t.anchorY;
 
   const parts: string[] = [];
-  if (t.perspective > 0 && (t.rotationX !== 0 || t.rotationY !== 0)) {
+  const usePerspective = !opts?.skipPerspective && t.perspective > 0
+    && (t.rotationX !== 0 || t.rotationY !== 0);
+  if (usePerspective) {
     parts.push(`perspective(${t.perspective}px)`);
   }
   if (t.rotationX !== 0) parts.push(`rotateX(${t.rotationX}deg)`);
