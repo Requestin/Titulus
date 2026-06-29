@@ -27,6 +27,7 @@ import { computeStackOrder, groupMap, type FlatEntry } from './stackOrder.js';
 import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
 import { formatClock } from './clock.js';
 import { ensureFonts, collectFonts } from './fonts.js';
+import { type RenderStats, emptyRenderStats, snapshotStats } from './stats.js';
 
 export interface TemplateRendererOptions {
   /** fixed: caller drives tick(fixedTickRate); raf: internal rAF loop. */
@@ -36,13 +37,20 @@ export interface TemplateRendererOptions {
 }
 
 /** Per-frame callback during timeline playback (e.g. for stats). */
-export type OnFrameFn = (info: { frame: number; fps: number }) => void;
+export type OnFrameFn = (info: { frame: number; fps: number; stats?: RenderStats }) => void;
 
 interface LayerNode {
   el: HTMLElement;
   /** child element for text/clock content (so we can update text without re-layout). */
   contentEl?: HTMLElement;
   layer: Layer;
+  /** Cache of last-written property strings so we can skip identical writes. */
+  cache: Record<string, string>;
+}
+
+interface GroupNode {
+  el: HTMLElement;
+  cache: Record<string, string>;
 }
 
 const NO_VARS: Record<string, string | number> = {};
@@ -55,8 +63,11 @@ export class TemplateRenderer {
 
   // DOM bookkeeping
   private layerEls = new Map<string, LayerNode>();
-  private groupEls = new Map<string, HTMLElement>();
+  private groupEls = new Map<string, GroupNode>();
   private norm: NormalizedTimeline | null = null;
+
+  // Render stats accumulator: reset per applyState call, snapshotted into onFrame.
+  private stats: RenderStats = emptyRenderStats();
 
   // Playback state
   private mode: 'fixed' | 'raf';
@@ -196,18 +207,19 @@ export class TemplateRenderer {
     // Groups first (they are positioning contexts for their children).
     for (const g of t.groups) {
       seen.add(g.id);
-      let el = this.groupEls.get(g.id);
-      if (!el) {
-        el = document.createElement('div');
+      let node = this.groupEls.get(g.id);
+      if (!node) {
+        const el = document.createElement('div');
         el.className = 'titulus-group';
         el.dataset.groupId = g.id;
         Object.assign(el.style, {
           position: 'absolute', left: '0', top: '0', transformOrigin: '0 0',
         } as Partial<CSSStyleDeclaration>);
-        this.groupEls.set(g.id, el);
+        node = { el, cache: {} };
+        this.groupEls.set(g.id, node);
       }
-      el.style.display = g.visible ? 'block' : 'none';
-      this.root.appendChild(el); // appendChild reorders to end if already present
+      node.el.style.display = g.visible ? 'block' : 'none';
+      this.root.appendChild(node.el); // appendChild reorders to end if already present
     }
 
     // Layers.
@@ -225,10 +237,10 @@ export class TemplateRenderer {
           this.parentFor(e).appendChild(node.el);
         }
       } else {
-        const el = this.groupEls.get(e.id);
-        if (el) {
-          el.style.zIndex = String(e.z);
-          this.parentFor({ ...e, kind: 'group' } as FlatEntry).appendChild(el);
+        const node = this.groupEls.get(e.id);
+        if (node) {
+          node.el.style.zIndex = String(e.z);
+          this.parentFor({ ...e, kind: 'group' } as FlatEntry).appendChild(node.el);
         }
       }
     }
@@ -237,8 +249,8 @@ export class TemplateRenderer {
     for (const [id, node] of this.layerEls) {
       if (!seen.has(id)) { node.el.remove(); this.layerEls.delete(id); }
     }
-    for (const [id, el] of this.groupEls) {
-      if (!seen.has(id)) { el.remove(); this.groupEls.delete(id); }
+    for (const [id, node] of this.groupEls) {
+      if (!seen.has(id)) { node.el.remove(); this.groupEls.delete(id); }
     }
     void groups;
   }
@@ -247,21 +259,21 @@ export class TemplateRenderer {
   private parentFor(e: FlatEntry): HTMLElement {
     if (e.ancestorGroups.length === 0) return this.root;
     const gid = e.ancestorGroups[e.ancestorGroups.length - 1];
-    return this.groupEls.get(gid) ?? this.root;
+    return this.groupEls.get(gid)?.el ?? this.root;
   }
 
   private ensureLayerNode(layer: Layer): LayerNode {
     let node = this.layerEls.get(layer.id);
     if (!node) {
       const built = this.createLayerElement(layer);
-      node = { el: built.el, contentEl: built.contentEl, layer };
+      node = { el: built.el, contentEl: built.contentEl, layer, cache: {} };
       this.layerEls.set(layer.id, node);
     } else {
-      // Type change? Recreate the element.
+      // Type change? Recreate the element (and reset the cache).
       if (node.layer.type !== layer.type) {
         node.el.remove();
         const built = this.createLayerElement(layer);
-        node = { el: built.el, contentEl: built.contentEl, layer };
+        node = { el: built.el, contentEl: built.contentEl, layer, cache: {} };
         this.layerEls.set(layer.id, node);
       } else {
         node.layer = layer;
@@ -322,6 +334,14 @@ export class TemplateRenderer {
 
   private applyState(frame: number, tickFps?: number): void {
     if (!this.template || !this.norm) return;
+    const startWall = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+    // Reset per-frame stats counters (the snapshot handed to onFrame is taken
+    // from these after all writes complete).
+    this.stats.styleWrites = 0;
+    this.stats.skippedWrites = 0;
+    this.stats.frameTimeMs = 0;
+
     const sample: TimelineSample = sampleAt(this.norm, frame);
 
     // Fire actions crossed since the last sampled frame (cue points).
@@ -343,9 +363,39 @@ export class TemplateRenderer {
       this.applyGroupState(g, anim);
     }
 
+    this.stats.frameTimeMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startWall;
+
     if (this.onFrame) {
-      this.onFrame({ frame, fps: tickFps ?? this.template.timeline.fps });
+      this.onFrame({
+        frame,
+        fps: tickFps ?? this.template.timeline.fps,
+        stats: snapshotStats(this.stats),
+      });
     }
+  }
+
+  /**
+   * Write `el.style[prop] = value` only when the new value differs from the
+   * last value we wrote to this element under the same key. Updates the cache
+   * and the running stats counters. Keys live in the per-node `cache` map so
+   * that separate concerns (e.g. transform vs transformOrigin) don't collide.
+   */
+  private setStyle(
+    el: HTMLElement,
+    cache: Record<string, string>,
+    prop: string,
+    value: string,
+  ): void {
+    if (cache[prop] === value) {
+      this.stats.skippedWrites += 1;
+      return;
+    }
+    // Reflect into the CSSOM and record what we wrote so subsequent identical
+    // values skip. Cast because some style keys (e.g. mixBlendMode) have
+    // narrower setter types than `string`.
+    (el.style as unknown as Record<string, string>)[prop] = value;
+    cache[prop] = value;
+    this.stats.styleWrites += 1;
   }
 
   private runActions(acts: import('./schema.js').TimelineAction[]): void {
@@ -362,60 +412,65 @@ export class TemplateRenderer {
     const node = this.layerEls.get(layer.id);
     if (!node) return;
     const el = node.el;
+    const cache = node.cache;
 
-    el.style.display = layer.visible ? 'block' : 'none';
-    el.style.opacity = opacityCss(anim?.opacity ?? layer.opacity);
-    el.style.mixBlendMode = blendModeCss(layer.blendMode) as CSSStyleDeclaration['mixBlendMode'];
+    this.setStyle(el, cache, 'display', layer.visible ? 'block' : 'none');
+    this.setStyle(el, cache, 'opacity', opacityCss(anim?.opacity ?? layer.opacity));
+    this.setStyle(el, cache, 'mixBlendMode', blendModeCss(layer.blendMode));
 
     const at: AppliedTransform = applyTransform(layer.transform, anim as Partial<import('./schema.js').Transform> | undefined);
-    el.style.left = `${at.left}px`;
-    el.style.top = `${at.top}px`;
-    el.style.width = `${at.width}px`;
-    el.style.height = `${at.height}px`;
-    el.style.transformOrigin = `${at.originX}px ${at.originY}px`;
-    el.style.transform = at.transform;
+    this.setStyle(el, cache, 'left', `${at.left}px`);
+    this.setStyle(el, cache, 'top', `${at.top}px`);
+    this.setStyle(el, cache, 'width', `${at.width}px`);
+    this.setStyle(el, cache, 'height', `${at.height}px`);
+    this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
+    this.setStyle(el, cache, 'transform', at.transform);
 
     this.paintLayerContent(layer, node);
   }
 
   private applyGroupState(group: LayerGroup, anim: AnimatableValues | undefined): void {
-    const el = this.groupEls.get(group.id);
-    if (!el) return;
-    el.style.display = group.visible ? 'block' : 'none';
+    const node = this.groupEls.get(group.id);
+    if (!node) return;
+    const el = node.el;
+    const cache = node.cache;
+    this.setStyle(el, cache, 'display', group.visible ? 'block' : 'none');
     const at = applyTransform(group.transform, anim as Partial<import('./schema.js').Transform> | undefined);
-    el.style.transformOrigin = `${at.originX}px ${at.originY}px`;
-    el.style.transform = at.transform;
+    this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
+    this.setStyle(el, cache, 'transform', at.transform);
   }
 
   /** Paint the type-specific content (text/media/fill/mask) for a layer. */
   private paintLayerContent(layer: Layer, node: LayerNode): void {
     const el = node.el;
     const v = this.variables;
+    const cache = node.cache;
     switch (layer.type) {
       case 'rect':
       case 'mask': {
         const fill = String(resolveBinding(layer.fill, v));
-        el.style.background = fill;
-        el.style.borderRadius = `${layer.cornerRadius}px`;
-        if (layer.borderWidth > 0) {
-          el.style.border = `${layer.borderWidth}px solid ${layer.borderColor}`;
-        } else {
-          el.style.border = 'none';
-        }
+        this.setStyle(el, cache, 'background', fill);
+        this.setStyle(el, cache, 'borderRadius', `${layer.cornerRadius}px`);
+        const border = layer.borderWidth > 0
+          ? `${layer.borderWidth}px solid ${layer.borderColor}`
+          : 'none';
+        this.setStyle(el, cache, 'border', border);
         if (layer.type === 'mask') {
           // §6.5: clip-path on this layer's box. For 'rect' shape use inset();
           // for 'ellipse' use ellipse(). Inverted mask = clip everything outside.
+          // NOTE: this clips the mask's own div only; stack-aware clipping is
+          // implemented in Phase 9.3.
           const inset = `0 0 0 0 round ${layer.cornerRadius}px`;
-          if (layer.shape === 'ellipse') {
-            el.style.clipPath = layer.maskMode === 'inverted'
-              ? `polygon(0 0, 100% 0, 100% 100%, 0 100%)` // inverted ellipse approximated by excluding center — kept simple for MVP
-              : `ellipse(50% 50% at 50% 50%)`;
-          } else {
-            // rect: clip via overflow:hidden wrapper semantics; for MVP a mask
-            // layer of shape rect uses inset(0). Inverted rect = outside is shown.
-            el.style.clipPath = layer.maskMode === 'inverted' ? 'none' : `inset(${inset})`;
-          }
-          el.style.background = layer.maskMode === 'inverted' ? 'transparent' : fill;
+          const clip =
+            layer.shape === 'ellipse'
+              ? layer.maskMode === 'inverted'
+                ? `polygon(0 0, 100% 0, 100% 100%, 0 100%)`
+                : `ellipse(50% 50% at 50% 50%)`
+              : layer.maskMode === 'inverted'
+                ? 'none'
+                : `inset(${inset})`;
+          this.setStyle(el, cache, 'clipPath', clip);
+          this.setStyle(el, cache, 'background', layer.maskMode === 'inverted' ? 'transparent' : fill);
         }
         break;
       }
@@ -423,55 +478,78 @@ export class TemplateRenderer {
       case 'clock': {
         const content = node.contentEl as HTMLElement;
         const s = layer.style;
-        content.style.fontFamily = `"${s.fontFamily}", system-ui, sans-serif`;
-        content.style.fontSize = `${s.fontSize}px`;
-        content.style.fontWeight = s.fontWeight;
-        content.style.color = String(resolveBinding(s.fill, v));
-        content.style.textAlign = s.align;
-        content.style.justifyContent =
-          s.align === 'left' ? 'flex-start' : s.align === 'right' ? 'flex-end' : 'center';
-        content.style.alignItems = 'center';
-        content.style.lineHeight = String(s.lineHeight);
-        content.style.letterSpacing = `${s.letterSpacing}px`;
-        content.style.whiteSpace = 'pre';
-        if (s.strokeWidth > 0) {
-          const stroke = s.strokeColor;
-          content.style.webkitTextStroke = `${s.strokeWidth}px ${stroke}`;
-        } else {
-          content.style.webkitTextStroke = '';
-        }
-        content.style.textShadow = s.dropShadow
-          ? `${0}px ${s.dropShadowDistance}px ${s.dropShadowBlur}px ${s.dropShadowColor}`
-          : '';
+        this.setStyle(content, cache, 'fontFamily', `"${s.fontFamily}", system-ui, sans-serif`);
+        this.setStyle(content, cache, 'fontSize', `${s.fontSize}px`);
+        this.setStyle(content, cache, 'fontWeight', s.fontWeight);
+        this.setStyle(content, cache, 'color', String(resolveBinding(s.fill, v)));
+        this.setStyle(content, cache, 'textAlign', s.align);
+        this.setStyle(content, cache, 'justifyContent',
+          s.align === 'left' ? 'flex-start' : s.align === 'right' ? 'flex-end' : 'center');
+        this.setStyle(content, cache, 'alignItems', 'center');
+        this.setStyle(content, cache, 'lineHeight', String(s.lineHeight));
+        this.setStyle(content, cache, 'letterSpacing', `${s.letterSpacing}px`);
+        this.setStyle(content, cache, 'whiteSpace', 'pre');
+        this.setStyle(content, cache, 'webkitTextStroke',
+          s.strokeWidth > 0 ? `${s.strokeWidth}px ${s.strokeColor}` : '');
+        this.setStyle(content, cache, 'textShadow',
+          s.dropShadow
+            ? `${0}px ${s.dropShadowDistance}px ${s.dropShadowBlur}px ${s.dropShadowColor}`
+            : '');
         if (layer.type === 'text') {
-          content.textContent = String(resolveBinding(layer.content, v));
+          this.setText(content, cache, 'textContent', String(resolveBinding(layer.content, v)));
         } else {
           // clock content is refreshed by the clock ticker; set an initial value.
-          content.textContent = formatClock(layer.format, layer.mode, Date.now(),
-            { startTime: layer.startTime, targetTime: layer.targetTime });
+          this.setText(content, cache, 'textContent', formatClock(layer.format, layer.mode, Date.now(),
+            { startTime: layer.startTime, targetTime: layer.targetTime }));
         }
         break;
       }
       case 'image': {
         const img = node.contentEl as HTMLImageElement;
         const src = String(resolveBinding(layer.src, v));
-        if (img.src !== src) img.src = src;
-        img.style.borderRadius = `${layer.cornerRadius}px`;
-        img.style.objectFit = layer.fit;
+        this.setText(img, cache, 'src', src);
+        this.setStyle(img, cache, 'borderRadius', `${layer.cornerRadius}px`);
+        this.setStyle(img, cache, 'objectFit', layer.fit);
         break;
       }
       case 'video': {
         const vid = node.contentEl as HTMLVideoElement;
         const src = String(resolveBinding(layer.src, v));
-        if (vid.src !== src) {
-          vid.src = src;
+        const changed = this.setText(vid, cache, 'src', src);
+        if (changed) {
           vid.loop = layer.loop;
           if (layer.loop) vid.play().catch(() => {});
         }
-        vid.style.objectFit = layer.fit;
+        this.setStyle(vid, cache, 'objectFit', layer.fit);
         break;
       }
     }
+  }
+
+  /**
+   * Like {@link setStyle} but for non-CSS values (img.src, video.src,
+   * textContent). Returns true if the value was actually applied (changed),
+   * false if it was skipped. Reuses the same per-node cache.
+   */
+  private setText(
+    el: HTMLElement,
+    cache: Record<string, string>,
+    key: string,
+    value: string,
+  ): boolean {
+    if (cache[key] === value) {
+      this.stats.skippedWrites += 1;
+      return false;
+    }
+    if (key === 'textContent') {
+      (el as HTMLElement).textContent = value;
+    } else {
+      // img.src / video.src live on the element, not on .style
+      (el as unknown as Record<string, string>)[key] = value;
+    }
+    cache[key] = value;
+    this.stats.styleWrites += 1;
+    return true;
   }
 
   // -----------------------------------------------------------------------

@@ -86,6 +86,9 @@
 
     var lastStatus = 'disconnected';
     var lastActive = 0;
+    // Last reported RenderStats (Phase 9.1) — updated via onFrame; surfaced in
+    // the hud overlay so the engine smoke / bench harness can read it.
+    var lastStats = null;
     var client = new BG.ChannelClient({
       stage: stage,
       channelId: channelId,
@@ -93,7 +96,13 @@
       playbackMode: engineMode ? 'fixed' : 'raf',
       fixedTickRate: engineFps,
       onStatus: function (s) { lastStatus = s; paintHud(); },
-      onActiveCount: function (n) { lastActive = n; paintHud(); }
+      onActiveCount: function (n) { lastActive = n; paintHud(); },
+      onFrame: function (info) {
+        if (info.stats) {
+          lastStats = info.stats;
+          if (hudOn) paintHud();
+        }
+      }
     });
     client.connect();
 
@@ -130,10 +139,21 @@
 
     function paintHud(t) {
       if (!hudOn) return;
-      hud.textContent =
-        'channel=' + channelId + ' mode=' + (engineMode ? 'fixed@' + engineFps : 'raf') + '\n' +
-        'ws=' + lastStatus + '  active=' + lastActive + '\n' +
-        'rAF=' + frameCount + (t !== undefined ? '  t=' + Math.round(t) + 'ms' : '');
+      var lines = [
+        'channel=' + channelId + ' mode=' + (engineMode ? 'fixed@' + engineFps : 'raf'),
+        'ws=' + lastStatus + '  active=' + lastActive,
+        'rAF=' + frameCount + (t !== undefined ? '  t=' + Math.round(t) + 'ms' : '')
+      ];
+      if (lastStats) {
+        // RenderStats: lower styleWrites / higher skippedWrites = dirty-check
+        // doing its job. frameTimeMs is the applyState wall-clock cost.
+        lines.push(
+          'stats: writes=' + lastStats.styleWrites +
+          ' skipped=' + lastStats.skippedWrites +
+          ' frame=' + lastStats.frameTimeMs.toFixed(2) + 'ms'
+        );
+      }
+      hud.textContent = lines.join('\n');
     }
 
     // --- Resize handling --------------------------------------------------
