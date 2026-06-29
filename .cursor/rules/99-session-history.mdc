@@ -82,6 +82,23 @@ alwaysApply: true
   - безопасная normalisation renderer `channelId`.
 - `backend/src/index.js`: глобальные security headers baseline (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`); удалены устаревшие комментарии bootstrap-фазы.
 
+### Phase 5.1 (Stream consumer) — DONE
+- Добавлен `engine/src/consumers/ffmpeg_consumer.{h,cpp}`: raw BGRA `OnFrame` -> stdin ffmpeg child process (`fork/exec`), отдельный worker thread для записи на channel cadence.
+- `stream` path интегрирован в `engine/src/main.cpp` (реальный consumer вместо fallback `null`).
+- `engine/run-channel.sh` теперь валидирует обязательный `--stream-url` для `output_mode=stream`.
+- Прогон build + smoke (`--consumer=stream --stream-url=udp://... --duration=3`) прошёл, `SUMMARY` стабильный.
+
+### Phase 5.2 (AI-ready schema finalization) — DONE
+- `shared/template.schema.json` расширен AI/operator metadata полями (`schemaVersion`, `description`, `tags`, `metadata`).
+- Усилена типобезопасность: variable constraints (type-aware `defaultValue`), строгие `animatableValues`, command-aware timeline action rules, stricter `additionalProperties`.
+- `runtime/src/schema.ts` синхронизирован с новыми optional schema полями.
+- Backend validate smoke подтверждает: valid payload -> `200`, invalid typed variable -> structured `422`.
+
+### Phase 5.3 (Architecture + Runbook docs) — DONE
+- Добавлены `docs/ARCHITECTURE.md` и `docs/RUNBOOK.md` как актуальные operational docs.
+- Runbook покрывает: fresh Ubuntu bootstrap, runtime/backend/frontend setup, engine build, channel config, stream/decklink notes, smoke checks, shutdown и troubleshooting.
+- Architecture doc фиксирует текущий control-plane/render-plane контракт и Phase 5 состояния.
+
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
 ### 1. `/root/Titulus/data` нестабилен для SQLite (SQLITE_IOERR_SHORT_READ)
@@ -173,7 +190,7 @@ console.log('ALL OK');
 
 ## Контактные точки для нового агента
 
-- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → `main` чист → новая ветка под Phase 5.1 (`ffmpeg_consumer`) → дочитать этот файл + `10-development-plan.mdc`
+- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → проверить deferred DeckLink HW validation status (Phase 3) → дочитать этот файл + `10-development-plan.mdc`
 - **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
-- **Текущая ветка работы:** `main` (Phase 4 DONE)
-- **Последний merged:** PR #30 (`[Phase 4.3] structured template validation API`) + PR #29/28 (Phase 4.2/4.1)
+- **Текущая ветка работы:** `main` (Phase 5 DONE)
+- **Последний merged:** PR #33 (`[Phase 5.2] finalize shared template schema`) + PR #32 (`[Phase 5.1] ffmpeg stream consumer`)
