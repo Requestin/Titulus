@@ -16,6 +16,14 @@ import { randomUUID } from 'node:crypto';
 import { mediaTypeFor } from '../media.js';
 
 const MAX_BYTES = 200 * 1024 * 1024; // 200 MB (§7.5)
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg']);
+const VIDEO_EXT = new Set(['.mp4', '.mov', '.webm']);
+
+function apiError(res, status, code, message, details) {
+  return res.status(status).json({
+    error: { code, message, details: details || null },
+  });
+}
 
 export function uploadsRouter(media, uploadsDir) {
   const router = Router();
@@ -33,33 +41,55 @@ export function uploadsRouter(media, uploadsDir) {
     storage,
     limits: { fileSize: MAX_BYTES },
     fileFilter: (req, file, cb) => {
-      if (mediaTypeFor(file.mimetype) === null) {
+      const kind = mediaTypeFor(file.mimetype);
+      if (kind === null) {
         const err = new Error(`unsupported media type: ${file.mimetype}`);
         err.code = 'UNSUPPORTED_TYPE';
+        return cb(err);
+      }
+      const ext = (extname(file.originalname) || '').toLowerCase();
+      const allowedExt = kind === 'image' ? IMAGE_EXT : VIDEO_EXT;
+      if (!allowedExt.has(ext)) {
+        const err = new Error(`unsupported file extension: ${ext || '(none)'}`);
+        err.code = 'UNSUPPORTED_EXTENSION';
         return cb(err);
       }
       cb(null, true);
     },
   });
 
+  // CORS preflight for cross-origin upload clients if enabled in index.js.
+  router.options('*', (req, res) => res.status(204).end());
+
   router.post('/', (req, res) => {
     upload.single('file')(req, res, (err) => {
       if (err) {
-        if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'file too large (max 200 MB)' });
-        if (err.code === 'UNSUPPORTED_TYPE') return res.status(415).json({ error: err.message });
-        return res.status(400).json({ error: err.message || 'upload failed' });
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return apiError(res, 413, 'FILE_TOO_LARGE', 'file too large (max 200 MB)');
+        }
+        if (err.code === 'UNSUPPORTED_TYPE') {
+          return apiError(res, 415, 'UNSUPPORTED_MEDIA_TYPE', err.message);
+        }
+        if (err.code === 'UNSUPPORTED_EXTENSION') {
+          return apiError(res, 415, 'UNSUPPORTED_EXTENSION', err.message);
+        }
+        return apiError(res, 400, 'UPLOAD_FAILED', err.message || 'upload failed');
       }
-      if (!req.file) return res.status(400).json({ error: 'multipart field "file" required' });
+      if (!req.file) {
+        return apiError(res, 400, 'FILE_REQUIRED', 'multipart field "file" required');
+      }
       const job = media.ingest(req.file);
-      res.status(201).json({
+      const statusCode = job.status === 'error' ? 422 : 201;
+      res.status(statusCode).json({
         jobId: job.id, status: job.status, url: job.url, posterUrl: job.posterUrl, type: job.type,
+        error: job.error || null,
       });
     });
   });
 
   router.get('/jobs/:id', (req, res) => {
     const job = media.get(req.params.id);
-    if (!job) return res.status(404).json({ error: 'job not found' });
+    if (!job) return apiError(res, 404, 'JOB_NOT_FOUND', 'job not found');
     res.json(job);
   });
 

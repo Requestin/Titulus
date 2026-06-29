@@ -35,6 +35,25 @@ const UPLOADS_DIR = resolve(DATA_DIR, 'uploads');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
+const UPLOADS_CORS_ORIGINS = (process.env.TITULUS_UPLOADS_CORS_ORIGINS || '')
+  .split(',')
+  .map((v) => v.trim())
+  .filter(Boolean);
+
+function uploadsCors(req, res, next) {
+  const origin = req.headers.origin;
+  if (!origin || UPLOADS_CORS_ORIGINS.length === 0) return next();
+  const allowAny = UPLOADS_CORS_ORIGINS.includes('*');
+  const allowed = allowAny || UPLOADS_CORS_ORIGINS.includes(origin);
+  if (!allowed) return next();
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Origin', allowAny ? '*' : origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  res.setHeader('Access-Control-Max-Age', '600');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  return next();
+}
 
 // ---------------------------------------------------------------------------
 // App + DB
@@ -42,6 +61,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const app = express();
 expressWs(app); // adds app.ws() and upgrades handling
 
+app.disable('x-powered-by');
 app.use(express.json({ limit: '50mb' }));
 
 const db = openDb(resolve(DATA_DIR, 'app.db'));
@@ -59,7 +79,7 @@ app.locals.media = media;
 app.use('/api/templates', templatesRouter(db));
 app.use('/api/channels', channelsRouter(db));
 app.use('/api/rundowns', rundownsRouter(db));
-app.use('/api/uploads', uploadsRouter(media, UPLOADS_DIR));
+app.use('/api/uploads', uploadsCors, uploadsRouter(media, UPLOADS_DIR));
 
 // On-air snapshot for the control panel (§7.4). Separate from the WS router so
 // it sits under /api alongside the other REST endpoints.
@@ -84,7 +104,12 @@ app.get('/api/health', (req, res) => res.json({ ok: true, service: 'titulus-back
 // Static: engine channel page, runtime bundle, fonts, uploads.
 // Channel.html + bg-runtime.js come from backend/public (Vite proxies in dev).
 // ---------------------------------------------------------------------------
-app.use('/uploads', express.static(UPLOADS_DIR));
+app.use('/uploads', uploadsCors, express.static(UPLOADS_DIR, {
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  },
+}));
 app.use('/fonts', express.static(resolve(ROOT, 'fonts')));
 app.use(express.static(PUBLIC_DIR)); // channel.html, bg-runtime.js
 
