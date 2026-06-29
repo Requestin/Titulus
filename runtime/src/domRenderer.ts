@@ -25,6 +25,9 @@ import { resolveBinding } from './schema.js';
 import { applyTransform, blendModeCss, opacityCss, transformHas3D, type AppliedTransform } from './transform.js';
 import { computeStackOrder, groupMap } from './stackOrder.js';
 import { computeMaskScopes, maskClipStyle, type MaskScope } from './maskScopes.js';
+import {
+  maskNeedsProjection, projectMaskQuad, projectedMaskClip, maskGeometryKey,
+} from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
 import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
 import { formatClock } from './clock.js';
@@ -64,6 +67,8 @@ interface MaskScopeNode {
   parentMaskId: string | null;
   containerId: string | null;
   cache: Record<string, string>;
+  /** bounds = axis-aligned clipHost at mask rect; projected = full container + polygon */
+  clipMode: 'bounds' | 'projected';
 }
 
 const NO_VARS: Record<string, string | number> = {};
@@ -388,7 +393,7 @@ export class TemplateRenderer {
       clipHost.className = 'titulus-mask-clip';
       clipHost.dataset.maskClip = maskLayerId;
       scopeEl.appendChild(clipHost);
-      node = { scopeEl, clipHost, maskLayerId, parentMaskId, containerId, cache: {} };
+      node = { scopeEl, clipHost, maskLayerId, parentMaskId, containerId, cache: {}, clipMode: 'bounds' };
       this.maskScopeEls.set(maskLayerId, node);
     } else {
       node.parentMaskId = parentMaskId;
@@ -609,7 +614,8 @@ export class TemplateRenderer {
     const originMaskId = this.entryMaskOrigin.get(layer.id);
     if (originMaskId && this.template) {
       const maskLayer = this.template.layers.find((l) => l.id === originMaskId);
-      if (maskLayer) {
+      const scope = this.maskScopeEls.get(originMaskId);
+      if (maskLayer && scope?.clipMode !== 'projected') {
         const maskAnim = sample.layers[originMaskId];
         const mat = applyTransform(
           maskLayer.transform,
@@ -648,6 +654,9 @@ export class TemplateRenderer {
       if (!node || !layer || layer.type !== 'mask') continue;
 
       const anim = sample.layers[layer.id];
+      const mergedT = anim
+        ? { ...layer.transform, ...anim as Partial<import('./schema.js').Transform> }
+        : layer.transform;
       const at = applyTransform(
         layer.transform,
         anim as Partial<import('./schema.js').Transform> | undefined,
@@ -672,22 +681,43 @@ export class TemplateRenderer {
         }
       }
 
-      const clip = maskClipStyle(layer, clipAt, containerW, containerH);
+      const projected = maskNeedsProjection(mergedT);
 
-      if (layer.maskMode === 'normal') {
-        this.setStyle(node.clipHost, cache, 'left', `${clipAt.left}px`);
-        this.setStyle(node.clipHost, cache, 'top', `${clipAt.top}px`);
-        this.setStyle(node.clipHost, cache, 'width', `${clipAt.width}px`);
-        this.setStyle(node.clipHost, cache, 'height', `${clipAt.height}px`);
-      } else {
+      if (projected) {
+        node.clipMode = 'projected';
+        const quad = projectMaskQuad(mergedT, clipAt);
+        const geoKey = maskGeometryKey(quad);
+        const proj = projectedMaskClip(layer, quad, containerW, containerH);
         this.setStyle(node.clipHost, cache, 'left', '0');
         this.setStyle(node.clipHost, cache, 'top', '0');
         this.setStyle(node.clipHost, cache, 'width', `${containerW}px`);
         this.setStyle(node.clipHost, cache, 'height', `${containerH}px`);
+        this.setStyle(node.clipHost, cache, 'overflow', proj.overflow);
+        if (cache.clipGeoKey !== geoKey) {
+          cache.clipGeoKey = geoKey;
+        }
+        this.setStyle(node.clipHost, cache, 'clipPath', proj.clipPath);
+        this.setStyle(node.clipHost, cache, 'borderRadius', '0');
+      } else {
+        node.clipMode = 'bounds';
+        delete cache.clipGeoKey;
+        const clip = maskClipStyle(layer, clipAt, containerW, containerH);
+
+        if (layer.maskMode === 'normal') {
+          this.setStyle(node.clipHost, cache, 'left', `${clipAt.left}px`);
+          this.setStyle(node.clipHost, cache, 'top', `${clipAt.top}px`);
+          this.setStyle(node.clipHost, cache, 'width', `${clipAt.width}px`);
+          this.setStyle(node.clipHost, cache, 'height', `${clipAt.height}px`);
+        } else {
+          this.setStyle(node.clipHost, cache, 'left', '0');
+          this.setStyle(node.clipHost, cache, 'top', '0');
+          this.setStyle(node.clipHost, cache, 'width', `${containerW}px`);
+          this.setStyle(node.clipHost, cache, 'height', `${containerH}px`);
+        }
+        this.setStyle(node.clipHost, cache, 'overflow', clip.overflow);
+        this.setStyle(node.clipHost, cache, 'clipPath', clip.clipPath);
+        this.setStyle(node.clipHost, cache, 'borderRadius', clip.borderRadius);
       }
-      this.setStyle(node.clipHost, cache, 'overflow', clip.overflow);
-      this.setStyle(node.clipHost, cache, 'clipPath', clip.clipPath);
-      this.setStyle(node.clipHost, cache, 'borderRadius', clip.borderRadius);
     }
   }
 
