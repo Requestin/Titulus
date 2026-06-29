@@ -1,0 +1,83 @@
+<!doctype html>
+<!--
+  bench/bench-25d.html — 2.5D / CSS 3D tilt stress (Phase 9.7).
+
+  Scene: 8 animated cards with rotateX/Y + perspective + preserve-3d group.
+  Measures compositor cost of 2.5D transforms at 1080p50.
+
+  Run:
+    bg_engine --consumer=null --url="file://.../bench/bench-25d.html" --fps=50 --duration=60
+
+  Compare SUMMARY p50/p99 vs bench.html baseline; target: no sustained drops
+  beyond Phase 0 budget when 2.5D scene is static after warm-up.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #050810; }
+  #stage {
+    position: fixed; inset: 0; width: 1920px; height: 1080px;
+    perspective: 1200px;
+    transform-style: preserve-3d;
+    background: radial-gradient(900px 600px at 50% 40%, #0f2744, #050810);
+    overflow: hidden;
+    font-family: system-ui, sans-serif;
+  }
+  .row {
+    position: absolute; left: 120px; top: 200px;
+    width: 1680px; height: 680px;
+    transform-style: preserve-3d;
+    animation: sway 10s ease-in-out infinite;
+  }
+  @keyframes sway {
+    0%, 100% { transform: rotateY(-8deg) rotateX(4deg); }
+    50%      { transform: rotateY(8deg)  rotateX(-4deg); }
+  }
+  .card {
+    position: absolute; width: 360px; height: 220px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(34,211,238,.9), rgba(168,85,247,.85));
+    box-shadow: 0 24px 60px rgba(0,0,0,.45);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 32px; font-weight: 700;
+    transform-style: preserve-3d;
+    will-change: transform;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="row" id="row"></div>
+</div>
+<script>
+(function () {
+  const row = document.getElementById('row');
+  const n = 8;
+  for (let i = 0; i < n; i++) {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.textContent = '2.5D ' + (i + 1);
+    const x = (i % 4) * 400;
+    const y = Math.floor(i / 4) * 260;
+    const tiltX = -18 + (i * 5);
+    const tiltY = 12 - (i * 3);
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.transform = 'rotateX(' + tiltX + 'deg) rotateY(' + tiltY + 'deg) translateZ(' + (i * 18) + 'px)';
+    row.appendChild(el);
+  }
+  function tick() {
+    const t = performance.now() / 1000;
+    for (let i = 0; i < row.children.length; i++) {
+      const el = row.children[i];
+      const wobble = Math.sin(t * 1.2 + i) * 6;
+      el.style.transform = el.style.transform.replace(/rotateX\([^)]+\)/, 'rotateX(' + (-18 + i * 5 + wobble) + 'deg)');
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
