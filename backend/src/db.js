@@ -278,19 +278,116 @@ export const channelsDao = (db) => ({
 // rundowns
 // ---------------------------------------------------------------------------
 
+function isPlainObject(v) {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function normalizeSlotVars(input) {
+  if (!isPlainObject(input)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (typeof k !== 'string' || !k.trim()) continue;
+    if (typeof v === 'string' || typeof v === 'number') {
+      out[k] = v;
+      continue;
+    }
+    if (typeof v === 'boolean') {
+      out[k] = v ? 'true' : 'false';
+    }
+  }
+  return out;
+}
+
+function normalizeRundownSlots(input) {
+  if (!Array.isArray(input)) return { slots: [], changed: true };
+  const normalized = [];
+  let changed = false;
+  for (let i = 0; i < input.length; i++) {
+    const raw = input[i];
+    if (!isPlainObject(raw)) {
+      changed = true;
+      continue;
+    }
+
+    const templateId = typeof raw.templateId === 'string'
+      ? raw.templateId.trim()
+      : '';
+    if (!templateId) {
+      changed = true;
+      continue;
+    }
+
+    const slotIdCandidate = typeof raw.slotId === 'string'
+      ? raw.slotId.trim()
+      : (typeof raw.id === 'string' ? raw.id.trim() : '');
+    const slotId = slotIdCandidate || randomUUID();
+    const name = typeof raw.name === 'string'
+      ? raw.name.trim()
+      : (typeof raw.label === 'string' ? raw.label.trim() : '');
+    const vars = normalizeSlotVars(raw.vars ?? raw.variables ?? {});
+    const slot = {
+      slotId,
+      templateId,
+      name: name || `Slot ${i + 1}`,
+      vars,
+    };
+    normalized.push(slot);
+
+    if (!slotIdCandidate) changed = true;
+    if ('id' in raw || 'label' in raw || 'variables' in raw) changed = true;
+  }
+
+  const stable = JSON.stringify(input) === JSON.stringify(normalized);
+  return { slots: normalized, changed: changed || !stable };
+}
+
+function parseSlots(rawJson) {
+  try {
+    return JSON.parse(rawJson);
+  } catch {
+    return [];
+  }
+}
+
 export const rundownsDao = (db) => ({
   all() {
-    return db.prepare('SELECT * FROM rundowns ORDER BY sort_order ASC, created_at ASC').all()
-      .map((r) => ({ ...r, slots: JSON.parse(r.slots) }));
+    const rows = db.prepare('SELECT * FROM rundowns ORDER BY sort_order ASC, created_at ASC').all();
+    return rows.map((row) => {
+      const parsed = parseSlots(row.slots);
+      const { slots, changed } = normalizeRundownSlots(parsed);
+      if (changed) {
+        db.prepare(
+          `UPDATE rundowns
+           SET slots = ?, updated_at = datetime('now')
+           WHERE id = ?`,
+        ).run(JSON.stringify(slots), row.id);
+      }
+      return { ...row, slots };
+    });
   },
   get(id) {
     const r = db.prepare('SELECT * FROM rundowns WHERE id = ?').get(id);
-    return r ? { ...r, slots: JSON.parse(r.slots) } : null;
+    if (!r) return null;
+    const parsed = parseSlots(r.slots);
+    const { slots, changed } = normalizeRundownSlots(parsed);
+    if (changed) {
+      db.prepare(
+        `UPDATE rundowns
+         SET slots = ?, updated_at = datetime('now')
+         WHERE id = ?`,
+      ).run(JSON.stringify(slots), id);
+    }
+    return { ...r, slots };
   },
   create({ id, name, channel_id, slots }) {
+    const normalizedName = typeof name === 'string' && name.trim() ? name.trim() : 'Rundown';
+    const normalizedChannelId = typeof channel_id === 'string' && channel_id.trim()
+      ? channel_id.trim()
+      : null;
+    const normalizedSlots = normalizeRundownSlots(slots).slots;
     db.prepare(
       'INSERT INTO rundowns (id, name, channel_id, slots, sort_order) VALUES (?, ?, ?, ?, ?)',
-    ).run(id, name, channel_id ?? null, JSON.stringify(slots ?? []), this.count());
+    ).run(id, normalizedName, normalizedChannelId, JSON.stringify(normalizedSlots), this.count());
     return this.get(id);
   },
   count() {
@@ -300,9 +397,13 @@ export const rundownsDao = (db) => ({
     const cur = this.get(id);
     if (!cur) return null;
     const next = {
-      name: patch.name ?? cur.name,
-      channel_id: patch.channel_id ?? cur.channel_id,
-      slots: patch.slots !== undefined ? JSON.stringify(patch.slots) : JSON.stringify(cur.slots),
+      name: (typeof patch.name === 'string' && patch.name.trim()) ? patch.name.trim() : cur.name,
+      channel_id: patch.channel_id !== undefined
+        ? ((typeof patch.channel_id === 'string' && patch.channel_id.trim()) ? patch.channel_id.trim() : null)
+        : cur.channel_id,
+      slots: patch.slots !== undefined
+        ? JSON.stringify(normalizeRundownSlots(patch.slots).slots)
+        : JSON.stringify(cur.slots),
     };
     db.prepare(
       `UPDATE rundowns SET name=?, channel_id=?, slots=?, updated_at=datetime('now') WHERE id=?`,
