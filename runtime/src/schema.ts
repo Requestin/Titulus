@@ -67,6 +67,13 @@ export interface Variable {
   label: string;
   type: VariableType;
   defaultValue: string | number;
+  description?: string;
+  required?: boolean;
+  options?: Array<string | number>;
+  min?: number;
+  max?: number;
+  step?: number;
+  placeholder?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -282,9 +289,20 @@ export interface Canvas {
   background: string;  // 'transparent' | '#rrggbb' | css color
 }
 
+export interface TemplateMetadata {
+  category?: string;
+  locale?: string;
+  safeTitle?: string;
+  notes?: string;
+}
+
 export interface Template {
+  schemaVersion?: string;
   id: string;
   name: string;
+  description?: string;
+  tags?: string[];
+  metadata?: TemplateMetadata;
   canvas: Canvas;
   variables: Variable[];
   groups: LayerGroup[];

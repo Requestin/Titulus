@@ -7,8 +7,24 @@
   "required": ["id", "name", "canvas", "variables", "groups", "layers", "rootStack", "groupStacks", "timeline"],
   "additionalProperties": false,
   "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Template schema version for migrations (e.g. 1.0.0).",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
     "id": { "type": "string", "description": "UUID" },
     "name": { "type": "string" },
+    "description": {
+      "type": "string",
+      "description": "Human-readable intent; useful for operators and AI generation."
+    },
+    "tags": {
+      "type": "array",
+      "description": "Search/generation tags (e.g. lower-third, election, breaking).",
+      "items": { "type": "string" },
+      "maxItems": 32
+    },
+    "metadata": { "$ref": "#/$defs/templateMetadata" },
     "canvas": {
       "type": "object",
       "required": ["width", "height", "background"],
@@ -48,6 +64,17 @@
   },
 
   "$defs": {
+    "templateMetadata": {
+      "type": "object",
+      "description": "Optional AI/operator hints. Runtime may ignore these fields.",
+      "additionalProperties": false,
+      "properties": {
+        "category": { "type": "string" },
+        "locale": { "type": "string", "description": "BCP-47 locale, e.g. en-US" },
+        "safeTitle": { "type": "string", "description": "One-line title for generated catalogs." },
+        "notes": { "type": "string" }
+      }
+    },
     "blendMode": {
       "type": "string",
       "enum": ["normal", "multiply", "screen", "add", "overlay", "darken", "lighten"]
@@ -99,8 +126,35 @@
         "name": { "type": "string" },
         "label": { "type": "string" },
         "type": { "type": "string", "enum": ["text", "image", "number", "color", "video"] },
-        "defaultValue": { "type": ["string", "number"] }
-      }
+        "defaultValue": { "type": ["string", "number"] },
+        "description": { "type": "string" },
+        "required": { "type": "boolean" },
+        "options": {
+          "type": "array",
+          "items": { "type": ["string", "number"] },
+          "maxItems": 64
+        },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "step": { "type": "number", "exclusiveMinimum": 0 },
+        "placeholder": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "number" } } },
+          "then": {
+            "properties": { "defaultValue": { "type": "number" } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "enum": ["text", "image", "color", "video"] } }
+          },
+          "then": {
+            "properties": { "defaultValue": { "type": "string" } }
+          }
+        }
+      ]
     },
     "group": {
       "type": "object",
@@ -147,6 +201,7 @@
     "layer": {
       "type": "object",
       "required": ["id", "name", "type", "visible", "locked", "opacity", "blendMode", "transform", "groupId"],
+      "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
@@ -250,10 +305,33 @@
       "properties": {
         "id": { "type": "string" },
         "frame": { "type": "integer", "minimum": 0 },
-        "layers": { "type": "object" },
-        "groups": { "type": "object" },
+        "layers": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/animatableValues" }
+        },
+        "groups": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/animatableValues" }
+        },
         "easing": { "$ref": "#/$defs/easingType" },
         "bezier": { "$ref": "#/$defs/bezier" }
+      }
+    },
+    "animatableValues": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "rotation": { "type": "number" },
+        "rotationX": { "type": "number" },
+        "rotationY": { "type": "number" },
+        "perspective": { "type": "number" },
+        "scaleX": { "type": "number" },
+        "scaleY": { "type": "number" },
+        "opacity": { "type": "number" }
       }
     },
     "director": {
@@ -272,7 +350,7 @@
     },
     "action": {
       "type": "object",
-      "required": ["id", "directorId", "frame", "command", "targetDirectorId", "tag"],
+      "required": ["id", "directorId", "frame", "command"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
@@ -281,7 +359,24 @@
         "command": { "type": "string", "enum": ["startDirector", "stopDirector", "setTag"] },
         "targetDirectorId": { "type": ["string", "null"] },
         "tag": { "type": ["string", "null"], "enum": ["Stop", "End scene", null] }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "command": { "enum": ["startDirector", "stopDirector"] } } },
+          "then": {
+            "required": ["targetDirectorId"],
+            "properties": {
+              "targetDirectorId": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "command": { "const": "setTag" } } },
+          "then": {
+            "required": ["tag"]
+          }
+        }
+      ]
     },
     "timeline": {
       "type": "object",
@@ -292,7 +387,10 @@
         "durationFrames": { "type": "integer", "minimum": 1 },
         "playbackMode": { "type": "string", "enum": ["bounded", "infinite"] },
         "directors": { "type": "array", "items": { "$ref": "#/$defs/director" } },
-        "trackDirectors": { "type": "object" },
+        "trackDirectors": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        },
         "keyframes": { "type": "array", "items": { "$ref": "#/$defs/keyframe" } },
         "actions": { "type": "array", "items": { "$ref": "#/$defs/action" } }
       }
