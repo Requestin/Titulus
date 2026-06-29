@@ -13,7 +13,7 @@ alwaysApply: true
 
 ## Как применять
 - Скиллы авто-срабатывают по `description`; можно явно — `/<skill-name>` в чате.
-- **ИЕРАРХИЯ ГЛАВНЕЕ СКИЛЛОВ:** при конфликте `DEVELOPMENT_PROMPT.md` + `.cursor/rules/*.mdc` > любой generic skill. Скиллы — это «как делать», правила Titulus — «что и почему».
+- **ИЕРАРХИЯ ГЛАВНЕЕ СКИЛЛОВ:** при конфликте `docs/DEVELOPMENT_PROMPT.md` + `.cursor/rules/*.mdc` > любой generic skill. Скиллы — это «как делать», правила Titulus — «что и почему».
 
 ## engine/ — C++20 `bg_engine` (Phase 0 / 3 / 5)
 | Skill | Когда применять |
@@ -27,7 +27,7 @@ alwaysApply: true
 ## runtime/ + frontend/ — UI (Phase 1 / 2.5–2.7)
 | Skill | Когда применять |
 |---|---|
-| `impeccable` | Основной design language: `/impeccable craft·polish·audit`. Требует `PRODUCT.md` (`/impeccable init` при первой UI-задаче). |
+| `impeccable` | Основной design language: `/impeccable craft·polish·audit`. Требует `docs/PRODUCT.md` (`/impeccable init` при первой UI-задаче). |
 | `make-interfaces-feel-better` | Микро-детали: concentric radius, shadows>borders, **tabular-nums (таймкод/счётчики)**, stagger, optical alignment. |
 | `transitions-dev` | Конкретные CSS-переходы: modals, dropdowns, tabs, **icon swap (TAKE/CLEAR)**, number pop-in, accordion. `transitions review/apply`. |
 | `react-patterns` | React 18 компоненты, hooks, Zustand+zundo state, формы editor/control panel. |

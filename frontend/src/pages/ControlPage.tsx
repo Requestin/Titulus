@@ -23,6 +23,7 @@ export function ControlPage() {
   const [channelId, setChannelId] = useState<string>('');
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [rundowns, setRundowns] = useState<Rundown[]>([]);
+  const [controlDataLoaded, setControlDataLoaded] = useState(false);
   const [onAir, setOnAir] = useState<Record<string, string[]>>({});
   const [tab, setTab] = useState<'templates' | 'rundowns'>('templates');
   const [rundownMonitorChannel, setRundownMonitorChannel] = useState<string>('');
@@ -46,6 +47,8 @@ export function ControlPage() {
         if (ch.length && !channelId) setChannelId(ch[0].id);
       } catch (e) {
         toast.error(`Failed to load control data: ${(e as Error).message}`);
+      } finally {
+        setControlDataLoaded(true);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,6 +152,7 @@ export function ControlPage() {
                   templates={templates}
                   rundowns={rundowns}
                   setRundowns={setRundowns}
+                  dataLoaded={controlDataLoaded}
                   onAir={onAir}
                   setOnAir={setOnAir}
                   fallbackChannelId={channelId || 'default'}

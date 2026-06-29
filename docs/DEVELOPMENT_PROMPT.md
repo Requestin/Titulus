@@ -162,7 +162,7 @@ Titulus — Cloud Broadcast Graphics System
 
 ```
 /root/Titulus/                          ← git clone Requestin/Titulus (PRODUCT)
-├── DEVELOPMENT_PROMPT.md              ← этот документ (source of truth для агента)
+├── docs/DEVELOPMENT_PROMPT.md         ← этот документ (source of truth для агента)
 ├── LICENSE.md / README.md
 ├── backend/ frontend/ runtime/ engine/ …   ← целевая структура продукта (создавать/переносить сюда)
 │
@@ -718,7 +718,7 @@ Control WS: take / update / clear
 
 ```
 Titulus/                     ← Requestin/Titulus (commit here)
-├── DEVELOPMENT_PROMPT.md    ← this document
+├── docs/DEVELOPMENT_PROMPT.md    ← this document
 ├── backend/                 # Express API + WS + SQLite
 │   ├── src/
 │   │   ├── index.js         # WS routing, on-air state
@@ -1632,7 +1632,7 @@ When implementing from scratch:
 12. **CPU affinity in supervisor from day 1** — not an optimization, a requirement.
 13. **Never ship `casparcg-server` dependency** — only our `bg_engine` binary.
 14. **Document as you go** — ARCHITECTURE.md, RUNBOOK.md, PHASE0_BENCH.md, CASPARRCG_PORTING.md (each doc update = own commit/PR or part of feature PR).
-15. **Keep DEVELOPMENT_PROMPT.md in sync** — root of Titulus repo + `docs/` if duplicated.
+15. **Keep `docs/DEVELOPMENT_PROMPT.md` in sync** — canonical spec lives under `docs/` only.
 16. **On session start:** always `git fetch`, check open PRs and dirty tree before new work (§0.5.6).
 
 **Definition of done for entire project:** Operator installs on fresh Ubuntu via RUNBOOK, configures 2 SDI channels, runs 4-hour broadcast with TAKE/UPDATE/CLEAR; picture matches editor preview; **SDI output indistinguishable from CasparCG on same templates/hardware**; **full Git history in `main` with revertible feature milestones**.

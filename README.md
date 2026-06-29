@@ -37,7 +37,9 @@ Stop:
 
 ## Key Docs
 
-- `DEVELOPMENT_PROMPT.md` - canonical product/engineering spec.
+- `docs/DEVELOPMENT_PROMPT.md` - canonical product/engineering spec.
+- `docs/PRODUCT.md`, `docs/DESIGN.md` - product and design context.
+- `docs/RUNDOWN_IMPLEMENTATION_PROMPT.md` - rundown functional reference (Phase 8).
 - `docs/ARCHITECTURE.md` - up-to-date architecture overview.
 - `docs/RUNBOOK.md` - setup/operations/run procedures.
 - `docs/phase6-decklink-validation-closure.md` - Phase 6.4 hardware acceptance handoff.

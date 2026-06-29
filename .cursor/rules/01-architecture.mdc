@@ -60,7 +60,7 @@ Control WS: take / update / clear
 
 ```
 Titulus/
-├── DEVELOPMENT_PROMPT.md           (canon)
+├── docs/DEVELOPMENT_PROMPT.md      (canon)
 ├── engine/                         ← НАШ C++ render host (clean-room из CasparCG)
 │   ├── CASPARRCG_PORTING.md        (porting-map + развилки)
 │   ├── THIRD_PARTY_NOTICES.md      (GPL-compliance)

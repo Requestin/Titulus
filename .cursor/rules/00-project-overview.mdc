@@ -6,7 +6,7 @@ alwaysApply: true
 
 Ты работаешь над **Titulus** — коммерческой облачной титровальной системой для эфирного телевидения (2D-графика уровня новостных выпусков). Проприетарная лицензия, закрытый репозиторий.
 
-**Канонический spec:** `/root/Titulus/DEVELOPMENT_PROMPT.md` (1642 строки). При любом конфликте — этот файл главный. Эти .cursor-правила — сжатая выжимка + наши конкретные решения; DEVELOPMENT_PROMPT.md остаётся авторитетом на уровне выше.
+**Канонический spec:** `docs/DEVELOPMENT_PROMPT.md` (1642 строки). При любом конфликте — этот файл главный. Эти .cursor-правила — сжатая выжимка + наши конкретные решения; `docs/DEVELOPMENT_PROMPT.md` остаётся авторитетом на уровне выше.
 
 ## Что строим
 
@@ -16,7 +16,7 @@ Control plane (свой React-editor + JSON-templates + rundowns + WebSocket) + 
 
 ## Иерархия источников истины (при конфликте — сверху вниз)
 
-1. `DEVELOPMENT_PROMPT.md` (§0.2 принципы + §0.5 Git workflow) + эти .cursor/rules
+1. `docs/DEVELOPMENT_PROMPT.md` (§0.2 принципы + §0.5 Git workflow) + эти .cursor/rules
 2. **CasparCG Server** (`/root/Titulus/CasparCG/server`) — render engine truth (изучаем, портируем by-reference, НЕ линкуем, НЕ шипим)
 3. Cherry-pick из sandbox `broadcast-graphics/` (только validated pieces, см. правило sandbox)
 4. Собственные решения — если 1–3 не покрывают и не ломают CPU-only / CasparCG parity
@@ -67,7 +67,8 @@ Cloud SaaS (подписка) + On-prem (lifetime/annual). Один codebase, р
 
 ## Ключевые артифакты проекта (где что лежит)
 
-- `DEVELOPMENT_PROMPT.md` — канонический spec (читай при сомнениях)
+- `docs/DEVELOPMENT_PROMPT.md` — канонический spec (читай при сомнениях)
+- `docs/PRODUCT.md`, `docs/DESIGN.md` — product/design context для UI
 - `engine/CASPARRCG_PORTING.md` — porting-map CasparCG→bg_engine + зафиксированные развилки
 - `engine/THIRD_PARTY_NOTICES.md` — GPL-compliance log (reimplement-by-reference)
 - `docs/PHASE0_BENCH.md` — bench-результаты (Phase 0 proven)

@@ -43,7 +43,7 @@ alwaysApply: true
 - 2.2 ✅ channels + rundowns + settings REST (#15). `TITULUS_DATA` конфигурируем
 - 2.3 ✅ WS + on-air (#17): `OnAirManager`, `/ws/control`, `/ws/renderer`, `/api/onair`; replay-on-connect; CLEAR ALL fan-out; on-air переживает рестарт backend
 - 2.4 ✅ media transcode (#18): `backend/src/media.js` + `/api/uploads` (VP9/WebM alpha, poster)
-- 2.5 ✅ frontend shell (#19): Vite/React18/TS/Tailwind, dark design system (`PRODUCT.md`/`DESIGN.md`), app shell, api/ws clients
+- 2.5 ✅ frontend shell (#19): Vite/React18/TS/Tailwind, dark design system (`docs/PRODUCT.md`/`docs/DESIGN.md`), app shell, api/ws clients
 - 2.6 ✅ editor (#20, #21): WYSIWYG CanvasArea via `@runtime`, Layers/Properties/Variables, full timeline/curve editor
 - 2.7 ✅ control panel (#22): TAKE/UPDATE(debounced)/CLEAR/CLEAR ALL, ProgramMonitor iframe, Browser Source URL, Rundowns reorder
 - 2.8 ✅ output modes (#23): SettingsPage channel CRUD + `engine/run-engines.sh` / `run-channel.sh` supervisor (taskset, dry-run)
@@ -231,6 +231,6 @@ console.log('ALL OK');
 ## Контактные точки для нового агента
 
 - **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → при наличии hardware выполнить Phase 6.4 run по `docs/phase6-decklink-validation-closure.md`; для control-plane продолжать развитие поверх slot-aware rundown v2 (`docs/phase8-rundown-acceptance.md`).
-- **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
+- **Канон:** всегда `docs/DEVELOPMENT_PROMPT.md` при сомнениях
 - **Текущая ветка работы:** `main` (Phase 6.4 handoff ready + Phase 8 rundown v2 delivered)
 - **Последний merged:** PR #38 (`[Phase 7] docs and rules consolidation + phase report`) — следующий milestone: Phase 8.

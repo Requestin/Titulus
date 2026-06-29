@@ -31,6 +31,7 @@ export function RundownTab({
   templates,
   rundowns,
   setRundowns,
+  dataLoaded,
   onAir,
   setOnAir,
   fallbackChannelId,
@@ -41,6 +42,7 @@ export function RundownTab({
   templates: TemplateSummary[];
   rundowns: Rundown[];
   setRundowns: React.Dispatch<React.SetStateAction<Rundown[]>>;
+  dataLoaded: boolean;
   onAir: OnAirSnapshot;
   setOnAir: React.Dispatch<React.SetStateAction<OnAirSnapshot>>;
   fallbackChannelId: string;
@@ -48,6 +50,8 @@ export function RundownTab({
   onPreferredChannelChange?: (channelId: string) => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const bootstrapAttempted = useRef(false);
   const [focusIdx, setFocusIdx] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -67,6 +71,22 @@ export function RundownTab({
     if (!activeId && rundowns.length) setActiveId(rundowns[0].id);
     if (activeId && !rundowns.some((r) => r.id === activeId)) setActiveId(rundowns[0]?.id ?? null);
   }, [rundowns, activeId]);
+
+  useEffect(() => {
+    if (!dataLoaded || rundowns.length > 0 || bootstrapAttempted.current) return;
+    bootstrapAttempted.current = true;
+    setBootstrapping(true);
+    void api.rundowns.create({ name: 'Rundown 1', slots: [] })
+      .then((rd) => {
+        setRundowns([rd]);
+        setActiveId(rd.id);
+      })
+      .catch((e) => {
+        bootstrapAttempted.current = false;
+        toast.error(`Failed to create default rundown: ${(e as Error).message}`);
+      })
+      .finally(() => setBootstrapping(false));
+  }, [dataLoaded, rundowns.length, setRundowns]);
 
   useEffect(() => {
     const max = Math.max(0, (active?.slots.length ?? 1) - 1);
@@ -258,7 +278,37 @@ export function RundownTab({
     });
   }
 
-  if (!active) return <div className="p-3 text-[13px] text-ink-muted">Loading rundowns…</div>;
+  if (!dataLoaded || bootstrapping) {
+    return (
+      <div className="grid h-full place-items-center p-6 text-center">
+        <p className="text-[13px] text-ink-muted">
+          {!dataLoaded ? 'Loading control data…' : 'Creating default rundown…'}
+        </p>
+      </div>
+    );
+  }
+
+  if (rundowns.length === 0) {
+    return (
+      <div className="grid h-full place-items-center p-6 text-center">
+        <div className="space-y-3">
+          <p className="text-sm font-medium">No rundowns yet</p>
+          <p className="text-[13px] text-ink-muted">Create your first rundown to start scenario playout.</p>
+          <Button variant="primary" onClick={() => void createRundown().catch((e) => toast.error((e as Error).message))}>
+            <Plus className="h-4 w-4" /> Create rundown
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!active) {
+    return (
+      <div className="grid h-full place-items-center p-6 text-center">
+        <p className="text-[13px] text-ink-muted">Preparing rundown…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="grid h-full grid-cols-[250px_1fr]">
