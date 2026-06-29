@@ -64,6 +64,24 @@ alwaysApply: true
 - `backend/src/onair.js`: `applyTake`/`applyUpdate` используют новый DAO контракт (`bringToFront=true/false`) чтобы порядок TAKE/UPDATE совпадал до и после рестарта.
 - `backend/src/routes/ws.js`: обработка control WS команд обёрнута в try/catch; ошибка не валит backend process, клиент получает `{type:'error', error:...}`.
 
+### Phase 4.2 (Media robustness) — DONE
+- `backend/src/routes/uploads.js`: строгая проверка MIME + extension allow-list; структурированные ошибки (`error.code/message/details`); preflight `OPTIONS`.
+- `backend/src/media.js`: retry transcode attempts, timeout guard для ffmpeg, bounded stderr tail, fast-fail для пустых upload (`EMPTY_UPLOAD`), attempts metadata в job.
+- `backend/src/index.js`: CORS middleware для `/api/uploads` и `/uploads` через `TITULUS_UPLOADS_CORS_ORIGINS`; `x-powered-by` disabled; nosniff + cache headers на uploads static.
+
+### Phase 4.3 (Structured template validation API) — DONE
+- `backend/src/templateValidation.js`: enriched AJV diagnostics (`keyword`, `schemaPath`) + helper `templateValidationErrorPayload()`.
+- `backend/src/routes/templates.js`: `/api/templates/validate` возвращает `200` для valid и `422` structured error для invalid; create/update тоже используют единый structured validation payload.
+- `backend/src/index.js`: JSON parse errors нормализованы в `400 INVALID_JSON`, добавлен JSON `500 INTERNAL_ERROR` fallback handler.
+
+### Phase 4.4 (Cleanup + security baseline) — DONE
+- `backend/src/routes/ws.js`: удалён неиспользуемый `db` param, добавлены:
+  - message size cap (256KB) с close code `1009`,
+  - strict WS payload validation для `take/update/clear`,
+  - structured WS error replies (`INVALID_JSON`, `INVALID_CHANNEL_ID`, `INVALID_VARIABLES`, `MESSAGE_TOO_LARGE`, ...),
+  - безопасная normalisation renderer `channelId`.
+- `backend/src/index.js`: глобальные security headers baseline (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`); удалены устаревшие комментарии bootstrap-фазы.
+
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
 ### 1. `/root/Titulus/data` нестабилен для SQLite (SQLITE_IOERR_SHORT_READ)
@@ -155,7 +173,7 @@ console.log('ALL OK');
 
 ## Контактные точки для нового агента
 
-- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → `main` чист → новая ветка под Phase 4 → дочитать этот файл + `10-development-plan.mdc`
+- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → `main` чист → новая ветка под Phase 5.1 (`ffmpeg_consumer`) → дочитать этот файл + `10-development-plan.mdc`
 - **Канон:** всегда `DEVELOPMENT_PROMPT.md` при сомнениях
-- **Текущая ветка работы:** `main` (Phase 2 DONE, PRs #14-#23)
-- **Последний merged:** PR #23 (output modes + run-engines.sh)
+- **Текущая ветка работы:** `main` (Phase 4 DONE)
+- **Последний merged:** PR #30 (`[Phase 4.3] structured template validation API`) + PR #29/28 (Phase 4.2/4.1)
