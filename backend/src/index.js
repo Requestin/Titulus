@@ -5,8 +5,7 @@
 // hubs (/ws/control, /ws/renderer), the engine channel page + runtime bundle,
 // and uploaded media.
 //
-// WS + on-air wiring lands in task 2.3; this first cut mounts the templates
-// REST API + static serving so the control plane is reachable end-to-end.
+// This module wires REST + WS + static assets for the control plane.
 
 import express from 'express';
 import expressWs from 'express-ws';
@@ -62,6 +61,13 @@ const app = express();
 expressWs(app); // adds app.ws() and upgrades handling
 
 app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
 app.use(express.json({ limit: '50mb' }));
 
 const db = openDb(resolve(DATA_DIR, 'app.db'));
@@ -86,7 +92,7 @@ app.use('/api/uploads', uploadsCors, uploadsRouter(media, UPLOADS_DIR));
 app.get('/api/onair', (req, res) => res.json(onAir.onAirTemplateIds()));
 
 // WebSocket hubs (§7.4): /ws/control (panel -> backend), /ws/renderer (engine).
-app.use('/ws', wsRouter(db, onAir));
+app.use('/ws', wsRouter(onAir));
 
 // Settings: global key-value fallback (GET all / PUT replace).
 app.get('/api/settings', (req, res) => res.json(settingsDao(db).all()));
@@ -145,8 +151,5 @@ const server = app.listen(PORT, HOST, () => {
   console.log(`[titulus-backend] listening on http://${HOST}:${PORT}`);
   console.log(`[titulus-backend] db: ${resolve(DATA_DIR, 'app.db')}`);
 });
-
-// Channels/rundowns/WS/media routers will be mounted here in tasks 2.2-2.4 via
-// additional app.use(...) calls (kept out of this file's top level to land per-task).
 
 export { app, server, db };

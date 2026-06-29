@@ -12,9 +12,10 @@ alwaysApply: true
 - **Phase 1:** ✅ DONE (PRs #8-#13, runtime + channel page)
 - **Phase 2:** ✅ DONE (PRs #14-#23, control plane + media + frontend + output modes)
 - **Phase 3:** ✅ CODE-COMPLETE (DeckLink SDI consumer implemented; hardware validation deferred без HW)
-- **Phase 4-6+:** ⏳ Phase 4 — следующая
+- **Phase 4:** ✅ DONE (backend hardening complete)
+- **Phase 5-6+:** ⏳ Phase 5 — следующая
 
-**СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 4.2 — media robustness (`/api/uploads`: MIME/size/cors/retry/error handling).
+**СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 5.1 — `ffmpeg_consumer` (libavformat/avfilter/avcodec, BGRA, srt/rtmp).
 
 ## Git история (merged PRs в main)
 
@@ -46,17 +47,18 @@ alwaysApply: true
 
 ---
 
-## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Phase 4.2 (Media robustness)
+## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Phase 5.1 (`ffmpeg_consumer`)
 
-**Цель:** повысить надёжность media pipeline перед production (валидация входа, предсказуемые ошибки, устойчивость job lifecycle).
+**Цель:** добавить production stream output path (SRT/RTMP) в `bg_engine`, CasparCG-aligned producer->consumer pipeline с BGRA source.
 
 **Что сделать:**
-1. 4.2 harden `/api/uploads`: MIME/size validation and structured failure codes
-2. Add retry/error-state strategy for media jobs (non-200 ffmpeg exits)
-3. Tighten CORS/path constraints for uploads static path
-4. Verification loop + PR `[Phase 4.2] media robustness` → merge
+1. Добавить `engine/src/consumers/ffmpeg_consumer.{h,cpp}` (in-process ffmpeg path)
+2. Поддержать `--consumer=stream --stream-url=...` в `main.cpp/config`
+3. Реализовать BGRA → AVFrame bridge + lifecycle + telemetry
+4. Прогнать smoke на localhost stream sink + зафиксировать в docs
+5. PR `[Phase 5.1] ffmpeg consumer` → merge
 
-**Phase 4.2 exit:** uploads and media jobs fail predictably, without crashing backend or leaving hanging job states.
+**Phase 5.1 exit:** `stream` consumer стабильно запускается, отправляет поток и корректно завершает lifecycle.
 
 ---
 
@@ -119,12 +121,12 @@ alwaysApply: true
 
 **Phase 3 Exit (code):** компилируется/линкуется против SDK. **Exit (validation — DEFERRED до железа):** 8h soak, genlock locked, CasparCG parity.
 
-## Phase 4 — Backend hardening ⏳ NEXT
+## Phase 4 — Backend hardening ✅ DONE
 
 - 4.1 on-air persistence hardened (kill/restart backend → restored) — ✅ DONE (order-index persistence + WS error hardening)
-- 4.2 media robust (error handling, retry, 200MB, MIME, CORS)
-- 4.3 `/api/templates/validate` ajv structured errors
-- 4.4 remove dead code/legacy; security baseline (NFR-3)
+- 4.2 media robust (error handling, retry, 200MB, MIME, CORS) — ✅ DONE
+- 4.3 `/api/templates/validate` ajv structured errors — ✅ DONE
+- 4.4 remove dead code/legacy; security baseline (NFR-3) — ✅ DONE
 
 ## Phase 5 — Cloud outputs + AI foundation + docs ⏳
 
