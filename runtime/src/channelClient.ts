@@ -19,7 +19,7 @@
 // page just lets the rAF loop run.
 
 import type { Template } from './schema.js';
-import { TemplateRenderer, type TemplateRendererOptions } from './domRenderer.js';
+import { TemplateRenderer, type TemplateRendererOptions, type OnFrameFn } from './domRenderer.js';
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -46,6 +46,12 @@ export interface ChannelClientOptions {
   onStatus?: (s: WsStatus) => void;
   /** Active on-air template count changed. */
   onActiveCount?: (n: number) => void;
+  /**
+   * Per-frame renderer callback forwarded to every active TemplateRenderer
+   * (Phase 9.1). Used by the channel.html `hud=1` overlay and bench harness to
+   * surface RenderStats. Only fires for the most recently ticked renderer.
+   */
+  onFrame?: OnFrameFn;
 }
 
 interface ActiveTemplate {
@@ -176,7 +182,8 @@ export class ChannelClient {
     if (prev) { prev.renderer.destroy(); this.active.delete(id); }
     const renderer = new TemplateRenderer(this.opts.stage, this.rendererOpts());
     this.active.set(id, { renderer });
-    renderer.playTimeline(msg.template, msg.variables ?? {});
+    renderer.playTimeline(msg.template, msg.variables ?? {},
+      this.opts.onFrame ? { onFrame: this.opts.onFrame } : {});
     this.opts.onActiveCount?.(this.active.size);
   }
 
