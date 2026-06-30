@@ -17,6 +17,7 @@ import { cn } from '@/lib/cn';
 import { ProgramMonitor } from '@/control/ProgramMonitor';
 import { VariableValues } from '@/control/VariableValues';
 import { RundownTab } from '@/control/RundownTab';
+import { createId } from '@/core/id';
 
 export function ControlPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -316,7 +317,7 @@ function normalizeRundown(rundown: Rundown): Rundown {
       const name = slot.name ?? slot.label ?? `Slot ${idx + 1}`;
       return {
         ...slot,
-        slotId: slot.slotId ?? slot.id ?? crypto.randomUUID(),
+        slotId: slot.slotId ?? slot.id ?? createId(),
         name,
         vars,
       };

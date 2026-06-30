@@ -3,6 +3,7 @@
 // Minimal toast store (error-handling skill: surface user-facing failures).
 
 import { create } from 'zustand';
+import { createId } from '@/core/id';
 
 export type ToastKind = 'success' | 'error' | 'info';
 
@@ -21,7 +22,7 @@ interface ToastState {
 export const useToasts = create<ToastState>((set, get) => ({
   toasts: [],
   push: (kind, message) => {
-    const id = crypto.randomUUID();
+    const id = createId();
     set((s) => ({ toasts: [...s.toasts, { id, kind, message }] }));
     window.setTimeout(() => get().dismiss(id), kind === 'error' ? 6000 : 3500);
   },

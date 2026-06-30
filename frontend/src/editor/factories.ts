@@ -4,6 +4,7 @@
 // shared/template.schema.json so saves pass /api/templates/validate).
 
 import { createDefaultTransform, type Layer, type LayerType, type TextStyle, type Variable } from '@runtime';
+import { createId } from '@/core/id';
 
 export const LAYER_TYPES: LayerType[] = ['text', 'rect', 'image', 'video', 'clock', 'mask'];
 
@@ -17,7 +18,7 @@ export const LAYER_LABEL: Record<LayerType, string> = {
 };
 
 function uuid(): string {
-  return crypto.randomUUID();
+  return createId();
 }
 
 export function defaultTextStyle(): TextStyle {

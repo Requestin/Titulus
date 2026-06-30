@@ -17,9 +17,9 @@ export interface MaskScope {
 }
 
 /**
- * Compute all mask scopes for a template. Walks each stack container in order;
- * when a mask layer is encountered, all subsequent entries in that container
- * form one scope.
+ * Compute all mask scopes for a template. `rootStack` / `groupStacks` are stored
+ * back-to-front (last entry is frontmost). A mask clips only siblings below it
+ * in the visible tree, so it affects entries before the mask in the stack array.
  */
 export function computeMaskScopes(
   template: Pick<Template, 'layers' | 'rootStack' | 'groupStacks'>,
@@ -37,7 +37,7 @@ export function computeMaskScopes(
           scopes.push({
             maskLayerId: e.id,
             containerId,
-            affected: entries.slice(i + 1),
+            affected: entries.slice(0, i),
           });
         }
       }
@@ -86,29 +86,35 @@ export function maskClipStyle(
   containerH: number,
 ): { overflow: string; clipPath: string; borderRadius: string } {
   const cr = mask.cornerRadius;
-  if (mask.maskMode === 'normal') {
-    if (mask.shape === 'ellipse') {
-      return {
-        overflow: 'hidden',
-        clipPath: 'none',
-        borderRadius: '50%',
-      };
-    }
-    if (cr > 0) {
-      return {
-        overflow: 'hidden',
-        clipPath: `inset(0 round ${cr}px)`,
-        borderRadius: '0',
-      };
-    }
-    return { overflow: 'hidden', clipPath: 'none', borderRadius: '0' };
-  }
-
-  // Inverted: show outside mask rect via evenodd polygon on container bounds.
   const x = at.left;
   const y = at.top;
   const w = at.width;
   const h = at.height;
+  if (mask.maskMode === 'normal') {
+    if (mask.shape === 'ellipse') {
+      return {
+        overflow: 'hidden',
+        clipPath: `ellipse(${w / 2}px ${h / 2}px at ${x + w / 2}px ${y + h / 2}px)`,
+        borderRadius: '0',
+      };
+    }
+    const right = Math.max(0, containerW - x - w);
+    const bottom = Math.max(0, containerH - y - h);
+    if (cr > 0) {
+      return {
+        overflow: 'hidden',
+        clipPath: `inset(${y}px ${right}px ${bottom}px ${x}px round ${cr}px)`,
+        borderRadius: '0',
+      };
+    }
+    return {
+      overflow: 'hidden',
+      clipPath: `inset(${y}px ${right}px ${bottom}px ${x}px)`,
+      borderRadius: '0',
+    };
+  }
+
+  // Inverted: show outside mask rect via evenodd polygon on container bounds.
   if (mask.shape === 'ellipse') {
     // Approximate: outer canvas rect minus inner ellipse via SVG mask is heavy;
     // use polygon hole for rect bounds of ellipse for MVP.
@@ -116,7 +122,7 @@ export function maskClipStyle(
     const cy = y + h / 2;
     const rx = w / 2;
     const ry = h / 2;
-    const outer = `0 0, ${containerW} 0, ${containerW} ${containerH}, 0 ${containerH}`;
+    const outer = `0px 0px, ${containerW}px 0px, ${containerW}px ${containerH}px, 0px ${containerH}px`;
     const inner = ellipsePolygon(cx, cy, rx, ry, 32);
     return {
       overflow: 'hidden',
@@ -124,12 +130,12 @@ export function maskClipStyle(
       borderRadius: '0',
     };
   }
-  const outer = `0 0, ${containerW} 0, ${containerW} ${containerH}, 0 ${containerH}`;
+  const outer = `0px 0px, ${containerW}px 0px, ${containerW}px ${containerH}px, 0px ${containerH}px`;
   let inner: string;
   if (cr > 0) {
     inner = roundedRectPolygon(x, y, w, h, cr);
   } else {
-    inner = `${x} ${y}, ${x + w} ${y}, ${x + w} ${y + h}, ${x} ${y + h}`;
+    inner = `${x}px ${y}px, ${x + w}px ${y}px, ${x + w}px ${y + h}px, ${x}px ${y + h}px`;
   }
   return {
     overflow: 'hidden',
@@ -142,7 +148,7 @@ function ellipsePolygon(cx: number, cy: number, rx: number, ry: number, segments
   const pts: string[] = [];
   for (let i = 0; i < segments; i++) {
     const a = (i / segments) * Math.PI * 2;
-    pts.push(`${cx + Math.cos(a) * rx} ${cy + Math.sin(a) * ry}`);
+    pts.push(`${cx + Math.cos(a) * rx}px ${cy + Math.sin(a) * ry}px`);
   }
   return pts.join(', ');
 }
@@ -151,17 +157,17 @@ function ellipsePolygon(cx: number, cy: number, rx: number, ry: number, segments
 function roundedRectPolygon(x: number, y: number, w: number, h: number, r: number): string {
   const cr = Math.min(r, w / 2, h / 2);
   if (cr <= 0) {
-    return `${x} ${y}, ${x + w} ${y}, ${x + w} ${y + h}, ${x} ${y + h}`;
+    return `${x}px ${y}px, ${x + w}px ${y}px, ${x + w}px ${y + h}px, ${x}px ${y + h}px`;
   }
   // Simplified: 4 corners with quarter-circle approx (8 segments per corner = overkill; use 2 pts per corner)
   return [
-    `${x + cr} ${y}`,
-    `${x + w - cr} ${y}`,
-    `${x + w} ${y + cr}`,
-    `${x + w} ${y + h - cr}`,
-    `${x + w - cr} ${y + h}`,
-    `${x + cr} ${y + h}`,
-    `${x} ${y + h - cr}`,
-    `${x} ${y + cr}`,
+    `${x + cr}px ${y}px`,
+    `${x + w - cr}px ${y}px`,
+    `${x + w}px ${y + cr}px`,
+    `${x + w}px ${y + h - cr}px`,
+    `${x + w - cr}px ${y + h}px`,
+    `${x + cr}px ${y + h}px`,
+    `${x}px ${y + h - cr}px`,
+    `${x}px ${y + cr}px`,
   ].join(', ');
 }

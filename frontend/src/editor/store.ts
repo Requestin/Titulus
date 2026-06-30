@@ -12,6 +12,7 @@ import type {
   TimelineDirector, TimelineKeyframe, AnimatableProp, EasingType,
 } from '@runtime';
 import { createDefaultTransform } from '@runtime';
+import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
@@ -33,7 +34,7 @@ function baseValue(t: Template, target: Target, prop: AnimatableProp): number {
 function kfAt(t: Template, frame: number): TimelineKeyframe {
   let kf = t.timeline.keyframes.find((k) => k.frame === frame);
   if (!kf) {
-    kf = { id: crypto.randomUUID(), frame, layers: {}, groups: {}, easing: 'power2.out' };
+    kf = { id: createId(), frame, layers: {}, groups: {}, easing: 'power2.out' };
     t.timeline.keyframes.push(kf);
     t.timeline.keyframes.sort((a, b) => a.frame - b.frame);
   }
@@ -187,7 +188,7 @@ export const useEditor = create<EditorState>()(
         const src = template.layers.find((l) => l.id === selection.id);
         if (!src) return;
         const copy = structuredClone(src);
-        copy.id = crypto.randomUUID();
+        copy.id = createId();
         copy.name = `${src.name} copy`;
         copy.transform.x += 24;
         copy.transform.y += 24;
@@ -253,7 +254,7 @@ export const useEditor = create<EditorState>()(
         const t0 = get().template;
         if (!t0) return;
         const n = t0.groups.length + 1;
-        const id = crypto.randomUUID();
+        const id = createId();
         get().patch((t) => {
           t.groups.push({
             id, name: `Group ${n}`, parentId: null, visible: true, locked: false,
@@ -301,7 +302,7 @@ export const useEditor = create<EditorState>()(
         const t0 = get().template;
         if (!t0) return;
         const n = t0.timeline.directors.length + 1;
-        const id = crypto.randomUUID();
+        const id = createId();
         get().patch((t) => {
           t.timeline.directors.push({
             id, name: `Director ${n}`,
