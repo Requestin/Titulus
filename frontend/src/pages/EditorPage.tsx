@@ -3,7 +3,7 @@
 // Template editor (DEVELOPMENT_PROMPT §8.3): toolbar + Layers | Canvas | (Props /
 // Variables) + timeline strip. Loads/saves via REST, validated on save.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '@/core/api';
 import { toast } from '@/core/toast';
@@ -25,8 +25,10 @@ export function EditorPage() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<'properties' | 'variables'>('properties');
+  const [timelineHeight, setTimelineHeight] = useState(256);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const allowNavigationRef = useRef(false);
+  const timelineResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,6 +168,25 @@ export function EditorPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [save]);
 
+  function beginTimelineResize(e: ReactPointerEvent<HTMLDivElement>) {
+    timelineResizeRef.current = { startY: e.clientY, startHeight: timelineHeight };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
+  function resizeTimeline(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = timelineResizeRef.current;
+    if (!drag) return;
+    const next = drag.startHeight + (drag.startY - e.clientY);
+    setTimelineHeight(Math.min(520, Math.max(160, next)));
+  }
+
+  function endTimelineResize(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!timelineResizeRef.current) return;
+    timelineResizeRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }
+
   if (status === 'loading') {
     return <div className="grid h-full place-items-center text-sm text-ink-muted">Loading editor…</div>;
   }
@@ -185,7 +206,20 @@ export function EditorPage() {
           <div className="min-h-0 flex-1">
             <CanvasArea />
           </div>
-          <div className="h-64 shrink-0 border-t border-border">
+          <div
+            className="relative shrink-0 border-t border-border"
+            style={{ height: timelineHeight }}
+          >
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize timeline"
+              className="absolute -top-1 left-0 right-0 z-sticky h-2 cursor-row-resize transition-colors hover:bg-primary/30"
+              onPointerDown={beginTimelineResize}
+              onPointerMove={resizeTimeline}
+              onPointerUp={endTimelineResize}
+              onPointerCancel={endTimelineResize}
+            />
             <TimelinePanel />
           </div>
         </div>

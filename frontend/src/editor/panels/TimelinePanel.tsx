@@ -170,7 +170,7 @@ export function TimelinePanel() {
                 {addOpen && (
                   <>
                     <div className="fixed inset-0 z-dropdown" onClick={() => setAddOpen(false)} />
-                    <div className="absolute bottom-9 left-1.5 z-dropdown grid max-h-48 w-28 grid-cols-2 gap-0.5 overflow-auto rounded-md border border-border bg-surface-2 p-1 shadow-xl">
+                    <div className="absolute left-1.5 top-9 z-dropdown grid max-h-48 w-28 grid-cols-2 gap-0.5 overflow-auto rounded-md border border-border bg-surface-2 p-1 shadow-xl">
                       {untrackedProps.map((p) => (
                         <button
                           key={p}

@@ -670,6 +670,16 @@ export class TemplateRenderer {
         }
         this.setStyle(node.clipHost, cache, 'clipPath', proj.clipPath);
         this.setStyle(node.clipHost, cache, 'borderRadius', '0');
+        this.setStyle(node.clipHost, cache, 'maskImage', 'none');
+        this.setStyle(node.clipHost, cache, 'WebkitMaskImage', 'none');
+        this.setStyle(node.clipHost, cache, 'maskMode', 'match-source');
+        this.setStyle(node.clipHost, cache, 'WebkitMaskMode', 'match-source');
+        this.setStyle(node.clipHost, cache, 'maskSize', 'auto');
+        this.setStyle(node.clipHost, cache, 'WebkitMaskSize', 'auto');
+        this.setStyle(node.clipHost, cache, 'maskRepeat', 'repeat');
+        this.setStyle(node.clipHost, cache, 'WebkitMaskRepeat', 'repeat');
+        this.setStyle(node.clipHost, cache, 'maskPosition', '0 0');
+        this.setStyle(node.clipHost, cache, 'WebkitMaskPosition', '0 0');
       } else {
         node.clipMode = 'bounds';
         delete cache.clipGeoKey;
@@ -682,6 +692,16 @@ export class TemplateRenderer {
         this.setStyle(node.clipHost, cache, 'overflow', clip.overflow);
         this.setStyle(node.clipHost, cache, 'clipPath', clip.clipPath);
         this.setStyle(node.clipHost, cache, 'borderRadius', clip.borderRadius);
+        this.setStyle(node.clipHost, cache, 'maskImage', clip.maskImage);
+        this.setStyle(node.clipHost, cache, 'WebkitMaskImage', clip.maskImage);
+        this.setStyle(node.clipHost, cache, 'maskMode', clip.maskMode);
+        this.setStyle(node.clipHost, cache, 'WebkitMaskMode', clip.maskMode);
+        this.setStyle(node.clipHost, cache, 'maskSize', clip.maskSize);
+        this.setStyle(node.clipHost, cache, 'WebkitMaskSize', clip.maskSize);
+        this.setStyle(node.clipHost, cache, 'maskRepeat', clip.maskRepeat);
+        this.setStyle(node.clipHost, cache, 'WebkitMaskRepeat', clip.maskRepeat);
+        this.setStyle(node.clipHost, cache, 'maskPosition', clip.maskPosition);
+        this.setStyle(node.clipHost, cache, 'WebkitMaskPosition', clip.maskPosition);
       }
     }
   }

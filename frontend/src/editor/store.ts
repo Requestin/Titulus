@@ -124,7 +124,7 @@ export const useEditor = create<EditorState>()(
       selection: null,
       dirty: false,
       zoom: 0.45,
-      gridSnap: true,
+      gridSnap: false,
       gridSize: 8,
       playhead: 0,
       playing: false,

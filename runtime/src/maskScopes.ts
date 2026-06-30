@@ -84,7 +84,16 @@ export function maskClipStyle(
   at: AppliedTransform,
   containerW: number,
   containerH: number,
-): { overflow: string; clipPath: string; borderRadius: string } {
+): {
+  overflow: string;
+  clipPath: string;
+  borderRadius: string;
+  maskImage: string;
+  maskMode: string;
+  maskSize: string;
+  maskRepeat: string;
+  maskPosition: string;
+} {
   const cr = mask.cornerRadius;
   const x = at.left;
   const y = at.top;
@@ -96,6 +105,11 @@ export function maskClipStyle(
         overflow: 'hidden',
         clipPath: `ellipse(${w / 2}px ${h / 2}px at ${x + w / 2}px ${y + h / 2}px)`,
         borderRadius: '0',
+        maskImage: 'none',
+        maskMode: 'match-source',
+        maskSize: 'auto',
+        maskRepeat: 'repeat',
+        maskPosition: '0 0',
       };
     }
     const right = Math.max(0, containerW - x - w);
@@ -105,69 +119,51 @@ export function maskClipStyle(
         overflow: 'hidden',
         clipPath: `inset(${y}px ${right}px ${bottom}px ${x}px round ${cr}px)`,
         borderRadius: '0',
+        maskImage: 'none',
+        maskMode: 'match-source',
+        maskSize: 'auto',
+        maskRepeat: 'repeat',
+        maskPosition: '0 0',
       };
     }
     return {
       overflow: 'hidden',
       clipPath: `inset(${y}px ${right}px ${bottom}px ${x}px)`,
       borderRadius: '0',
+      maskImage: 'none',
+      maskMode: 'match-source',
+      maskSize: 'auto',
+      maskRepeat: 'repeat',
+      maskPosition: '0 0',
     };
   }
 
-  // Inverted: show outside mask rect via evenodd polygon on container bounds.
-  if (mask.shape === 'ellipse') {
-    // Approximate: outer canvas rect minus inner ellipse via SVG mask is heavy;
-    // use polygon hole for rect bounds of ellipse for MVP.
-    const cx = x + w / 2;
-    const cy = y + h / 2;
-    const rx = w / 2;
-    const ry = h / 2;
-    const outer = `0px 0px, ${containerW}px 0px, ${containerW}px ${containerH}px, 0px ${containerH}px`;
-    const inner = ellipsePolygon(cx, cy, rx, ry, 32);
-    return {
-      overflow: 'hidden',
-      clipPath: `polygon(evenodd, ${outer}, ${inner})`,
-      borderRadius: '0',
-    };
-  }
-  const outer = `0px 0px, ${containerW}px 0px, ${containerW}px ${containerH}px, 0px ${containerH}px`;
-  let inner: string;
-  if (cr > 0) {
-    inner = roundedRectPolygon(x, y, w, h, cr);
-  } else {
-    inner = `${x}px ${y}px, ${x + w}px ${y}px, ${x + w}px ${y + h}px, ${x}px ${y + h}px`;
-  }
+  const maskImage = invertedMaskImage(mask, x, y, w, h, containerW, containerH, cr);
   return {
     overflow: 'hidden',
-    clipPath: `polygon(evenodd, ${outer}, ${inner})`,
+    clipPath: 'none',
     borderRadius: '0',
+    maskImage,
+    maskMode: 'luminance',
+    maskSize: `${containerW}px ${containerH}px`,
+    maskRepeat: 'no-repeat',
+    maskPosition: '0 0',
   };
 }
 
-function ellipsePolygon(cx: number, cy: number, rx: number, ry: number, segments: number): string {
-  const pts: string[] = [];
-  for (let i = 0; i < segments; i++) {
-    const a = (i / segments) * Math.PI * 2;
-    pts.push(`${cx + Math.cos(a) * rx}px ${cy + Math.sin(a) * ry}px`);
-  }
-  return pts.join(', ');
-}
-
-/** Rounded-rect polygon (clockwise) for evenodd hole. */
-function roundedRectPolygon(x: number, y: number, w: number, h: number, r: number): string {
-  const cr = Math.min(r, w / 2, h / 2);
-  if (cr <= 0) {
-    return `${x}px ${y}px, ${x + w}px ${y}px, ${x + w}px ${y + h}px, ${x}px ${y + h}px`;
-  }
-  // Simplified: 4 corners with quarter-circle approx (8 segments per corner = overkill; use 2 pts per corner)
-  return [
-    `${x + cr}px ${y}px`,
-    `${x + w - cr}px ${y}px`,
-    `${x + w}px ${y + cr}px`,
-    `${x + w}px ${y + h - cr}px`,
-    `${x + w - cr}px ${y + h}px`,
-    `${x + cr}px ${y + h}px`,
-    `${x}px ${y + h - cr}px`,
-    `${x}px ${y + cr}px`,
-  ].join(', ');
+function invertedMaskImage(
+  mask: { shape: 'rect' | 'ellipse' },
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  containerW: number,
+  containerH: number,
+  cornerRadius: number,
+): string {
+  const cutout = mask.shape === 'ellipse'
+    ? `<ellipse cx="${x + w / 2}" cy="${y + h / 2}" rx="${w / 2}" ry="${h / 2}" fill="black"/>`
+    : `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.min(cornerRadius, w / 2, h / 2)}" ry="${Math.min(cornerRadius, w / 2, h / 2)}" fill="black"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${containerW}" height="${containerH}" viewBox="0 0 ${containerW} ${containerH}"><defs><mask id="m" maskUnits="userSpaceOnUse"><rect width="${containerW}" height="${containerH}" fill="white"/>${cutout}</mask></defs><rect width="${containerW}" height="${containerH}" fill="white" mask="url(#m)"/></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 }
