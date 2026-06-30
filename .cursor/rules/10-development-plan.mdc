@@ -62,17 +62,16 @@ alwaysApply: true
 
 ---
 
-## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ: Phase 6.4 hardware execution (external dependency)
+## НЕМЕДЛЕННОЕ ПРОДОЛЖЕНИЕ
 
-**Цель:** исполнить готовый handoff-пакет на hardware host и зафиксировать финальное acceptance evidence.
+**Стартовая точка для нового агента:** `docs/AGENT_RESUME.md` (читай первым).
 
-**Что сделать:**
-1. На host с платой запустить `engine/collect-decklink-evidence.sh` и собрать bundle.
-2. Пройти validation matrix из `docs/phase6-decklink-validation-closure.md` (lock, parity, soak).
-3. Приложить waveform/scope evidence и итоговый verdict.
-4. Обновить docs с финальным статусом `DONE` или зафиксировать residual blockers.
+**Текущие приоритеты (без предпочтения, если не указано):**
 
-**Phase 6.4 exit:** hardware run выполнен и evidence приложен.
+1. **Phase 6.4 — SDI hardware validation (external-blocked).** Нужен host с DeckLink + genlock. Runbook: `docs/phase6-decklink-validation-closure.md`. Если железа нет — пропускается.
+2. **Phase 6+ stretch (без HW):** multi-tenant SaaS auth/billing, license activation с внешним provider, NDI output.
+3. **Развитие control plane** поверх rundown v2 (`docs/phase8-rundown-acceptance.md`).
+4. **Phase 10 (2.5D/masks v2)** из known limits `docs/phase9-25d-masks.md` §9.
 
 ---
 

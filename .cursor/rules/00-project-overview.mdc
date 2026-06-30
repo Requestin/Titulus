@@ -67,8 +67,11 @@ Cloud SaaS (подписка) + On-prem (lifetime/annual). Один codebase, р
 
 ## Ключевые артифакты проекта (где что лежит)
 
+- **`docs/AGENT_RESUME.md` — ТОЧКА СТАРТА для нового агента (читай первым после clone)**
 - `docs/DEVELOPMENT_PROMPT.md` — канонический spec (читай при сомнениях)
 - `docs/PRODUCT.md`, `docs/DESIGN.md` — product/design context для UI
+- `docs/phase9-25d-masks.md` — последняя завершённая фаза (2.5D + маски)
+- `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md` — архитектура и операционка
 - `engine/CASPARRCG_PORTING.md` — porting-map CasparCG→bg_engine + зафиксированные развилки
 - `engine/THIRD_PARTY_NOTICES.md` — GPL-compliance log (reimplement-by-reference)
 - `docs/PHASE0_BENCH.md` — bench-результаты (Phase 0 proven)

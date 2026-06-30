@@ -139,6 +139,17 @@ alwaysApply: true
 - Program monitor привязан к channel binding активного rundown (preview-context), при этом Templates tab поведение не деградирует.
 - Документация Phase 8 добавлена: `docs/phase8-rundown-acceptance.md`; `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md`, `.cursor/rules/10-development-plan.mdc` обновлены под новый workflow.
 
+### Phase 9 (2.5D transforms + stack-scoped masks) — DONE
+- **9.1 (#41):** `RenderStats` (`styleWrites`/`skippedWrites`/`frameTimeMs`) + per-node dirty-check `setStyle()` в `TemplateRenderer`; `OnFrameFn` расширен `stats?`; `channel.html?hud=1` — HUD.
+- **9.2 (#42):** Compiled timeline tracks (`CompiledDirector`/`CompiledTargetTracks`), per-target sorted keyframes + pre-resolved easing, binary search в `sampleTargetTrack`; `normalizeTimeline` — один раз в `syncTemplate`.
+- **9.3 (#43):** Stack-scoped маски 2D: `maskScopes.ts` (`computeMaskScopes`, `maskClipStyle` для normal/inverted, rect/ellipse, radius), recursive `mountStack`/`mountStackContents` + `clipHost`; маска невидима в эфире; UI cleanup по `docs/phase9-25d-masks.md` (Mode/Shape/Radius, без fill/border/opacity/blend), SVG `MaskIcon` (квадрат+«М»), schema `fill`/`border*` optional.
+- **9.4 (#44):** Anchor pivot fix: `x/y` теперь = позиция pivot в parent space; `left = x - width*anchorX`; `anchorCompensatedUpdate()` — editor не «прыгает» при смене anchor; UI **Tilt X** / **Tilt Y** (`rotationX`/`rotationY`); `CanvasArea` drag использует `applyTransform()`.
+- **9.5 (#45):** `preserve-3d` + perspective inheritance: root/groups получают `transform-style: preserve-3d` только если subtree has 3D (`transformHas3D`); group CSS `perspective` property; child `applyTransform` с `skipPerspective` если ancestor уже задал.
+- **9.6 (#46):** Projected clip-path для rotated/tilted masks: `maskGeometry.ts` (проекция 4 углов при rotation/rotationX/rotationY, quantization 0.5px, `maskGeometryKey`), `clipMode: 'projected'` переключает clipHost на full-container + `polygon(…)`.
+- **9.7 (#47):** `bench/bench-25d.html` (CSS 3D stress, 8 cards wobble), `bench/bench-mask-stack.html` (`TemplateRenderer` + mask stack + animation), `docs/phase9-25d-masks.md` (полная спека, раньше лежала в `docs/new feature/`).
+- **Канонический документ Phase 9:** `docs/phase9-25d-masks.md` (400+ строк: задачи, архитектура, все 7 PR, mask-семантика, bench-команды, ограничения MVP).
+- **Smoke-подтверждение:** `bg_engine --consumer=null --url=file://.../bench-mask-stack.html --duration=3` → `drops=0%`, p50≈20.7ms.
+
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
 ### 1. `/root/Titulus/data` нестабилен для SQLite (SQLITE_IOERR_SHORT_READ)
@@ -173,6 +184,14 @@ alwaysApply: true
 - Симптом: `pkill -f "PORT=3097"` не убивает `node src/index.js`; зато матчит shell-обёртки (включая собственную команду) → команда «убивает сама себя», backend остаётся жив на порту.
 - Причина: `PORT=3097` — это env var, его НЕТ в argv процесса `node src/index.js` (`/proc/pid/cmdline`). `pkill -f` матчит по cmdline, не по environment.
 - **Решение:** убивать слушателя по PID порта: `PID=$(ss -ltnp | grep ':<port>' | grep -oP 'pid=\K[0-9]+' | head -1); kill "$PID"`. (НЕ `pkill -f "src/index.js"` — это снова матчит shell-обёртку с этой строкой в argv.)
+
+### 9. jsdom + `globalThis.performance` в runtime smoke-тестах
+- Симптом: переопределение `globalThis.performance = jsdom.window.performance` → stack overflow / бесконечная рекурсия в `performance.now()`.
+- **Решение:** НЕ перезаписывать `globalThis.performance`; использовать jsdom'овский как есть (или shim через `Date.now()`).
+
+### 10. Runtime smoke: после `syncTemplate` повторный `seek` = `writes: 0`
+- Не баг: кэш dirty-check уже обновлён в `syncTemplate`→`applyState`; повторный `seek` на том же кадре ничего не пишет.
+- Корректная проверка dirty-check: два `seek` на одном кадре **без** промежуточного `syncTemplate`, или stats до/после смены данных, а не после обновления кэша.
 
 ## Проверенные подходы (что работает)
 
@@ -230,7 +249,25 @@ console.log('ALL OK');
 
 ## Контактные точки для нового агента
 
-- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → при наличии hardware выполнить Phase 6.4 run по `docs/phase6-decklink-validation-closure.md`; для control-plane продолжать развитие поверх slot-aware rundown v2 (`docs/phase8-rundown-acceptance.md`).
-- **Канон:** всегда `docs/DEVELOPMENT_PROMPT.md` при сомнениях
-- **Текущая ветка работы:** `main` (Phase 6.4 handoff ready + Phase 8 rundown v2 delivered)
-- **Последний merged:** PR #38 (`[Phase 7] docs and rules consolidation + phase report`) — следующий milestone: Phase 8.
+- **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → **читать `docs/AGENT_RESUME.md`** (точка старта с командами).
+- **Канон:** всегда `docs/DEVELOPMENT_PROMPT.md` при сомнениях.
+- **Phase 9 (последняя завершённая):** полный отчёт в `docs/phase9-25d-masks.md`.
+- **Текущая ветка работы:** `main` (Phase 9 done, 7 PR merged #41–#47).
+- **Последний merged:** PR #47 (`[Phase 9.7] bench 2.5D scenes + phase9-25d-masks.md`) + commit `4a3237d` (docs consolidation).
+- **Следующий milestone (external-blocked):** Phase 6.4 — hardware validation на host с DeckLink+genlock (`docs/phase6-decklink-validation-closure.md`).
+- **Альтернативы для продолжения без HW:** Phase 6+ stretch (multi-tenant SaaS, license activation, NDI), либо новые control-plane фичи поверх slot-aware rundown v2 (`docs/phase8-rundown-acceptance.md`).
+- **Доступ к dev-серверу:** заказчик работал через Remote SSH (Windows Cursor → Ubuntu dev server `/root/Titulus`); возможно продолжение на домашнем Linux-хосте (`git clone` + `./dev-start.sh`).
+
+## Dev-окружение (актуальный workflow)
+
+- **Запуск всего стека:** `./dev-start.sh` (frontend :3011, backend :3002, `TITULUS_DATA=/tmp/titulus-dev`, run-engines supervisor).
+- **Остановка:** `./dev-stop.sh`.
+- **Логи:** `/root/Titulus/logs/{backend,frontend,engines}.log`.
+- **UI:** `http://127.0.0.1:3011`, логин `admin` / `admin123` (bootstrap default, см. `backend/src/db.js`).
+- **LAN-доступ (другой ПК в сети):** `dev-start.sh` по умолчанию слушает `0.0.0.0`; для localhost-only → `TITULUS_HOST=127.0.0.1 ./dev-start.sh`.
+- **Backend health:** `curl -s http://127.0.0.1:3002/api/health` → `{"ok":true,"service":"titulus-backend"}`.
+- **Получить токен:** `POST /api/auth/login` с `{"username":"admin","password":"admin123"}`.
+
+## Что НЕ получилось / abandoned (контекст для нового агента)
+
+- **Перенос Cursor-чата между машинами (заказчик, июль 2026):** встроенной синхронизации Cursor нет; чаты лежат локально (`%APPDATA%\Cursor\User\workspaceStorage\` на Windows при Remote SSH). Решили **не переносить UI-чат**, а положить весь контекст в `.cursor/rules` + `docs/` (этот commit). Cursor Chat Transfer / cursaves не использовались.
