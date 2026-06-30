@@ -173,30 +173,31 @@ runtime/src/
 
 ### PR 9.3 — Stack-scoped masks 2D + UI
 
-**Runtime — mount model:**
+**Runtime — mount model (post sergey-v1 merge):**
 
 ```
 stack container (root или groupStacks[gid])
-  … siblings above mask …
+  maskScopeWrapper  ← mount для frontmost mask
+    clipHost  ← full-container; clip-path / SVG mask описывает зону
+      … все siblings НИЖЕ маски в back-to-front массиве (рекурсивно) …
   mask layer (видим только в editor selection)
-  maskScopeWrapper
-    clipHost  ← overflow / clip-path
-      … все siblings ниже (рекурсивно, вложенные маски) …
+  … siblings ВЫШЕ маски mount в containerEl напрямую …
 ```
 
 **Файлы:**
 
-- `maskScopes.ts` — `computeMaskScopes()`, `maskClipStyle()` (normal/inverted, rect/ellipse, corner radius).
-- `domRenderer.ts` — `mountStack`, `mountStackContents`, `applyMaskScopes`, offset позиций детей внутри `clipHost`.
+- `maskScopes.ts` — `computeMaskScopes()` (slice(0, i)), `maskClipStyle()` (normal/inverted, rect/ellipse, corner radius; inverted использует inline SVG luminance mask).
+- `domRenderer.ts` — `mountStackRange()` рекурсивный split по frontmost mask; `applyMaskScopes` выставляет full-container clipHost + clip-path.
+- `maskGeometry.ts` — `projectMaskOutline()` для projected rect/rounded/ellipse.
 - Маска в эфире: `background: transparent`, `pointer-events: none`.
 
 **UI:**
 
 - `PropertiesPanel` — отдельный case mask: Mode, Shape, Radius; без Opacity/Blend/Fill/Border.
 - `LayersPanel` — SVG `MaskIcon` (квадрат + «М»).
-- `template.schema.json` — `fill`/`border*` optional на mask (backward compat).
+- `template.schema.json` — type-specific поля (`fill`/`border*`/`maskMode`/`shape`/...) объявлены прямо в `layer.properties`; type-safety сохранена через `allOf/then` (required per type).
 
-**Почему clipHost, а не clip на маске:** семантика маска.txt п.1 — обрезка **соседей**, не самого mask div. Fast path: axis-aligned `overflow:hidden` + `border-radius` / `inset(round)`; inverted — `polygon(evenodd, …)`.
+**Почему clipHost, а не clip на маске:** семантика маска.txt п.1 — обрезка **соседей**, не самого mask div. Fast path: `clip-path: inset(...)` / `ellipse(...)` на full-container; inverted — inline SVG luminance mask.
 
 ---
 
@@ -277,22 +278,33 @@ Pivot через `transform-origin` на unscaled box; позиция через
 
 ## 7. Маски — техническая семантика
 
+`rootStack` и каждый `groupStacks[gid]` хранятся **back-to-front** (последняя
+запись = frontmost, см. `runtime/src/stackOrder.ts`). По спецификации (§1.3 п.1)
+маска обрезает siblings **ниже** в видимом дереве = записи **до** неё в массиве.
+Это значит `slice(0, i)` для `affected`, а не `slice(i + 1)`.
+
 | Правило | Реализация |
 |---|---|
-| Scope | `computeMaskScopes()` обходит `rootStack` + каждый `groupStacks[gid]`; mask на index `i` → `affected = entries[i+1..]` |
-| Normal 2D | `clipHost` at mask rect, `overflow:hidden`, `border-radius` / `inset(round)` |
-| Inverted 2D | `polygon(evenodd, outer canvas, inner hole)` |
-| Rotated/tilted | `projectMaskQuad()` → `clip-path: polygon(...)` |
-| Nested masks | Рекурсивный `mountStackContents` внутри parent `clipHost` |
+| Scope | `computeMaskScopes()` обходит `rootStack` + каждый `groupStacks[gid]`; mask на index `i` → `affected = entries[0..i]` (записи **до** маски в back-to-front массиве = ниже по z) |
+| Mount | `mountStackRange()` — рекурсивный split по **frontmost** маске в диапазоне; нижние siblings монтируются в её `clipHost`, верхние — в `containerEl`, сама маска mountится между ними |
+| Normal 2D | `clipHost` full-container; `clip-path: inset(...)` / `ellipse(...)` с координатами mask rect в canvas-space |
+| Inverted 2D | Inline SVG luminance mask (`<mask>` white + black cutout) через `mask-image` / `mask-mode: luminance`. Заменяет `polygon(evenodd)`, который давал треугольные артефакты |
+| Rotated/tilted | `projectMaskOutline()` → `clip-path: polygon(...)` (поддерживает rect, rounded rect, ellipse) |
+| Nested masks | Рекурсивный `mountStackRange` внутри parent `clipHost` |
 | Mask invisible on air | Прозрачный fill; editor — selection overlay |
+
+**Координатная модель:** `clipHost` всегда full-container (`left:0, top:0,
+width:canvasW, height:canvasH`). Children сохраняют свои canvas-координаты —
+маска описывает видимую зону, а не контейнер-якорь. Это решает баг
+«добавление маски сдвигало координаты других объектов».
 
 **Cost tiers (§6.5):**
 
 | Tier | Условие | Механизм |
 |---|---|---|
-| T1 cheap | Axis-aligned rect, no rotation | `overflow:hidden` |
-| T2 medium | Rounded rect / ellipse | `border-radius` / `inset(round)` |
-| T3 expensive | Any rotation / tilt | `clip-path: polygon` + quantization |
+| T1 cheap | Axis-aligned rect, no rotation | `clip-path: inset(...)` / `overflow: hidden` |
+| T2 medium | Rounded rect / ellipse | `clip-path: inset(... round N)` / `ellipse(...)` |
+| T3 expensive | Any rotation / tilt | `clip-path: polygon` (projected outline) + quantization |
 
 ---
 
