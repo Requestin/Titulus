@@ -24,15 +24,68 @@ export function maskNeedsProjection(t: Transform): boolean {
   return t.rotation !== 0 || t.rotationX !== 0 || t.rotationY !== 0;
 }
 
+export interface MaskShapeSpec {
+  maskMode: 'normal' | 'inverted';
+  shape: 'rect' | 'ellipse';
+  cornerRadius: number;
+}
+
+const ARC_SEGMENTS = 8;
+const ELLIPSE_SEGMENTS = 32;
+
+function sampleRoundedRectOutline(w: number, h: number, radius: number): [number, number][] {
+  const r = Math.max(0, Math.min(radius, w / 2, h / 2));
+  if (r <= 0.001) {
+    return [[0, 0], [w, 0], [w, h], [0, h]];
+  }
+  const pts: [number, number][] = [];
+  const pushArc = (cx: number, cy: number, a0: number, a1: number) => {
+    for (let i = 0; i < ARC_SEGMENTS; i++) {
+      const a = a0 + ((a1 - a0) * i) / ARC_SEGMENTS;
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+  };
+  pushArc(w - r, r, -Math.PI / 2, 0);
+  pushArc(w - r, h - r, 0, Math.PI / 2);
+  pushArc(r, h - r, Math.PI / 2, Math.PI);
+  pushArc(r, r, Math.PI, (3 * Math.PI) / 2);
+  return pts;
+}
+
+function sampleEllipseOutline(w: number, h: number): [number, number][] {
+  const rx = w / 2;
+  const ry = h / 2;
+  const cx = rx;
+  const cy = ry;
+  const pts: [number, number][] = [];
+  for (let i = 0; i < ELLIPSE_SEGMENTS; i++) {
+    const a = (2 * Math.PI * i) / ELLIPSE_SEGMENTS;
+    pts.push([cx + rx * Math.cos(a), cy + ry * Math.sin(a)]);
+  }
+  return pts;
+}
+
+/**
+ * Project mask perimeter into container-local 2D coordinates.
+ * Supports rounded rects and ellipses under rotation / 2.5D tilt.
+ */
+export function projectMaskOutline(
+  mask: MaskShapeSpec,
+  t: Transform,
+  at: AppliedTransform,
+): Point2D[] {
+  const local = mask.shape === 'ellipse'
+    ? sampleEllipseOutline(at.width, at.height)
+    : sampleRoundedRectOutline(at.width, at.height, mask.cornerRadius);
+  return local.map(([lx, ly]) => transformCorner(lx, ly, at, t));
+}
+
 /**
  * Project the four corners of a mask rect into container-local 2D coordinates.
- * `at` must already be in the coordinate system of the clip container.
+ * @deprecated Prefer projectMaskOutline — preserves corner radius under projection.
  */
 export function projectMaskQuad(t: Transform, at: AppliedTransform): Point2D[] {
-  const w = at.width;
-  const h = at.height;
-  const corners: [number, number][] = [[0, 0], [w, 0], [w, h], [0, h]];
-  return corners.map(([lx, ly]) => transformCorner(lx, ly, at, t));
+  return projectMaskOutline({ maskMode: 'normal', shape: 'rect', cornerRadius: 0 }, t, at);
 }
 
 function transformCorner(
@@ -100,12 +153,12 @@ export function maskGeometryKey(quad: Point2D[]): string {
  * Build clip-path for a projected mask quad. Coordinates are container-local.
  */
 export function projectedMaskClip(
-  mask: { maskMode: 'normal' | 'inverted' },
-  quad: Point2D[],
+  mask: MaskShapeSpec,
+  outline: Point2D[],
   containerW: number,
   containerH: number,
 ): { clipPath: string; overflow: string } {
-  const inner = quad.map((p) => `${p.x}px ${p.y}px`).join(', ');
+  const inner = outline.map((p) => `${p.x}px ${p.y}px`).join(', ');
   if (mask.maskMode === 'normal') {
     return {
       overflow: 'hidden',

@@ -88,11 +88,19 @@ Default endpoints:
 
 - frontend: `http://127.0.0.1:3011`
 - backend: `http://127.0.0.1:3002`
+- LAN frontend: `http://<this-host-LAN-IP>:3011` (for another computer on the same network)
 
 Health check:
 
 ```bash
 curl -s http://127.0.0.1:3002/api/health
+```
+
+By default `dev-start.sh` binds the dev servers to `0.0.0.0` so the UI is reachable
+from another computer on the LAN. To force localhost-only mode:
+
+```bash
+TITULUS_HOST=127.0.0.1 ./dev-start.sh
 ```
 
 ## 5. Authentication baseline

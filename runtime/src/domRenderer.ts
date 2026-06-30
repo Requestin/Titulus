@@ -26,7 +26,7 @@ import { applyTransform, blendModeCss, opacityCss, transformHas3D, type AppliedT
 import { computeStackOrder, groupMap } from './stackOrder.js';
 import { computeMaskScopes, maskClipStyle, type MaskScope } from './maskScopes.js';
 import {
-  maskNeedsProjection, projectMaskQuad, projectedMaskClip, maskGeometryKey,
+  maskNeedsProjection, projectMaskOutline, projectedMaskClip, maskGeometryKey,
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
 import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
@@ -295,68 +295,56 @@ export class TemplateRenderer {
     parentMaskId: string | null,
   ): void {
     if (!entries || !this.template) return;
-    const layerById = new Map(this.template.layers.map((l) => [l.id, l]));
-
-    let i = 0;
-    while (i < entries.length) {
-      const e = entries[i];
-      const layer = e.kind === 'layer' ? layerById.get(e.id) : undefined;
-      if (e.kind === 'layer' && layer?.type === 'mask') {
-        if (parentMaskId) this.entryMaskOrigin.set(e.id, parentMaskId);
-        this.mountEntry(e, containerEl, zById);
-        const affected = entries.slice(i + 1);
-        if (affected.length > 0) {
-          const scope = this.ensureMaskScope(layer.id, containerEl, containerId, parentMaskId, seenMasks);
-          this.mountStackContents(scope, layer.id, containerId, affected, zById, seenMasks);
-        }
-        return;
-      }
-      if (parentMaskId) this.entryMaskOrigin.set(e.id, parentMaskId);
-      this.mountEntry(e, containerEl, zById);
-      i++;
-    }
+    this.mountStackRange(containerEl, containerId, entries, 0, entries.length, zById, seenMasks, parentMaskId);
   }
 
-  /** Mount siblings below a mask inside its clipHost (supports nested masks). */
-  private mountStackContents(
-    scope: MaskScopeNode,
-    maskLayerId: string,
+  /** Mount a stack slice, splitting at the frontmost mask so only lower siblings are clipped. */
+  private mountStackRange(
+    containerEl: HTMLElement,
     containerId: string | null,
     entries: RootStackEntry[],
+    start: number,
+    end: number,
     zById: Map<string, number>,
     seenMasks: Set<string>,
+    parentMaskId: string | null,
   ): void {
     if (!this.template) return;
     const layerById = new Map(this.template.layers.map((l) => [l.id, l]));
-    const clipHost = scope.clipHost;
 
-    let i = 0;
-    while (i < entries.length) {
+    let maskIndex = -1;
+    for (let i = end - 1; i >= start; i--) {
       const e = entries[i];
       const layer = e.kind === 'layer' ? layerById.get(e.id) : undefined;
       if (e.kind === 'layer' && layer?.type === 'mask') {
-        this.entryMaskOrigin.set(e.id, maskLayerId);
-        this.mountEntry(e, clipHost, zById);
-        const affected = entries.slice(i + 1);
-        if (affected.length > 0) {
-          const nested = this.ensureMaskScope(layer.id, clipHost, containerId, maskLayerId, seenMasks);
-          this.mountStackContents(nested, layer.id, containerId, affected, zById, seenMasks);
-        }
-        return;
+        maskIndex = i;
+        break;
       }
-      this.entryMaskOrigin.set(e.id, maskLayerId);
-      if (e.kind === 'group') {
-        const gNode = this.groupEls.get(e.id);
-        if (gNode) {
-          gNode.el.style.zIndex = String(zById.get(e.id) ?? 1);
-          clipHost.appendChild(gNode.el);
-          const sub = this.template.groupStacks[e.id];
-          this.mountStack(gNode.el, containerId, sub, zById, seenMasks, maskLayerId);
-        }
-      } else {
-        this.mountEntry(e, clipHost, zById);
+    }
+
+    if (maskIndex < 0) {
+      for (let i = start; i < end; i++) {
+        const e = entries[i];
+        if (parentMaskId) this.entryMaskOrigin.set(e.id, parentMaskId);
+        this.mountEntry(e, containerEl, zById);
       }
-      i++;
+      return;
+    }
+
+    const maskEntry = entries[maskIndex];
+    const maskLayer = maskEntry.kind === 'layer' ? layerById.get(maskEntry.id) : undefined;
+    if (!maskLayer || maskLayer.type !== 'mask') return;
+
+    if (start < maskIndex) {
+      const scope = this.ensureMaskScope(maskLayer.id, containerEl, containerId, parentMaskId, seenMasks);
+      this.mountStackRange(scope.clipHost, containerId, entries, start, maskIndex, zById, seenMasks, maskLayer.id);
+    }
+
+    if (parentMaskId) this.entryMaskOrigin.set(maskEntry.id, parentMaskId);
+    this.mountEntry(maskEntry, containerEl, zById);
+
+    if (maskIndex + 1 < end) {
+      this.mountStackRange(containerEl, containerId, entries, maskIndex + 1, end, zById, seenMasks, parentMaskId);
     }
   }
 
@@ -417,8 +405,9 @@ export class TemplateRenderer {
     for (const [containerId, entries] of Object.entries({ root: t.rootStack, ...t.groupStacks })) {
       const idx = entries?.findIndex((e) => e.kind === 'group' && e.id === gid) ?? -1;
       if (idx < 0) continue;
-      // Check if gid is below a mask in this container
-      for (let i = idx - 1; i >= 0; i--) {
+      // Stack arrays are back-to-front. A group is below a mask if a mask is
+      // after it in the same container.
+      for (let i = idx + 1; i < entries!.length; i++) {
         const e = entries![i];
         if (e.kind === 'layer') {
           const layer = t.layers.find((l) => l.id === e.id);
@@ -527,7 +516,7 @@ export class TemplateRenderer {
     // Apply animated overrides per layer/group.
     for (const layer of this.template.layers) {
       const anim = sample.layers[layer.id];
-      this.applyLayerState(layer, anim, sample);
+      this.applyLayerState(layer, anim);
     }
     for (const g of this.template.groups) {
       const anim = sample.groups[g.id];
@@ -587,7 +576,6 @@ export class TemplateRenderer {
   private applyLayerState(
     layer: Layer,
     anim: AnimatableValues | undefined,
-    sample: TimelineSample,
   ): void {
     const node = this.layerEls.get(layer.id);
     if (!node) return;
@@ -609,24 +597,8 @@ export class TemplateRenderer {
       anim as Partial<import('./schema.js').Transform> | undefined,
       { skipPerspective: this.parentPerspective(layer) > 0 },
     );
-    let left = at.left;
-    let top = at.top;
-    const originMaskId = this.entryMaskOrigin.get(layer.id);
-    if (originMaskId && this.template) {
-      const maskLayer = this.template.layers.find((l) => l.id === originMaskId);
-      const scope = this.maskScopeEls.get(originMaskId);
-      if (maskLayer && scope?.clipMode !== 'projected') {
-        const maskAnim = sample.layers[originMaskId];
-        const mat = applyTransform(
-          maskLayer.transform,
-          maskAnim as Partial<import('./schema.js').Transform> | undefined,
-        );
-        left -= mat.left;
-        top -= mat.top;
-      }
-    }
-    this.setStyle(el, cache, 'left', `${left}px`);
-    this.setStyle(el, cache, 'top', `${top}px`);
+    this.setStyle(el, cache, 'left', `${at.left}px`);
+    this.setStyle(el, cache, 'top', `${at.top}px`);
     this.setStyle(el, cache, 'width', `${at.width}px`);
     this.setStyle(el, cache, 'height', `${at.height}px`);
     this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
@@ -685,9 +657,14 @@ export class TemplateRenderer {
 
       if (projected) {
         node.clipMode = 'projected';
-        const quad = projectMaskQuad(mergedT, clipAt);
-        const geoKey = maskGeometryKey(quad);
-        const proj = projectedMaskClip(layer, quad, containerW, containerH);
+        const maskSpec = {
+          maskMode: layer.maskMode,
+          shape: layer.shape,
+          cornerRadius: layer.cornerRadius,
+        };
+        const outline = projectMaskOutline(maskSpec, mergedT, clipAt);
+        const geoKey = `${maskGeometryKey(outline)}|${layer.shape}|${layer.cornerRadius}|${layer.maskMode}`;
+        const proj = projectedMaskClip(maskSpec, outline, containerW, containerH);
         this.setStyle(node.clipHost, cache, 'left', '0');
         this.setStyle(node.clipHost, cache, 'top', '0');
         this.setStyle(node.clipHost, cache, 'width', `${containerW}px`);
@@ -698,25 +675,38 @@ export class TemplateRenderer {
         }
         this.setStyle(node.clipHost, cache, 'clipPath', proj.clipPath);
         this.setStyle(node.clipHost, cache, 'borderRadius', '0');
+        this.setStyle(node.clipHost, cache, 'maskImage', 'none');
+        this.setStyle(node.clipHost, cache, 'WebkitMaskImage', 'none');
+        this.setStyle(node.clipHost, cache, 'maskMode', 'match-source');
+        this.setStyle(node.clipHost, cache, 'WebkitMaskMode', 'match-source');
+        this.setStyle(node.clipHost, cache, 'maskSize', 'auto');
+        this.setStyle(node.clipHost, cache, 'WebkitMaskSize', 'auto');
+        this.setStyle(node.clipHost, cache, 'maskRepeat', 'repeat');
+        this.setStyle(node.clipHost, cache, 'WebkitMaskRepeat', 'repeat');
+        this.setStyle(node.clipHost, cache, 'maskPosition', '0 0');
+        this.setStyle(node.clipHost, cache, 'WebkitMaskPosition', '0 0');
       } else {
         node.clipMode = 'bounds';
         delete cache.clipGeoKey;
         const clip = maskClipStyle(layer, clipAt, containerW, containerH);
 
-        if (layer.maskMode === 'normal') {
-          this.setStyle(node.clipHost, cache, 'left', `${clipAt.left}px`);
-          this.setStyle(node.clipHost, cache, 'top', `${clipAt.top}px`);
-          this.setStyle(node.clipHost, cache, 'width', `${clipAt.width}px`);
-          this.setStyle(node.clipHost, cache, 'height', `${clipAt.height}px`);
-        } else {
-          this.setStyle(node.clipHost, cache, 'left', '0');
-          this.setStyle(node.clipHost, cache, 'top', '0');
-          this.setStyle(node.clipHost, cache, 'width', `${containerW}px`);
-          this.setStyle(node.clipHost, cache, 'height', `${containerH}px`);
-        }
+        this.setStyle(node.clipHost, cache, 'left', '0');
+        this.setStyle(node.clipHost, cache, 'top', '0');
+        this.setStyle(node.clipHost, cache, 'width', `${containerW}px`);
+        this.setStyle(node.clipHost, cache, 'height', `${containerH}px`);
         this.setStyle(node.clipHost, cache, 'overflow', clip.overflow);
         this.setStyle(node.clipHost, cache, 'clipPath', clip.clipPath);
         this.setStyle(node.clipHost, cache, 'borderRadius', clip.borderRadius);
+        this.setStyle(node.clipHost, cache, 'maskImage', clip.maskImage);
+        this.setStyle(node.clipHost, cache, 'WebkitMaskImage', clip.maskImage);
+        this.setStyle(node.clipHost, cache, 'maskMode', clip.maskMode);
+        this.setStyle(node.clipHost, cache, 'WebkitMaskMode', clip.maskMode);
+        this.setStyle(node.clipHost, cache, 'maskSize', clip.maskSize);
+        this.setStyle(node.clipHost, cache, 'WebkitMaskSize', clip.maskSize);
+        this.setStyle(node.clipHost, cache, 'maskRepeat', clip.maskRepeat);
+        this.setStyle(node.clipHost, cache, 'WebkitMaskRepeat', clip.maskRepeat);
+        this.setStyle(node.clipHost, cache, 'maskPosition', clip.maskPosition);
+        this.setStyle(node.clipHost, cache, 'WebkitMaskPosition', clip.maskPosition);
       }
     }
   }
@@ -733,6 +723,10 @@ export class TemplateRenderer {
       anim as Partial<import('./schema.js').Transform> | undefined,
       { skipPerspective: this.parentPerspectiveForGroup(group.parentId) > 0 },
     );
+    this.setStyle(el, cache, 'left', `${at.left}px`);
+    this.setStyle(el, cache, 'top', `${at.top}px`);
+    this.setStyle(el, cache, 'width', `${at.width}px`);
+    this.setStyle(el, cache, 'height', `${at.height}px`);
     this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
     this.setStyle(el, cache, 'transform', at.transform);
     this.setStyle(el, cache, 'perspective', gt.perspective > 0 ? `${gt.perspective}px` : 'none');

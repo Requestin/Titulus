@@ -7,6 +7,7 @@ import { Braces } from 'lucide-react';
 import type { Layer, Variable, VariableBinding, BlendMode } from '@runtime';
 import { anchorCompensatedUpdate } from '@runtime';
 import { useEditor } from '../store';
+import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
 import { MediaUploadButton } from '../MediaUploadButton';
 import { Field, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
@@ -17,7 +18,10 @@ export function PropertiesPanel() {
   const template = useEditor((s) => s.template);
   const selection = useEditor((s) => s.selection);
   const updateLayer = useEditor((s) => s.updateLayer);
+  const setLayerOpacity = useEditor((s) => s.setLayerOpacity);
   const updateTransform = useEditor((s) => s.updateTransform);
+  const playhead = useEditor((s) => s.playhead);
+  const activeDirectorId = useEditor((s) => s.activeDirectorId);
   const setLayerGroup = useEditor((s) => s.setLayerGroup);
   const patch = useEditor((s) => s.patch);
 
@@ -41,7 +45,12 @@ export function PropertiesPanel() {
             <Input value={g.name} onChange={(e) => patch((t) => { const x = t.groups.find((q) => q.id === g.id); if (x) x.name = e.target.value; })} />
           </Field>
         </Section>
-        <TransformSection id={g.id} kind="group" t={g.transform} updateTransform={updateTransform} />
+        <TransformSection
+          id={g.id}
+          kind="group"
+          t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
+          updateTransform={updateTransform}
+        />
       </div>
     );
   }
@@ -58,7 +67,14 @@ export function PropertiesPanel() {
         {layer.type !== 'mask' && (
           <>
             <Field label="Opacity">
-              <NumberInput value={layer.opacity} min={0} max={1} step={0.05} onChange={(v) => updateLayer(layer.id, (l) => { l.opacity = Math.min(1, Math.max(0, v)); })} />
+              <NumberInput
+                value={effectiveOpacity(template, layer.opacity, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
+                min={0}
+                max={1}
+                step={0.05}
+                resetValue={1}
+                onChange={(v) => setLayerOpacity(layer.id, v)}
+              />
             </Field>
             <Field label="Blend">
               <Select value={layer.blendMode} onChange={(e) => updateLayer(layer.id, (l) => { l.blendMode = e.target.value as BlendMode; })}>
@@ -78,7 +94,12 @@ export function PropertiesPanel() {
         </Field>
       </Section>
 
-      <TransformSection id={layer.id} kind="layer" t={layer.transform} updateTransform={updateTransform} />
+      <TransformSection
+        id={layer.id}
+        kind="layer"
+        t={effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
+        updateTransform={updateTransform}
+      />
 
       <TypeSection layer={layer} variables={variables} updateLayer={updateLayer} />
     </div>
@@ -96,30 +117,43 @@ function TransformSection({
   const set = (partial: Partial<Layer['transform']>) => updateTransform(id, partial, kind);
   return (
     <Section title="Transform">
-      <div className="grid grid-cols-2 gap-2">
-        <LabeledNum label="X" value={t.x} onChange={(v) => set({ x: v })} />
-        <LabeledNum label="Y" value={t.y} onChange={(v) => set({ y: v })} />
-        <LabeledNum label="W" value={t.width} onChange={(v) => set({ width: v })} />
-        <LabeledNum label="H" value={t.height} onChange={(v) => set({ height: v })} />
-        <LabeledNum label="Rotate" value={t.rotation} onChange={(v) => set({ rotation: v })} />
-        <LabeledNum label="Tilt X" value={t.rotationX} onChange={(v) => set({ rotationX: v })} />
-        <LabeledNum label="Tilt Y" value={t.rotationY} onChange={(v) => set({ rotationY: v })} />
-        <LabeledNum label="Persp" value={t.perspective} onChange={(v) => set({ perspective: v })} />
-        <LabeledNum label="Scale X" value={t.scaleX} step={0.05} onChange={(v) => set({ scaleX: v })} />
-        <LabeledNum label="Scale Y" value={t.scaleY} step={0.05} onChange={(v) => set({ scaleY: v })} />
-        <LabeledNum label="Anchor X" value={t.anchorX} step={0.05} onChange={(v) => set(anchorCompensatedUpdate(t, { anchorX: v }))} />
-        <LabeledNum label="Anchor Y" value={t.anchorY} step={0.05} onChange={(v) => set(anchorCompensatedUpdate(t, { anchorY: v }))} />
-      </div>
+      <LabeledNum label="X" value={t.x} resetValue={0} onChange={(v) => set({ x: v })} />
+      <LabeledNum label="Y" value={t.y} resetValue={0} onChange={(v) => set({ y: v })} />
+      {kind === 'layer' && (
+        <>
+          <LabeledNum label="Width" value={t.width} resetValue={300} onChange={(v) => set({ width: v })} />
+          <LabeledNum label="Height" value={t.height} resetValue={80} onChange={(v) => set({ height: v })} />
+        </>
+      )}
+      <LabeledNum label="Rotate" value={t.rotation} resetValue={0} onChange={(v) => set({ rotation: v })} />
+      <LabeledNum label="Tilt X" value={t.rotationX} resetValue={0} onChange={(v) => set({ rotationX: v })} />
+      <LabeledNum label="Tilt Y" value={t.rotationY} resetValue={0} onChange={(v) => set({ rotationY: v })} />
+      <LabeledNum label="Perspective" value={t.perspective} resetValue={1000} onChange={(v) => set({ perspective: v })} />
+      <LabeledNum label="Scale X" value={t.scaleX} resetValue={1} step={0.05} onChange={(v) => set({ scaleX: v })} />
+      <LabeledNum label="Scale Y" value={t.scaleY} resetValue={1} step={0.05} onChange={(v) => set({ scaleY: v })} />
+      <LabeledNum label="Anchor X" value={t.anchorX} resetValue={0} step={0.05} onChange={(v) => set(anchorCompensatedUpdate(t, { anchorX: v }))} />
+      <LabeledNum label="Anchor Y" value={t.anchorY} resetValue={0} step={0.05} onChange={(v) => set(anchorCompensatedUpdate(t, { anchorY: v }))} />
     </Section>
   );
 }
 
-function LabeledNum({ label, value, onChange, step }: { label: string; value: number; onChange: (v: number) => void; step?: number }) {
+function LabeledNum({
+  label,
+  value,
+  onChange,
+  step,
+  resetValue,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  step?: number;
+  resetValue?: number;
+}) {
   return (
-    <label className="flex items-center gap-2">
-      <span className="w-14 shrink-0 text-[12px] text-ink-muted">{label}</span>
-      <NumberInput value={value} step={step} onChange={onChange} />
-    </label>
+    <Field label={label}>
+      <NumberInput value={value} step={step} resetValue={resetValue} onChange={onChange} />
+    </Field>
   );
 }
 
@@ -153,10 +187,10 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             />
           </Field>
           <Field label="Radius">
-            <NumberInput value={layer.cornerRadius} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.cornerRadius = v; })} />
+            <NumberInput value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.cornerRadius = v; })} />
           </Field>
           <Field label="Border">
-            <NumberInput value={layer.borderWidth} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.borderWidth = v; })} />
+            <NumberInput value={layer.borderWidth} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.borderWidth = v; })} />
           </Field>
           <Field label="Border color">
             <ColorInput value={layer.borderColor} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.borderColor = v; })} />
@@ -179,7 +213,7 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             </Select>
           </Field>
           <Field label="Radius">
-            <NumberInput value={layer.cornerRadius} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.cornerRadius = v; })} />
+            <NumberInput value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.cornerRadius = v; })} />
           </Field>
         </Section>
       );
@@ -210,7 +244,7 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
           </Field>
           {layer.type === 'image' && (
             <Field label="Radius">
-              <NumberInput value={layer.cornerRadius} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'image') l.cornerRadius = v; })} />
+              <NumberInput value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'image') l.cornerRadius = v; })} />
             </Field>
           )}
           {layer.type === 'video' && (
@@ -248,15 +282,12 @@ function TextStyleSection({ layer, variables, updateLayer }: { layer: Extract<La
       <Field label="Font">
         <Input value={s.fontFamily} onChange={(e) => setStyle((st) => { st.fontFamily = e.target.value; })} />
       </Field>
-      <div className="grid grid-cols-2 gap-2">
-        <LabeledNum label="Size" value={s.fontSize} onChange={(v) => setStyle((st) => { st.fontSize = v; })} />
-        <label className="flex items-center gap-2">
-          <span className="w-14 shrink-0 text-[12px] text-ink-muted">Weight</span>
-          <Select value={s.fontWeight} onChange={(e) => setStyle((st) => { st.fontWeight = e.target.value; })}>
-            {['300', '400', '500', '600', '700', '800', '900'].map((w) => <option key={w} value={w}>{w}</option>)}
-          </Select>
-        </label>
-      </div>
+      <LabeledNum label="Size" value={s.fontSize} resetValue={48} onChange={(v) => setStyle((st) => { st.fontSize = v; })} />
+      <Field label="Weight">
+        <Select value={s.fontWeight} onChange={(e) => setStyle((st) => { st.fontWeight = e.target.value; })}>
+          {['300', '400', '500', '600', '700', '800', '900'].map((w) => <option key={w} value={w}>{w}</option>)}
+        </Select>
+      </Field>
       <Field label="Color">
         <BindableField kind="color" value={s.fill} variables={variables} onChange={(v) => setStyle((st) => { st.fill = v; })} />
       </Field>
@@ -267,10 +298,8 @@ function TextStyleSection({ layer, variables, updateLayer }: { layer: Extract<La
           <option value="right">right</option>
         </Select>
       </Field>
-      <div className="grid grid-cols-2 gap-2">
-        <LabeledNum label="Line H" value={s.lineHeight} step={0.05} onChange={(v) => setStyle((st) => { st.lineHeight = v; })} />
-        <LabeledNum label="Spacing" value={s.letterSpacing} onChange={(v) => setStyle((st) => { st.letterSpacing = v; })} />
-      </div>
+      <LabeledNum label="Line height" value={s.lineHeight} resetValue={1.1} step={0.05} onChange={(v) => setStyle((st) => { st.lineHeight = v; })} />
+      <LabeledNum label="Spacing" value={s.letterSpacing} resetValue={0} onChange={(v) => setStyle((st) => { st.letterSpacing = v; })} />
       <Checkbox label="Drop shadow" checked={s.dropShadow} onChange={(v) => setStyle((st) => { st.dropShadow = v; })} />
     </Section>
   );

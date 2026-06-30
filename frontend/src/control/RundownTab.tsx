@@ -17,6 +17,7 @@ import { Field, Input, NumberInput, ColorInput, Select } from '@/components/ui/f
 import { MediaUploadButton } from '@/editor/MediaUploadButton';
 import { cn } from '@/lib/cn';
 import { toast } from '@/core/toast';
+import { createId } from '@/core/id';
 
 type SendControl = (cmd: {
   type: 'take' | 'update' | 'clear';
@@ -218,7 +219,7 @@ export function RundownTab({
     const rd = await api.rundowns.create({
       name: `${src.name} (copy)`,
       channel_id: src.channel_id,
-      slots: src.slots.map((s) => ({ ...s, slotId: crypto.randomUUID() })),
+      slots: src.slots.map((s) => ({ ...s, slotId: createId() })),
     });
     setRundowns((prev) => [rd, ...prev]);
     setActiveId(rd.id);
@@ -249,7 +250,7 @@ export function RundownTab({
     const slots = Array.isArray(parsed.slots) ? parsed.slots.map((raw, i) => normalizeImportedSlot(raw, i)).filter(Boolean) as RundownSlot[] : [];
     const rd = await api.rundowns.create({
       name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : 'Imported rundown',
-      slots: slots.map((s) => ({ ...s, slotId: crypto.randomUUID() })),
+      slots: slots.map((s) => ({ ...s, slotId: createId() })),
     });
     setRundowns((prev) => [rd, ...prev]);
     setActiveId(rd.id);
@@ -378,7 +379,7 @@ export function RundownTab({
                     key={t.id}
                     className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[12px] hover:bg-surface-2"
                     onClick={() => {
-                      patchActive((r) => ({ ...r, slots: [...r.slots, { slotId: crypto.randomUUID(), templateId: t.id, name: t.name, vars: {} }] }));
+                      patchActive((r) => ({ ...r, slots: [...r.slots, { slotId: createId(), templateId: t.id, name: t.name, vars: {} }] }));
                       setShowAdd(false);
                     }}
                   >
@@ -504,7 +505,7 @@ function normalizeImportedSlot(raw: unknown, idx: number): RundownSlot | null {
     if (typeof v === 'string' || typeof v === 'number') vars[k] = v;
   }
   return {
-    slotId: typeof slot.slotId === 'string' && slot.slotId.trim() ? slot.slotId.trim() : crypto.randomUUID(),
+    slotId: typeof slot.slotId === 'string' && slot.slotId.trim() ? slot.slotId.trim() : createId(),
     templateId,
     name,
     vars,
