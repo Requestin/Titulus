@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Loader2, LayoutTemplate } from 'lucide-react';
+import { Plus, Trash2, Loader2, LayoutTemplate, Copy } from 'lucide-react';
 import { createDefaultTemplate } from '@runtime';
 import { api, type TemplateSummary } from '@/core/api';
+import { createId } from '@/core/id';
 import { Button } from '@/components/ui/Button';
 import { toast } from '@/core/toast';
 
@@ -10,6 +11,7 @@ export function TemplatesPage() {
   const nav = useNavigate();
   const [items, setItems] = useState<TemplateSummary[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -33,6 +35,24 @@ export function TemplatesPage() {
       toast.error(`Create failed: ${(e as Error).message}`);
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function duplicate(id: string, name: string) {
+    setDuplicatingId(id);
+    try {
+      const rec = await api.templates.get(id);
+      const copyName = `${name}(copy)`;
+      const data = structuredClone(rec.data);
+      data.id = createId();
+      data.name = copyName;
+      const created = await api.templates.create(copyName, data);
+      setItems((cur) => [...(cur ?? []), created]);
+      toast.success(`Copied as "${copyName}"`);
+    } catch (e) {
+      toast.error(`Copy failed: ${(e as Error).message}`);
+    } finally {
+      setDuplicatingId(null);
     }
   }
 
@@ -99,13 +119,29 @@ export function TemplatesPage() {
                   <div className="truncate text-sm font-medium">{t.name}</div>
                   <div className="truncate text-xs text-ink-faint">Updated {t.updated_at}</div>
                 </button>
-                <button
-                  onClick={() => remove(t.id, t.name)}
-                  aria-label={`Delete ${t.name}`}
-                  className="text-ink-faint opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
-                >
-                  <Trash2 className="h-4 w-4" aria-hidden />
-                </button>
+                <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => duplicate(t.id, t.name)}
+                    disabled={duplicatingId === t.id}
+                    aria-label={`Duplicate ${t.name}`}
+                    title="Duplicate template"
+                    className="grid h-7 w-7 place-items-center rounded text-ink-faint hover:bg-surface-2 hover:text-ink disabled:opacity-40"
+                  >
+                    {duplicatingId === t.id
+                      ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      : <Copy className="h-4 w-4" aria-hidden />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove(t.id, t.name)}
+                    aria-label={`Delete ${t.name}`}
+                    title="Delete template"
+                    className="grid h-7 w-7 place-items-center rounded text-ink-faint hover:bg-surface-2 hover:text-danger"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

@@ -26,7 +26,7 @@ import { applyTransform, blendModeCss, opacityCss, transformHas3D, type AppliedT
 import { computeStackOrder, groupMap } from './stackOrder.js';
 import { computeMaskScopes, maskClipStyle, type MaskScope } from './maskScopes.js';
 import {
-  maskNeedsProjection, projectMaskQuad, projectedMaskClip, maskGeometryKey,
+  maskNeedsProjection, projectMaskOutline, projectedMaskClip, maskGeometryKey,
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
 import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
@@ -657,9 +657,14 @@ export class TemplateRenderer {
 
       if (projected) {
         node.clipMode = 'projected';
-        const quad = projectMaskQuad(mergedT, clipAt);
-        const geoKey = maskGeometryKey(quad);
-        const proj = projectedMaskClip(layer, quad, containerW, containerH);
+        const maskSpec = {
+          maskMode: layer.maskMode,
+          shape: layer.shape,
+          cornerRadius: layer.cornerRadius,
+        };
+        const outline = projectMaskOutline(maskSpec, mergedT, clipAt);
+        const geoKey = `${maskGeometryKey(outline)}|${layer.shape}|${layer.cornerRadius}|${layer.maskMode}`;
+        const proj = projectedMaskClip(maskSpec, outline, containerW, containerH);
         this.setStyle(node.clipHost, cache, 'left', '0');
         this.setStyle(node.clipHost, cache, 'top', '0');
         this.setStyle(node.clipHost, cache, 'width', `${containerW}px`);
@@ -718,6 +723,10 @@ export class TemplateRenderer {
       anim as Partial<import('./schema.js').Transform> | undefined,
       { skipPerspective: this.parentPerspectiveForGroup(group.parentId) > 0 },
     );
+    this.setStyle(el, cache, 'left', `${at.left}px`);
+    this.setStyle(el, cache, 'top', `${at.top}px`);
+    this.setStyle(el, cache, 'width', `${at.width}px`);
+    this.setStyle(el, cache, 'height', `${at.height}px`);
     this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
     this.setStyle(el, cache, 'transform', at.transform);
     this.setStyle(el, cache, 'perspective', gt.perspective > 0 ? `${gt.perspective}px` : 'none');
