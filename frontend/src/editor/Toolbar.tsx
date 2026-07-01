@@ -61,8 +61,13 @@ export function Toolbar({ onSave, saving }: { onSave: () => void; saving: boolea
       <IconBtn onClick={toggleGridSnap} active={gridSnap} title="Grid snap"><Grid3x3 className="h-4 w-4" /></IconBtn>
 
       <div className="ml-auto flex items-center gap-2">
-        {dirty && <span className="text-[12px] text-ink-faint">Unsaved</span>}
-        <Button variant="primary" size="sm" onClick={onSave} disabled={saving}>
+        <Button variant="primary" size="sm" onClick={onSave} disabled={saving} className="relative">
+          {dirty && (
+            <span
+              className="absolute left-0.5 top-0.5 h-2 w-2 rounded-full bg-amber-400 ring-2 ring-surface-2"
+              aria-hidden
+            />
+          )}
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
           Save
         </Button>

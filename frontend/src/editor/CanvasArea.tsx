@@ -9,6 +9,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
+import { groupCanvasAabb } from './groupBounds';
+import { axisCrosshairSize, pivotCanvasPoint } from './pivot';
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 type DragMode = 'move' | Handle;
@@ -21,8 +23,8 @@ interface Box {
 }
 
 type SelectionOverlay =
-  | { kind: 'box'; box: Box }
-  | { kind: 'polygon'; box: Box; points: Array<{ x: number; y: number }> };
+  | { kind: 'box'; box: Box; axis: { x: number; y: number } | null }
+  | { kind: 'polygon'; box: Box; points: Array<{ x: number; y: number }>; axis: { x: number; y: number } | null };
 
 interface DragState {
   id: string;
@@ -115,37 +117,60 @@ export function CanvasArea() {
   const cw = template?.canvas.width ?? 1920;
   const ch = template?.canvas.height ?? 1080;
 
-  function overlayForTransform(layerId: string, transform: Transform): SelectionOverlay | null {
-    const tpl = useEditor.getState().template;
-    if (!tpl) return null;
-    const layer = tpl.layers.find((l) => l.id === layerId);
-    if (!layer) return null;
+  function overlayForTransform(
+    tpl: NonNullable<ReturnType<typeof useEditor.getState>['template']>,
+    target: { kind: 'layer' | 'group'; id: string },
+    transform: Transform,
+  ): SelectionOverlay | null {
+    const pivot = pivotCanvasPoint(tpl, target, transform);
+    const axis = { x: pivot.x * zoom, y: pivot.y * zoom };
 
-    if (layer.type === 'mask') {
-      const at = applyTransform(transform, undefined);
-      const outline = projectMaskOutline(
-        { maskMode: layer.maskMode, shape: layer.shape, cornerRadius: layer.cornerRadius },
-        transform,
-        at,
-      );
-      const scaled = outline.map((p) => ({ x: p.x * zoom, y: p.y * zoom }));
-      const xs = scaled.map((p) => p.x);
-      const ys = scaled.map((p) => p.y);
-      const minX = Math.min(...xs);
-      const minY = Math.min(...ys);
-      const maxX = Math.max(...xs);
-      const maxY = Math.max(...ys);
-      return {
-        kind: 'polygon',
-        box: { left: minX, top: minY, width: maxX - minX, height: maxY - minY },
-        points: scaled,
-      };
+    if (target.kind === 'layer') {
+      const layer = tpl.layers.find((l) => l.id === target.id);
+      if (layer?.type === 'mask') {
+        const at = applyTransform(transform, undefined);
+        const outline = projectMaskOutline(
+          { maskMode: layer.maskMode, shape: layer.shape, cornerRadius: layer.cornerRadius },
+          transform,
+          at,
+        );
+        const scaled = outline.map((p) => ({ x: p.x * zoom, y: p.y * zoom }));
+        const xs = scaled.map((p) => p.x);
+        const ys = scaled.map((p) => p.y);
+        const minX = Math.min(...xs);
+        const minY = Math.min(...ys);
+        const maxX = Math.max(...xs);
+        const maxY = Math.max(...ys);
+        return {
+          kind: 'polygon',
+          box: { left: minX, top: minY, width: maxX - minX, height: maxY - minY },
+          points: scaled,
+          axis,
+        };
+      }
+    }
+
+    if (target.kind === 'group') {
+      const bbox = groupCanvasAabb(tpl, target.id, transform);
+      if (bbox) {
+        return {
+          kind: 'box',
+          box: {
+            left: bbox.left * zoom,
+            top: bbox.top * zoom,
+            width: bbox.width * zoom,
+            height: bbox.height * zoom,
+          },
+          axis,
+        };
+      }
     }
 
     const at = applyTransform(transform, undefined);
     return {
       kind: 'box',
       box: { left: at.left * zoom, top: at.top * zoom, width: at.width * zoom, height: at.height * zoom },
+      axis,
     };
   }
 
@@ -161,7 +186,7 @@ export function CanvasArea() {
 
     if (sel.kind === 'layer') {
       const layer = tpl.layers.find((l) => l.id === sel.id);
-      if (layer?.type === 'mask') {
+      if (layer) {
         const t = effectiveTransform(
           tpl,
           layer.transform,
@@ -169,7 +194,16 @@ export function CanvasArea() {
           st.playhead,
           st.activeDirectorId,
         );
-        setOverlay(overlayForTransform(layer.id, t));
+        setOverlay(overlayForTransform(tpl, { kind: 'layer', id: layer.id }, t));
+        return;
+      }
+    }
+
+    if (sel.kind === 'group') {
+      const g = tpl.groups.find((x) => x.id === sel.id);
+      if (g) {
+        const t = effectiveTransform(tpl, g.transform, { kind: 'group', id: g.id }, st.playhead, st.activeDirectorId);
+        setOverlay(overlayForTransform(tpl, { kind: 'group', id: g.id }, t));
         return;
       }
     }
@@ -184,6 +218,7 @@ export function CanvasArea() {
     setOverlay({
       kind: 'box',
       box: { left: r.left - sr.left, top: r.top - sr.top, width: r.width, height: r.height },
+      axis: null,
     });
   }
 
@@ -302,13 +337,13 @@ export function CanvasArea() {
     const dy = (e.clientY - d.startPY) / zoom;
     const layer = template?.layers.find((l) => l.id === d.id);
     const partial = computeDrag(d.mode, d.start, dx, dy);
-    if (d.el && layer) {
+    if (d.el && layer && template) {
       const at = applyTransform({ ...layer.transform, ...partial }, undefined);
       d.el.style.left = `${at.left}px`;
       d.el.style.top = `${at.top}px`;
       d.el.style.width = `${at.width}px`;
       d.el.style.height = `${at.height}px`;
-      const next = overlayForTransform(layer.id, { ...layer.transform, ...partial });
+      const next = overlayForTransform(template, { kind: 'layer', id: layer.id }, { ...layer.transform, ...partial });
       if (next) setOverlay(next);
     }
   }
@@ -377,40 +412,67 @@ export function CanvasArea() {
 
           {/* Selection overlay. */}
           {overlay && (
-            <div
-              className="pointer-events-none absolute"
-              style={{ left: overlay.box.left, top: overlay.box.top, width: overlay.box.width, height: overlay.box.height }}
-            >
-              {overlay.kind === 'polygon' ? (
+            <>
+              <div
+                className="pointer-events-none absolute"
+                style={{ left: overlay.box.left, top: overlay.box.top, width: overlay.box.width, height: overlay.box.height }}
+              >
+                {overlay.kind === 'polygon' ? (
+                  <svg
+                    className="pointer-events-none absolute overflow-visible"
+                    width={overlay.box.width}
+                    height={overlay.box.height}
+                    viewBox={`0 0 ${overlay.box.width} ${overlay.box.height}`}
+                  >
+                    <polygon
+                      points={overlay.points
+                        .map((p) => `${p.x - overlay.box.left},${p.y - overlay.box.top}`)
+                        .join(' ')}
+                      fill="none"
+                      stroke="oklch(var(--primary))"
+                      strokeWidth={1}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  </svg>
+                ) : (
+                  <div className="absolute inset-0 border border-primary" />
+                )}
+                <div data-overlay-move className="pointer-events-auto absolute inset-0 cursor-move" />
+                {selection?.kind === 'layer' &&
+                  HANDLES.map((h) => (
+                    <div
+                      key={h}
+                      data-handle={h}
+                      className={`pointer-events-auto absolute h-2.5 w-2.5 rounded-sm border border-primary bg-surface ${HANDLE_POS[h]} ${HANDLE_CURSOR[h]}`}
+                    />
+                  ))}
+              </div>
+              {overlay.axis && (
                 <svg
                   className="pointer-events-none absolute overflow-visible"
-                  width={overlay.box.width}
-                  height={overlay.box.height}
-                  viewBox={`0 0 ${overlay.box.width} ${overlay.box.height}`}
+                  style={{ left: 0, top: 0, width: cw * zoom, height: ch * zoom }}
                 >
-                  <polygon
-                    points={overlay.points
-                      .map((p) => `${p.x - overlay.box.left},${p.y - overlay.box.top}`)
-                      .join(' ')}
-                    fill="none"
-                    stroke="oklch(var(--primary))"
+                  <g
+                    stroke="oklch(var(--live))"
                     strokeWidth={1}
                     vectorEffect="non-scaling-stroke"
-                  />
+                  >
+                    <line
+                      x1={overlay.axis.x - axisCrosshairSize(zoom)}
+                      y1={overlay.axis.y}
+                      x2={overlay.axis.x + axisCrosshairSize(zoom)}
+                      y2={overlay.axis.y}
+                    />
+                    <line
+                      x1={overlay.axis.x}
+                      y1={overlay.axis.y - axisCrosshairSize(zoom)}
+                      x2={overlay.axis.x}
+                      y2={overlay.axis.y + axisCrosshairSize(zoom)}
+                    />
+                  </g>
                 </svg>
-              ) : (
-                <div className="absolute inset-0 border border-primary" />
               )}
-              <div data-overlay-move className="pointer-events-auto absolute inset-0 cursor-move" />
-              {selection?.kind === 'layer' &&
-                HANDLES.map((h) => (
-                  <div
-                    key={h}
-                    data-handle={h}
-                    className={`pointer-events-auto absolute h-2.5 w-2.5 rounded-sm border border-primary bg-surface ${HANDLE_POS[h]} ${HANDLE_CURSOR[h]}`}
-                  />
-                ))}
-            </div>
+            </>
           )}
         </div>
       </div>

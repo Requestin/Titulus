@@ -341,8 +341,8 @@ export function createDefaultTransform(x = 100, y = 100): Transform {
     perspective: 1000,
     scaleX: 1,
     scaleY: 1,
-    anchorX: 0,
-    anchorY: 0,
+    anchorX: 0.5,
+    anchorY: 0.5,
   };
 }
 

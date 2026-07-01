@@ -14,6 +14,7 @@ import type {
 import { ANIMATABLE_PROPS, createDefaultTransform } from '@runtime';
 import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
+import { captureGlobalPivots, entryKey, reparentEntriesIntoGroup, updateAncestorGroupBounds, updateGroupBounds } from './groupBounds';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
 export type Target = { kind: 'layer' | 'group'; id: string };
@@ -167,8 +168,13 @@ export const useEditor = create<EditorState>()(
       activeDirectorId: 'default',
 
       load: (t) => {
+        const normalized = clone(t);
+        for (const g of normalized.groups) {
+          g.transform.width = 0;
+          g.transform.height = 0;
+        }
         set({
-          template: t,
+          template: normalized,
           selection: null,
           dirty: false,
           playhead: 0,
@@ -215,12 +221,22 @@ export const useEditor = create<EditorState>()(
             kind === 'layer' ? t.layers.find((x) => x.id === id) : t.groups.find((x) => x.id === id);
           if (!target) return;
           Object.assign(target.transform, partial);
+          if (kind === 'group') {
+            target.transform.width = 0;
+            target.transform.height = 0;
+          }
           syncAnimatedPropsAtPlayhead(
             t,
             { kind, id },
             animatableFromTransformPartial(partial),
             get().playhead,
           );
+          if (kind === 'layer') {
+            const layer = t.layers.find((x) => x.id === id);
+            if (layer?.groupId) updateGroupBounds(t, layer.groupId);
+          } else {
+            updateAncestorGroupBounds(t, id);
+          }
         }),
 
       setName: (name) => get().patch((t) => { t.name = name; }),
@@ -301,9 +317,25 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => {
           const l = t.layers.find((x) => x.id === layerId);
           if (!l) return;
-          l.groupId = groupId;
+          const prevGroupId = l.groupId;
+          const entry = { kind: 'layer' as const, id: layerId };
+          const globalPivots = captureGlobalPivots(t, [entry]);
+          const targetWasEmpty = groupId
+            ? (t.groupStacks[groupId] ?? []).filter((e) => e.id !== layerId).length === 0
+            : false;
           removeEntryEverywhere(t, layerId);
-          addEntry(t, { kind: 'layer', id: layerId }, groupId);
+          l.groupId = groupId;
+          if (groupId) {
+            addEntry(t, entry, groupId);
+            reparentEntriesIntoGroup(t, groupId, [entry], targetWasEmpty, globalPivots);
+          } else {
+            const gp = globalPivots.get(entryKey(entry));
+            if (gp) {
+              l.transform.x = gp.x;
+              l.transform.y = gp.y;
+            }
+          }
+          if (prevGroupId) updateGroupBounds(t, prevGroupId);
         }),
 
       addGroup: () => {
@@ -314,7 +346,7 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => {
           t.groups.push({
             id, name: `Group ${n}`, parentId: null, visible: true, locked: false,
-            transform: createDefaultTransform(0, 0),
+            transform: { ...createDefaultTransform(0, 0), width: 0, height: 0 },
           });
           t.groupStacks[id] = [];
           t.rootStack.push({ kind: 'group', id });

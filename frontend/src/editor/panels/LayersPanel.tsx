@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { LayerType, RootStackEntry, Template } from '@runtime';
 import { useEditor } from '../store';
+import { captureGlobalPivots, reparentEntriesIntoGroup, updateGroupBounds } from '../groupBounds';
 import { LAYER_TYPES, LAYER_LABEL } from '../factories';
 import { cn } from '@/lib/cn';
 
@@ -119,13 +120,51 @@ function updateParents(t: Template, entries: RootStackEntry[], targetContainerId
   }
 }
 
+function affectedGroupContainers(t: Template, keys: Set<EntryKey>): Set<string> {
+  const out = new Set<string>();
+  for (const key of keys) {
+    const entry = parseEntryKey(key);
+    if (!entry) continue;
+    const container = findContainer(t, key);
+    if (container) out.add(container);
+  }
+  return out;
+}
+
+function unparentEntriesToCanvas(
+  t: Template,
+  moving: RootStackEntry[],
+  globalPivots: ReturnType<typeof captureGlobalPivots>,
+): void {
+  for (const entry of moving) {
+    const gp = globalPivots.get(entryKey(entry));
+    const tr = entry.kind === 'layer'
+      ? t.layers.find((l) => l.id === entry.id)?.transform
+      : t.groups.find((g) => g.id === entry.id)?.transform;
+    if (!gp || !tr) continue;
+    tr.x = gp.x;
+    tr.y = gp.y;
+  }
+}
+
 function moveEntriesToGroup(t: Template, keys: Set<EntryKey>, targetContainerId: string | null): void {
   const moving = collectDisplayEntries(t).filter((e) => keys.has(entryKey(e)));
   if (moving.length === 0 || wouldCreateCycle(t, moving, targetContainerId)) return;
+  const prevGroups = affectedGroupContainers(t, keys);
+  const globalPivots = captureGlobalPivots(t, moving);
+  const targetWasEmpty = targetContainerId
+    ? (t.groupStacks[targetContainerId] ?? []).filter((e) => !keys.has(entryKey(e))).length === 0
+    : false;
   removeMovingEntries(t, keys);
   updateParents(t, moving, targetContainerId);
   const currentDisplay = [...containerEntries(t, targetContainerId)].reverse();
   setContainerEntries(t, targetContainerId, [...moving, ...currentDisplay].reverse());
+  if (targetContainerId) {
+    reparentEntriesIntoGroup(t, targetContainerId, moving, targetWasEmpty, globalPivots);
+  }
+  for (const gid of prevGroups) {
+    if (gid !== targetContainerId) updateGroupBounds(t, gid);
+  }
 }
 
 function moveEntriesNear(t: Template, keys: Set<EntryKey>, overKey: EntryKey, position: 'before' | 'after'): void {
@@ -134,6 +173,17 @@ function moveEntriesNear(t: Template, keys: Set<EntryKey>, overKey: EntryKey, po
   if (targetContainerId === undefined) return;
   const moving = collectDisplayEntries(t).filter((e) => keys.has(entryKey(e)));
   if (moving.length === 0 || wouldCreateCycle(t, moving, targetContainerId)) return;
+  const prevGroups = affectedGroupContainers(t, keys);
+  const oldContainers = new Map<EntryKey, string | null>();
+  for (const entry of moving) {
+    const key = entryKey(entry);
+    const container = findContainer(t, key);
+    oldContainers.set(key, container === undefined ? null : container);
+  }
+  const globalPivots = captureGlobalPivots(t, moving);
+  const targetWasEmpty = targetContainerId
+    ? (t.groupStacks[targetContainerId] ?? []).filter((e) => !keys.has(entryKey(e))).length === 0
+    : false;
   removeMovingEntries(t, keys);
   updateParents(t, moving, targetContainerId);
   const currentDisplay = [...containerEntries(t, targetContainerId)].reverse();
@@ -141,6 +191,19 @@ function moveEntriesNear(t: Template, keys: Set<EntryKey>, overKey: EntryKey, po
   const insertAt = overIndex < 0 ? currentDisplay.length : overIndex + (position === 'after' ? 1 : 0);
   currentDisplay.splice(insertAt, 0, ...moving);
   setContainerEntries(t, targetContainerId, currentDisplay.reverse());
+
+  const containerChanged = moving.some((e) => oldContainers.get(entryKey(e)) !== targetContainerId);
+  if (containerChanged) {
+    if (targetContainerId) {
+      reparentEntriesIntoGroup(t, targetContainerId, moving, targetWasEmpty, globalPivots);
+    } else {
+      unparentEntriesToCanvas(t, moving, globalPivots);
+    }
+  }
+
+  for (const gid of prevGroups) {
+    if (gid !== targetContainerId) updateGroupBounds(t, gid);
+  }
 }
 
 function activeCenter(event: DragMoveEvent | DragOverEvent | DragEndEvent): { x: number; y: number } | null {

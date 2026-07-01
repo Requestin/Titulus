@@ -18,6 +18,16 @@ const RULER_H = 24;
 const LANE_H = 26;
 const GROUP_HDR_H = 20;
 
+const TRACK_PROP_LABELS: Partial<Record<AnimatableProp, string>> = {
+  rotation: 'rotationZ',
+  rotationX: 'rotationX',
+  rotationY: 'rotationY',
+};
+
+function trackPropLabel(prop: AnimatableProp): string {
+  return TRACK_PROP_LABELS[prop] ?? prop;
+}
+
 interface TimelineTrack {
   target: Target;
   prop: AnimatableProp;
@@ -351,7 +361,7 @@ export function TimelinePanel() {
                             onClick={() => openTrack(track)}
                             className="min-w-0 flex-1 truncate text-left text-[12px] tabular-nums"
                           >
-                            {prop}
+                            {trackPropLabel(prop)}
                           </button>
                           <button
                             type="button"
@@ -393,7 +403,7 @@ export function TimelinePanel() {
                         }}
                         className="rounded px-1 py-1 text-left text-[11px] text-ink hover:bg-surface"
                       >
-                        {p}
+                        {trackPropLabel(p)}
                       </button>
                     ))}
                   </div>
@@ -555,7 +565,7 @@ function DopeLane({
           <div
             key={p.frame}
             data-kf="1"
-            title={`${prop} @ ${p.frame} = ${p.value}`}
+            title={`${trackPropLabel(prop)} @ ${p.frame} = ${p.value}`}
             onPointerDown={(e) => {
               e.stopPropagation();
               e.currentTarget.setPointerCapture(e.pointerId);

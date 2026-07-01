@@ -8,6 +8,7 @@ import {
   type SelectHTMLAttributes,
   type ReactNode,
 } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 const BASE_INPUT =
@@ -21,12 +22,20 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   },
 );
 
+export interface NumberInputExtraAction {
+  label: string;
+  title?: string;
+  onClick: () => void;
+}
+
 export interface NumberInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value' | 'type'> {
   value: number;
   onChange: (value: number) => void;
   resetValue?: number;
   dragScale?: number;
+  stepperStep?: number;
+  extraActions?: NumberInputExtraAction[];
 }
 
 export function NumberInput({
@@ -34,6 +43,8 @@ export function NumberInput({
   onChange,
   resetValue,
   dragScale,
+  stepperStep,
+  extraActions,
   className,
   ...props
 }: NumberInputProps) {
@@ -41,6 +52,7 @@ export function NumberInput({
   const dragRef = useRef<{ x: number; value: number; dragging: boolean } | null>(null);
   const step = typeof props.step === 'number' ? props.step : Number.parseFloat(String(props.step ?? 1));
   const scale = dragScale ?? (Number.isFinite(step) ? step : 1);
+  const nudge = stepperStep ?? 1;
 
   useEffect(() => {
     if (!dragRef.current?.dragging) setDraft(formatNumber(value));
@@ -83,13 +95,22 @@ export function NumberInput({
     if (wasDragging) e.preventDefault();
   }
 
+  function nudgeBy(delta: number) {
+    const next = roundForStep(value + delta, nudge);
+    setDraft(formatNumber(next));
+    onChange(next);
+  }
+
+  const stepperBtn =
+    'grid w-3.5 place-items-center rounded-sm text-ink-faint hover:bg-surface hover:text-ink disabled:opacity-40';
+
   return (
     <div className="flex min-w-0 items-center gap-1">
       <input
         type="text"
         inputMode="decimal"
         {...props}
-        className={cn(BASE_INPUT, 'cursor-ew-resize tabular-nums', className)}
+        className={cn(BASE_INPUT, 'min-w-0 flex-1 cursor-ew-resize tabular-nums', className)}
         value={draft}
         onChange={(e) => commit(e.target.value)}
         onBlur={() => setDraft(formatNumber(value))}
@@ -98,6 +119,24 @@ export function NumberInput({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       />
+      <div className="flex h-8 shrink-0 flex-col justify-center gap-px">
+        <button
+          type="button"
+          title={`Increase by ${nudge}`}
+          onClick={() => nudgeBy(nudge)}
+          className={cn(stepperBtn, 'h-3.5')}
+        >
+          <ChevronUp className="h-3 w-3" aria-hidden />
+        </button>
+        <button
+          type="button"
+          title={`Decrease by ${nudge}`}
+          onClick={() => nudgeBy(-nudge)}
+          className={cn(stepperBtn, 'h-3.5')}
+        >
+          <ChevronDown className="h-3 w-3" aria-hidden />
+        </button>
+      </div>
       {resetValue !== undefined && (
         <button
           type="button"
@@ -108,6 +147,17 @@ export function NumberInput({
           R
         </button>
       )}
+      {extraActions?.map((action) => (
+        <button
+          key={action.label}
+          type="button"
+          title={action.title ?? action.label}
+          onClick={action.onClick}
+          className="grid h-8 shrink-0 place-items-center rounded-md border border-border bg-surface-2 px-1 text-[10px] font-semibold tabular-nums text-ink-muted hover:border-ink-faint hover:text-ink"
+        >
+          {action.label}
+        </button>
+      ))}
     </div>
   );
 }

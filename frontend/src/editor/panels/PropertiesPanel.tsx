@@ -4,12 +4,21 @@
 // style, and variable bindings on string fields (content / fill / src).
 
 import { Braces } from 'lucide-react';
-import type { Layer, Variable, VariableBinding, BlendMode } from '@runtime';
-import { anchorCompensatedUpdate } from '@runtime';
+import type { Layer, Template, Variable, VariableBinding, BlendMode } from '@runtime';
 import { useEditor } from '../store';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
+import {
+  axisCenterFromPixels,
+  axisCenterFromPixelsGroup,
+  axisCenterPresetX,
+  axisCenterPresetXGroup,
+  axisCenterPresetY,
+  axisCenterPresetYGroup,
+  groupUnionSize,
+} from '../groupBounds';
 import { MediaUploadButton } from '../MediaUploadButton';
 import { Field, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
+import type { NumberInputExtraAction } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 
 const BLEND_MODES: BlendMode[] = ['normal', 'multiply', 'screen', 'add', 'overlay', 'darken', 'lighten'];
@@ -48,6 +57,7 @@ export function PropertiesPanel() {
         <TransformSection
           id={g.id}
           kind="group"
+          template={template}
           t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
           updateTransform={updateTransform}
         />
@@ -97,6 +107,7 @@ export function PropertiesPanel() {
       <TransformSection
         id={layer.id}
         kind="layer"
+        template={template}
         t={effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
         updateTransform={updateTransform}
       />
@@ -107,14 +118,21 @@ export function PropertiesPanel() {
 }
 
 function TransformSection({
-  id, kind, t, updateTransform,
+  id, kind, template, t, updateTransform,
 }: {
   id: string;
   kind: 'layer' | 'group';
+  template: Template;
   t: Layer['transform'];
   updateTransform: (id: string, partial: Partial<Layer['transform']>, kind?: 'layer' | 'group') => void;
 }) {
   const set = (partial: Partial<Layer['transform']>) => updateTransform(id, partial, kind);
+  const unionSize = kind === 'group' ? groupUnionSize(template, id) : null;
+  const axisW = unionSize ? unionSize.width : t.width;
+  const axisH = unionSize ? unionSize.height : t.height;
+  const axisPxX = axisW * t.anchorX;
+  const axisPxY = axisH * t.anchorY;
+
   return (
     <Section title="Transform">
       <LabeledNum label="X" value={t.x} resetValue={0} onChange={(v) => set({ x: v })} />
@@ -125,15 +143,127 @@ function TransformSection({
           <LabeledNum label="Height" value={t.height} resetValue={80} onChange={(v) => set({ height: v })} />
         </>
       )}
-      <LabeledNum label="Rotate" value={t.rotation} resetValue={0} onChange={(v) => set({ rotation: v })} />
-      <LabeledNum label="Tilt X" value={t.rotationX} resetValue={0} onChange={(v) => set({ rotationX: v })} />
-      <LabeledNum label="Tilt Y" value={t.rotationY} resetValue={0} onChange={(v) => set({ rotationY: v })} />
-      <LabeledNum label="Perspective" value={t.perspective} resetValue={1000} onChange={(v) => set({ perspective: v })} />
       <LabeledNum label="Scale X" value={t.scaleX} resetValue={1} step={0.05} onChange={(v) => set({ scaleX: v })} />
       <LabeledNum label="Scale Y" value={t.scaleY} resetValue={1} step={0.05} onChange={(v) => set({ scaleY: v })} />
-      <LabeledNum label="Anchor X" value={t.anchorX} resetValue={0} step={0.05} onChange={(v) => set(anchorCompensatedUpdate(t, { anchorX: v }))} />
-      <LabeledNum label="Anchor Y" value={t.anchorY} resetValue={0} step={0.05} onChange={(v) => set(anchorCompensatedUpdate(t, { anchorY: v }))} />
+
+      <div className="pt-1">
+        <h4 className="mb-2 text-[11px] font-semibold text-ink-faint">Rotation</h4>
+        <div className="space-y-2">
+          <LabeledNum
+            label="X"
+            value={t.rotationX}
+            resetValue={0}
+            onChange={(v) => set({ rotationX: v })}
+            extraActions={[
+              { label: '+45', onClick: () => set({ rotationX: t.rotationX + 45 }) },
+              { label: '-45', onClick: () => set({ rotationX: t.rotationX - 45 }) },
+            ]}
+          />
+          <LabeledNum
+            label="Y"
+            value={t.rotationY}
+            resetValue={0}
+            onChange={(v) => set({ rotationY: v })}
+            extraActions={[
+              { label: '+45', onClick: () => set({ rotationY: t.rotationY + 45 }) },
+              { label: '-45', onClick: () => set({ rotationY: t.rotationY - 45 }) },
+            ]}
+          />
+          <LabeledNum
+            label="Z"
+            value={t.rotation}
+            resetValue={0}
+            onChange={(v) => set({ rotation: v })}
+            extraActions={[
+              { label: '+45', onClick: () => set({ rotation: t.rotation + 45 }) },
+              { label: '-45', onClick: () => set({ rotation: t.rotation - 45 }) },
+            ]}
+          />
+          <LabeledNum label="Perspective" value={t.perspective} resetValue={1000} onChange={(v) => set({ perspective: v })} />
+        </div>
+      </div>
+
+      <div className="pt-1">
+        <h4 className="mb-2 text-[11px] font-semibold text-ink-faint">Axis center</h4>
+        <div className="space-y-2">
+          <AxisCenterRow
+            label="X"
+            value={axisPxX}
+            resetValue={axisW * 0.5}
+            presets={['L', 'C', 'R']}
+            onChange={(v) => set(
+              kind === 'group'
+                ? axisCenterFromPixelsGroup(t, axisW, axisH, 'x', v)
+                : axisCenterFromPixels(t, 'x', v),
+            )}
+            onPreset={(p) => set(
+              kind === 'group'
+                ? axisCenterPresetXGroup(t, axisW, axisH, p)
+                : axisCenterPresetX(t, p),
+            )}
+          />
+          <AxisCenterRow
+            label="Y"
+            value={axisPxY}
+            resetValue={axisH * 0.5}
+            presets={['B', 'C', 'T']}
+            onChange={(v) => set(
+              kind === 'group'
+                ? axisCenterFromPixelsGroup(t, axisW, axisH, 'y', v)
+                : axisCenterFromPixels(t, 'y', v),
+            )}
+            onPreset={(p) => set(
+              kind === 'group'
+                ? axisCenterPresetYGroup(t, axisW, axisH, p)
+                : axisCenterPresetY(t, p),
+            )}
+          />
+        </div>
+      </div>
     </Section>
+  );
+}
+
+function AxisCenterRow<P extends string>({
+  label,
+  value,
+  resetValue,
+  presets,
+  onChange,
+  onPreset,
+}: {
+  label: 'X' | 'Y';
+  value: number;
+  resetValue: number;
+  presets: readonly P[];
+  onChange: (v: number) => void;
+  onPreset: (p: P) => void;
+}) {
+  return (
+    <Field label={label}>
+      <div className="flex min-w-0 items-center gap-1">
+        <NumberInput
+          value={value}
+          step={1}
+          resetValue={resetValue}
+          onChange={onChange}
+          className="min-w-0 flex-1"
+        />
+        <div className="flex shrink-0 gap-0.5">
+          {presets.map((p) => (
+            <button
+              key={p}
+              type="button"
+              title={p}
+              onClick={() => onPreset(p)}
+              className="grid h-8 w-6 place-items-center rounded-md border border-border bg-surface-2 text-[10px] font-semibold text-ink-muted hover:border-ink-faint hover:text-ink"
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+    </Field>
   );
 }
 
@@ -143,16 +273,18 @@ function LabeledNum({
   onChange,
   step,
   resetValue,
+  extraActions,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
   step?: number;
   resetValue?: number;
+  extraActions?: NumberInputExtraAction[];
 }) {
   return (
     <Field label={label}>
-      <NumberInput value={value} step={step} resetValue={resetValue} onChange={onChange} />
+      <NumberInput value={value} step={step} resetValue={resetValue} extraActions={extraActions} onChange={onChange} />
     </Field>
   );
 }
