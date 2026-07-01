@@ -12,7 +12,8 @@ cd "$ROOT"
 
 FE_PORT="${TITULUS_FE_PORT:-3011}"
 BE_PORT="${TITULUS_BE_PORT:-3002}"
-HOST="${TITULUS_HOST:-127.0.0.1}"
+BIND_HOST="${TITULUS_HOST:-0.0.0.0}"
+CONNECT_HOST="${TITULUS_CONNECT_HOST:-127.0.0.1}"
 DATA_DIR="${TITULUS_DATA:-/tmp/titulus-dev}"
 LOG_DIR="$ROOT/logs"
 PID_DIR="$LOG_DIR/dev"
@@ -98,15 +99,15 @@ ensure_engine() {
 ensure_engine || true
 
 # Backend ---------------------------------------------------------------------
-log "starting backend on ${HOST}:${BE_PORT} (data: ${DATA_DIR}) ..."
+log "starting backend on ${BIND_HOST}:${BE_PORT} (data: ${DATA_DIR}) ..."
 cd "$ROOT/backend"
-PORT="$BE_PORT" HOST="$HOST" TITULUS_DATA="$DATA_DIR" \
+PORT="$BE_PORT" HOST="$BIND_HOST" TITULUS_DATA="$DATA_DIR" \
   node src/index.js > "$LOG_DIR/backend.log" 2>&1 &
 echo $! > "$PID_DIR/backend.pid"
 cd "$ROOT"
 
 for i in $(seq 1 30); do
-  if curl -sf "http://${HOST}:${BE_PORT}/api/health" >/dev/null 2>&1; then
+  if curl -sf "http://${CONNECT_HOST}:${BE_PORT}/api/health" >/dev/null 2>&1; then
     break
   fi
   if [[ "$i" -eq 30 ]]; then
@@ -117,16 +118,16 @@ for i in $(seq 1 30); do
 done
 
 # Frontend --------------------------------------------------------------------
-log "starting frontend on ${HOST}:${FE_PORT} (proxy -> backend :${BE_PORT}) ..."
+log "starting frontend on ${BIND_HOST}:${FE_PORT} (proxy -> backend ${CONNECT_HOST}:${BE_PORT}) ..."
 cd "$ROOT/frontend"
-VITE_BACKEND="http://${HOST}:${BE_PORT}" \
-  npm run dev -- --port "$FE_PORT" --host "$HOST" --strictPort > "$LOG_DIR/frontend.log" 2>&1 &
+VITE_BACKEND="http://${CONNECT_HOST}:${BE_PORT}" \
+  npm run dev -- --port "$FE_PORT" --host "$BIND_HOST" --strictPort > "$LOG_DIR/frontend.log" 2>&1 &
 echo $! > "$PID_DIR/frontend.pid"
 cd "$ROOT"
 
 for i in $(seq 1 40); do
-  if curl -sf "http://${HOST}:${FE_PORT}/" >/dev/null 2>&1 \
-    && ! curl -sI "http://${HOST}:${FE_PORT}/" 2>/dev/null | grep -qi 'x-powered-by: express'; then
+  if curl -sf "http://${CONNECT_HOST}:${FE_PORT}/" >/dev/null 2>&1 \
+    && ! curl -sI "http://${CONNECT_HOST}:${FE_PORT}/" 2>/dev/null | grep -qi 'x-powered-by: express'; then
     break
   fi
   if [[ "$i" -eq 40 ]]; then
@@ -139,17 +140,21 @@ done
 
 # Render engines (needs bg_engine binary + channels in Settings) ------------
 if [[ -x "$ENGINE_BIN" ]]; then
-  log "starting run-engines.sh (BACKEND_URL=http://${HOST}:${BE_PORT}) ..."
-  BACKEND_URL="http://${HOST}:${BE_PORT}" ENGINE_BIN="$ENGINE_BIN" \
+  log "starting run-engines.sh (BACKEND_URL=http://${CONNECT_HOST}:${BE_PORT}) ..."
+  BACKEND_URL="http://${CONNECT_HOST}:${BE_PORT}" ENGINE_BIN="$ENGINE_BIN" \
     "$ROOT/engine/run-engines.sh" > "$LOG_DIR/engines.log" 2>&1 &
   echo $! > "$PID_DIR/engines.pid"
 else
   log "skip run-engines: bg_engine not available at $ENGINE_BIN"
 fi
 
+LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 log ""
 log "Titulus dev stack up:"
-log "  frontend  http://${HOST}:${FE_PORT}   (nginx graphics.gyhyry.com -> here)"
-log "  backend   http://${HOST}:${BE_PORT}"
+log "  frontend  http://${CONNECT_HOST}:${FE_PORT}"
+if [[ -n "${LAN_IP:-}" ]]; then
+  log "  LAN URL   http://${LAN_IP}:${FE_PORT}"
+fi
+log "  backend   http://${CONNECT_HOST}:${BE_PORT} (bound on ${BIND_HOST})"
 log "  logs      $LOG_DIR/"
 log "  stop      ./dev-stop.sh"

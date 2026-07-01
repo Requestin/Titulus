@@ -4,7 +4,8 @@
 # Output: engine/third_party/cef/<cef_binary_...>/  (libcef.so, include/, Resources/, libcef_dll_wrapper/)
 set -euo pipefail
 
-CEF_DIR="/root/Titulus/engine/third_party/cef"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CEF_DIR="$SCRIPT_DIR/cef"
 mkdir -p "$CEF_DIR"
 cd "$CEF_DIR"
 

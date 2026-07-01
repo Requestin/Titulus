@@ -1,4 +1,13 @@
-import { forwardRef, type InputHTMLAttributes, type SelectHTMLAttributes, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useRef,
+  useState,
+  type InputHTMLAttributes,
+  type PointerEvent,
+  type SelectHTMLAttributes,
+  type ReactNode,
+} from 'react';
 import { cn } from '@/lib/cn';
 
 const BASE_INPUT =
@@ -16,21 +25,101 @@ export interface NumberInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value' | 'type'> {
   value: number;
   onChange: (value: number) => void;
+  resetValue?: number;
+  dragScale?: number;
 }
 
-export function NumberInput({ value, onChange, className, ...props }: NumberInputProps) {
+export function NumberInput({
+  value,
+  onChange,
+  resetValue,
+  dragScale,
+  className,
+  ...props
+}: NumberInputProps) {
+  const [draft, setDraft] = useState(formatNumber(value));
+  const dragRef = useRef<{ x: number; value: number; dragging: boolean } | null>(null);
+  const step = typeof props.step === 'number' ? props.step : Number.parseFloat(String(props.step ?? 1));
+  const scale = dragScale ?? (Number.isFinite(step) ? step : 1);
+
+  useEffect(() => {
+    if (!dragRef.current?.dragging) setDraft(formatNumber(value));
+  }, [value]);
+
+  function commit(next: string) {
+    setDraft(next);
+    if (next === '' || next === '-' || next === '.' || next === '-.') return;
+    const n = Number.parseFloat(next);
+    if (Number.isFinite(n)) onChange(n);
+  }
+
+  function onPointerDown(e: PointerEvent<HTMLInputElement>) {
+    if (e.button !== 0) return;
+    dragRef.current = { x: e.clientX, value, dragging: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function onPointerMove(e: PointerEvent<HTMLInputElement>) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (!drag.dragging && Math.abs(dx) < 3) return;
+    drag.dragging = true;
+    e.preventDefault();
+    const rounded = roundForStep(drag.value + dx * scale, scale);
+    setDraft(formatNumber(rounded));
+    onChange(rounded);
+  }
+
+  function onPointerUp(e: PointerEvent<HTMLInputElement>) {
+    const drag = dragRef.current;
+    const wasDragging = drag?.dragging ?? false;
+    dragRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // Pointer capture may already be released by the browser.
+    }
+    if (wasDragging) e.preventDefault();
+  }
+
   return (
-    <input
-      type="number"
-      className={cn(BASE_INPUT, 'tabular-nums', className)}
-      value={Number.isFinite(value) ? value : 0}
-      onChange={(e) => {
-        const n = parseFloat(e.target.value);
-        onChange(Number.isFinite(n) ? n : 0);
-      }}
-      {...props}
-    />
+    <div className="flex min-w-0 items-center gap-1">
+      <input
+        type="text"
+        inputMode="decimal"
+        {...props}
+        className={cn(BASE_INPUT, 'cursor-ew-resize tabular-nums', className)}
+        value={draft}
+        onChange={(e) => commit(e.target.value)}
+        onBlur={() => setDraft(formatNumber(value))}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      />
+      {resetValue !== undefined && (
+        <button
+          type="button"
+          title="Reset"
+          onClick={() => onChange(resetValue)}
+          className="grid h-8 w-7 shrink-0 place-items-center rounded-md border border-border bg-surface-2 text-[11px] font-semibold text-ink-muted hover:border-ink-faint hover:text-ink"
+        >
+          R
+        </button>
+      )}
+    </div>
   );
+}
+
+function formatNumber(value: number): string {
+  return Number.isFinite(value) ? String(value) : '0';
+}
+
+function roundForStep(value: number, step: number): number {
+  if (!Number.isFinite(step) || step >= 1) return Math.round(value);
+  const decimals = Math.min(6, Math.max(0, String(step).split('.')[1]?.length ?? 0));
+  return Number(value.toFixed(decimals));
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(

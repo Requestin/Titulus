@@ -3,11 +3,12 @@
 // Template editor (DEVELOPMENT_PROMPT §8.3): toolbar + Layers | Canvas | (Props /
 // Variables) + timeline strip. Loads/saves via REST, validated on save.
 
-import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '@/core/api';
 import { toast } from '@/core/toast';
 import { cn } from '@/lib/cn';
+import { Button } from '@/components/ui/Button';
 import { useEditor, undo, redo } from '@/editor/store';
 import { Toolbar } from '@/editor/Toolbar';
 import { CanvasArea } from '@/editor/CanvasArea';
@@ -18,10 +19,16 @@ import { TimelinePanel } from '@/editor/panels/TimelinePanel';
 
 export function EditorPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const load = useEditor((s) => s.load);
+  const dirty = useEditor((s) => s.dirty);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<'properties' | 'variables'>('properties');
+  const [timelineHeight, setTimelineHeight] = useState(256);
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const allowNavigationRef = useRef(false);
+  const timelineResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,25 +50,92 @@ export function EditorPage() {
     return () => { cancelled = true; };
   }, [id, load]);
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (): Promise<boolean> => {
     const t = useEditor.getState().template;
-    if (!t || !id) return;
+    if (!t || !id) return false;
     setSaving(true);
     try {
       const res = await api.templates.validate(t);
       if (!res.valid) {
         toast.error(`Validation failed: ${res.errors[0]?.message ?? 'invalid template'}`);
-        return;
+        return false;
       }
       await api.templates.update(id, { name: t.name, data: t });
       useEditor.getState().markSaved();
       toast.success('Saved');
+      return true;
     } catch (e) {
       toast.error(`Save failed: ${(e as Error).message}`);
+      return false;
     } finally {
       setSaving(false);
     }
   }, [id]);
+
+  const continueTo = useCallback((path: string) => {
+    allowNavigationRef.current = true;
+    setPendingPath(null);
+    navigate(path);
+  }, [navigate]);
+
+  const saveAndExit = useCallback(async () => {
+    if (!pendingPath) return;
+    const ok = await save();
+    if (ok) continueTo(pendingPath);
+  }, [continueTo, pendingPath, save]);
+
+  const discardAndExit = useCallback(() => {
+    if (!pendingPath) return;
+    useEditor.getState().markSaved();
+    continueTo(pendingPath);
+  }, [continueTo, pendingPath]);
+
+  const cancelExit = useCallback(() => {
+    setPendingPath(null);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingPath) return undefined;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') cancelExit();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [cancelExit, pendingPath]);
+
+  useEffect(() => {
+    if (dirty) return undefined;
+    setPendingPath(null);
+    return undefined;
+  }, [dirty]);
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (allowNavigationRef.current || !useEditor.getState().dirty) return;
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const target = e.target instanceof Element ? e.target.closest('a[href]') : null;
+      if (!(target instanceof HTMLAnchorElement)) return;
+      if (target.target && target.target !== '_self') return;
+      const url = new URL(target.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setPendingPath(`${url.pathname}${url.search}${url.hash}`);
+    }
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, []);
+
+  useEffect(() => {
+    if (!dirty) return undefined;
+    function beforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
+  }, [dirty]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -94,6 +168,25 @@ export function EditorPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [save]);
 
+  function beginTimelineResize(e: ReactPointerEvent<HTMLDivElement>) {
+    timelineResizeRef.current = { startY: e.clientY, startHeight: timelineHeight };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
+  function resizeTimeline(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = timelineResizeRef.current;
+    if (!drag) return;
+    const next = drag.startHeight + (drag.startY - e.clientY);
+    setTimelineHeight(Math.min(520, Math.max(160, next)));
+  }
+
+  function endTimelineResize(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!timelineResizeRef.current) return;
+    timelineResizeRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }
+
   if (status === 'loading') {
     return <div className="grid h-full place-items-center text-sm text-ink-muted">Loading editor…</div>;
   }
@@ -103,7 +196,7 @@ export function EditorPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <Toolbar onSave={save} saving={saving} />
+      <Toolbar onSave={() => { void save(); }} saving={saving} />
       <div className="flex min-h-0 flex-1">
         <aside className="w-60 shrink-0 border-r border-border bg-surface">
           <LayersPanel />
@@ -113,7 +206,20 @@ export function EditorPage() {
           <div className="min-h-0 flex-1">
             <CanvasArea />
           </div>
-          <div className="h-64 shrink-0 border-t border-border">
+          <div
+            className="relative shrink-0 border-t border-border"
+            style={{ height: timelineHeight }}
+          >
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize timeline"
+              className="absolute -top-1 left-0 right-0 z-sticky h-2 cursor-row-resize transition-colors hover:bg-primary/30"
+              onPointerDown={beginTimelineResize}
+              onPointerMove={resizeTimeline}
+              onPointerUp={endTimelineResize}
+              onPointerCancel={endTimelineResize}
+            />
             <TimelinePanel />
           </div>
         </div>
@@ -137,6 +243,52 @@ export function EditorPage() {
             {tab === 'properties' ? <PropertiesPanel /> : <VariablesPanel />}
           </div>
         </aside>
+      </div>
+      {pendingPath && (
+        <UnsavedChangesDialog
+          saving={saving}
+          onSaveAndExit={() => { void saveAndExit(); }}
+          onDiscardAndExit={discardAndExit}
+          onCancel={cancelExit}
+        />
+      )}
+    </div>
+  );
+}
+
+function UnsavedChangesDialog({
+  saving,
+  onSaveAndExit,
+  onDiscardAndExit,
+  onCancel,
+}: {
+  saving: boolean;
+  onSaveAndExit: () => void;
+  onDiscardAndExit: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-modal grid place-items-center bg-bg/70 px-4 backdrop-blur-sm" role="presentation">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="unsaved-changes-title"
+        className="w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-2xl"
+      >
+        <h2 id="unsaved-changes-title" className="text-base font-semibold text-ink">
+          You have unsaved changes
+        </h2>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="danger" onClick={onSaveAndExit} disabled={saving}>
+            {saving ? 'Saving...' : 'Save and exit'}
+          </Button>
+          <Button variant="neutral" onClick={onDiscardAndExit} disabled={saving}>
+            Discard and exit
+          </Button>
+          <Button variant="neutral" onClick={onCancel} disabled={saving}>
+            Cancel
+          </Button>
+        </div>
       </div>
     </div>
   );

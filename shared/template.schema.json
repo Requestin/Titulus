@@ -211,7 +211,22 @@
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "blendMode": { "$ref": "#/$defs/blendMode" },
         "transform": { "$ref": "#/$defs/transform" },
-        "groupId": { "type": ["string", "null"] }
+        "groupId": { "type": ["string", "null"] },
+        "content": { "$ref": "#/$defs/stringOrBinding" },
+        "style": { "$ref": "#/$defs/textStyle" },
+        "fill": { "$ref": "#/$defs/stringOrBinding" },
+        "cornerRadius": { "type": "number" },
+        "borderColor": { "type": "string" },
+        "borderWidth": { "type": "number" },
+        "src": { "$ref": "#/$defs/stringOrBinding" },
+        "fit": { "type": "string", "enum": ["stretch", "contain", "cover"] },
+        "loop": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["clock", "countup", "countdown"] },
+        "format": { "type": "string" },
+        "startTime": { "type": "number" },
+        "targetTime": { "type": "number" },
+        "maskMode": { "type": "string", "enum": ["normal", "inverted"] },
+        "shape": { "type": "string", "enum": ["rect", "ellipse"] }
       },
       "allOf": [
         {

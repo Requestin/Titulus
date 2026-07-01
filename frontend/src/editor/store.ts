@@ -11,7 +11,8 @@ import type {
   Template, Layer, LayerType, Variable, Transform, RootStackEntry,
   TimelineDirector, TimelineKeyframe, AnimatableProp, EasingType,
 } from '@runtime';
-import { createDefaultTransform } from '@runtime';
+import { ANIMATABLE_PROPS, createDefaultTransform } from '@runtime';
+import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
@@ -33,7 +34,7 @@ function baseValue(t: Template, target: Target, prop: AnimatableProp): number {
 function kfAt(t: Template, frame: number): TimelineKeyframe {
   let kf = t.timeline.keyframes.find((k) => k.frame === frame);
   if (!kf) {
-    kf = { id: crypto.randomUUID(), frame, layers: {}, groups: {}, easing: 'power2.out' };
+    kf = { id: createId(), frame, layers: {}, groups: {}, easing: 'power2.out' };
     t.timeline.keyframes.push(kf);
     t.timeline.keyframes.sort((a, b) => a.frame - b.frame);
   }
@@ -44,6 +45,40 @@ function pruneKf(t: Template, kf: TimelineKeyframe): void {
   if (Object.keys(kf.layers).length === 0 && Object.keys(kf.groups).length === 0) {
     t.timeline.keyframes = t.timeline.keyframes.filter((k) => k !== kf);
   }
+}
+
+const ANIMATABLE_SET = new Set<string>(ANIMATABLE_PROPS);
+
+function hasAnimatedProp(t: Template, target: Target, prop: AnimatableProp): boolean {
+  return t.timeline.keyframes.some((k) => {
+    const bag = (target.kind === 'layer' ? k.layers : k.groups)[target.id];
+    return bag?.[prop] !== undefined;
+  });
+}
+
+/** Keep keyframes at the current playhead in sync when base props are edited. */
+function syncAnimatedPropsAtPlayhead(
+  t: Template,
+  target: Target,
+  values: Partial<Record<AnimatableProp, number>>,
+  localFrame: number,
+): void {
+  const frame = Math.round(localFrame);
+  for (const [prop, value] of Object.entries(values) as [AnimatableProp, number][]) {
+    if (value === undefined || !hasAnimatedProp(t, target, prop)) continue;
+    const kf = kfAt(t, frame);
+    const sec = target.kind === 'layer' ? kf.layers : kf.groups;
+    (sec[target.id] ??= {})[prop] = value;
+  }
+}
+
+function animatableFromTransformPartial(partial: Partial<Transform>): Partial<Record<AnimatableProp, number>> {
+  const out: Partial<Record<AnimatableProp, number>> = {};
+  for (const key of Object.keys(partial)) {
+    if (!ANIMATABLE_SET.has(key) || key === 'opacity') continue;
+    out[key as AnimatableProp] = (partial as Record<string, number>)[key];
+  }
+  return out;
 }
 
 interface EditorState {
@@ -62,6 +97,7 @@ interface EditorState {
 
   patch: (mutator: (t: Template) => void) => void;
   updateLayer: (id: string, mutator: (l: Layer) => void) => void;
+  setLayerOpacity: (id: string, opacity: number) => void;
   updateTransform: (id: string, partial: Partial<Transform>, kind?: 'layer' | 'group') => void;
   setName: (name: string) => void;
   setCanvas: (partial: Partial<Template['canvas']>) => void;
@@ -93,6 +129,7 @@ interface EditorState {
   setKeyframeValue: (target: Target, frame: number, prop: AnimatableProp, value: number) => void;
   movePoint: (target: Target, prop: AnimatableProp, fromFrame: number, toFrame: number) => void;
   deletePoint: (target: Target, prop: AnimatableProp, frame: number) => void;
+  removeTrack: (target: Target, prop: AnimatableProp) => void;
   setKeyframeEasing: (frame: number, easing: EasingType) => void;
   addTrackAtPlayhead: (target: Target, prop: AnimatableProp) => void;
 }
@@ -123,7 +160,7 @@ export const useEditor = create<EditorState>()(
       selection: null,
       dirty: false,
       zoom: 0.45,
-      gridSnap: true,
+      gridSnap: false,
       gridSize: 8,
       playhead: 0,
       playing: false,
@@ -159,11 +196,31 @@ export const useEditor = create<EditorState>()(
           if (l) mutator(l);
         }),
 
+      setLayerOpacity: (id, opacity) =>
+        get().patch((t) => {
+          const l = t.layers.find((x) => x.id === id);
+          if (!l) return;
+          l.opacity = Math.min(1, Math.max(0, opacity));
+          syncAnimatedPropsAtPlayhead(
+            t,
+            { kind: 'layer', id },
+            { opacity: l.opacity },
+            get().playhead,
+          );
+        }),
+
       updateTransform: (id, partial, kind = 'layer') =>
         get().patch((t) => {
           const target =
             kind === 'layer' ? t.layers.find((x) => x.id === id) : t.groups.find((x) => x.id === id);
-          if (target) Object.assign(target.transform, partial);
+          if (!target) return;
+          Object.assign(target.transform, partial);
+          syncAnimatedPropsAtPlayhead(
+            t,
+            { kind, id },
+            animatableFromTransformPartial(partial),
+            get().playhead,
+          );
         }),
 
       setName: (name) => get().patch((t) => { t.name = name; }),
@@ -187,7 +244,7 @@ export const useEditor = create<EditorState>()(
         const src = template.layers.find((l) => l.id === selection.id);
         if (!src) return;
         const copy = structuredClone(src);
-        copy.id = crypto.randomUUID();
+        copy.id = createId();
         copy.name = `${src.name} copy`;
         copy.transform.x += 24;
         copy.transform.y += 24;
@@ -253,7 +310,7 @@ export const useEditor = create<EditorState>()(
         const t0 = get().template;
         if (!t0) return;
         const n = t0.groups.length + 1;
-        const id = crypto.randomUUID();
+        const id = createId();
         get().patch((t) => {
           t.groups.push({
             id, name: `Group ${n}`, parentId: null, visible: true, locked: false,
@@ -301,7 +358,7 @@ export const useEditor = create<EditorState>()(
         const t0 = get().template;
         if (!t0) return;
         const n = t0.timeline.directors.length + 1;
-        const id = crypto.randomUUID();
+        const id = createId();
         get().patch((t) => {
           t.timeline.directors.push({
             id, name: `Director ${n}`,
@@ -372,6 +429,23 @@ export const useEditor = create<EditorState>()(
           delete bag[prop];
           if (Object.keys(bag).length === 0) delete sec[target.id];
           pruneKf(t, kf);
+        }),
+
+      removeTrack: (target, prop) =>
+        get().patch((t) => {
+          for (const kf of t.timeline.keyframes) {
+            const sec = target.kind === 'layer' ? kf.layers : kf.groups;
+            const bag = sec[target.id];
+            if (!bag || bag[prop] === undefined) continue;
+            delete bag[prop];
+            if (Object.keys(bag).length === 0) delete sec[target.id];
+            pruneKf(t, kf);
+          }
+          const stillAnimated = t.timeline.keyframes.some((k) => {
+            const bag = (target.kind === 'layer' ? k.layers : k.groups)[target.id];
+            return bag && Object.keys(bag).length > 0;
+          });
+          if (!stillAnimated) delete t.timeline.trackDirectors[target.id];
         }),
 
       setKeyframeEasing: (frame, easing) =>

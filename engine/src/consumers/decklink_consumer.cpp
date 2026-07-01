@@ -541,10 +541,18 @@ struct DecklinkConsumer::Impl {
             return false;
         }
 
-        create_iterator_ = reinterpret_cast<CreateIteratorFn>(
-            dlsym(decklink_lib_, "CreateDeckLinkIteratorInstance"));
+        static constexpr const char* kIteratorSymbols[] = {
+            "CreateDeckLinkIteratorInstance",
+            "CreateDeckLinkIteratorInstance_0004",
+            "CreateDeckLinkIteratorInstance_0003",
+            "CreateDeckLinkIteratorInstance_0002",
+        };
+        for (const char* symbol : kIteratorSymbols) {
+            create_iterator_ = reinterpret_cast<CreateIteratorFn>(dlsym(decklink_lib_, symbol));
+            if (create_iterator_) break;
+        }
         if (!create_iterator_) {
-            log_msg(label_, "dlsym(CreateDeckLinkIteratorInstance) failed");
+            log_msg(label_, "dlsym(CreateDeckLinkIteratorInstance*) failed");
             dlclose(decklink_lib_);
             decklink_lib_ = nullptr;
             return false;

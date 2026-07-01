@@ -6,8 +6,9 @@
 // transform on pointer-up (so a drag is a single history step).
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { TemplateRenderer, resolveVariableMap, applyTransform, type Transform } from '@runtime';
+import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
 import { useEditor } from './store';
+import { effectiveTransform } from './effectiveValues';
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 type DragMode = 'move' | Handle;
@@ -18,6 +19,10 @@ interface Box {
   width: number;
   height: number;
 }
+
+type SelectionOverlay =
+  | { kind: 'box'; box: Box }
+  | { kind: 'polygon'; box: Box; points: Array<{ x: number; y: number }> };
 
 interface DragState {
   id: string;
@@ -91,7 +96,7 @@ export function CanvasArea() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<TemplateRenderer | null>(null);
   const dragRef = useRef<DragState | null>(null);
-  const [box, setBox] = useState<Box | null>(null);
+  const [overlay, setOverlay] = useState<SelectionOverlay | null>(null);
 
   // Renderer lifecycle (static preview: syncTemplate only, no timeline rAF).
   // useLayoutEffect (not useEffect) so the renderer exists before the sync
@@ -110,21 +115,76 @@ export function CanvasArea() {
   const cw = template?.canvas.width ?? 1920;
   const ch = template?.canvas.height ?? 1080;
 
+  function overlayForTransform(layerId: string, transform: Transform): SelectionOverlay | null {
+    const tpl = useEditor.getState().template;
+    if (!tpl) return null;
+    const layer = tpl.layers.find((l) => l.id === layerId);
+    if (!layer) return null;
+
+    if (layer.type === 'mask') {
+      const at = applyTransform(transform, undefined);
+      const outline = projectMaskOutline(
+        { maskMode: layer.maskMode, shape: layer.shape, cornerRadius: layer.cornerRadius },
+        transform,
+        at,
+      );
+      const scaled = outline.map((p) => ({ x: p.x * zoom, y: p.y * zoom }));
+      const xs = scaled.map((p) => p.x);
+      const ys = scaled.map((p) => p.y);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      const maxX = Math.max(...xs);
+      const maxY = Math.max(...ys);
+      return {
+        kind: 'polygon',
+        box: { left: minX, top: minY, width: maxX - minX, height: maxY - minY },
+        points: scaled,
+      };
+    }
+
+    const at = applyTransform(transform, undefined);
+    return {
+      kind: 'box',
+      box: { left: at.left * zoom, top: at.top * zoom, width: at.width * zoom, height: at.height * zoom },
+    };
+  }
+
   function recomputeBox() {
     const stage = stageRef.current;
-    const sel = useEditor.getState().selection;
-    if (!stage || !sel) {
-      setBox(null);
+    const st = useEditor.getState();
+    const sel = st.selection;
+    const tpl = st.template;
+    if (!stage || !sel || !tpl) {
+      setOverlay(null);
       return;
     }
+
+    if (sel.kind === 'layer') {
+      const layer = tpl.layers.find((l) => l.id === sel.id);
+      if (layer?.type === 'mask') {
+        const t = effectiveTransform(
+          tpl,
+          layer.transform,
+          { kind: 'layer', id: layer.id },
+          st.playhead,
+          st.activeDirectorId,
+        );
+        setOverlay(overlayForTransform(layer.id, t));
+        return;
+      }
+    }
+
     const el = stage.querySelector(`[data-${sel.kind}-id="${sel.id}"]`) as HTMLElement | null;
     if (!el) {
-      setBox(null);
+      setOverlay(null);
       return;
     }
     const r = el.getBoundingClientRect();
     const sr = stage.getBoundingClientRect();
-    setBox({ left: r.left - sr.left, top: r.top - sr.top, width: r.width, height: r.height });
+    setOverlay({
+      kind: 'box',
+      box: { left: r.left - sr.left, top: r.top - sr.top, width: r.width, height: r.height },
+    });
   }
 
   useLayoutEffect(() => {
@@ -248,7 +308,8 @@ export function CanvasArea() {
       d.el.style.top = `${at.top}px`;
       d.el.style.width = `${at.width}px`;
       d.el.style.height = `${at.height}px`;
-      setBox({ left: at.left * zoom, top: at.top * zoom, width: at.width * zoom, height: at.height * zoom });
+      const next = overlayForTransform(layer.id, { ...layer.transform, ...partial });
+      if (next) setOverlay(next);
     }
   }
 
@@ -315,11 +376,31 @@ export function CanvasArea() {
           )}
 
           {/* Selection overlay. */}
-          {box && (
+          {overlay && (
             <div
-              className="pointer-events-none absolute border border-primary"
-              style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
+              className="pointer-events-none absolute"
+              style={{ left: overlay.box.left, top: overlay.box.top, width: overlay.box.width, height: overlay.box.height }}
             >
+              {overlay.kind === 'polygon' ? (
+                <svg
+                  className="pointer-events-none absolute overflow-visible"
+                  width={overlay.box.width}
+                  height={overlay.box.height}
+                  viewBox={`0 0 ${overlay.box.width} ${overlay.box.height}`}
+                >
+                  <polygon
+                    points={overlay.points
+                      .map((p) => `${p.x - overlay.box.left},${p.y - overlay.box.top}`)
+                      .join(' ')}
+                    fill="none"
+                    stroke="oklch(var(--primary))"
+                    strokeWidth={1}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+              ) : (
+                <div className="absolute inset-0 border border-primary" />
+              )}
               <div data-overlay-move className="pointer-events-auto absolute inset-0 cursor-move" />
               {selection?.kind === 'layer' &&
                 HANDLES.map((h) => (
