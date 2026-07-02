@@ -45,7 +45,8 @@ Maps output_mode -> consumer:
   stream              -> stream (--stream-url)
 
 Supervisor (run-channel.sh): exit 42 -> 6s restart; crash -> 3s backoff.
-CPU affinity: 2 dedicated physical cores per channel (taskset).
+CPU affinity: 2 dedicated physical cores per channel incl. SMT siblings
+(taskset); channels beyond physical capacity run unpinned.
 
 Environment: BACKEND_URL, ENGINE_BIN, CACHE_ROOT, TITULUS_API_TOKEN,
              TITULUS_API_USER, TITULUS_API_PASSWORD
@@ -104,17 +105,30 @@ if [[ "$COUNT" -eq 0 ]]; then
   exit 0
 fi
 
-# Physical core discovery (same as bench/run-bench.sh).
-phys_cores="$(lscpu 2>/dev/null | awk '/^Core\(s\) per socket:/ {c=$4} /^Socket\(s\):/ {s=$4} END {print c*s}')"
-if [[ -z "$phys_cores" || "$phys_cores" -eq 0 ]]; then
+# Physical core discovery — locale-independent. The old text parse of `lscpu`
+# broke on non-English locales (fell back to nproc and counted SMT threads as
+# physical cores). `lscpu -p` output is stable across locales.
+# core_map[i] = comma list of ALL logical CPUs of physical core i (including
+# SMT siblings), e.g. Ryzen 3600: core_map[0]="0,6", core_map[1]="1,7", ...
+mapfile -t core_map < <(LC_ALL=C lscpu -p=CPU,CORE 2>/dev/null | awk -F, '
+  /^[0-9]/ {
+    if (cpus[$2] == "") cpus[$2] = $1
+    else                cpus[$2] = cpus[$2] "," $1
+    if ($2 + 0 > max) max = $2 + 0
+  }
+  END { for (i = 0; i <= max; i++) if (cpus[i] != "") print cpus[i] }')
+phys_cores="${#core_map[@]}"
+if [[ "$phys_cores" -eq 0 ]]; then
   phys_cores="$(nproc)"
+  core_map=()
+  for ((i = 0; i < phys_cores; i++)); do core_map+=("$i"); done
 fi
 cores_per_channel=2
 total_needed=$((COUNT * cores_per_channel))
 if [[ "$phys_cores" -lt "$total_needed" ]]; then
-  echo "[run-engines] WARNING: ${phys_cores} physical cores < ${total_needed} needed for ${COUNT}ch @${cores_per_channel}c/ch" >&2
+  echo "[run-engines] WARNING: ${phys_cores} physical cores < ${total_needed} needed for ${COUNT}ch @${cores_per_channel}c/ch — channels beyond capacity run unpinned" >&2
 fi
-echo "[run-engines] ${COUNT} channel(s); host ${phys_cores} physical cores; pinning ${cores_per_channel}/ch"
+echo "[run-engines] ${COUNT} channel(s); host ${phys_cores} physical cores; pinning ${cores_per_channel} cores (+SMT siblings)/ch"
 
 mkdir -p "$CACHE_ROOT"
 
@@ -124,7 +138,17 @@ while IFS= read -r line; do
   eval "$line"
   core_start=$core
   core_end=$((core + cores_per_channel - 1))
-  cores="${core_start}-${core_end}"
+  # CPU set = the channel's physical cores INCLUDING their SMT siblings; the
+  # old "0-1" ranges left half of every pinned core idle (CEF render is
+  # multi-threaded and starved at ~20-25fps instead of 50 on this pinning).
+  if [[ "$core_end" -lt "$phys_cores" ]]; then
+    cores=""
+    for ((ci = core_start; ci <= core_end; ci++)); do
+      cores="${cores:+${cores},}${core_map[$ci]}"
+    done
+  else
+    cores=""  # not enough physical cores -> run unpinned (scheduler balances)
+  fi
 
   args=(
     "$RUN_CHANNEL"
@@ -145,7 +169,7 @@ while IFS= read -r line; do
     # telemetry unreadable (Phase 10.1).
     mkdir -p "$ENGINE_LOG_DIR"
     ch_log="${ENGINE_LOG_DIR}/engine-$(echo "$ch_name" | tr ' /' '__').log"
-    echo "[run-engines] launching ${ch_name} on cores ${cores} (mode=${output_mode}) log=${ch_log}"
+    echo "[run-engines] launching ${ch_name} on cpus ${cores:-unpinned} (mode=${output_mode}) log=${ch_log}"
     BACKEND_URL="$BACKEND_URL" ENGINE_BIN="$ENGINE_BIN" CACHE_ROOT="$CACHE_ROOT" \
       "${args[@]}" > "$ch_log" 2>&1 &
   fi
