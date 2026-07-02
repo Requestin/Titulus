@@ -105,6 +105,11 @@ class OwnedDecklinkFrame final : public IDeckLinkVideoFrame, public IDeckLinkVid
         *buffer = data_.data();
         return S_OK;
     }
+
+    // Buffer recycling: the completion callback steals the displayed frame's
+    // storage so the next ScheduleVideoBuffer() reuses it instead of a fresh
+    // 8MB allocation every 20-40ms (allocation jitter on the playback path).
+    std::vector<uint8_t> TakeBuffer() { return std::move(data_); }
     HRESULT GetSize(uint64_t* size) override {
         if (!size) return E_INVALIDARG;
         *size = data_.size();
@@ -209,8 +214,11 @@ struct DecklinkConsumer::Impl {
         height_ = height;
         fps_ = fps;
         frame_bytes_ = static_cast<size_t>(width_) * static_cast<size_t>(height_) * 4;
-        last_frame_.assign(frame_bytes_, 0);
         black_frame_.assign(frame_bytes_, 0);
+        // Start with black fields so the first starved completions output black
+        // instead of garbage.
+        field_a_ = black_frame_;
+        field_b_ = black_frame_;
 
         if (!LoadDeckLinkRuntime()) return false;
 
@@ -373,14 +381,16 @@ struct DecklinkConsumer::Impl {
                 counters,
                 sizeof(counters),
                 "telemetry in=%llu scheduled=%llu late=%llu dropped=%llu flushed=%llu "
-                "overwrite=%llu starved=%llu",
+                "overwrite=%llu starved=%llu pairs=%llu singles=%llu",
                 static_cast<unsigned long long>(frames_in_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(scheduled_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(late_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(dropped_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(flushed_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(frames_overwritten_.load(std::memory_order_relaxed)),
-                static_cast<unsigned long long>(starved_.load(std::memory_order_relaxed)));
+                static_cast<unsigned long long>(starved_.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(pairs_.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(singles_.load(std::memory_order_relaxed)));
             log_msg(label_, counters);
         }
 
@@ -388,7 +398,10 @@ struct DecklinkConsumer::Impl {
             std::lock_guard<std::mutex> lock(queue_mu_);
             frame_queue_.clear();
         }
-        pending_field_.reset();
+        {
+            std::lock_guard<std::mutex> lock(recycle_mu_);
+            recycle_pool_.clear();
+        }
         start_ok_ = false;
 
         release_com(mode_);
@@ -429,7 +442,7 @@ struct DecklinkConsumer::Impl {
     }
 
     HRESULT OnScheduledFrameCompleted(
-        IDeckLinkVideoFrame* /*completed_frame*/,
+        IDeckLinkVideoFrame* completed_frame,
         BMDOutputFrameCompletionResult result) {
         if (!running_.load(std::memory_order_acquire)) return S_OK;
 
@@ -445,23 +458,60 @@ struct DecklinkConsumer::Impl {
             flushed_.fetch_add(1, std::memory_order_relaxed);
         }
 
-        BufferedFrame frame_a = TakeFrameOrLast();
-        BufferedFrame frame_b;
-        if (interlaced_) {
-            frame_b = TakeFrameOrLast();
+        // Recycle the displayed frame's storage: every frame we schedule is our
+        // OwnedDecklinkFrame, so steal its buffer instead of allocating a fresh
+        // ~8MB block per output frame (malloc jitter on the playback path).
+        if (completed_frame) {
+            auto* owned = static_cast<OwnedDecklinkFrame*>(completed_frame);
+            RecycleBuffer(owned->TakeBuffer());
         }
 
-        std::vector<uint8_t> output_frame;
+        // Pull up to the fields needed for one output frame. Never mix a fresh
+        // frame with a stale one: weaving new field A with old field B inverts
+        // time between fields and shows as tearing/flicker on air (Phase 10
+        // root cause). Starvation policy instead:
+        //   2 fresh -> normal weave (A older, B newer: correct field order)
+        //   1 fresh -> duplicate it into both fields (progressive-look, no comb)
+        //   0 fresh -> repeat the previous pair verbatim (steady frame repeat)
+        size_t fresh = 0;
+        BufferedFrame f0;
+        BufferedFrame f1;
+        {
+            std::lock_guard<std::mutex> lock(queue_mu_);
+            if (!frame_queue_.empty()) {
+                f0 = std::move(frame_queue_.front());
+                frame_queue_.pop_front();
+                fresh = 1;
+                if (interlaced_ && !frame_queue_.empty()) {
+                    f1 = std::move(frame_queue_.front());
+                    frame_queue_.pop_front();
+                    fresh = 2;
+                }
+            }
+        }
+
         if (interlaced_) {
-            output_frame = WeaveFields(frame_a.bytes, frame_b.bytes);
-            if (!frame_b.bytes.empty()) last_frame_ = frame_b.bytes;
+            if (fresh == 2 && f0.bytes.size() == frame_bytes_ && f1.bytes.size() == frame_bytes_) {
+                field_a_ = std::move(f0.bytes);
+                field_b_ = std::move(f1.bytes);
+                pairs_.fetch_add(1, std::memory_order_relaxed);
+            } else if (fresh >= 1 && f0.bytes.size() == frame_bytes_) {
+                field_a_ = f0.bytes;
+                field_b_ = std::move(f0.bytes);
+                singles_.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                starved_.fetch_add(1, std::memory_order_relaxed);
+                // keep previous field_a_/field_b_ -> exact repeat
+            }
         } else {
-            output_frame = std::move(frame_a.bytes);
-            if (!output_frame.empty()) last_frame_ = output_frame;
+            if (fresh >= 1 && f0.bytes.size() == frame_bytes_) {
+                field_a_ = std::move(f0.bytes);
+            } else {
+                starved_.fetch_add(1, std::memory_order_relaxed);
+            }
         }
-        if (output_frame.empty()) output_frame = black_frame_;
 
-        if (!ScheduleVideoBuffer(output_frame, next_display_time_)) {
+        if (!ScheduleWovenOutput(next_display_time_)) {
             dropped_.fetch_add(1, std::memory_order_relaxed);
             return E_FAIL;
         }
@@ -494,6 +544,8 @@ struct DecklinkConsumer::Impl {
         const uint64_t flushed   = flushed_.load(std::memory_order_relaxed);
         const uint64_t overwr    = frames_overwritten_.load(std::memory_order_relaxed);
         const uint64_t starved   = starved_.load(std::memory_order_relaxed);
+        const uint64_t pairs     = pairs_.load(std::memory_order_relaxed);
+        const uint64_t singles   = singles_.load(std::memory_order_relaxed);
 
         size_t queue_depth = 0;
         {
@@ -509,27 +561,33 @@ struct DecklinkConsumer::Impl {
             else                                             ref = "UNLOCKED";
         }
 
-        char buf[420];
+        char buf[480];
         std::snprintf(
             buf, sizeof(buf),
             "telemetry5s in_fps=%.1f out_fps=%.1f queue=%zu "
-            "d_late=%llu d_dropped=%llu d_flushed=%llu d_overwritten=%llu d_starved=%llu "
-            "ref=%s | totals in=%llu completed=%llu late=%llu dropped=%llu flushed=%llu starved=%llu",
+            "d_pairs=%llu d_singles=%llu d_starved=%llu "
+            "d_late=%llu d_dropped=%llu d_flushed=%llu d_overwritten=%llu "
+            "ref=%s | totals in=%llu completed=%llu pairs=%llu singles=%llu starved=%llu "
+            "late=%llu dropped=%llu flushed=%llu",
             static_cast<double>(in - prev_in_) / sec,
             static_cast<double>(completed - prev_completed_) / sec,
             queue_depth,
+            static_cast<unsigned long long>(pairs - prev_pairs_),
+            static_cast<unsigned long long>(singles - prev_singles_),
+            static_cast<unsigned long long>(starved - prev_starved_),
             static_cast<unsigned long long>(late - prev_late_),
             static_cast<unsigned long long>(dropped - prev_dropped_),
             static_cast<unsigned long long>(flushed - prev_flushed_),
             static_cast<unsigned long long>(overwr - prev_overwritten_),
-            static_cast<unsigned long long>(starved - prev_starved_),
             ref,
             static_cast<unsigned long long>(in),
             static_cast<unsigned long long>(completed),
+            static_cast<unsigned long long>(pairs),
+            static_cast<unsigned long long>(singles),
+            static_cast<unsigned long long>(starved),
             static_cast<unsigned long long>(late),
             static_cast<unsigned long long>(dropped),
-            static_cast<unsigned long long>(flushed),
-            static_cast<unsigned long long>(starved));
+            static_cast<unsigned long long>(flushed));
         log_msg(label_, buf);
 
         prev_in_          = in;
@@ -539,6 +597,8 @@ struct DecklinkConsumer::Impl {
         prev_flushed_     = flushed;
         prev_overwritten_ = overwr;
         prev_starved_     = starved;
+        prev_pairs_       = pairs;
+        prev_singles_     = singles;
     }
 
     void RequestRestart(int code) {
@@ -658,37 +718,64 @@ struct DecklinkConsumer::Impl {
         log_msg(label_, "reference signal lock timeout (continuing)");
     }
 
-    BufferedFrame TakeFrameOrLast() {
-        std::lock_guard<std::mutex> lock(queue_mu_);
-        if (!frame_queue_.empty()) {
-            BufferedFrame out = std::move(frame_queue_.front());
-            frame_queue_.pop_front();
-            if (!out.bytes.empty()) return out;
+    void RecycleBuffer(std::vector<uint8_t>&& buf) {
+        const size_t output_bytes = static_cast<size_t>(row_bytes_) * static_cast<size_t>(height_);
+        if (buf.size() != output_bytes) return;
+        std::lock_guard<std::mutex> lock(recycle_mu_);
+        if (recycle_pool_.size() < kMaxRecycledBuffers) {
+            recycle_pool_.push_back(std::move(buf));
         }
-        starved_.fetch_add(1, std::memory_order_relaxed);
-        BufferedFrame fallback;
-        fallback.bytes = last_frame_;
-        return fallback;
     }
 
-    std::vector<uint8_t> WeaveFields(const std::vector<uint8_t>& field_a,
-                                     const std::vector<uint8_t>& field_b) const {
-        if (field_a.size() != frame_bytes_ || field_b.size() != frame_bytes_) {
-            return black_frame_;
+    std::vector<uint8_t> GetOutputBuffer() {
+        const size_t output_bytes = static_cast<size_t>(row_bytes_) * static_cast<size_t>(height_);
+        {
+            std::lock_guard<std::mutex> lock(recycle_mu_);
+            if (!recycle_pool_.empty()) {
+                std::vector<uint8_t> buf = std::move(recycle_pool_.back());
+                recycle_pool_.pop_back();
+                return buf;
+            }
         }
+        return std::vector<uint8_t>(output_bytes, 0);
+    }
 
-        std::vector<uint8_t> out(frame_bytes_);
+    // Weave field_a_/field_b_ (or copy field_a_ for progressive) directly into
+    // a recycled output buffer with the SDK row stride, and schedule it. One
+    // pass replaces the old WeaveFields + repack copy chain.
+    bool ScheduleWovenOutput(BMDTimeValue display_time) {
+        if (!output_) return false;
+
+        const std::vector<uint8_t>& a =
+            (field_a_.size() == frame_bytes_) ? field_a_ : black_frame_;
+        const std::vector<uint8_t>& b =
+            (field_b_.size() == frame_bytes_) ? field_b_ : black_frame_;
+
+        std::vector<uint8_t> out = GetOutputBuffer();
         const size_t line_bytes = static_cast<size_t>(width_) * 4;
         for (int y = 0; y < height_; ++y) {
-            const bool use_first =
-                upper_field_first_ ? ((y % 2) == 0) : ((y % 2) == 1);
-            const uint8_t* src = use_first ? field_a.data() : field_b.data();
+            const uint8_t* src;
+            if (interlaced_) {
+                const bool use_first =
+                    upper_field_first_ ? ((y % 2) == 0) : ((y % 2) == 1);
+                src = use_first ? a.data() : b.data();
+            } else {
+                src = a.data();
+            }
             std::memcpy(
-                out.data() + static_cast<size_t>(y) * line_bytes,
+                out.data() + static_cast<size_t>(y) * static_cast<size_t>(row_bytes_),
                 src + static_cast<size_t>(y) * line_bytes,
                 line_bytes);
         }
-        return out;
+
+        auto* frame = new OwnedDecklinkFrame(width_, height_, row_bytes_, std::move(out));
+        const HRESULT hr = output_->ScheduleVideoFrame(
+            frame, display_time, frame_duration_, time_scale_);
+        frame->Release();
+
+        if (hr != S_OK) return false;
+        scheduled_.fetch_add(1, std::memory_order_relaxed);
+        return true;
     }
 
     bool ScheduleVideoBuffer(const std::vector<uint8_t>& bgra, BMDTimeValue display_time) {
@@ -717,7 +804,10 @@ struct DecklinkConsumer::Impl {
         return true;
     }
 
-    static constexpr size_t kMaxQueuedFrames = 8;
+    // Queue depth 4 = 80ms max buffered input at 50fps; deeper queues only add
+    // latency drift without absorbing sustained render underruns.
+    static constexpr size_t kMaxQueuedFrames = 4;
+    static constexpr size_t kMaxRecycledBuffers = 8;
 
     int device_index_ = -1;
     std::string display_mode_name_;
@@ -748,9 +838,16 @@ struct DecklinkConsumer::Impl {
 
     std::mutex queue_mu_;
     std::deque<BufferedFrame> frame_queue_;
-    std::vector<uint8_t> last_frame_;
     std::vector<uint8_t> black_frame_;
-    std::optional<BufferedFrame> pending_field_;
+
+    // Current output pair (completion callback thread only). For interlaced
+    // modes field_a_ = temporally older field, field_b_ = newer; for
+    // progressive field_a_ holds the whole frame.
+    std::vector<uint8_t> field_a_;
+    std::vector<uint8_t> field_b_;
+
+    std::mutex recycle_mu_;
+    std::vector<std::vector<uint8_t>> recycle_pool_;
 
     std::atomic<bool> running_{false};
     std::atomic<int> requested_exit_code_{0};
@@ -766,13 +863,15 @@ struct DecklinkConsumer::Impl {
     std::atomic<uint64_t> scheduled_{0};
     std::atomic<uint64_t> frames_in_{0};
     std::atomic<uint64_t> frames_overwritten_{0};
-    std::atomic<uint64_t> starved_{0};  // queue empty on pull -> stale repeat
+    std::atomic<uint64_t> starved_{0};  // queue empty on pull -> full-frame repeat
+    std::atomic<uint64_t> pairs_{0};    // interlaced: 2 fresh fields woven
+    std::atomic<uint64_t> singles_{0};  // interlaced: 1 fresh frame duplicated to both fields
 
     // Telemetry window state (touched only on the completion callback thread).
     std::chrono::steady_clock::time_point telemetry_last_{};
     uint64_t prev_in_ = 0, prev_completed_ = 0, prev_late_ = 0,
              prev_dropped_ = 0, prev_flushed_ = 0, prev_overwritten_ = 0,
-             prev_starved_ = 0;
+             prev_starved_ = 0, prev_pairs_ = 0, prev_singles_ = 0;
 
     OutputCallback output_callback_{this};
     ProfileCallback profile_callback_{this};
