@@ -230,7 +230,10 @@ curl -s http://127.0.0.1:3002/api/rundowns/<id> \
 For final SDI acceptance (Phase 6.4), use:
 
 - `docs/phase6-decklink-validation-closure.md`
+- `docs/phase6-decklink-host-diagnose.md` — **home-host diagnose results**, canonical Quad 2 connector numbering, and verified `device_index` mapping
 - `engine/collect-decklink-evidence.sh`
+
+**Home dev host (Quad 2, 2026-07-02):** sync generator on Reference In (closest mini-DIN to MB); SDI monitor on **physical SDI #3**; engine flag `--device-index=1`, `HD1080i50`, `fill_only`. See diagnose doc for connector layout and smoke command.
 
 Evidence bundle example:
 
