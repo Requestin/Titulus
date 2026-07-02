@@ -11,6 +11,8 @@
 #   BACKEND_URL   default http://127.0.0.1:3001
 #   ENGINE_BIN    default engine/build/Release/bg_engine
 #   CACHE_ROOT    default /tmp/titulus-engines
+#   ENGINE_LOG_DIR  per-channel log dir (default <repo>/logs); each channel
+#                   writes logs/engine-<name>.log instead of interleaving
 #   TITULUS_API_TOKEN     optional bearer token for protected API
 #   TITULUS_API_USER      default admin (used when token absent)
 #   TITULUS_API_PASSWORD  default admin123 (used when token absent)
@@ -22,6 +24,7 @@ RUN_CHANNEL="${ROOT}/engine/run-channel.sh"
 BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:3001}"
 ENGINE_BIN="${ENGINE_BIN:-${ROOT}/engine/build/Release/bg_engine}"
 CACHE_ROOT="${CACHE_ROOT:-/tmp/titulus-engines}"
+ENGINE_LOG_DIR="${ENGINE_LOG_DIR:-${ROOT}/logs}"
 API_TOKEN="${TITULUS_API_TOKEN:-}"
 DRY_RUN=0
 
@@ -138,9 +141,13 @@ while IFS= read -r line; do
     args+=(--dry-run)
     DRY_RUN=1 BACKEND_URL="$BACKEND_URL" ENGINE_BIN="$ENGINE_BIN" CACHE_ROOT="$CACHE_ROOT" "${args[@]}"
   else
-    echo "[run-engines] launching ${ch_name} on cores ${cores} (mode=${output_mode})"
+    # One log file per channel: three engines interleaving one stream makes
+    # telemetry unreadable (Phase 10.1).
+    mkdir -p "$ENGINE_LOG_DIR"
+    ch_log="${ENGINE_LOG_DIR}/engine-$(echo "$ch_name" | tr ' /' '__').log"
+    echo "[run-engines] launching ${ch_name} on cores ${cores} (mode=${output_mode}) log=${ch_log}"
     BACKEND_URL="$BACKEND_URL" ENGINE_BIN="$ENGINE_BIN" CACHE_ROOT="$CACHE_ROOT" \
-      "${args[@]}" &
+      "${args[@]}" > "$ch_log" 2>&1 &
   fi
   core=$((core + cores_per_channel))
 done < <(python3 -c "

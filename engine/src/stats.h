@@ -49,6 +49,13 @@ class Stats {
     uint64_t max_us_     = 0;
     double   sum_us_     = 0.0;
 
+    // Rolling window since the previous Progress() call. The cumulative avg
+    // hides the *current* state on long runs (one 10s stall poisons avg_us
+    // forever), so Progress() also reports a per-interval window fps/late.
+    mutable uint64_t win_frames_ = 0;
+    mutable uint64_t win_late_   = 0;
+    mutable double   win_sum_us_ = 0.0;
+
     // Ring buffer of recent intervals for percentile reporting (cap memory; we
     // only need a representative sample for p50/p99/p999).
     static constexpr size_t kMaxSamples = 1u << 16;  // 65536 samples (~22 min @50fps)

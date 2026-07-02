@@ -368,17 +368,19 @@ struct DecklinkConsumer::Impl {
         }
 
         if (start_ok_) {
-            char counters[320];
+            char counters[360];
             std::snprintf(
                 counters,
                 sizeof(counters),
-                "telemetry in=%llu scheduled=%llu late=%llu dropped=%llu flushed=%llu overwrite=%llu",
+                "telemetry in=%llu scheduled=%llu late=%llu dropped=%llu flushed=%llu "
+                "overwrite=%llu starved=%llu",
                 static_cast<unsigned long long>(frames_in_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(scheduled_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(late_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(dropped_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(flushed_.load(std::memory_order_relaxed)),
-                static_cast<unsigned long long>(frames_overwritten_.load(std::memory_order_relaxed)));
+                static_cast<unsigned long long>(frames_overwritten_.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(starved_.load(std::memory_order_relaxed)));
             log_msg(label_, counters);
         }
 
@@ -464,7 +466,79 @@ struct DecklinkConsumer::Impl {
             return E_FAIL;
         }
         next_display_time_ += frame_duration_;
+
+        MaybeLogTelemetry();
         return S_OK;
+    }
+
+    // Periodic (5s) consumer-side telemetry, logged from the DeckLink completion
+    // callback thread. Deltas describe the last window; totals are cumulative.
+    // in_fps < channel fps means the render plane starves the consumer and the
+    // output repeats/mixes fields — the exact signal we need for diagnosing
+    // torn output (Phase 10).
+    void MaybeLogTelemetry() {
+        const auto now = std::chrono::steady_clock::now();
+        if (telemetry_last_.time_since_epoch().count() == 0) {
+            telemetry_last_ = now;
+            return;
+        }
+        const double sec =
+            std::chrono::duration_cast<std::chrono::duration<double>>(now - telemetry_last_).count();
+        if (sec < 5.0) return;
+        telemetry_last_ = now;
+
+        const uint64_t in        = frames_in_.load(std::memory_order_relaxed);
+        const uint64_t completed = completed_.load(std::memory_order_relaxed);
+        const uint64_t late      = late_.load(std::memory_order_relaxed);
+        const uint64_t dropped   = dropped_.load(std::memory_order_relaxed);
+        const uint64_t flushed   = flushed_.load(std::memory_order_relaxed);
+        const uint64_t overwr    = frames_overwritten_.load(std::memory_order_relaxed);
+        const uint64_t starved   = starved_.load(std::memory_order_relaxed);
+
+        size_t queue_depth = 0;
+        {
+            std::lock_guard<std::mutex> lock(queue_mu_);
+            queue_depth = frame_queue_.size();
+        }
+
+        const char* ref = "n/a";
+        BMDReferenceStatus status = bmdReferenceUnlocked;
+        if (output_ && output_->GetReferenceStatus(&status) == S_OK) {
+            if (status & bmdReferenceNotSupportedByHardware) ref = "unsupported";
+            else if (status & bmdReferenceLocked)            ref = "locked";
+            else                                             ref = "UNLOCKED";
+        }
+
+        char buf[420];
+        std::snprintf(
+            buf, sizeof(buf),
+            "telemetry5s in_fps=%.1f out_fps=%.1f queue=%zu "
+            "d_late=%llu d_dropped=%llu d_flushed=%llu d_overwritten=%llu d_starved=%llu "
+            "ref=%s | totals in=%llu completed=%llu late=%llu dropped=%llu flushed=%llu starved=%llu",
+            static_cast<double>(in - prev_in_) / sec,
+            static_cast<double>(completed - prev_completed_) / sec,
+            queue_depth,
+            static_cast<unsigned long long>(late - prev_late_),
+            static_cast<unsigned long long>(dropped - prev_dropped_),
+            static_cast<unsigned long long>(flushed - prev_flushed_),
+            static_cast<unsigned long long>(overwr - prev_overwritten_),
+            static_cast<unsigned long long>(starved - prev_starved_),
+            ref,
+            static_cast<unsigned long long>(in),
+            static_cast<unsigned long long>(completed),
+            static_cast<unsigned long long>(late),
+            static_cast<unsigned long long>(dropped),
+            static_cast<unsigned long long>(flushed),
+            static_cast<unsigned long long>(starved));
+        log_msg(label_, buf);
+
+        prev_in_          = in;
+        prev_completed_   = completed;
+        prev_late_        = late;
+        prev_dropped_     = dropped;
+        prev_flushed_     = flushed;
+        prev_overwritten_ = overwr;
+        prev_starved_     = starved;
     }
 
     void RequestRestart(int code) {
@@ -591,6 +665,7 @@ struct DecklinkConsumer::Impl {
             frame_queue_.pop_front();
             if (!out.bytes.empty()) return out;
         }
+        starved_.fetch_add(1, std::memory_order_relaxed);
         BufferedFrame fallback;
         fallback.bytes = last_frame_;
         return fallback;
@@ -691,6 +766,13 @@ struct DecklinkConsumer::Impl {
     std::atomic<uint64_t> scheduled_{0};
     std::atomic<uint64_t> frames_in_{0};
     std::atomic<uint64_t> frames_overwritten_{0};
+    std::atomic<uint64_t> starved_{0};  // queue empty on pull -> stale repeat
+
+    // Telemetry window state (touched only on the completion callback thread).
+    std::chrono::steady_clock::time_point telemetry_last_{};
+    uint64_t prev_in_ = 0, prev_completed_ = 0, prev_late_ = 0,
+             prev_dropped_ = 0, prev_flushed_ = 0, prev_overwritten_ = 0,
+             prev_starved_ = 0;
 
     OutputCallback output_callback_{this};
     ProfileCallback profile_callback_{this};
