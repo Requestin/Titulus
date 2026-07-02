@@ -59,6 +59,11 @@ class EngineClient : public CefClient,
     bool closing() const { return closing_.load(std::memory_order_acquire); }
     void set_closing()   { closing_.store(true, std::memory_order_release); }
 
+    // Browser handle for the main pump. Set on OnAfterCreated, cleared on
+    // OnBeforeClose; both run on the CEF UI thread, which IS the main thread
+    // in our single-threaded message-loop mode, so no locking is needed.
+    CefRefPtr<CefBrowser> browser() const { return browser_; }
+
   private:
     IMPLEMENT_REFCOUNTING(EngineClient);
     DISALLOW_COPY_AND_ASSIGN(EngineClient);
@@ -68,6 +73,7 @@ class EngineClient : public CefClient,
     OnPaintFn      on_paint_;
     OnReadyFn      on_ready_;
     std::atomic<bool> closing_{false};
+    CefRefPtr<CefBrowser> browser_;
 };
 
 }  // namespace bg
