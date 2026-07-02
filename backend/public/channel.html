@@ -119,16 +119,30 @@
     }
 
     // --- Perpetual rAF heartbeat (§10) ------------------------------------
-    // CEF's external begin-frame only paints on compositor damage. Without a
-    // heartbeat a static take stops producing OnPaint after the first frame.
-    // We nudge the DOM every frame so the compositor keeps damage alive.
+    // CEF OSR paints only on real compositor damage. The old sub-pixel opacity
+    // nudge (0.9995..1.0) quantizes back to the same pixels — the compositor
+    // optimizes it away and static takes stop producing OnPaint, while video
+    // caps the whole channel at the video's own fps.
+    //
+    // Damage beacon instead: a 1x1 fixed pixel alternating between alpha 1/255
+    // and 2/255 every rAF frame. Invisible on air (keyed graphics never carry
+    // alpha<3/255 meaningfully) but it is REAL damage, so the compositor
+    // submits a correctly-composited frame at windowless_frame_rate (50fps)
+    // through the normal renderer->compositor->capturer path. Do NOT replace
+    // this with host-side Invalidate() — flooding the CEF capturer with
+    // refresh requests delivers blank buffers (black flicker on SDI).
+    var beacon = document.createElement('div');
+    beacon.style.cssText =
+      'position:fixed;left:0;top:0;width:1px;height:1px;' +
+      'pointer-events:none;z-index:2147483647;';
+    document.body.appendChild(beacon);
+
     var frameCount = 0;
     var lastHudPaint = 0;
     function heartbeat(t) {
       frameCount++;
-      // Sub-pixel opacity nudge forces a compositor frame without a visible
-      // flicker (stays at ~0.999..1.0). Cheaper than re-setting transform.
-      document.body.style.opacity = (0.9995 + (t % 2) * 0.0005).toString();
+      beacon.style.background =
+        (frameCount & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
       if (hudOn && t - lastHudPaint > 250) {
         lastHudPaint = t;
         paintHud(t);
