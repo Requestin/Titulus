@@ -132,6 +132,12 @@ int main(int argc, char** argv) {
 
     CefWindowInfo window_info;
     window_info.SetAsWindowless(0);  // OSR, no native window
+    // External begin-frame: the engine pump is the compositor clock. Damage-
+    // driven painting coalesces rAF-produced frames to ~25-30fps regardless of
+    // windowless_frame_rate; with external begin frames every pump tick drives
+    // exactly one compositor frame, so rAF/CSS/video all follow the channel
+    // cadence (and later a hardware reference clock can drive this directly).
+    window_info.external_begin_frame_enabled = 1;
     CefBrowserSettings browser_settings;
     // Pin the internal frame rate to the channel fps so begin-frame scheduling
     // drives painting at the channel cadence (CasparCG html_producer.cpp:666).
@@ -157,6 +163,17 @@ int main(int argc, char** argv) {
 
     // Main loop: pump CEF, deliver latest frame to consumer, record cadence.
     while (true) {
+        // Drive the compositor: one external BeginFrame per channel tick
+        // (window_info.external_begin_frame_enabled). rAF, CSS animations and
+        // video then advance exactly once per tick and every composite carries
+        // full, correct content. This is the CasparCG html_producer path on
+        // modern CEF; damage-driven scheduling coalesced paints to ~25-30fps.
+        if (browser_ready.load(std::memory_order_acquire)) {
+            if (CefRefPtr<CefBrowser> b = client->browser()) {
+                if (auto host = b->GetHost()) host->SendExternalBeginFrame();
+            }
+        }
+
         const int64_t sleep_us = pump.Tick(/*out_painted=*/false);
 
         // Deliver the latest painted frame to the consumer, but only when a new
