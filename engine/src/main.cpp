@@ -149,19 +149,14 @@ int main(int argc, char** argv) {
     uint64_t last_stats_report = 0;
     int exit_code = 0;
 
+    // Watchdog state: a single Invalidate if paints stall (see below). A
+    // per-tick Invalidate flood is NOT allowed here — in CEF 149 OSR it maps
+    // to the capturer's RequestRefreshFrame and floods it into delivering
+    // blank buffers (black flicker on air, Phase 10.5 regression).
+    auto last_any_paint = std::chrono::steady_clock::now();
+
     // Main loop: pump CEF, deliver latest frame to consumer, record cadence.
     while (true) {
-        // Force a repaint at the channel cadence (CasparCG html_producer
-        // parity: invalidate per tick). CEF's OSR compositor only paints on
-        // damage; DOM-side heartbeats do not reliably produce it, so without
-        // this the paint rate follows content changes (e.g. 25fps video) and
-        // interlaced output loses half its fields.
-        if (browser_ready.load(std::memory_order_acquire)) {
-            if (CefRefPtr<CefBrowser> b = client->browser()) {
-                if (auto host = b->GetHost()) host->Invalidate(PET_VIEW);
-            }
-        }
-
         const int64_t sleep_us = pump.Tick(/*out_painted=*/false);
 
         // Deliver the latest painted frame to the consumer, but only when a new
@@ -183,6 +178,21 @@ int main(int argc, char** argv) {
             stats.RecordFrame(interval_us, expected_us);
             last_paint_time = now;
             have_last_paint = true;
+            last_any_paint = now;
+        }
+
+        // Paint watchdog: the channel.html damage beacon keeps OnPaint alive at
+        // the channel rate. If paints stop for >200ms (page crashed its rAF
+        // loop, or truly static legacy page), nudge ONE refresh — never a
+        // sustained Invalidate flood.
+        if (browser_ready.load(std::memory_order_acquire)) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now - last_any_paint > std::chrono::milliseconds(200)) {
+                last_any_paint = now;
+                if (CefRefPtr<CefBrowser> b = client->browser()) {
+                    if (auto host = b->GetHost()) host->Invalidate(PET_VIEW);
+                }
+            }
         }
 
         // Periodic stats progress.
@@ -211,7 +221,17 @@ int main(int argc, char** argv) {
             }
         }
 
-        if (sleep_us > 0) std::this_thread::sleep_for(std::chrono::microseconds(sleep_us));
+        // Sleep to the frame deadline in <=4ms slices, pumping CEF work in each
+        // slice. A single 20ms sleep between pumps doubles renderer IPC
+        // latency (CEF expects the external pump to run more often than the
+        // frame rate) and starves video decode.
+        int64_t remaining_us = sleep_us;
+        while (remaining_us > 0) {
+            const int64_t slice_us = remaining_us < 4000 ? remaining_us : 4000;
+            std::this_thread::sleep_for(std::chrono::microseconds(slice_us));
+            CefDoMessageLoopWork();
+            remaining_us -= slice_us;
+        }
     }
 
     // Shutdown: close the browser, stop the consumer, print the SUMMARY line
