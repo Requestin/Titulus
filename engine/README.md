@@ -17,18 +17,20 @@ channel.html + bg-runtime.js  →  CEF HTML Producer (OSR)
 
 ## Status
 
-**Phase 0-6 code path is implemented** (DeckLink runtime acceptance still
-depends on HW/genlock host execution):
+**Phase 0-10 code path is implemented and in `main`; Phase 11 (CasparCG-parity
+perf pass) is implemented and live-validated on a DeckLink-equipped host, on
+branch `feature/phase-11-casparcg-parity` (not yet committed/merged):**
 
 | Component | Status |
 |---|---|
 | `CMakeLists.txt`, CEF download | ✅ |
-| `src/main.cpp`, `engine_app.*`, `engine_client.*` (CEF OSR host) | ✅ |
+| `src/main.cpp`, `engine_app.*`, `engine_client.*` (CEF OSR host) | ✅ (Phase 11.2/11.4/11.6: decklink-driven clock branch, SCHED_FIFO, background-throttling hardening) |
 | `src/config.*` (CLI), `src/stats.*` (interval/fps/drops), `src/frame_ring.h`, `src/message_pump.h` | ✅ |
 | `consumers/null_consumer.h` | ✅ |
 | `consumers/pipe_consumer.*`, `consumers/preview_writer.*` | ✅ |
-| `consumers/decklink_consumer.*` | ✅ code-complete (HW validation deferred) |
+| `consumers/decklink_consumer.*` | ✅ code-complete + live-validated (28.6min 3-channel soak, `docs/phase11-baseline.md`); formal 8h HW closure still pending |
 | `consumers/ffmpeg_consumer.*` | ✅ done (raw BGRA -> ffmpeg stream child) |
+| `src/aligned_buffer.h`, `src/simd_copy.h` | ✅ Phase 11.3 (pooled 64B-aligned buffers, AVX2 non-temporal weave copy) |
 | `run-engines.sh`, `run-channel.sh`, `systemd/bg-engine@.service` | ✅ |
 | `collect-decklink-evidence.sh` (Phase 6.4 handoff) | ✅ |
 

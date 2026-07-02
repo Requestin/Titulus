@@ -25,6 +25,10 @@ class DecklinkConsumer final : public Consumer {
     const char* Label() const override;
     int PollExitCode() const override;
 
+    // Phase 11.2: DeckLink is the hardware clock — see consumer.h.
+    bool HasExternalClock() const override;
+    int WaitForTick(int64_t timeout_us) override;
+
   private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

@@ -231,9 +231,14 @@ For final SDI acceptance (Phase 6.4), use:
 
 - `docs/phase6-decklink-validation-closure.md`
 - `docs/phase6-decklink-host-diagnose.md` — **home-host diagnose results**, canonical Quad 2 connector numbering, and verified `device_index` mapping
+- `docs/phase11-baseline.md` — CasparCG-parity perf pass (clock/memory/OS), validated live on the same home host: 3 simultaneous SDI outputs confirmed on profile `1dfd` (an earlier "2-output limit" hypothesis during that investigation was retracted), 28.6-minute 3-channel soak with 0 dropped/flushed/late frames
 - `engine/collect-decklink-evidence.sh`
 
+**Before any hardware experiment on this host:** run `pgrep -af "bg_engine|run-channel|run-engines"` first — live channels may already be running (test stand or air), possibly started well before your session and kept alive across engine restarts by the `run-channel.sh` supervisor loop.
+
 **Home dev host (Quad 2, 2026-07-02):** sync generator on Reference In (closest mini-DIN to MB); SDI monitor on **physical SDI #3**; engine flag `--device-index=1`, `HD1080i50`, `fill_only`. See diagnose doc for connector layout and smoke command.
+
+**Real-time scheduling (Phase 11.4):** `bg_engine` requests `SCHED_FIFO` priority 2 on the render pump thread when running a DeckLink-driven channel (soft-fails without `RLIMIT_RTPRIO`/`CAP_SYS_NICE` granted — normal on an unprivileged service account, logs once and continues at normal priority). To enable it in production, grant the capability at the deployment level (e.g. a systemd unit with `LimitRTPRIO=2`, or an `/etc/security/limits.d` entry) — not done automatically by the codebase since it's a system-wide security-policy change.
 
 Evidence bundle example:
 
@@ -282,6 +287,12 @@ Legacy stack scripts:
 
 - **DeckLink runtime unavailable on dev host**  
   Expected without card/driver. Use `browser`/`stream` until hardware host validation.
+
+- **`EnableVideoOutput failed` on a DeckLink host that has the card**  
+  Usually means another process already owns that `--device-index`'s output engine (e.g. a live channel from `run-engines.sh`), not a card/profile limitation. Check `pgrep -af "bg_engine --name=Channel"` before assuming a hardware limit — a 3-simultaneous-SDI-output limit hypothesis was investigated and retracted in `docs/phase11-baseline.md` §1 for exactly this reason.
+
+- **DeckLink consumer crashes with `mutex lock failed` after a failed `Start()`**  
+  Known issue (`docs/phase11-baseline.md` §5): reproduces when `EnableVideoOutput` fails (e.g. device already in use) and the abbreviated shutdown path runs. Does not affect any channel that started successfully. Tracked for a follow-up fix, not blocking.
 
 - **Rundown slots from old DB look inconsistent**  
   Open/modify/save rundown once: backend applies soft normalization from legacy

@@ -18,12 +18,29 @@ alwaysApply: true
 - **Phase 7:** ✅ DONE (docs/rules consolidation + historical report Phase 1-7)
 - **Phase 8:** ✅ DONE (Rundown mechanism v2: slot-aware playout workflow)
 - **Phase 9:** ✅ DONE (2.5D transforms + stack-scoped masks)
+- **Phase 10:** ✅ DONE, в `main` (PR #49-#55) — SDI stutter/tearing perf fixes на домашнем DeckLink-хосте: per-channel telemetry, field-pairing starvation policy, SMT-aware core pinning, external BeginFrame pacing, projected-mask degenerate-guard. Не имел отдельного doc-файла до Phase 11 — см. `.cursor/rules/99-session-history.mdc` хронологию.
+- **Phase 11:** ✅ РЕАЛИЗОВАНО на ветке `feature/phase-11-casparcg-parity` (**не закоммичено/не смёржено**) — CasparCG-parity perf pass: DeckLink-driven clock (11.2), buffer pooling + 64B align + AVX2 SIMD weave (11.3), SCHED_FIFO + backend nice-деприоритизация (11.4), low-latency scheduled playback + preroll formula (11.5), Chromium background-throttling hardening (11.6). 28.6-мин live 3-channel soak: 0 крашей, 0 dropped/flushed/late. Канонический документ: `docs/phase11-baseline.md`.
 
-**СЛЕДУЮЩАЯ ЗАДАЧА:** Phase 6.4 hardware execution — прогон checklist на host с DeckLink+genlock (external dependency).
+**СЛЕДУЮЩАЯ ЗАДАЧА:** решить с заказчиком судьбу ветки `feature/phase-11-casparcg-parity` (commit → PR → merge, или продолжить итерации). После этого — Phase 6.4 формальное 8h-закрытие (checklist в `docs/phase6-decklink-validation-closure.md`) на том же домашнем хосте, где уже накоплена существенная live-evidence (Phase 10 + Phase 11).
 
 ## Git история (merged PRs в main)
 
 ```
+#55 [Phase 10.6] mask projection flash guard
+#54 [Phase 10.5b] external begin-frame pacing
+#53 [Phase 10.5] revert Invalidate flood; damage beacon + sliced pump
+#52 [Phase 10.4] forced per-tick repaint
+#51 [Phase 10.3] core topology (SMT-aware pinning)
+#50 [Phase 10.2] weave field-pairing (starvation policy)
+#49 [Phase 10.1] decklink telemetry
+#47 [Phase 9.7] bench 2.5D scenes + phase9-25d-masks.md
+#46 [Phase 9.6] 3D masks (projected clip-path)
+#45 [Phase 9.5] preserve-3d
+#44 [Phase 9.4] 2.5D transform UI
+#43 [Phase 9.3] functional masks
+#42 [Phase 9.2] timeline compile indexes
+#41 [Phase 9.1] render stats + dirty-check
+#40 [Phase 8] rundown mechanism v2
 #38 [Phase 7] docs and rules consolidation + phase report
 #37 [Phase 6.4] decklink hardware handoff evidence tooling
 #36 [Phase 6.2/6.3] auth boundaries + billing audit baseline
@@ -68,10 +85,11 @@ alwaysApply: true
 
 **Текущие приоритеты (без предпочтения, если не указано):**
 
-1. **Phase 6.4 — SDI hardware validation (external-blocked).** Нужен host с DeckLink + genlock. Runbook: `docs/phase6-decklink-validation-closure.md`. Если железа нет — пропускается.
-2. **Phase 6+ stretch (без HW):** multi-tenant SaaS auth/billing, license activation с внешним provider, NDI output.
-3. **Развитие control plane** поверх rundown v2 (`docs/phase8-rundown-acceptance.md`).
-4. **Phase 10 (2.5D/masks v2)** из known limits `docs/phase9-25d-masks.md` §9.
+1. **Phase 11 branch — commit/PR/merge.** Ветка `feature/phase-11-casparcg-parity` содержит реализованную и live-протестированную работу (`docs/phase11-baseline.md`), но НЕ закоммичена/не смёржена. Решить с заказчиком дальнейший ход.
+2. **Phase 6.4 — SDI hardware formal closure.** Больше не полностью external-blocked — хост с DeckLink+genlock уже используется (Phase 10/11), но формальный 8h-soak checklist (`docs/phase6-decklink-validation-closure.md`) ещё не пройден.
+3. **Phase 6+ stretch:** multi-tenant SaaS auth/billing, license activation с внешним provider, NDI output.
+4. **Развитие control plane** поверх rundown v2 (`docs/phase8-rundown-acceptance.md`).
+5. **Контент-оптимизация projected-mask hotspot** (`template_test_1`, ~25fps, известно с Phase 9, отложено в Phase 11.6) из `docs/phase9-25d-masks.md` §9.
 
 ---
 
@@ -181,9 +199,43 @@ alwaysApply: true
 - 9.7 Bench scenes + `docs/phase9-25d-masks.md` (#47)
 - Документация: `docs/phase9-25d-masks.md`; bench: `bench/bench-25d.html`, `bench/bench-mask-stack.html`
 
+## Phase 10 — SDI stutter/tearing perf fixes ✅ DONE (в main)
+
+**Goal (достигнут):** устранить visible tearing/comb/judder на реальном 1080i50 SDI выходе, впервые протестированном на домашнем хосте с DeckLink Quad 2 + genlock.
+
+| # | Задача | PR |
+|---|---|---|
+| 10.1 | Per-channel telemetry (win_fps, starved counter, per-channel логи) | #49 |
+| 10.2 | Weave field-pairing starvation policy (root cause tearing) | #50 |
+| 10.3 | Core topology — locale-safe SMT-aware pinning | #51 |
+| 10.4 | Forced per-tick repaint (регрессировал → см. 10.5) | #52 |
+| 10.5 | Revert Invalidate flood; damage beacon + sliced pump | #53 |
+| 10.5b | External begin-frame pacing (28.7fps→50.04fps на beacon-тесте) | #54 |
+| 10.6 | Mask projection degenerate-guard (black flash fix) | #55 |
+
+**Не имел отдельного doc-файла** до Phase 11 — детали по каждому пункту см. `.cursor/rules/99-session-history.mdc` (Phase 10 хронология) и сами commit messages.
+
+## Phase 11 — CasparCG-parity perf pass ✅ РЕАЛИЗОВАНО (ветка `feature/phase-11-casparcg-parity`, НЕ смёржена)
+
+**Goal (достигнут в измерениях, требует commit/PR/merge):** 3 канала 1080i50 без лагов/дёрганий на текущем железе (Ryzen 5 3600, DeckLink Quad 2), CPU-only, без 100%-копирования CasparCG.
+
+| # | Задача | Файлы |
+|---|---|---|
+| 11.1 | Stage-time телеметрия (copy/weave/schedule us) | `engine/src/consumers/decklink_consumer.cpp` |
+| 11.2 | DeckLink-driven clock (consumer как единственные часы) | `engine/src/consumers/consumer.h`, `engine/src/main.cpp`, `backend/public/channel.html` |
+| 11.3 | Buffer pooling + 64B align + AVX2 non-temporal weave | `engine/src/aligned_buffer.h`, `engine/src/simd_copy.h`, `decklink_consumer.cpp` |
+| 11.4 | SCHED_FIFO (decklink-only) + backend/frontend nice | `engine/src/main.cpp`, `dev-start.sh` |
+| 11.5 | Low-latency scheduled playback + CasparCG preroll formula | `decklink_consumer.cpp` |
+| 11.6 | Chromium background-throttling hardening | `engine/src/engine_app.cpp` |
+| 11.7 | 28.6-мин 3-channel live soak acceptance | — |
+
+**Результат:** канал 2/3 pairs:singles с ~4-7:1 до ~8-100:1, copy_us ~2700→1200мкс, weave_us ~2800→1500-1900мкс, 0 крашей/dropped/flushed/late за 28.6 мин. Канал 1 (~29fps) диагностирован как CPU-video-decode content-bound, не engine defect. **Канонический документ:** `docs/phase11-baseline.md`. Заимствования из CasparCG зафиксированы в `engine/CASPARRCG_PORTING.md`.
+
+**Не входит в Phase 11** (отложено, не блокирует): контент-оптимизация projected-mask hotspot (`docs/phase9-25d-masks.md` §9); формальный 8h-soak (сделан 28.6-мин); CCX-topology reshuffle (исследовано, решено не трогать — см. `docs/phase11-baseline.md` §3a).
+
 ## Phase 6+ (future, НЕ MVP) ⏸
 
-NDI output; AI template generation; **GPU path** (только через GPU Gate §0.2.1); BeginFrame from hardware reference clock (single master clock); multi-tenant SaaS auth+billing; license activation; stretch 6+ channels.
+NDI output; AI template generation; **GPU path** (только через GPU Gate §0.2.1); single master clock от `GetHardwareReferenceClock` (частично закрыто в Phase 11.2 иным механизмом — см. `engine/CASPARRCG_PORTING.md` §3.6); multi-tenant SaaS auth+billing; license activation; stretch 6+ channels.
 
 ---
 

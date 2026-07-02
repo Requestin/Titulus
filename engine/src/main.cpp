@@ -36,7 +36,40 @@
 #include <string>
 #include <thread>
 
+#if defined(__linux__)
+#include <pthread.h>
+#include <sched.h>
+#endif
+
 namespace {
+
+// Phase 11.4: real-time scheduling for the render pump thread, matching
+// CasparCG's channel thread (SCHED_FIFO, low priority — common/os/linux/
+// thread.cpp in the reference server uses priority 2). Only called for
+// DeckLink-driven channels (see main(): gated on decklink_driven) — the
+// Browser/OBS/vMix consumer (null) and every other non-SDI output keeps the
+// default scheduling policy untouched, per the explicit constraint that
+// nothing in this phase may risk that path.
+//
+// Low RT priority is safe here because this thread's only job is bounded
+// work per tick (pump CEF, deliver a frame, sleep) — it is not a busy loop,
+// so it cannot starve the rest of the system the way a runaway RT thread
+// would. Failure (no CAP_SYS_NICE / not root) is logged once and otherwise
+// ignored: normal scheduling still works, just with more jitter under load,
+// which is the pre-11.4 baseline behavior.
+void MaybeSetRealtimePumpPriority() {
+#if defined(__linux__)
+    sched_param param{};
+    param.sched_priority = 2;
+    const int rc = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+    if (rc != 0) {
+        std::fprintf(stderr,
+                     "bg_engine: SCHED_FIFO priority 2 unavailable (%s) — "
+                     "continuing at normal scheduling priority\n",
+                     std::strerror(rc));
+    }
+#endif
+}
 
 std::string ts() {
     std::time_t t = std::time(nullptr);
@@ -161,6 +194,132 @@ int main(int argc, char** argv) {
     // blank buffers (black flicker on air, Phase 10.5 regression).
     auto last_any_paint = std::chrono::steady_clock::now();
 
+    // Phase 11.2: consumers with a hardware clock (DeckLink genlock +
+    // scheduled playback) drive the pump directly instead of the engine
+    // free-running its own 50Hz self-timer — see consumer.h and
+    // docs/phase11-baseline.md §2-3 for why the self-timer/hardware-clock gap
+    // was the dominant cause of multi-channel SDI judder. Every other
+    // consumer (null/pipe/preview/stream — including Browser/OBS/vMix, which
+    // always maps to the null consumer per run-channel.sh) has
+    // HasExternalClock() == false and takes the ORIGINAL self-timer loop
+    // below completely unchanged.
+    const bool decklink_driven = consumer && consumer->HasExternalClock();
+
+    if (decklink_driven) {
+        MaybeSetRealtimePumpPriority();
+
+        // Fallback timeout so a stalled/unplugged hardware clock can never
+        // fully freeze rendering: if no tick request arrives within 2 output
+        // frame periods, run one tick anyway (WaitForTick returns 0).
+        const int64_t kFallbackTimeoutUs = 2 * static_cast<int64_t>(expected_us);
+
+        while (true) {
+            const int requested_ticks = consumer->WaitForTick(kFallbackTimeoutUs);
+            const int run_ticks = requested_ticks > 0 ? requested_ticks : 1;
+
+            for (int t = 0; t < run_ticks; ++t) {
+                const auto tick_deadline =
+                    std::chrono::steady_clock::now() + std::chrono::microseconds(expected_us);
+
+                if (browser_ready.load(std::memory_order_acquire)) {
+                    if (CefRefPtr<CefBrowser> b = client->browser()) {
+                        if (auto host = b->GetHost()) host->SendExternalBeginFrame();
+                    }
+                }
+
+                // Pump CEF in <=4ms slices for up to one full field period,
+                // bailing out early once the paint we asked for lands.
+                // IMPORTANT: CEF's renderer-process IPC round-trip for a
+                // composite needs real wall-clock time (~10-15ms observed) —
+                // firing back-to-back BeginFrames a few ms apart (an earlier
+                // version of this loop did 8x500us = 4ms total) does NOT
+                // yield two distinct painted frames; it just re-delivers the
+                // same paint_seq twice and the queue silently starves down to
+                // half rate. Each requested tick gets its own full ~20ms
+                // budget here, same as the self-timer path used to give it.
+                while (true) {
+                    CefDoMessageLoopWork();
+                    if (paint_seq.load(std::memory_order_acquire) != last_delivered_seq) break;
+                    const auto now = std::chrono::steady_clock::now();
+                    if (now >= tick_deadline) break;
+                    const auto remaining = tick_deadline - now;
+                    const auto slice = remaining < std::chrono::microseconds(4000)
+                        ? remaining
+                        : std::chrono::microseconds(4000);
+                    std::this_thread::sleep_for(slice);
+                }
+
+                const uint64_t cur_seq = paint_seq.load(std::memory_order_acquire);
+                if (browser_ready.load(std::memory_order_acquire) && cur_seq != last_delivered_seq) {
+                    last_delivered_seq = cur_seq;
+                    ring.Latest([&](const bg::Frame& f) {
+                        if (consumer) consumer->OnFrame(f);
+                    });
+
+                    const auto now = std::chrono::steady_clock::now();
+                    uint64_t interval_us = 0;
+                    if (have_last_paint) {
+                        interval_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                            now - last_paint_time).count();
+                    }
+                    stats.RecordFrame(interval_us, expected_us);
+                    last_paint_time = now;
+                    have_last_paint = true;
+                    last_any_paint = now;
+                }
+
+                if (browser_ready.load(std::memory_order_acquire)) {
+                    const auto now = std::chrono::steady_clock::now();
+                    if (now - last_any_paint > std::chrono::milliseconds(200)) {
+                        last_any_paint = now;
+                        if (CefRefPtr<CefBrowser> b = client->browser()) {
+                            if (auto host = b->GetHost()) host->Invalidate(PET_VIEW);
+                        }
+                    }
+                }
+
+                // Pace the next sub-tick's BeginFrame to the same ~1 field
+                // period even when this tick's paint landed early — sending
+                // two BeginFrames close together defeats the purpose (see
+                // comment above) regardless of which one finished first.
+                if (t + 1 < run_ticks) {
+                    const auto now = std::chrono::steady_clock::now();
+                    if (now < tick_deadline) {
+                        int64_t remaining_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                            tick_deadline - now).count();
+                        while (remaining_us > 0) {
+                            const int64_t slice_us = remaining_us < 4000 ? remaining_us : 4000;
+                            std::this_thread::sleep_for(std::chrono::microseconds(slice_us));
+                            CefDoMessageLoopWork();
+                            remaining_us -= slice_us;
+                        }
+                    }
+                }
+            }
+
+            const uint64_t elapsed_s = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start).count();
+            if (cfg.stats_interval_sec > 0 &&
+                elapsed_s >= last_stats_report + static_cast<uint64_t>(cfg.stats_interval_sec)) {
+                last_stats_report = elapsed_s;
+                BG_LOG(stats.Progress());
+            }
+
+            if (cfg.duration_sec > 0 && elapsed_s >= static_cast<uint64_t>(cfg.duration_sec)) {
+                BG_LOG("duration reached, shutting down");
+                break;
+            }
+
+            if (consumer) {
+                const int requested = consumer->PollExitCode();
+                if (requested != 0) {
+                    exit_code = requested;
+                    BG_LOG("consumer requested exit code " + std::to_string(exit_code));
+                    break;
+                }
+            }
+        }
+    } else {
     // Main loop: pump CEF, deliver latest frame to consumer, record cadence.
     while (true) {
         // Drive the compositor: one external BeginFrame per channel tick
@@ -250,6 +409,7 @@ int main(int argc, char** argv) {
             remaining_us -= slice_us;
         }
     }
+    }  // decklink_driven / self-timer loop selection
 
     // Shutdown: close the browser, stop the consumer, print the SUMMARY line
     // that bench/run-bench.sh parses.

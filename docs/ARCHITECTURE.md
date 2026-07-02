@@ -129,14 +129,16 @@ channel.html + bg-runtime.js
  -> consumer OnFrame()
 ```
 
-Engine reports interval/fps/drop statistics via periodic logs and final `SUMMARY`.
+Engine reports interval/fps/drop statistics via periodic logs and final `SUMMARY`. DeckLink consumer additionally reports 5s-window telemetry (`telemetry5s`: in/out fps, pairs/singles/starved field-pairing counters) and per-stage timing (`stages5s`: copy/weave/schedule microseconds, see `docs/phase11-baseline.md`).
+
+**Clock model (Phase 11.2):** for DeckLink-driven channels, the render pump no longer free-runs its own timer — `Consumer::HasExternalClock()`/`WaitForTick()` let the DeckLink `ScheduledFrameCompleted` callback drive the pump directly, so the SDI card is the single clock for paint + JS timeline + output. Every other consumer (`null`/`pipe`/`preview`/`stream`, i.e. the Browser/OBS/vMix output path) keeps the original self-timer (`MessagePump`, 50Hz) path unchanged.
 
 ### 5.3 Consumers
 
 - `null` (bench)
 - `pipe` (raw BGRA debug)
 - `preview` (JPEG monitor output)
-- `decklink` (code-complete, hardware validation deferred)
+- `decklink` — code-complete since Phase 3; substantial live hardware validation since Phase 10/11 on a DeckLink Quad 2 + genlock host (`docs/phase6-decklink-host-diagnose.md`, `docs/phase11-baseline.md`); formal 8h-soak closure (Phase 6.4) still pending
 - `stream` (`ffmpeg_consumer`, SRT/RTMP/UDP)
 
 ### 5.4 Supervision
@@ -176,9 +178,10 @@ Configured per channel via `/api/channels` and consumed by engine supervisors.
 ## 9) Reliability / performance constraints
 
 - CPU-only rendering by default
-- Per-channel process + CPU affinity isolation
+- Per-channel process + CPU affinity isolation (SMT-aware pinning, Phase 10.3)
 - Strict validation and bounded payload handling for REST/WS
 - Upload/transcode robustness (MIME/extension checks, timeout/retry)
-- Final SDI acceptance requires DeckLink + genlock host execution
+- Final SDI acceptance requires DeckLink + genlock host execution — substantial live evidence gathered on such a host since Phase 10 (`docs/phase6-decklink-host-diagnose.md`, `docs/phase11-baseline.md`); formal 8h-soak closure (Phase 6.4) still pending
 - Rundown playout remains on the same `/ws/control` command path (no parallel WS protocol)
+- `SCHED_FIFO` priority is opt-in and scoped: only DeckLink-driven channels request it (soft-fails without `CAP_SYS_NICE`/`RLIMIT_RTPRIO`); Browser/OBS/vMix output never requests real-time scheduling (Phase 11.4)
 
