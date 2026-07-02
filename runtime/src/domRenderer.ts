@@ -27,6 +27,7 @@ import { computeStackOrder, groupMap } from './stackOrder.js';
 import { computeMaskScopes, maskClipStyle, type MaskScope } from './maskScopes.js';
 import {
   maskNeedsProjection, projectMaskOutline, projectedMaskClip, maskGeometryKey,
+  isDegenerateProjectedOutline,
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
 import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
@@ -664,16 +665,36 @@ export class TemplateRenderer {
         };
         const outline = projectMaskOutline(maskSpec, mergedT, clipAt);
         const geoKey = `${maskGeometryKey(outline)}|${layer.shape}|${layer.cornerRadius}|${layer.maskMode}`;
-        const proj = projectedMaskClip(maskSpec, outline, containerW, containerH);
+        const degenerate = isDegenerateProjectedOutline(outline, containerW, containerH);
+        let clipPath: string;
+        let overflow: string;
+        if (degenerate) {
+          // Hold the last good polygon — a collapsed projection at rotationY ~ 90°
+          // would clip the whole group to black for a frame (Phase 10.6).
+          if (cache.lastValidClipPath) {
+            clipPath = cache.lastValidClipPath;
+            overflow = cache.lastValidClipOverflow ?? 'hidden';
+          } else {
+            clipPath = 'none';
+            overflow = 'visible';
+          }
+        } else {
+          const proj = projectedMaskClip(maskSpec, outline, containerW, containerH);
+          clipPath = proj.clipPath;
+          overflow = proj.overflow;
+          cache.lastValidClipPath = clipPath;
+          cache.lastValidClipOverflow = overflow;
+          cache.lastValidClipGeoKey = geoKey;
+        }
         this.setStyle(node.clipHost, cache, 'left', '0');
         this.setStyle(node.clipHost, cache, 'top', '0');
         this.setStyle(node.clipHost, cache, 'width', `${containerW}px`);
         this.setStyle(node.clipHost, cache, 'height', `${containerH}px`);
-        this.setStyle(node.clipHost, cache, 'overflow', proj.overflow);
-        if (cache.clipGeoKey !== geoKey) {
+        this.setStyle(node.clipHost, cache, 'overflow', overflow);
+        if (cache.clipGeoKey !== geoKey && !degenerate) {
           cache.clipGeoKey = geoKey;
         }
-        this.setStyle(node.clipHost, cache, 'clipPath', proj.clipPath);
+        this.setStyle(node.clipHost, cache, 'clipPath', clipPath);
         this.setStyle(node.clipHost, cache, 'borderRadius', '0');
         this.setStyle(node.clipHost, cache, 'maskImage', 'none');
         this.setStyle(node.clipHost, cache, 'WebkitMaskImage', 'none');
@@ -688,6 +709,9 @@ export class TemplateRenderer {
       } else {
         node.clipMode = 'bounds';
         delete cache.clipGeoKey;
+        delete cache.lastValidClipPath;
+        delete cache.lastValidClipOverflow;
+        delete cache.lastValidClipGeoKey;
         const clip = maskClipStyle(layer, clipAt, containerW, containerH);
 
         this.setStyle(node.clipHost, cache, 'left', '0');
