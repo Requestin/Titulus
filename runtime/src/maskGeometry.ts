@@ -133,7 +133,17 @@ function transformCorner(
 
   const persp = t.perspective > 0 ? t.perspective : 1000;
   if (t.rotationX !== 0 || t.rotationY !== 0) {
-    const scale = persp / (persp - z);
+    const denom = persp - z;
+    // Near-singular perspective (rotationY ~ 90°): scale blows up and the
+    // projected polygon collapses to a sliver — clip-path clips the whole
+    // group to black for a frame (Phase 10.6 Group 3 flash).
+    if (Math.abs(denom) < 1) {
+      return { x: Number.NaN, y: Number.NaN };
+    }
+    const scale = persp / denom;
+    if (!Number.isFinite(scale) || scale > 64) {
+      return { x: Number.NaN, y: Number.NaN };
+    }
     x *= scale;
     y *= scale;
   }
@@ -147,6 +157,58 @@ function transformCorner(
 /** Stable cache key for a projected quad (quantized). */
 export function maskGeometryKey(quad: Point2D[]): string {
   return quad.map((p) => `${p.x},${p.y}`).join(' ');
+}
+
+/** Signed polygon area (px²). Shoelace; 0 when collinear/collapsed. */
+export function outlineSignedArea(outline: Point2D[]): number {
+  const n = outline.length;
+  if (n < 3) return 0;
+  let a = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    a += outline[i].x * outline[j].y - outline[j].x * outline[i].y;
+  }
+  return a * 0.5;
+}
+
+/**
+ * True when a projected mask outline should not be applied — applying a
+ * collapsed/invalid polygon clips the entire masked subtree to nothing.
+ */
+export function isDegenerateProjectedOutline(
+  outline: Point2D[],
+  containerW: number,
+  containerH: number,
+  minAreaPx2 = 16,
+): boolean {
+  if (outline.length < 3) return true;
+  for (const p of outline) {
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return true;
+  }
+  const area = Math.abs(outlineSignedArea(outline));
+  if (!Number.isFinite(area) || area < minAreaPx2) return true;
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of outline) {
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
+  }
+  const bw = maxX - minX;
+  const bh = maxY - minY;
+  if (bw < 0.5 && bh < 0.5) return true;
+
+  // Projected corners wildly outside the container indicate a singular tilt.
+  const margin = Math.max(containerW, containerH) * 2;
+  if (minX < -margin || maxX > containerW + margin ||
+      minY < -margin || maxY > containerH + margin) {
+    return true;
+  }
+  return false;
 }
 
 /**
