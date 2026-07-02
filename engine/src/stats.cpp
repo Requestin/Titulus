@@ -27,10 +27,14 @@ void Stats::RecordFrame(uint64_t interval_us, uint64_t expected_us) {
     if (interval_us < min_us_) min_us_ = interval_us;
     if (interval_us > max_us_) max_us_ = interval_us;
 
+    ++win_frames_;
+    win_sum_us_ += static_cast<double>(interval_us);
+
     // A frame is "late" if it arrived >1.5x the expected interval
     // (DEVELOPMENT_PROMPT §9.7: deadline misses).
     if (expected_us > 0 && interval_us > (expected_us + expected_us / 2)) {
         ++late_;
+        ++win_late_;
     }
 }
 
@@ -65,10 +69,25 @@ uint64_t percentile_of(const uint64_t* sorted, size_t n, double pct) {
 std::string Stats::Progress() const {
     if (frames_ == 0) return "frames=0";
     double avg = sum_us_ / static_cast<double>(sample_count_ > 0 ? sample_count_ : 1);
-    char buf[160];
+
+    // Window slice since the previous Progress() call — the actionable "right
+    // now" render rate, as opposed to the run-cumulative numbers.
+    double win_fps = 0.0;
+    if (win_frames_ > 0 && win_sum_us_ > 0.0) {
+        win_fps = 1.0e6 / (win_sum_us_ / static_cast<double>(win_frames_));
+    }
+    const unsigned long long win_late = static_cast<unsigned long long>(win_late_);
+    win_frames_ = 0;
+    win_late_   = 0;
+    win_sum_us_ = 0.0;
+
+    char buf[224];
     std::snprintf(buf, sizeof(buf),
-                  "frames=%llu avg_us=%.0f min_us=%llu max_us=%llu late=%llu drops=%.3f%%",
+                  "frames=%llu win_fps=%.1f win_late=%llu avg_us=%.0f min_us=%llu max_us=%llu "
+                  "late=%llu drops=%.3f%%",
                   static_cast<unsigned long long>(frames_),
+                  win_fps,
+                  win_late,
                   avg,
                   static_cast<unsigned long long>(min_us_),
                   static_cast<unsigned long long>(max_us_),
