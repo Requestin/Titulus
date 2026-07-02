@@ -30,8 +30,11 @@ class MessagePump {
     // Call once per main-loop iteration. Pumps CEF work (non-blocking: at most
     // the work that's currently pending). Returns the number of microseconds to
     // sleep before the next iteration to hit the target fps cadence.
-    // Also returns, via out_painted, whether a new paint was observed this tick
-    // (used by the caller to record frame stats only on actual deliveries).
+    //
+    // Pacing uses an absolute deadline schedule. The previous version measured
+    // "elapsed since last Tick" (which included the sleep itself) and
+    // subtracted it from the target — that oscillates between sleep=0 and
+    // sleep=target and runs the loop at ~2x the channel rate.
     int64_t Tick(bool /*out_painted*/) {
         // CefDoMessageLoopWork processes any pending CEF tasks (paint callbacks
         // included) and returns; it does not block. The FrameRing is updated by
@@ -39,22 +42,27 @@ class MessagePump {
         CefDoMessageLoopWork();
 
         const auto now = clock::now();
-        const auto elapsed = std::chrono::duration_cast<
-            std::chrono::microseconds>(now - last_).count();
-        last_ = now;
+        if (next_deadline_.time_since_epoch().count() == 0) {
+            next_deadline_ = now + std::chrono::microseconds(target_interval_us_);
+            return static_cast<int64_t>(target_interval_us_);
+        }
 
-        // Pace: sleep off the remainder of the target interval. Allow the loop
-        // to catch up if we're already late (don't accumulate sleep debt).
-        int64_t sleep_us = target_interval_us_ - elapsed;
-        if (sleep_us < 0) sleep_us = 0;
-        return sleep_us;
+        next_deadline_ += std::chrono::microseconds(target_interval_us_);
+        if (next_deadline_ <= now) {
+            // Running late: re-anchor to now instead of accumulating debt
+            // (a burst of zero-sleep iterations would overshoot the cadence).
+            next_deadline_ = now + std::chrono::microseconds(target_interval_us_);
+            return 0;
+        }
+        return std::chrono::duration_cast<std::chrono::microseconds>(
+            next_deadline_ - now).count();
     }
 
     uint64_t target_interval_us() const { return target_interval_us_; }
 
   private:
     uint64_t target_interval_us_;
-    clock::time_point last_ = clock::now();
+    clock::time_point next_deadline_{};
 };
 
 }  // namespace bg

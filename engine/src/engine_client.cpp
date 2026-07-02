@@ -44,10 +44,12 @@ void EngineClient::OnPaint(CefRefPtr<CefBrowser>, PaintElementType type,
 void EngineClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
     // Browser is up. The page will start painting once its DOM is ready and the
     // perpetual rAF heartbeat (channel.html) keeps the compositor ticking.
+    browser_ = browser;
     if (on_ready_) on_ready_(true);
 }
 
 void EngineClient::OnBeforeClose(CefRefPtr<CefBrowser>) {
+    browser_ = nullptr;
     closing_.store(true, std::memory_order_release);
 }
 

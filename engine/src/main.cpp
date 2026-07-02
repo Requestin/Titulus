@@ -151,6 +151,17 @@ int main(int argc, char** argv) {
 
     // Main loop: pump CEF, deliver latest frame to consumer, record cadence.
     while (true) {
+        // Force a repaint at the channel cadence (CasparCG html_producer
+        // parity: invalidate per tick). CEF's OSR compositor only paints on
+        // damage; DOM-side heartbeats do not reliably produce it, so without
+        // this the paint rate follows content changes (e.g. 25fps video) and
+        // interlaced output loses half its fields.
+        if (browser_ready.load(std::memory_order_acquire)) {
+            if (CefRefPtr<CefBrowser> b = client->browser()) {
+                if (auto host = b->GetHost()) host->Invalidate(PET_VIEW);
+            }
+        }
+
         const int64_t sleep_us = pump.Tick(/*out_painted=*/false);
 
         // Deliver the latest painted frame to the consumer, but only when a new
