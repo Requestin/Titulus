@@ -99,10 +99,20 @@ ensure_engine() {
 ensure_engine || true
 
 # Backend ---------------------------------------------------------------------
+# Phase 11.4: nice +10 so the control plane yields CPU to pinned bg_engine
+# channel threads under contention. On a channel host, 3ch x 2 physical
+# cores already claims every physical core (docs/phase11-baseline.md §3) —
+# there is no spare core to isolate the backend onto, so this is a scheduling
+# *priority* nudge, not a cpuset change: the backend still runs on the same
+# cores, it just loses tie-breaks to the render/pump threads that share them.
+# `nice` is best-effort (may be a no-op in some container/CI setups); falls
+# through to unprioritized `node` if unavailable.
 log "starting backend on ${BIND_HOST}:${BE_PORT} (data: ${DATA_DIR}) ..."
 cd "$ROOT/backend"
+NICE_CMD=()
+if command -v nice >/dev/null 2>&1; then NICE_CMD=(nice -n 10); fi
 PORT="$BE_PORT" HOST="$BIND_HOST" TITULUS_DATA="$DATA_DIR" \
-  node src/index.js > "$LOG_DIR/backend.log" 2>&1 &
+  "${NICE_CMD[@]}" node src/index.js > "$LOG_DIR/backend.log" 2>&1 &
 echo $! > "$PID_DIR/backend.pid"
 cd "$ROOT"
 
@@ -118,10 +128,11 @@ for i in $(seq 1 30); do
 done
 
 # Frontend --------------------------------------------------------------------
+# Phase 11.4: same nice-priority rationale as the backend above.
 log "starting frontend on ${BIND_HOST}:${FE_PORT} (proxy -> backend ${CONNECT_HOST}:${BE_PORT}) ..."
 cd "$ROOT/frontend"
 VITE_BACKEND="http://${CONNECT_HOST}:${BE_PORT}" \
-  npm run dev -- --port "$FE_PORT" --host "$BIND_HOST" --strictPort > "$LOG_DIR/frontend.log" 2>&1 &
+  "${NICE_CMD[@]}" npm run dev -- --port "$FE_PORT" --host "$BIND_HOST" --strictPort > "$LOG_DIR/frontend.log" 2>&1 &
 echo $! > "$PID_DIR/frontend.pid"
 cd "$ROOT"
 

@@ -64,6 +64,11 @@ Producer (CEF HTML) → [channel-paced pull] → Consumer (decklink / ffmpeg / n
 | `core/mixer/mixer.cpp:89-90` | **n/a** | Mixer всегда outputs BGRA — у нас OSR OnPaint уже BGRA, не нужен отдельный mixer | n/a | — |
 | `core/video_format.h` (`video_field {progressive,a,b}`, `field_count`) | `engine/src/config.cpp` (format metadata) | Interlaced field model metadata for weave | ⏳ todo | 3.1 |
 | `shell/CMakeLists.txt` / top `src/CMakeLists.txt` | `engine/CMakeLists.txt` | Build config reference (C++20, CEF linkage, module structure) | ⏳ todo | 0.3 |
+| `core/consumer/output.cpp:206-227` (`has_synchronization_clock`) | `engine/src/consumers/consumer.h` (`HasExternalClock`/`WaitForTick`), `engine/src/main.cpp` (`decklink_driven` branch) | Consumer-driven pacing: DeckLink (hardware clock) drives the render pump directly instead of a free-running self-timer. **Reimplemented, not copied**: CasparCG's channel thread never sleeps and pushes into a backpressured queue; our pump *blocks* on a condvar the DeckLink callback signals, since our render step (CEF BeginFrame) is push-based, not pull-based like CasparCG's `stage`/`mixer`. Same effect (SDI is the master clock), different mechanism because the underlying producer models differ | ✅ done | 11.2 |
+| `common/os/linux/thread.cpp:10-18` (`set_thread_realtime_priority`) | `engine/src/main.cpp` (`MaybeSetRealtimePumpPriority`) | `SCHED_FIFO` priority 2 on the render pump thread, gated to DeckLink-driven channels only (CasparCG applies it unconditionally to its single channel thread) | ✅ done | 11.4 |
+| `modules/decklink/consumer/decklink_consumer.cpp:67-72` (`bmdDeckLinkConfigLowLatencyVideoOutput`) | `engine/src/consumers/decklink_consumer.cpp` (`Start`) | Low-latency scheduled playback flag | ✅ done | 11.5 |
+| `modules/decklink/consumer/config.h:126-130` (`buffer_depth()`) | `engine/src/consumers/decklink_consumer.cpp` (`Start`, preroll) | Preroll depth formula: base 3 + 1 if not low-latency + 1 if embedded audio (we have no audio term) | ✅ done | 11.5 |
+| `common/memory.h`, `common/memshfl.h` (aligned pools, SIMD shuffle) | `engine/src/aligned_buffer.h`, `engine/src/simd_copy.h` | **Reimplemented, not copied**: 64-byte-aligned pooled buffers for the DeckLink input queue + weave output; AVX2 non-temporal (`_mm256_stream_si256`) bulk copy for the weave destination (CasparCG uses SSSE3 `aligned_memshfl` for a different purpose — alpha/key channel shuffle; we use streaming stores for plain line-copy bandwidth, since our weave destination is write-once/never-read-back) | ✅ done | 11.3 |
 
 **Легенда статуса:** ⏳ todo · 🔨 in progress · ✅ done · ⏸ deferred · n/a (не применимо)
 
@@ -128,6 +133,38 @@ CasparCG core frame — плоский BGRA, не знает про fields. Weav
 **consumer** (`sdr_bgra_strategy.cpp:58-116`): line-interleave 2 field-frames,
 UFF (`bmdUpperFieldFirst`). Titulus: тот же подход — weave в decklink_consumer.
 
+### 3.6 Phase 11.2: revisiting §3.1 — DeckLink becomes the pump's clock
+
+§3.1 (Phase 0) deferred an explicit single-clock model per spec §9.3 in
+favor of CasparCG's `enable-begin-frame-scheduling` self-timer approach.
+Live 3-channel testing (`docs/phase11-baseline.md` §2-3) showed this
+self-timer and the DeckLink completion callback drifting against each
+other under load — exactly the failure mode §3.1 flagged as a "future" risk.
+
+**Decision (Phase 11.2):** implement the REQ-7-aligned single-clock model,
+but via a mechanism that fits our push-based CEF pipeline rather than
+copying CasparCG's pull-based `stage`/`mixer` architecture: `WaitForTick()`
+blocks the render pump until DeckLink's `ScheduledFrameCompleted` callback
+requests more fields, paced ~1 field period apart (CEF's renderer-process
+IPC needs close to a full field period per composite — firing BeginFrames
+faster just redelivers a stale `paint_seq`, discovered empirically during
+this phase). Gated to DeckLink-driven channels only; the Browser/OBS/vMix
+(null) consumer keeps the original CasparCG-style self-timer path from §3.1
+completely unchanged. Validated live: Channel 2/3 `pairs:singles` ratio
+improved from ~4-7:1 to ~8-100:1 (`docs/phase11-baseline.md` §6a).
+
+### 3.7 Phase 11.4: RT priority is opt-in, not automatic
+
+CasparCG applies `SCHED_FIFO` unconditionally to its one channel thread
+(§common/os/linux/thread.cpp). Titulus gates this to DeckLink-driven
+channels only (constraint: must not affect the Browser/OBS/vMix path) and
+the call is a soft-fail: on hosts without `RLIMIT_RTPRIO` granted (the
+default for an unprivileged service account), it logs once and continues
+at normal priority. Production deployments that want the RT benefit must
+grant it explicitly (systemd `LimitRTPRIO=` or `/etc/security/limits.d`) —
+intentionally not done automatically by this codebase, since it's a
+system-wide security-policy change outside the repo.
+
 ---
 
 ## 4. Что НЕ переносим (out of scope / не применимо)
@@ -161,6 +198,7 @@ UFF (`bmdUpperFieldFirst`). Titulus: тот же подход — weave в deckl
 | 4 | backend hardening | ⏳ todo |
 | 5 | ffmpeg_consumer port + docs | ⏳ todo |
 | 6+ | NDI, GPU (Gate), single-master-clock, SaaS | ⏸ future |
+| 11 | CasparCG-parity perf pass: stage-time telemetry (11.1), DeckLink-driven clock (11.2), pooled/aligned/SIMD buffers (11.3), SCHED_FIFO + backend nice deprioritization (11.4), low-latency + preroll formula (11.5), Chromium background-throttling hardening (11.6) | ✅ done — see `docs/phase11-baseline.md` |
 
 ---
 

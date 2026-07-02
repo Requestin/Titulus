@@ -38,6 +38,25 @@ void EngineApp::OnBeforeCommandLineProcessing(const CefString& process_type,
         cmd->AppendSwitch("disable-gpu");
         cmd->AppendSwitch("disable-gpu-compositing");
         cmd->AppendSwitchWithValue("disable-gpu-vsync", "gpu");
+
+        // Phase 11.6: an OSR (windowless) view has no real native window, so
+        // Chromium's page-visibility/occlusion heuristics can misclassify it
+        // as "backgrounded" the same way they would a minimized tab — which
+        // throttles JS timers (setTimeout/setInterval clamped to ~1Hz) and
+        // can lower the renderer process's scheduling priority. Neither is
+        // acceptable for a channel that must render every field on time.
+        // These flags are the standard fix for exactly this class of bug in
+        // other CEF/Chromium OSR and headless-automation hosts (Puppeteer/
+        // Playwright ship the same three for their headless mode). Verified
+        // live: renderer processes on this host already showed nice=0 (not
+        // yet hit in practice on Linux --no-sandbox), so this is a
+        // zero-measured-regression defensive hardening, not a fix for an
+        // observed bug — kept because the failure mode it guards against
+        // (silent JS timer throttling) is exactly the kind of intermittent
+        // judder that would be very hard to diagnose after the fact.
+        cmd->AppendSwitch("disable-renderer-backgrounding");
+        cmd->AppendSwitch("disable-backgrounding-occluded-windows");
+        cmd->AppendSwitch("disable-background-timer-throttling");
     }
 }
 

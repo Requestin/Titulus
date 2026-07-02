@@ -58,6 +58,27 @@ class Consumer {
     // DeckLink uses this to ask the supervisor for a controlled restart
     // (e.g. profile switch -> exit 42). Most consumers always return 0.
     virtual int PollExitCode() const { return 0; }
+
+    // Phase 11.2: consumers backed by a hardware clock (DeckLink genlock +
+    // scheduled playback) can drive the render pump directly instead of the
+    // engine free-running its own 50Hz self-timer. This closes the gap
+    // between "when a field is painted" and "when the card actually needs
+    // it", which is the root cause of the singles/starved judder on
+    // multi-channel SDI output (docs/phase11-baseline.md §2-3).
+    //
+    // Default consumers (null/pipe/preview/stream — i.e. every non-SDI
+    // output path, including the Browser/OBS/vMix consumer) do NOT override
+    // these: HasExternalClock() stays false and main.cpp's existing
+    // self-timer MessagePump path runs completely unchanged for them.
+    virtual bool HasExternalClock() const { return false; }
+
+    // Block until the consumer's clock requests N more painted frames (one
+    // request per field/frame it just consumed from its input queue), or
+    // timeout_us elapses. Returns the number of ticks to run now (the caller
+    // treats 0 as "clock stalled, do one tick anyway" — a safety net so a
+    // wedged hardware clock can never fully freeze the render loop). Only
+    // called when HasExternalClock() is true.
+    virtual int WaitForTick(int64_t /*timeout_us*/) { return 0; }
 };
 
 }  // namespace bg

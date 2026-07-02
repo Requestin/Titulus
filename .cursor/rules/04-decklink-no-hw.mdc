@@ -1,16 +1,27 @@
 ---
-description: "ВНИМАНИЕ: на dev-сервере НЕТ DeckLink платы и genlock. Phase 3 = code-complete + отложенный тест. Разрабатывай так, чтобы потом запустилось на железе."
+description: "ВНИМАНИЕ: на dev-сервере НЕТ DeckLink платы и genlock. Phase 3 = code-complete + отложенный тест. Разрабатывай так, чтобы потом запустилось на железе. НО: домашний хост (Karen) с реальным DeckLink Quad 2 + genlock уже используется с Phase 10 — см. апдейт ниже."
 alwaysApply: true
 ---
 # DeckLink / Genlock — разработка БЕЗ железа (ключевое ограничение)
 
-## Текущая ситуация
+## ⚠️ Апдейт (Phase 10/11): железо появилось на ОТДЕЛЬНОМ (домашнем) хосте
+
+Начиная с Phase 10, разработка/тестирование SDI-пути частично идёт на **домашнем Linux-хосте** (AMD Ryzen 5 3600, 6C/12T, DeckLink Quad 2, LES DG-14B genlock) — НЕ на исходном dev-сервере, описанном ниже. На этом хосте уже:
+- подтверждена одновременная работа **3 независимых SDI-выходов** на одной карте (профиль `1dfd`, ложная гипотеза о лимите в 2 выхода — retracted, см. `docs/phase11-baseline.md` §1);
+- пройден **28.6-минутный** непрерывный live-прогон 3 каналов с genlock lock, 0 dropped/flushed/late (`docs/phase11-baseline.md` §6f);
+- канонические доки: `docs/phase6-decklink-host-diagnose.md` (connector numbering, device-index mapping), `docs/phase11-baseline.md` (perf pass).
+
+Если работаешь на ЭТОМ хосте — **правила ниже про «нет железа» не применяются**, но: (а) сначала `pgrep -af "bg_engine|run-channel|run-engines"` — там могут уже идти live-каналы (эфир или тест-стенд, спроси оператора); (б) формальное 8h-soak closure (`docs/phase6-decklink-validation-closure.md`) всё ещё НЕ выполнено — не путай накопленную evidence с формальным acceptance.
+
+Если работаешь на исходном dev-сервере (описание ниже) — правила «нет железа» остаются в силе.
+
+## Текущая ситуация (исходный dev-сервер, без HW)
 
 На сервере, где идёт разработка, **физически отсутствует**:
 - плата DeckLink (нет SDI вывода)
 - внешний синхросигнал (genlock) от синхрогенератора
 
-**Принятое решение (с заказчиком):** Phase 3 (DeckLink SDI) = **code-complete + отложенная валидация**. Код пишется полностью, но SDI-тестирование невозможно сейчас. Всё остальное прогоняется с `null`/`pipe`/`preview`/`stream`/`browser` consumers.
+**Принятое решение (с заказчиком):** Phase 3 (DeckLink SDI) = **code-complete + отложенная валидация**. Код пишется полностью, но SDI-тестирование невозможно сейчас на ЭТОМ хосте. Всё остальное прогоняется с `null`/`pipe`/`preview`/`stream`/`browser` consumers.
 
 ## Что это значит для разработки
 
@@ -60,7 +71,7 @@ alwaysApply: true
 
 ## Зафиксированные развилки spec-vs-CasparCG (важно!)
 
-1. **Frame pacing:** CasparCG использует `enable-begin-frame-scheduling` + consumer-driven pull (НЕ spec's `SendExternalBeginFrame` push). Принято: CasparCG-path. Single-master-clock → Phase 6+ stretch.
+1. **Frame pacing:** CasparCG использует `enable-begin-frame-scheduling` + consumer-driven pull (НЕ spec's `SendExternalBeginFrame` push). Изначально принято: CasparCG-path (self-timer). **Пересмотрено в Phase 11.2**: для decklink-каналов теперь явный consumer-driven pacing через `Consumer::WaitForTick()` — DeckLink `ScheduledFrameCompleted` будит render pump напрямую (ближе к spec REQ-7 single-master-clock, но НЕ через `GetHardwareReferenceClock`). Browser/OBS/vMix путь остался на исходном self-timer. Детали: `engine/CASPARRCG_PORTING.md` §3.6, `docs/phase11-baseline.md` §6a.
 2. **DeckLink keyer:** `IDeckLinkKeyer` (CasparCG path), НЕ 2dfd profile API (его нет и в CasparCG). Spec §REQ-5 про 2dfd — aspirational gap.
 3. **Genlock:** `GetReferenceStatus` polling + scheduled playback = frame-accurate при locked genlock. `GetHardwareReferenceClock` CasparCG НЕ вызывает → future enhancement.
 4. **No BGRA→ARGB** — согласовано (CasparCG тоже).

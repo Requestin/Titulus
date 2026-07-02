@@ -20,6 +20,7 @@ alwaysApply: true
 4. **DeckLink HW отсутствует** → Phase 3 = code-complete + отложенный тест. Разрабатывать так, чтобы потом запустилось на железе.
 5. **GPL compliance — reimplement by reference.** Не копировать CasparCG дословно.
 6. **Git-first delivery** — каждая задача = merged PR, история пригодна для rollback/resume.
+7. **(Phase 11, подтверждено повторно)** Жёсткие правила движка: только CPU-рендер (никакого GPU), обязательный decklink-выход, нельзя копировать решения CasparCG на 100% (только подсматривать и переосмысливать), целевой перформанс — 3 канала 1080i50 без лагов/дёрганий/фризов/артефактов на текущем железе (см. `docs/phase11-baseline.md`).
 
 ## Хронология разработки (что произошло)
 
@@ -150,6 +151,30 @@ alwaysApply: true
 - **Канонический документ Phase 9:** `docs/phase9-25d-masks.md` (400+ строк: задачи, архитектура, все 7 PR, mask-семантика, bench-команды, ограничения MVP).
 - **Smoke-подтверждение:** `bg_engine --consumer=null --url=file://.../bench-mask-stack.html --duration=3` → `drops=0%`, p50≈20.7ms.
 
+### Phase 10 (SDI stutter/tearing perf fixes) — DONE (в main, PR #49–#55)
+- Появилась на **домашнем хосте с реальным DeckLink Quad 2 + genlock** (не dev-сервер без HW) — первая фаза с живым SDI трафиком.
+- **10.1** (`0bef2ad`): per-channel лог-файлы вместо interleaved stdout, rolling `win_fps`, счётчик `starved` в decklink consumer telemetry.
+- **10.2** (`8b06bbe`): root cause tearing/comb на 1080i — weave мешал свежее field A со stale field B при недоборе fps. Fix: starvation policy (2 fresh → weave, 1 → duplicate, 0 → repeat pair). Счётчики `pairs`/`singles`/`starved`.
+- **10.3** (`26480a7`): render падал до ~20-25fps — pinning брал только 2 **логических** CPU без SMT siblings + русская locale ломала парсинг `lscpu`. Fix: `lscpu -p=CPU,CORE` (locale-independent) + pin с SMT siblings (`run-engines.sh`).
+- **10.4** (`9da2389`): paint rate = fps контента (видео 25fps съедало половину interlaced полей). Fix: forced `Invalidate(PET_VIEW)` каждый tick + absolute-deadline pump pacing — **дало регресс** (см. 10.5).
+- **10.5** (`13f5b35`): 10.4 вызвал black stripes/flicker на SDI (flood `Invalidate` → blank buffers от CEF capturer). Revert flood; damage beacon 1×1 px (alpha 1↔2 каждый rAF) + sliced pump (≤4ms slices) + `Invalidate` только как watchdog (>200ms без paint).
+- **10.5b** (`9e4cd2d`): damage-driven OSR держал только ~28.7fps (rAF coalescing). Fix: явный `SendExternalBeginFrame()` каждый channel tick — beacon test 28.7→50.04fps, drops 74%→0%.
+- **10.6** (`72efef8`): black flash Group 3 при projected mask + rotationY→90° (degenerate collapsed clip-path). Fix: reject degenerate projection, hold last valid clip (`maskGeometry.ts`).
+- **Важно:** этот Phase 10 **не был отражён** в `.cursor/rules/10-development-plan.mdc`/`docs/AGENT_RESUME.md` до Phase 11-сессии (снапшоты застряли на Phase 9/PR #47) — расхождение исправлено при написании этого раздела. Источник правды для Phase 10 — commit messages в `git log`, не отдельный doc-файл.
+
+### Phase 11 (CasparCG-parity perf pass: clock/memory/OS) — РЕАЛИЗОВАНО, на ветке `feature/phase-11-casparcg-parity` (не закоммичено на момент записи)
+- Запрошено заказчиком как масштабное исследование-сравнение `bg_engine` vs CasparCG server (`server/` checkout в репо) с целью «взять лучшее, не копируя 1:1», под жёсткое требование: **3 канала 1080i50 без лагов на текущем железе** (AMD Ryzen 5 3600, 6C/12T, DeckLink Quad 2 — тот же домашний хост, что и Phase 10).
+- Baseline (`docs/phase11-baseline.md`): на живых 3 production-каналах (уже 54 мин работавших на хосте, обнаружено по ходу дела) канал 1 держал **~28fps** (71% "drops" по interval-метрике), каналы 2/3 — ~45-48fps. Root cause канала 1 в итоге найден — CPU-декодирование видео (GPU запрещён политикой), НЕ архитектурный дефект.
+- **11.1** — stage-time телеметрия (`copy_us`/`weave_us`/`schedule_us` + % бюджета кадра) в `decklink_consumer.cpp`, новая строка лога `stages5s`.
+- **11.2** — DeckLink стал единственным clock: `Consumer::HasExternalClock()/WaitForTick()`, `main.cpp` получил отдельную decklink-driven ветку главного цикла (self-timer путь для Browser/null/pipe/preview/stream оставлен **байт-в-байт нетронутым**). `channel.html`: JS-таймлайн переведён с независимого `setInterval` на fixed-step аккумулятор внутри того же rAF, что рисует paint (unified clock). Первая попытка (2 BeginFrame подряд с разрывом 4-8мс) сделала хуже — CEF renderer IPC требует ~целый field period на композит; исправлено пейсингом тиков по ~20мс. Результат: pairs:singles у каналов 2/3 вырос с ~4-7:1 до ~8-100:1.
+- **11.3** — пул буферов на входе decklink consumer (был fresh `aligned_alloc`/mmap на КАЖДЫЙ `OnFrame()` — доминирующая стоимость, не bandwidth memcpy), 64-байтное выравнивание (`engine/src/aligned_buffer.h`), AVX2 non-temporal store для weave (`engine/src/simd_copy.h`, `target("avx2")` атрибут вместо project-wide `-march=`). copy_us упал ~2700→1200мкс, weave_us ~2800→1500-1900мкс.
+- **11.4** — `SCHED_FIFO` priority 2 на pump-потоке, но **только для decklink-driven каналов** (Browser/OBS/vMix не тронут); `nice -n 10` для backend/frontend в `dev-start.sh` (нет свободного физического ядра на 6-корном хосте — приоритетный, не cpuset, механизм). CCX-топология (2×3 ядра) исследована и **сознательно не тронута** — прямых доказательств пользы не найдено (канал, пересекающий CCX, оказался одним из лучших после 11.2/11.3).
+- **11.5** — `bmdDeckLinkConfigLowLatencyVideoOutput` флаг + preroll depth по формуле CasparCG (`3 + (не low-latency?1:0) + (audio?1:0)`, у нас без audio).
+- **11.6** — защитные Chromium-флаги (`disable-renderer-backgrounding`, `disable-backgrounding-occluded-windows`, `disable-background-timer-throttling`) против OSR-misclassified-as-backgrounded. Контент-оптимизация projected-mask (`template_test_1`, известный ~25fps hotspot из Phase 9) **отложена** — вне текущего живого трафика.
+- **11.7** — 28.6-минутный непрерывный прогон 3 живых decklink-каналов: 0 крашей, 0 dropped/flushed/late на всех каналах. Browser/null regression чист на каждом шаге (49.9-50.0fps).
+- **Две операторские ошибки в ходе сессии** (честно задокументированы в `docs/phase11-baseline.md` §1, §6c): (a) ошибочная гипотеза «карта держит только 2 SDI-выхода одновременно» из-за коллизии с уже запущенными live-каналами при собственном тестировании — retracted, 3 SDI работают одновременно на профиле `1dfd`; (b) случайный `renice` чужого процесса (Cursor IDE extension host, не Titulus backend) — требует ручного `sudo renice -n 0 -p <pid>` для отката (непривилегированный пользователь не может понизить nice обратно).
+- **Канонический документ:** `docs/phase11-baseline.md`. Заимствования зафиксированы в `engine/CASPARRCG_PORTING.md` §2 (новые строки таблицы) и §3.6-3.7 (пересмотр решения §3.1 про frame pacing).
+
 ## Найденные технические проблемы (ВАЖНО для нового агента)
 
 ### 1. `/root/Titulus/data` нестабилен для SQLite (SQLITE_IOERR_SHORT_READ)
@@ -192,6 +217,16 @@ alwaysApply: true
 ### 10. Runtime smoke: после `syncTemplate` повторный `seek` = `writes: 0`
 - Не баг: кэш dirty-check уже обновлён в `syncTemplate`→`applyState`; повторный `seek` на том же кадре ничего не пишет.
 - Корректная проверка dirty-check: два `seek` на одном кадре **без** промежуточного `syncTemplate`, или stats до/после смены данных, а не после обновления кэша.
+
+### 11. На домашнем DeckLink-хосте могут уже работать live production-каналы — проверяй `pgrep` ПЕРЕД любым hardware-экспериментом (найдено в Phase 11)
+- Симптом: агент запускает изолированный decklink-тест на `--device-index=N`, получает `EnableVideoOutput failed`, ошибочно делает вывод «карта поддерживает только M одновременных выходов» — на самом деле этот device-index уже занят ДРУГИМ, уже работающим процессом (в т.ч. запущенным задолго до текущей сессии через `run-engines.sh`/`dev-start.sh` и пережившим множество последующих `bg_engine` рестартов через `while true` supervisor-loop в `run-channel.sh`).
+- **Решение:** ВСЕГДА `pgrep -af "bg_engine|run-channel|run-engines"` перед любым DeckLink-экспериментом (profile switch, конкурентные тестовые процессы на тех же device-index). Если что-то уже работает — это может быть эфир, спросить оператора, прежде чем трогать карту/профиль/убивать процессы.
+- Смежная ловушка: чтобы остановить такой live-канал НАСОВСЕМ (не просто убить `bg_engine`, который supervisor тут же перезапустит через 3с), нужно убить ВЕСЬ дерево: `run-engines.sh` (родитель) + все `run-channel.sh` (supervisor-loops) + сами `bg_engine`. Убийство только `bg_engine` PID полезно, если ЦЕЛЬ — заставить supervisor подхватить свежесобранный бинарь (частый паттерн при итеративной разработке движка на live-стенде).
+
+### 12. `renice` необратим для непривилегированного пользователя (найдено в Phase 11)
+- Симптом: `renice -n 10 -p <pid>` на СВОЙ процесс успешно повышает niceness (0→10), но откатить (`renice -n 0 -p <pid>`) тем же пользователем **невозможно** — POSIX разрешает обычному пользователю только УВЕЛИЧИВАТЬ nice своих процессов, никогда не уменьшать. Нужен `sudo`/root.
+- Смежная ловушка: `ps -eLo pid,psr,pcpu,comm` показывает `comm` как `node` без контекста — на dev-хосте с одновременно открытой IDE-сессией (Cursor/VSCode Remote SSH) легко спутать PID Titulus backend (`node src/index.js`) с PID расширения самой IDE (`node .../bootstrap-fork --type=extensionHost`). Проверяй `cmd` (полную командную строку), а лучше сверяйся с `logs/dev/backend.pid`, перед тем как трогать чужой процесс.
+- **Решение:** дважды проверять cmdline перед `renice`/`kill` на "похожий" процесс; если ошибся — попросить оператора выполнить `sudo renice -n 0 -p <pid>` вручную.
 
 ## Проверенные подходы (что работает)
 
@@ -251,12 +286,14 @@ console.log('ALL OK');
 
 - **С чего начать:** session-resume (`git fetch && git status && git branch -a && gh pr list`) → **читать `docs/AGENT_RESUME.md`** (точка старта с командами).
 - **Канон:** всегда `docs/DEVELOPMENT_PROMPT.md` при сомнениях.
-- **Phase 9 (последняя завершённая):** полный отчёт в `docs/phase9-25d-masks.md`.
-- **Текущая ветка работы:** `main` (Phase 9 done, 7 PR merged #41–#47).
-- **Последний merged:** PR #47 (`[Phase 9.7] bench 2.5D scenes + phase9-25d-masks.md`) + commit `4a3237d` (docs consolidation).
-- **Следующий milestone (external-blocked):** Phase 6.4 — hardware validation на host с DeckLink+genlock (`docs/phase6-decklink-validation-closure.md`).
-- **Альтернативы для продолжения без HW:** Phase 6+ stretch (multi-tenant SaaS, license activation, NDI), либо новые control-plane фичи поверх slot-aware rundown v2 (`docs/phase8-rundown-acceptance.md`).
-- **Доступ к dev-серверу:** заказчик работал через Remote SSH (Windows Cursor → Ubuntu dev server `/root/Titulus`); возможно продолжение на домашнем Linux-хосте (`git clone` + `./dev-start.sh`).
+- **Phase 11 (последняя, на ветке, не смёржена):** `docs/phase11-baseline.md` — CasparCG-parity perf pass (clock unification, buffer pooling+SIMD, SCHED_FIFO, low-latency flag). Ветка `feature/phase-11-casparcg-parity` — не закоммичена/не смёржена на момент записи, требует `git add`/commit/PR при продолжении.
+- **Phase 10 (в main, PR #49-#55):** SDI stutter/tearing perf fixes — только в git commit messages, не имел отдельного doc-файла до Phase 11 сессии (см. хронологию выше).
+- **Phase 9 (последняя с отдельным doc до Phase 10/11):** полный отчёт в `docs/phase9-25d-masks.md`.
+- **Текущая ветка main:** содержит Phase 0-10 (включая #49-#55). Ветка `feature/phase-11-casparcg-parity` содержит Phase 11 работу поверх main, ещё не смёржена.
+- **Следующий шаг:** решить с заказчиком — коммитить/PR/merge Phase 11 ветку, либо продолжать итерации на ней. Формальная 30-мин+ (в идеале 8h) soak-приёмка Phase 11 из `docs/phase11-baseline.md` §6f ещё не выполнена (сделан 28.6-минутный прогон, близко, но короче цели).
+- **Phase 6.4 (SDI hardware validation, ранее external-blocked):** больше не полностью blocked — на домашнем хосте с DeckLink Quad 2 + genlock (`docs/phase6-decklink-host-diagnose.md`) накоплена существенная live-evidence (Phase 10 + Phase 11 soak'и), но формальное 8h-закрытие (`docs/phase6-decklink-validation-closure.md`) всё ещё не выполнено.
+- **Альтернативы для продолжения:** Phase 6+ stretch (multi-tenant SaaS, license activation, NDI), новые control-plane фичи поверх slot-aware rundown v2 (`docs/phase8-rundown-acceptance.md`), либо контент-оптимизация projected-mask hotspot (отложена в Phase 11.6, `docs/phase9-25d-masks.md` §9).
+- **Доступ к dev-серверу:** заказчик работал через Remote SSH (Windows Cursor → Ubuntu dev server `/root/Titulus`); Phase 10/11 выполнялись на домашнем Linux-хосте с реальным DeckLink Quad 2 (`git clone` + `./dev-start.sh` поднимает полный стек).
 
 ## Dev-окружение (актуальный workflow)
 

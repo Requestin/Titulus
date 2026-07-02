@@ -1,9 +1,13 @@
 #include "consumers/decklink_consumer.h"
 
+#include "aligned_buffer.h"
+#include "simd_copy.h"
+
 #include "DeckLinkAPI.h"
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -51,13 +55,13 @@ void log_msg(const std::string& label, const std::string& msg) {
 }
 
 struct BufferedFrame {
-    std::vector<uint8_t> bytes;
+    AlignedBuffer bytes;
     uint64_t seq = 0;
 };
 
 class OwnedDecklinkFrame final : public IDeckLinkVideoFrame, public IDeckLinkVideoBuffer {
   public:
-    OwnedDecklinkFrame(int width, int height, int row_bytes, std::vector<uint8_t>&& data)
+    OwnedDecklinkFrame(int width, int height, int row_bytes, AlignedBuffer&& data)
         : width_(width), height_(height), row_bytes_(row_bytes), data_(std::move(data)) {}
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override {
@@ -109,7 +113,7 @@ class OwnedDecklinkFrame final : public IDeckLinkVideoFrame, public IDeckLinkVid
     // Buffer recycling: the completion callback steals the displayed frame's
     // storage so the next ScheduleVideoBuffer() reuses it instead of a fresh
     // 8MB allocation every 20-40ms (allocation jitter on the playback path).
-    std::vector<uint8_t> TakeBuffer() { return std::move(data_); }
+    AlignedBuffer TakeBuffer() { return std::move(data_); }
     HRESULT GetSize(uint64_t* size) override {
         if (!size) return E_INVALIDARG;
         *size = data_.size();
@@ -123,7 +127,7 @@ class OwnedDecklinkFrame final : public IDeckLinkVideoFrame, public IDeckLinkVid
     int width_ = 0;
     int height_ = 0;
     int row_bytes_ = 0;
-    std::vector<uint8_t> data_;
+    AlignedBuffer data_;
 };
 
 }  // namespace
@@ -214,11 +218,14 @@ struct DecklinkConsumer::Impl {
         height_ = height;
         fps_ = fps;
         frame_bytes_ = static_cast<size_t>(width_) * static_cast<size_t>(height_) * 4;
-        black_frame_.assign(frame_bytes_, 0);
+        black_frame_.Reset(frame_bytes_);
+        black_frame_.ZeroFill();
         // Start with black fields so the first starved completions output black
         // instead of garbage.
-        field_a_ = black_frame_;
-        field_b_ = black_frame_;
+        field_a_.Reset(frame_bytes_);
+        field_a_.ZeroFill();
+        field_b_.Reset(frame_bytes_);
+        field_b_.ZeroFill();
 
         if (!LoadDeckLinkRuntime()) return false;
 
@@ -264,6 +271,23 @@ struct DecklinkConsumer::Impl {
         device_->QueryInterface(IID_IDeckLinkKeyer, reinterpret_cast<void**>(&keyer_));
         device_->QueryInterface(IID_IDeckLinkProfileAttributes, reinterpret_cast<void**>(&attributes_));
         device_->QueryInterface(IID_IDeckLinkProfileManager, reinterpret_cast<void**>(&profile_manager_));
+
+        // Phase 11.5: low-latency scheduled playback (CasparCG parity —
+        // modules/decklink/consumer/decklink_consumer.cpp SetFlag call).
+        // Reduces the card's internal output buffering; preroll depth below
+        // is chosen to match (CasparCG's buffer_depth() formula: base 3 +
+        // 1 if NOT low-latency + 1 if embedded audio — we have no embedded
+        // audio, so 3 with the flag applied, 4 without).
+        IDeckLinkConfiguration* config = nullptr;
+        if (device_->QueryInterface(IID_IDeckLinkConfiguration, reinterpret_cast<void**>(&config)) == S_OK &&
+            config) {
+            const HRESULT hr = config->SetFlag(bmdDeckLinkConfigLowLatencyVideoOutput, true);
+            low_latency_applied_ = (hr == S_OK);
+            if (hr != S_OK) {
+                log_msg(label_, "bmdDeckLinkConfigLowLatencyVideoOutput unsupported (continuing)");
+            }
+            config->Release();
+        }
 
         auto bmd_mode = parse_display_mode(display_mode_name_);
         if (!bmd_mode.has_value()) {
@@ -326,8 +350,11 @@ struct DecklinkConsumer::Impl {
         video_enabled_ = true;
 
         next_display_time_ = 0;
-        static constexpr int kPrerollFrames = 3;
-        for (int i = 0; i < kPrerollFrames; ++i) {
+        // CasparCG buffer_depth(): base 3 + 1 if not low-latency + 1 if
+        // embedded audio (we carry no audio, so that term is always 0).
+        static constexpr int kBaseBufferDepth = 3;
+        const int preroll_frames = kBaseBufferDepth + (low_latency_applied_ ? 0 : 1);
+        for (int i = 0; i < preroll_frames; ++i) {
             if (!ScheduleVideoBuffer(black_frame_, next_display_time_)) {
                 log_msg(label_, "failed to schedule preroll frame");
                 return false;
@@ -348,13 +375,18 @@ struct DecklinkConsumer::Impl {
         log_msg(label_,
                 "started mode=" + display_mode_name_ +
                 " interlaced=" + std::string(interlaced_ ? "yes" : "no") +
-                " keyer=" + KeyerLabel(keyer_mode_));
+                " keyer=" + KeyerLabel(keyer_mode_) +
+                " low_latency=" + std::string(low_latency_applied_ ? "yes" : "no") +
+                " preroll=" + std::to_string(preroll_frames));
         return true;
     }
 
     void Stop() {
         const bool was_running = running_.exchange(false, std::memory_order_acq_rel);
         (void)was_running;
+        // Wake a blocked WaitForTick() so main.cpp's decklink-driven loop
+        // notices shutdown instead of waiting out its fallback timeout.
+        tick_cv_.notify_all();
 
         if (profile_manager_) {
             profile_manager_->SetCallback(nullptr);
@@ -421,20 +453,35 @@ struct DecklinkConsumer::Impl {
         if (!running_.load(std::memory_order_acquire)) return;
         if (!frame.bgra || frame.width != width_ || frame.height != height_) return;
 
+        const auto t0 = std::chrono::steady_clock::now();
+
+        // Phase 11.3: pull a recycled 64B-aligned buffer instead of letting a
+        // fresh BufferedFrame's default-constructed (empty) AlignedBuffer
+        // force a new ~8MB aligned_alloc every call — that allocation (fresh
+        // mmap + page faults above glibc's mmap_threshold) dominated the
+        // copy_us telemetry far more than the memcpy bandwidth itself
+        // (docs/phase11-baseline.md §4).
         BufferedFrame packed;
         packed.seq = frame.seq;
-        packed.bytes.resize(frame_bytes_);
-        std::memcpy(packed.bytes.data(), frame.bgra, frame_bytes_);
+        packed.bytes = GetInputBuffer();
+        packed.bytes.CopyFrom(frame.bgra, frame_bytes_);
 
+        BufferedFrame overwritten;
+        bool have_overwritten = false;
         {
             std::lock_guard<std::mutex> lock(queue_mu_);
             frames_in_.fetch_add(1, std::memory_order_relaxed);
             if (frame_queue_.size() >= kMaxQueuedFrames) {
+                overwritten = std::move(frame_queue_.front());
                 frame_queue_.pop_front();
+                have_overwritten = true;
                 frames_overwritten_.fetch_add(1, std::memory_order_relaxed);
             }
             frame_queue_.push_back(std::move(packed));
         }
+        if (have_overwritten) RecycleInputBuffer(std::move(overwritten.bytes));
+
+        RecordStageTime(copy_us_sum_, copy_us_max_, copy_us_count_, t0);
     }
 
     int PollExitCode() const {
@@ -492,11 +539,18 @@ struct DecklinkConsumer::Impl {
 
         if (interlaced_) {
             if (fresh == 2 && f0.bytes.size() == frame_bytes_ && f1.bytes.size() == frame_bytes_) {
+                RecycleInputBuffer(std::move(field_a_));
+                RecycleInputBuffer(std::move(field_b_));
                 field_a_ = std::move(f0.bytes);
                 field_b_ = std::move(f1.bytes);
                 pairs_.fetch_add(1, std::memory_order_relaxed);
             } else if (fresh >= 1 && f0.bytes.size() == frame_bytes_) {
-                field_a_ = f0.bytes;
+                RecycleInputBuffer(std::move(field_a_));
+                RecycleInputBuffer(std::move(field_b_));
+                // AlignedBuffer is move-only: clone f0 into field_a_ (its own
+                // buffer), then move f0 itself into field_b_.
+                field_a_ = GetInputBuffer();
+                field_a_.CopyFrom(f0.bytes.data(), frame_bytes_);
                 field_b_ = std::move(f0.bytes);
                 singles_.fetch_add(1, std::memory_order_relaxed);
             } else {
@@ -505,6 +559,7 @@ struct DecklinkConsumer::Impl {
             }
         } else {
             if (fresh >= 1 && f0.bytes.size() == frame_bytes_) {
+                RecycleInputBuffer(std::move(field_a_));
                 field_a_ = std::move(f0.bytes);
             } else {
                 starved_.fetch_add(1, std::memory_order_relaxed);
@@ -517,9 +572,40 @@ struct DecklinkConsumer::Impl {
         }
         next_display_time_ += frame_duration_;
 
+        // Phase 11.2: wake the render pump for the fields this cycle just
+        // consumed, so it renders the *next* ones ahead of the *next*
+        // callback (~1 output frame away) instead of free-running on its own
+        // timer. This is what makes DeckLink the single clock end-to-end.
+        RequestTicks(interlaced_ ? 2 : 1);
+
         MaybeLogTelemetry();
         return S_OK;
     }
+
+    // --- Phase 11.2: external clock (see consumer.h) -----------------------
+    void RequestTicks(int n) {
+        {
+            std::lock_guard<std::mutex> lock(tick_mu_);
+            pending_ticks_ += n;
+        }
+        tick_cv_.notify_one();
+    }
+
+    int WaitForTick(int64_t timeout_us) {
+        std::unique_lock<std::mutex> lock(tick_mu_);
+        if (pending_ticks_ <= 0) {
+            tick_cv_.wait_for(lock, std::chrono::microseconds(timeout_us), [&] {
+                return pending_ticks_ > 0 || !running_.load(std::memory_order_acquire);
+            });
+        }
+        const int n = pending_ticks_;
+        pending_ticks_ = 0;
+        return n;
+    }
+
+    std::mutex tick_mu_;
+    std::condition_variable tick_cv_;
+    int pending_ticks_ = 0;
 
     // Periodic (5s) consumer-side telemetry, logged from the DeckLink completion
     // callback thread. Deltas describe the last window; totals are cumulative.
@@ -561,6 +647,27 @@ struct DecklinkConsumer::Impl {
             else                                             ref = "UNLOCKED";
         }
 
+        // Per-output-frame time budget in microseconds (e.g. 40000us at 25Hz
+        // for HD1080i50). Stage % is avg-stage-us / budget_us, so >100% on any
+        // one stage means that stage alone would miss the output cadence.
+        const double budget_us = (time_scale_ > 0)
+            ? static_cast<double>(frame_duration_) * 1'000'000.0 / static_cast<double>(time_scale_)
+            : 0.0;
+
+        const uint64_t copy_sum = copy_us_sum_.exchange(0, std::memory_order_relaxed);
+        const uint64_t copy_max = copy_us_max_.exchange(0, std::memory_order_relaxed);
+        const uint64_t copy_cnt = copy_us_count_.exchange(0, std::memory_order_relaxed);
+        const uint64_t weave_sum = weave_us_sum_.exchange(0, std::memory_order_relaxed);
+        const uint64_t weave_max = weave_us_max_.exchange(0, std::memory_order_relaxed);
+        const uint64_t weave_cnt = weave_us_count_.exchange(0, std::memory_order_relaxed);
+        const uint64_t sched_sum = schedule_us_sum_.exchange(0, std::memory_order_relaxed);
+        const uint64_t sched_max = schedule_us_max_.exchange(0, std::memory_order_relaxed);
+        const uint64_t sched_cnt = schedule_us_count_.exchange(0, std::memory_order_relaxed);
+
+        const double copy_avg  = copy_cnt  ? static_cast<double>(copy_sum)  / copy_cnt  : 0.0;
+        const double weave_avg = weave_cnt ? static_cast<double>(weave_sum) / weave_cnt : 0.0;
+        const double sched_avg = sched_cnt ? static_cast<double>(sched_sum) / sched_cnt : 0.0;
+
         char buf[480];
         std::snprintf(
             buf, sizeof(buf),
@@ -589,6 +696,21 @@ struct DecklinkConsumer::Impl {
             static_cast<unsigned long long>(dropped),
             static_cast<unsigned long long>(flushed));
         log_msg(label_, buf);
+
+        char stage_buf[360];
+        std::snprintf(
+            stage_buf, sizeof(stage_buf),
+            "stages5s budget_us=%.0f copy_avg_us=%.1f copy_max_us=%llu copy_pct=%.1f "
+            "weave_avg_us=%.1f weave_max_us=%llu weave_pct=%.1f "
+            "schedule_avg_us=%.1f schedule_max_us=%llu schedule_pct=%.1f",
+            budget_us,
+            copy_avg, static_cast<unsigned long long>(copy_max),
+            budget_us > 0.0 ? 100.0 * copy_avg / budget_us : 0.0,
+            weave_avg, static_cast<unsigned long long>(weave_max),
+            budget_us > 0.0 ? 100.0 * weave_avg / budget_us : 0.0,
+            sched_avg, static_cast<unsigned long long>(sched_max),
+            budget_us > 0.0 ? 100.0 * sched_avg / budget_us : 0.0);
+        log_msg(label_, stage_buf);
 
         prev_in_          = in;
         prev_completed_   = completed;
@@ -718,7 +840,7 @@ struct DecklinkConsumer::Impl {
         log_msg(label_, "reference signal lock timeout (continuing)");
     }
 
-    void RecycleBuffer(std::vector<uint8_t>&& buf) {
+    void RecycleBuffer(AlignedBuffer&& buf) {
         const size_t output_bytes = static_cast<size_t>(row_bytes_) * static_cast<size_t>(height_);
         if (buf.size() != output_bytes) return;
         std::lock_guard<std::mutex> lock(recycle_mu_);
@@ -727,17 +849,48 @@ struct DecklinkConsumer::Impl {
         }
     }
 
-    std::vector<uint8_t> GetOutputBuffer() {
+    AlignedBuffer GetOutputBuffer() {
         const size_t output_bytes = static_cast<size_t>(row_bytes_) * static_cast<size_t>(height_);
         {
             std::lock_guard<std::mutex> lock(recycle_mu_);
             if (!recycle_pool_.empty()) {
-                std::vector<uint8_t> buf = std::move(recycle_pool_.back());
+                AlignedBuffer buf = std::move(recycle_pool_.back());
                 recycle_pool_.pop_back();
                 return buf;
             }
         }
-        return std::vector<uint8_t>(output_bytes, 0);
+        AlignedBuffer buf(output_bytes);
+        // Zero once on first allocation: row_bytes_ can exceed width_*4 (SDK
+        // stride padding) and the weave loop below only writes the visible
+        // width_*4 bytes per line, leaving stride padding untouched. Padding
+        // is never displayed, but zero-filling keeps a freshly grown pool
+        // deterministic instead of exposing uninitialized heap bytes.
+        buf.ZeroFill();
+        return buf;
+    }
+
+    // Phase 11.3: input-side pool, mirroring the output-side recycle_pool_
+    // above. field_a_/field_b_ and the OnFrame() queue buffers are all
+    // frame_bytes_-sized (width*height*4, no SDK row padding) so they share
+    // one pool.
+    void RecycleInputBuffer(AlignedBuffer&& buf) {
+        if (buf.size() != frame_bytes_) return;
+        std::lock_guard<std::mutex> lock(input_pool_mu_);
+        if (input_pool_.size() < kMaxRecycledBuffers) {
+            input_pool_.push_back(std::move(buf));
+        }
+    }
+
+    AlignedBuffer GetInputBuffer() {
+        {
+            std::lock_guard<std::mutex> lock(input_pool_mu_);
+            if (!input_pool_.empty()) {
+                AlignedBuffer buf = std::move(input_pool_.back());
+                input_pool_.pop_back();
+                return buf;
+            }
+        }
+        return AlignedBuffer(frame_bytes_);
     }
 
     // Weave field_a_/field_b_ (or copy field_a_ for progressive) directly into
@@ -746,13 +899,19 @@ struct DecklinkConsumer::Impl {
     bool ScheduleWovenOutput(BMDTimeValue display_time) {
         if (!output_) return false;
 
-        const std::vector<uint8_t>& a =
-            (field_a_.size() == frame_bytes_) ? field_a_ : black_frame_;
-        const std::vector<uint8_t>& b =
-            (field_b_.size() == frame_bytes_) ? field_b_ : black_frame_;
+        const auto t_weave0 = std::chrono::steady_clock::now();
 
-        std::vector<uint8_t> out = GetOutputBuffer();
+        const AlignedBuffer& a = (field_a_.size() == frame_bytes_) ? field_a_ : black_frame_;
+        const AlignedBuffer& b = (field_b_.size() == frame_bytes_) ? field_b_ : black_frame_;
+
+        AlignedBuffer out = GetOutputBuffer();
         const size_t line_bytes = static_cast<size_t>(width_) * 4;
+        // Phase 11.3: non-temporal stores for the destination — `out` is
+        // written once here and handed straight to ScheduleVideoFrame below,
+        // never read back by this process, so a normal store's implicit
+        // read-for-ownership of the destination cache line is pure waste
+        // (docs/phase11-baseline.md §4: this loop measured 2-4ms/call with 3
+        // channels contending for L3/memory bandwidth).
         for (int y = 0; y < height_; ++y) {
             const uint8_t* src;
             if (interlaced_) {
@@ -762,27 +921,49 @@ struct DecklinkConsumer::Impl {
             } else {
                 src = a.data();
             }
-            std::memcpy(
+            StreamCopy(
                 out.data() + static_cast<size_t>(y) * static_cast<size_t>(row_bytes_),
                 src + static_cast<size_t>(y) * line_bytes,
                 line_bytes);
         }
+        StreamCopyFence();
+        RecordStageTime(weave_us_sum_, weave_us_max_, weave_us_count_, t_weave0);
 
+        const auto t_sched0 = std::chrono::steady_clock::now();
         auto* frame = new OwnedDecklinkFrame(width_, height_, row_bytes_, std::move(out));
         const HRESULT hr = output_->ScheduleVideoFrame(
             frame, display_time, frame_duration_, time_scale_);
         frame->Release();
+        RecordStageTime(schedule_us_sum_, schedule_us_max_, schedule_us_count_, t_sched0);
 
         if (hr != S_OK) return false;
         scheduled_.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
 
-    bool ScheduleVideoBuffer(const std::vector<uint8_t>& bgra, BMDTimeValue display_time) {
+    // Accumulate a stage's elapsed time (since t0) into running sum/max/count
+    // atomics. Used for the 5s telemetry window's stage-time breakdown
+    // (Phase 11.1 baseline: copy/weave/schedule as a fraction of frame budget).
+    static void RecordStageTime(std::atomic<uint64_t>& sum, std::atomic<uint64_t>& max_val,
+                                 std::atomic<uint64_t>& count,
+                                 std::chrono::steady_clock::time_point t0) {
+        const uint64_t us = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - t0)
+                .count());
+        sum.fetch_add(us, std::memory_order_relaxed);
+        count.fetch_add(1, std::memory_order_relaxed);
+        uint64_t prev_max = max_val.load(std::memory_order_relaxed);
+        while (us > prev_max &&
+               !max_val.compare_exchange_weak(prev_max, us, std::memory_order_relaxed)) {
+        }
+    }
+
+    bool ScheduleVideoBuffer(const AlignedBuffer& bgra, BMDTimeValue display_time) {
         if (!output_ || bgra.size() != frame_bytes_) return false;
 
         const size_t src_row_bytes = static_cast<size_t>(width_) * 4;
-        std::vector<uint8_t> packed(static_cast<size_t>(row_bytes_) * static_cast<size_t>(height_), 0);
+        AlignedBuffer packed = GetOutputBuffer();
         if (row_bytes_ == static_cast<int>(src_row_bytes)) {
             std::memcpy(packed.data(), bgra.data(), frame_bytes_);
         } else {
@@ -804,9 +985,13 @@ struct DecklinkConsumer::Impl {
         return true;
     }
 
-    // Queue depth 4 = 80ms max buffered input at 50fps; deeper queues only add
-    // latency drift without absorbing sustained render underruns.
-    static constexpr size_t kMaxQueuedFrames = 4;
+    // Phase 11.2 made DeckLink the render pump's clock (WaitForTick requests
+    // exactly the fields it's about to consume, paced ~1 field apart), so
+    // the queue should hover at 0-1 in steady state; depth 2 = 40ms max
+    // buffered input at 50fps is now plenty of slack for jitter without
+    // adding latency drift on top of an already-synchronized clock (the old
+    // depth 4 / 80ms predates 11.2's pull-based pacing).
+    static constexpr size_t kMaxQueuedFrames = 2;
     static constexpr size_t kMaxRecycledBuffers = 8;
 
     int device_index_ = -1;
@@ -821,6 +1006,7 @@ struct DecklinkConsumer::Impl {
     size_t frame_bytes_ = 0;
     bool interlaced_ = false;
     bool upper_field_first_ = true;
+    bool low_latency_applied_ = false;
 
     IDeckLink* device_ = nullptr;
     IDeckLinkOutput* output_ = nullptr;
@@ -838,16 +1024,23 @@ struct DecklinkConsumer::Impl {
 
     std::mutex queue_mu_;
     std::deque<BufferedFrame> frame_queue_;
-    std::vector<uint8_t> black_frame_;
+    AlignedBuffer black_frame_;
 
     // Current output pair (completion callback thread only). For interlaced
     // modes field_a_ = temporally older field, field_b_ = newer; for
     // progressive field_a_ holds the whole frame.
-    std::vector<uint8_t> field_a_;
-    std::vector<uint8_t> field_b_;
+    AlignedBuffer field_a_;
+    AlignedBuffer field_b_;
 
     std::mutex recycle_mu_;
-    std::vector<std::vector<uint8_t>> recycle_pool_;
+    std::vector<AlignedBuffer> recycle_pool_;
+
+    // Phase 11.3: pool for frame_bytes_-sized input buffers (OnFrame's queue
+    // slots + field_a_/field_b_). Separate from recycle_pool_ above because
+    // output buffers are row_bytes_*height_-sized (SDK stride can exceed
+    // width*4) while input buffers are always exactly frame_bytes_.
+    std::mutex input_pool_mu_;
+    std::vector<AlignedBuffer> input_pool_;
 
     std::atomic<bool> running_{false};
     std::atomic<int> requested_exit_code_{0};
@@ -866,6 +1059,17 @@ struct DecklinkConsumer::Impl {
     std::atomic<uint64_t> starved_{0};  // queue empty on pull -> full-frame repeat
     std::atomic<uint64_t> pairs_{0};    // interlaced: 2 fresh fields woven
     std::atomic<uint64_t> singles_{0};  // interlaced: 1 fresh frame duplicated to both fields
+
+    // Stage-time telemetry (Phase 11.1): microsecond sum/max/count per stage,
+    // reset each 5s window in MaybeLogTelemetry. copy_us_* is the render-thread
+    // OnFrame memcpy into the input queue; weave_us_*/schedule_us_* are the
+    // completion-callback-thread field weave and IDeckLinkOutput::ScheduleVideoFrame
+    // call. Reported as avg/max us and avg as % of the per-output-frame time
+    // budget (frame_duration_/time_scale_) so regressions are visible without
+    // re-deriving them from raw counters.
+    std::atomic<uint64_t> copy_us_sum_{0}, copy_us_max_{0}, copy_us_count_{0};
+    std::atomic<uint64_t> weave_us_sum_{0}, weave_us_max_{0}, weave_us_count_{0};
+    std::atomic<uint64_t> schedule_us_sum_{0}, schedule_us_max_{0}, schedule_us_count_{0};
 
     // Telemetry window state (touched only on the completion callback thread).
     std::chrono::steady_clock::time_point telemetry_last_{};
@@ -900,6 +1104,14 @@ const char* DecklinkConsumer::Label() const {
 
 int DecklinkConsumer::PollExitCode() const {
     return impl_ ? impl_->PollExitCode() : 0;
+}
+
+bool DecklinkConsumer::HasExternalClock() const {
+    return impl_ != nullptr;
+}
+
+int DecklinkConsumer::WaitForTick(int64_t timeout_us) {
+    return impl_ ? impl_->WaitForTick(timeout_us) : 0;
 }
 
 }  // namespace bg

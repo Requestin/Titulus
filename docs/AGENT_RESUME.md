@@ -20,31 +20,36 @@
 | 6.4 — DeckLink HW validation | ⏳ external-blocked | `docs/phase6-decklink-validation-closure.md` |
 | 7 — docs/rules consolidation | ✅ DONE | `docs/PHASE_REPORT_PHASE1_TO_PHASE7.md` |
 | 8 — rundown v2 (slot-aware) | ✅ DONE | `docs/phase8-rundown-acceptance.md` |
-| **9 — 2.5D + stack-scoped masks** | ✅ **DONE (последняя)** | **`docs/phase9-25d-masks.md`** |
+| 9 — 2.5D + stack-scoped masks | ✅ DONE | `docs/phase9-25d-masks.md` |
+| 10 — SDI stutter/tearing perf fixes | ✅ DONE (в `main`, PR #49-#55) | `.cursor/rules/99-session-history.mdc` (не имел отдельного doc-файла) |
+| **11 — CasparCG-parity perf pass** | ✅ **РЕАЛИЗОВАНО, НЕ смёржено** — ветка `feature/phase-11-casparcg-parity` | **`docs/phase11-baseline.md`** |
 
-**Последний merged PR:** #47 (`[Phase 9.7] bench 2.5D scenes + phase9-25d-masks.md`).  
-**Текущая ветка:** `main`, чистый.  
+**Последний merged PR (в `main`):** #55 (`[Phase 10.6] mask projection flash guard`).  
+**Текущая ветка `main`:** чистая, содержит Phase 0-10.  
+**Незакоммиченная ветка `feature/phase-11-casparcg-parity`:** содержит реализованный и live-протестированный Phase 11 (clock unification, buffer pooling+SIMD, SCHED_FIFO, low-latency flag) — требует commit + PR + merge при продолжении.  
 **Дата snapshot:** июль 2026.
 
 ---
 
 ## 2. Следующие шаги (приоритеты)
 
-1. **Phase 6.4 — SDI hardware validation (external-blocked).**
-   Нужен хост с DeckLink + genlock. Runbook: `docs/phase6-decklink-validation-closure.md`, evidence: `engine/collect-decklink-evidence.sh`.
-   Если железа нет — этот пункт **пропускается**, переход к п.2.
+1. **Phase 11 branch — commit/PR/merge.**
+   Ветка `feature/phase-11-casparcg-parity` реализована и live-протестирована (`docs/phase11-baseline.md`), но НЕ закоммичена. Решить с заказчиком: commit+PR+merge, или продолжить итерации на ветке. Формальный 30+ мин (в идеале 8h) soak ещё не пройден — сделан 28.6-минутный.
 
-2. **Phase 6+ stretch (без HW):**
+2. **Phase 6.4 — SDI hardware formal closure.**
+   Больше НЕ полностью external-blocked: домашний хост с DeckLink Quad 2 + genlock уже активно используется (Phase 10/11), накоплена существенная live-evidence. Но формальный checklist (`docs/phase6-decklink-validation-closure.md`, evidence: `engine/collect-decklink-evidence.sh`) всё ещё не пройден целиком (нужен 8h soak, Fill+Key явно, CasparCG parity сравнение).
+
+3. **Phase 6+ stretch:**
    - Multi-tenant SaaS auth/billing поверх Phase 6.x foundation.
    - License activation с внешним provider.
    - NDI output consumer.
    - GPU path — **только** через GPU Gate doc (`docs/DEVELOPMENT_PROMPT.md` §0.2.1).
 
-3. **Развитие control plane поверх rundown v2** (`docs/phase8-rundown-acceptance.md`):
+4. **Развитие control plane поверх rundown v2** (`docs/phase8-rundown-acceptance.md`):
    новые операторские сценарии, hotkeys, templates marketplace, AI template generation.
 
-4. **2.5D / masks Phase 10 (не MVP):**
-   из known limits `docs/phase9-25d-masks.md` §9 — outer/inner layout split, temporal coherence evaluator, cost indicator в UI, `compositorLayers` в RenderStats.
+5. **Контент-оптимизация projected-mask hotspot** (не MVP):
+   `template_test_1` (projected mask + rotateY) ~25fps render cost, известно с Phase 9 (`docs/phase9-25d-masks.md` §9), отложено в Phase 11.6 т.к. не было в живом трафике на момент тестирования.
 
 ---
 
@@ -177,9 +182,11 @@ PR title для фаз: `[Phase N.M] <краткое>`.
 | История диалога/решений | `.cursor/rules/99-session-history.mdc` |
 | План разработки | `.cursor/rules/10-development-plan.mdc` |
 | Скиллы под задачу | `.cursor/rules/11-skills-map.mdc` |
+| Phase 11 (CasparCG-parity perf pass) | `docs/phase11-baseline.md` |
 | Phase 9 (2.5D + маски) | `docs/phase9-25d-masks.md` |
 | Phase 8 (rundown v2) | `docs/phase8-rundown-acceptance.md` |
 | Phase 6.4 handoff | `docs/phase6-decklink-validation-closure.md` |
+| Phase 6.4 диагностика на реальном хосте | `docs/phase6-decklink-host-diagnose.md` |
 | Исторический отчёт | `docs/PHASE_REPORT_PHASE1_TO_PHASE7.md` |
 | Sandobx policy | `.cursor/rules/05-sandbox-policy.mdc` |
 | Engine porting (CasparCG) | `engine/CASPARRCG_PORTING.md` |
@@ -199,6 +206,8 @@ PR title для фаз: `[Phase N.M] <краткое>`.
 7. `pkill -f "PORT=N"` НЕ убивает backend (env var) → kill по PID: `ss -ltnp | grep ':N'`.
 8. jsdom: НЕ перезаписывай `globalThis.performance`.
 9. Runtime dirty-check: после `syncTemplate` повторный `seek` = `writes: 0` (это ожидаемо, не баг).
+10. На домашнем DeckLink-хосте могут уже идти live-каналы (`run-engines.sh`/`dev-start.sh`, пережившие много `bg_engine` рестартов через supervisor loop) — ВСЕГДА `pgrep -af "bg_engine|run-channel|run-engines"` перед hardware-экспериментами (профиль карты, конкурентные device-index тесты).
+11. `renice` необратим для непривилегированного пользователя (только `sudo` может понизить nice обратно) — дважды проверяй cmdline процесса перед `renice`/`kill`, особенно на хосте с параллельной IDE-сессией (`node .../bootstrap-fork --type=extensionHost` легко спутать с `node src/index.js`).
 
 ---
 
@@ -220,10 +229,12 @@ PR title для фаз: `[Phase N.M] <краткое>`.
 - Копировать sandbox `broadcast-graphics/engine/` (render authority = CasparCG + наш clean-room).
 - Один Chromium на все каналы (singleton contention).
 - `--headless` для CEF (ломает Alloy OSR).
-- SCHED_RR/RT для engine (RT throttling ухудшает).
+- **(обновлено Phase 11.4)** SCHED_RR/RT для engine **без разбора** — старое общее правило отменено. Разрешён `SCHED_FIFO` priority 2, но **только** gated на `Consumer::HasExternalClock()` (decklink-driven каналы); Browser/OBS/vMib путь остаётся без RT. См. `engine/src/main.cpp` (`MaybeSetRealtimePumpPriority`).
 - Squash PR (merge commit для revert-точек).
 - Коммитить `data/app.db`, `bg-runtime.js` (generated), `engine/build/`, `engine/third_party/cef/`, `node_modules/`.
 - Оставлять dirty tree на конец сессии.
+- **(Phase 11)** Трогать DeckLink профиль/железо или конкурентные device-index тесты БЕЗ предварительного `pgrep -af "bg_engine|run-channel|run-engines"` — на домашнем хосте могут уже идти live-каналы.
+- **(Phase 11)** `renice` на процесс без проверки полной cmdline — легко перепутать Titulus backend с посторонним процессом (напр. IDE extension host); откат `renice` для непривилегированного юзера невозможен (нужен `sudo`).
 
 ---
 
@@ -250,4 +261,4 @@ PR title для фаз: `[Phase N.M] <краткое>`.
 
 ---
 
-**TL;DR для нового агента:** `git clone` → `./dev-start.sh` → `http://127.0.0.1:3011` (`admin`/`admin123`) → читай `.cursor/rules/99-session-history.mdc` + `docs/phase9-25d-masks.md` для контекста → следующий milestone — Phase 6.4 (нужен HW) либо control-plane / Phase 6+ stretch.
+**TL;DR для нового агента:** `git clone` → `git branch -a` (проверь, жива ли `feature/phase-11-casparcg-parity` — если да и не смёржена, это ПОСЛЕДНЯЯ работа) → `./dev-start.sh` → `http://127.0.0.1:3011` (`admin`/`admin123`) → читай `.cursor/rules/99-session-history.mdc` + `docs/phase11-baseline.md` для контекста → следующий шаг — commit/PR/merge Phase 11 ветки, либо Phase 6.4 формальное закрытие, либо control-plane / Phase 6+ stretch.
