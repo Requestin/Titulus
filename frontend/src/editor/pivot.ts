@@ -1,4 +1,4 @@
-import { applyTransform, type Template, type Transform } from '@runtime';
+import { applyTransform, computeGroupBbox, mapPointThroughGroupTransform, type Template, type Transform } from '@runtime';
 import type { Target } from './store';
 
 /** Map a point in parent-local space through a transform into grandparent/canvas space. */
@@ -42,31 +42,53 @@ export function localDeltaToCanvas(parent: Transform, dlx: number, dly: number):
   return { dx: b.x - a.x, dy: b.y - a.y };
 }
 
-/** Map a pivot (x,y) in local transform space up through ancestor groups to canvas space. */
-export function pivotCanvasPoint(template: Template, target: Target, t: Transform): { x: number; y: number } {
-  let x = t.x;
-  let y = t.y;
+type GroupTransformResolver = (groupId: string) => Transform | undefined;
 
+function walkAncestorGroups(
+  template: Template,
+  startGroupId: string | null,
+  x: number,
+  y: number,
+  resolveGroupTransform?: GroupTransformResolver,
+): { x: number; y: number } {
+  let groupId = startGroupId;
+  while (groupId) {
+    const g = template.groups.find((gr) => gr.id === groupId);
+    if (!g) break;
+    const gt = resolveGroupTransform?.(groupId) ?? g.transform;
+    const bbox = computeGroupBbox(template, groupId);
+    ({ x, y } = mapPointThroughGroupTransform(gt, bbox, x, y));
+    groupId = g.parentId;
+  }
+  return { x, y };
+}
+
+/** Map a pivot (x,y) in local transform space up through ancestor groups to canvas space. */
+export function pivotCanvasPoint(
+  template: Template,
+  target: Target,
+  t: Transform,
+  resolveGroupTransform?: GroupTransformResolver,
+): { x: number; y: number } {
   if (target.kind === 'layer') {
     const layer = template.layers.find((l) => l.id === target.id);
-    let groupId = layer?.groupId ?? null;
-    while (groupId) {
-      const g = template.groups.find((gr) => gr.id === groupId);
-      if (!g) break;
-      ({ x, y } = mapPointThroughTransform(g.transform, x, y));
-      groupId = g.parentId;
-    }
-  } else {
-    let groupId = template.groups.find((g) => g.id === target.id)?.parentId ?? null;
-    while (groupId) {
-      const g = template.groups.find((gr) => gr.id === groupId);
-      if (!g) break;
-      ({ x, y } = mapPointThroughTransform(g.transform, x, y));
-      groupId = g.parentId;
-    }
+    return walkAncestorGroups(template, layer?.groupId ?? null, t.x, t.y, resolveGroupTransform);
   }
+  const parentId = template.groups.find((g) => g.id === target.id)?.parentId ?? null;
+  return walkAncestorGroups(template, parentId, t.x, t.y, resolveGroupTransform);
+}
 
-  return { x, y };
+/** Map a point in a layer's parent-local space to canvas coordinates. */
+export function mapLayerPointToCanvas(
+  template: Template,
+  layerId: string,
+  localX: number,
+  localY: number,
+  resolveGroupTransform?: GroupTransformResolver,
+): { x: number; y: number } {
+  const layer = template.layers.find((l) => l.id === layerId);
+  if (!layer) return { x: localX, y: localY };
+  return walkAncestorGroups(template, layer.groupId, localX, localY, resolveGroupTransform);
 }
 
 export function axisCrosshairSize(zoom: number): number {

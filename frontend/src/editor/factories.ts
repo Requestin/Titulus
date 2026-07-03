@@ -3,7 +3,7 @@
 // Schema-valid factories for new layers / variables (matches
 // shared/template.schema.json so saves pass /api/templates/validate).
 
-import { createDefaultTransform, type Layer, type LayerType, type TextStyle, type Variable } from '@runtime';
+import { createDefaultTransform, type Layer, type LayerType, type TextStyle, type Transform, type Variable } from '@runtime';
 import { createId } from '@/core/id';
 
 export const LAYER_TYPES: LayerType[] = ['text', 'rect', 'image', 'video', 'clock', 'mask'];
@@ -16,6 +16,17 @@ export const LAYER_LABEL: Record<LayerType, string> = {
   clock: 'Clock',
   mask: 'Mask',
 };
+
+/** Editor default: origin at top-left pivot (anchor 0,0), position 0,0. */
+export function createEditorTransform(width: number, height: number): Transform {
+  return {
+    ...createDefaultTransform(0, 0),
+    width,
+    height,
+    anchorX: 0,
+    anchorY: 0,
+  };
+}
 
 function uuid(): string {
   return createId();
@@ -53,14 +64,14 @@ export function createLayer(type: LayerType, name: string): Layer {
     case 'text':
       return {
         ...base, type: 'text',
-        transform: { ...createDefaultTransform(120, 120), width: 760, height: 96 },
+        transform: createEditorTransform(760, 96),
         content: 'New text',
         style: defaultTextStyle(),
       };
     case 'rect':
       return {
         ...base, type: 'rect',
-        transform: { ...createDefaultTransform(120, 120), width: 480, height: 140 },
+        transform: createEditorTransform(480, 140),
         fill: '#1f2937',
         cornerRadius: 8,
         borderColor: '#000000',
@@ -69,7 +80,7 @@ export function createLayer(type: LayerType, name: string): Layer {
     case 'image':
       return {
         ...base, type: 'image',
-        transform: { ...createDefaultTransform(120, 120), width: 480, height: 270 },
+        transform: createEditorTransform(480, 270),
         src: '',
         cornerRadius: 0,
         fit: 'cover',
@@ -77,7 +88,7 @@ export function createLayer(type: LayerType, name: string): Layer {
     case 'video':
       return {
         ...base, type: 'video',
-        transform: { ...createDefaultTransform(120, 120), width: 480, height: 270 },
+        transform: createEditorTransform(480, 270),
         src: '',
         loop: true,
         fit: 'cover',
@@ -85,7 +96,7 @@ export function createLayer(type: LayerType, name: string): Layer {
     case 'clock':
       return {
         ...base, type: 'clock',
-        transform: { ...createDefaultTransform(120, 120), width: 300, height: 96 },
+        transform: createEditorTransform(300, 96),
         mode: 'clock',
         format: 'HH:mm:ss',
         style: { ...defaultTextStyle(), align: 'center' },
@@ -93,7 +104,7 @@ export function createLayer(type: LayerType, name: string): Layer {
     case 'mask':
       return {
         ...base, type: 'mask',
-        transform: { ...createDefaultTransform(120, 120), width: 480, height: 320 },
+        transform: createEditorTransform(480, 320),
         maskMode: 'normal',
         shape: 'rect',
         fill: '#000000',

@@ -6,6 +6,7 @@
 export * from './schema.js';
 export * from './easing.js';
 export * from './transform.js';
+export * from './groupBounds.js';
 export * from './stackOrder.js';
 export * from './timeline.js';
 export * from './clock.js';

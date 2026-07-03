@@ -14,7 +14,7 @@ import type {
 import { ANIMATABLE_PROPS, createDefaultTransform } from '@runtime';
 import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
-import { captureGlobalPivots, entryKey, reparentEntriesIntoGroup, updateAncestorGroupBounds, updateGroupBounds } from './groupBounds';
+import { reparentEntriesIntoGroup } from './groupBounds';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
 export type Target = { kind: 'layer' | 'group'; id: string };
@@ -105,6 +105,7 @@ interface EditorState {
   addLayer: (type: LayerType) => void;
   duplicateSelected: () => void;
   deleteSelected: () => void;
+  deleteEntry: (kind: 'layer' | 'group', id: string) => void;
   toggleVisible: (kind: 'layer' | 'group', id: string) => void;
   toggleLock: (kind: 'layer' | 'group', id: string) => void;
   setLayerGroup: (layerId: string, groupId: string | null) => void;
@@ -133,6 +134,31 @@ interface EditorState {
   removeTrack: (target: Target, prop: AnimatableProp) => void;
   setKeyframeEasing: (frame: number, easing: EasingType) => void;
   addTrackAtPlayhead: (target: Target, prop: AnimatableProp) => void;
+}
+
+function purgeTimelineTargets(t: Template, ids: string[]): void {
+  for (const id of ids) {
+    delete t.timeline.trackDirectors[id];
+    for (const kf of t.timeline.keyframes) {
+      delete kf.layers[id];
+      delete kf.groups[id];
+    }
+  }
+}
+
+function collectGroupSubtree(t: Template, groupId: string): { layerIds: string[]; groupIds: string[] } {
+  const layerIds: string[] = [];
+  const groupIds: string[] = [groupId];
+  for (const entry of t.groupStacks[groupId] ?? []) {
+    if (entry.kind === 'layer') {
+      layerIds.push(entry.id);
+    } else {
+      const sub = collectGroupSubtree(t, entry.id);
+      layerIds.push(...sub.layerIds);
+      groupIds.push(...sub.groupIds);
+    }
+  }
+  return { layerIds, groupIds };
 }
 
 function clone(t: Template): Template {
@@ -231,12 +257,6 @@ export const useEditor = create<EditorState>()(
             animatableFromTransformPartial(partial),
             get().playhead,
           );
-          if (kind === 'layer') {
-            const layer = t.layers.find((x) => x.id === id);
-            if (layer?.groupId) updateGroupBounds(t, layer.groupId);
-          } else {
-            updateAncestorGroupBounds(t, id);
-          }
         }),
 
       setName: (name) => get().patch((t) => { t.name = name; }),
@@ -272,33 +292,31 @@ export const useEditor = create<EditorState>()(
         set({ selection: { kind: 'layer', id: copy.id } });
       },
 
+      deleteEntry: (kind, id) => {
+        get().patch((t) => {
+          if (kind === 'layer') {
+            t.layers = t.layers.filter((l) => l.id !== id);
+            removeEntryEverywhere(t, id);
+            purgeTimelineTargets(t, [id]);
+            return;
+          }
+          const { layerIds, groupIds } = collectGroupSubtree(t, id);
+          t.layers = t.layers.filter((l) => !layerIds.includes(l.id));
+          t.groups = t.groups.filter((g) => !groupIds.includes(g.id));
+          for (const gid of groupIds) {
+            delete t.groupStacks[gid];
+            removeEntryEverywhere(t, gid);
+          }
+          purgeTimelineTargets(t, [...layerIds, ...groupIds]);
+        });
+        const sel = get().selection;
+        if (sel?.kind === kind && sel.id === id) set({ selection: null });
+      },
+
       deleteSelected: () => {
         const sel = get().selection;
         if (!sel) return;
-        get().patch((t) => {
-          if (sel.kind === 'layer') {
-            t.layers = t.layers.filter((l) => l.id !== sel.id);
-          } else {
-            // Re-parent the group's children to root, then drop the group.
-            const children = t.groupStacks[sel.id] ?? [];
-            for (const c of children) {
-              if (c.kind === 'layer') {
-                const l = t.layers.find((x) => x.id === c.id);
-                if (l) l.groupId = null;
-              }
-              t.rootStack.push(c);
-            }
-            delete t.groupStacks[sel.id];
-            t.groups = t.groups.filter((g) => g.id !== sel.id);
-          }
-          removeEntryEverywhere(t, sel.id);
-          delete t.timeline.trackDirectors[sel.id];
-          for (const kf of t.timeline.keyframes) {
-            delete kf.layers[sel.id];
-            delete kf.groups[sel.id];
-          }
-        });
-        set({ selection: null });
+        get().deleteEntry(sel.kind, sel.id);
       },
 
       toggleVisible: (kind, id) =>
@@ -319,23 +337,21 @@ export const useEditor = create<EditorState>()(
           if (!l) return;
           const prevGroupId = l.groupId;
           const entry = { kind: 'layer' as const, id: layerId };
-          const globalPivots = captureGlobalPivots(t, [entry]);
-          const targetWasEmpty = groupId
-            ? (t.groupStacks[groupId] ?? []).filter((e) => e.id !== layerId).length === 0
-            : false;
           removeEntryEverywhere(t, layerId);
           l.groupId = groupId;
           if (groupId) {
             addEntry(t, entry, groupId);
-            reparentEntriesIntoGroup(t, groupId, [entry], targetWasEmpty, globalPivots);
+            reparentEntriesIntoGroup(t, groupId, [entry]);
           } else {
-            const gp = globalPivots.get(entryKey(entry));
-            if (gp) {
-              l.transform.x = gp.x;
-              l.transform.y = gp.y;
+            addEntry(t, entry, null);
+          }
+          if (prevGroupId) {
+            const g = t.groups.find((x) => x.id === prevGroupId);
+            if (g) {
+              g.transform.width = 0;
+              g.transform.height = 0;
             }
           }
-          if (prevGroupId) updateGroupBounds(t, prevGroupId);
         }),
 
       addGroup: () => {
@@ -346,7 +362,7 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => {
           t.groups.push({
             id, name: `Group ${n}`, parentId: null, visible: true, locked: false,
-            transform: { ...createDefaultTransform(0, 0), width: 0, height: 0 },
+            transform: { ...createDefaultTransform(0, 0), width: 0, height: 0, anchorX: 0, anchorY: 0 },
           });
           t.groupStacks[id] = [];
           t.rootStack.push({ kind: 'group', id });

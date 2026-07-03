@@ -23,6 +23,7 @@ import type {
 } from './schema.js';
 import { resolveBinding } from './schema.js';
 import { applyTransform, blendModeCss, opacityCss, transformHas3D, type AppliedTransform } from './transform.js';
+import { applyGroupTransform, computeGroupBbox } from './groupBounds.js';
 import { computeStackOrder, groupMap } from './stackOrder.js';
 import { computeMaskScopes, maskClipStyle, type MaskScope } from './maskScopes.js';
 import {
@@ -718,8 +719,10 @@ export class TemplateRenderer {
     const cache = node.cache;
     this.setStyle(el, cache, 'display', group.visible ? 'block' : 'none');
     const gt = anim ? { ...group.transform, ...anim } : group.transform;
-    const at = applyTransform(
+    const bbox = this.template ? computeGroupBbox(this.template, group.id) : null;
+    const at = applyGroupTransform(
       group.transform,
+      bbox,
       anim as Partial<import('./schema.js').Transform> | undefined,
       { skipPerspective: this.parentPerspectiveForGroup(group.parentId) > 0 },
     );

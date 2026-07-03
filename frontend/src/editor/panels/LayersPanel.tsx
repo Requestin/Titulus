@@ -2,9 +2,10 @@
 //
 // Layer tree: top-level stack + groups (expandable), reorder within a container
 // via @dnd-kit, visibility/lock/select/rename/delete, add layer, new group.
+// Ctrl/Cmd + drag copies the dragged entries (deep, with timeline tracks).
 // Display is reversed so the frontmost layer (last in stack) sits on top.
 
-import { useState, type ComponentType } from 'react';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
 import {
   DndContext, PointerSensor, useSensor, useSensors, closestCenter,
   type DragEndEvent, type DragMoveEvent, type DragOverEvent,
@@ -16,11 +17,12 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   Type, Square, Image as ImageIcon, Video, Clock, Folder,
   Eye, EyeOff, Lock, Unlock, GripVertical, ChevronRight, ChevronDown,
-  Plus, FolderPlus, CheckSquare,
+  Plus, FolderPlus, CheckSquare, Trash2,
 } from 'lucide-react';
 import type { LayerType, RootStackEntry, Template } from '@runtime';
+import { createId } from '@/core/id';
 import { useEditor } from '../store';
-import { captureGlobalPivots, reparentEntriesIntoGroup, updateGroupBounds } from '../groupBounds';
+import { reparentEntriesIntoGroup } from '../groupBounds';
 import { LAYER_TYPES, LAYER_LABEL } from '../factories';
 import { cn } from '@/lib/cn';
 
@@ -131,39 +133,25 @@ function affectedGroupContainers(t: Template, keys: Set<EntryKey>): Set<string> 
   return out;
 }
 
-function unparentEntriesToCanvas(
-  t: Template,
-  moving: RootStackEntry[],
-  globalPivots: ReturnType<typeof captureGlobalPivots>,
-): void {
-  for (const entry of moving) {
-    const gp = globalPivots.get(entryKey(entry));
-    const tr = entry.kind === 'layer'
-      ? t.layers.find((l) => l.id === entry.id)?.transform
-      : t.groups.find((g) => g.id === entry.id)?.transform;
-    if (!gp || !tr) continue;
-    tr.x = gp.x;
-    tr.y = gp.y;
-  }
-}
-
 function moveEntriesToGroup(t: Template, keys: Set<EntryKey>, targetContainerId: string | null): void {
   const moving = collectDisplayEntries(t).filter((e) => keys.has(entryKey(e)));
   if (moving.length === 0 || wouldCreateCycle(t, moving, targetContainerId)) return;
   const prevGroups = affectedGroupContainers(t, keys);
-  const globalPivots = captureGlobalPivots(t, moving);
-  const targetWasEmpty = targetContainerId
-    ? (t.groupStacks[targetContainerId] ?? []).filter((e) => !keys.has(entryKey(e))).length === 0
-    : false;
   removeMovingEntries(t, keys);
   updateParents(t, moving, targetContainerId);
   const currentDisplay = [...containerEntries(t, targetContainerId)].reverse();
   setContainerEntries(t, targetContainerId, [...moving, ...currentDisplay].reverse());
   if (targetContainerId) {
-    reparentEntriesIntoGroup(t, targetContainerId, moving, targetWasEmpty, globalPivots);
+    reparentEntriesIntoGroup(t, targetContainerId, moving);
   }
   for (const gid of prevGroups) {
-    if (gid !== targetContainerId) updateGroupBounds(t, gid);
+    if (gid !== targetContainerId) {
+      const g = t.groups.find((x) => x.id === gid);
+      if (g) {
+        g.transform.width = 0;
+        g.transform.height = 0;
+      }
+    }
   }
 }
 
@@ -180,10 +168,6 @@ function moveEntriesNear(t: Template, keys: Set<EntryKey>, overKey: EntryKey, po
     const container = findContainer(t, key);
     oldContainers.set(key, container === undefined ? null : container);
   }
-  const globalPivots = captureGlobalPivots(t, moving);
-  const targetWasEmpty = targetContainerId
-    ? (t.groupStacks[targetContainerId] ?? []).filter((e) => !keys.has(entryKey(e))).length === 0
-    : false;
   removeMovingEntries(t, keys);
   updateParents(t, moving, targetContainerId);
   const currentDisplay = [...containerEntries(t, targetContainerId)].reverse();
@@ -193,17 +177,107 @@ function moveEntriesNear(t: Template, keys: Set<EntryKey>, overKey: EntryKey, po
   setContainerEntries(t, targetContainerId, currentDisplay.reverse());
 
   const containerChanged = moving.some((e) => oldContainers.get(entryKey(e)) !== targetContainerId);
-  if (containerChanged) {
-    if (targetContainerId) {
-      reparentEntriesIntoGroup(t, targetContainerId, moving, targetWasEmpty, globalPivots);
-    } else {
-      unparentEntriesToCanvas(t, moving, globalPivots);
-    }
+  if (containerChanged && targetContainerId) {
+    reparentEntriesIntoGroup(t, targetContainerId, moving);
   }
 
   for (const gid of prevGroups) {
-    if (gid !== targetContainerId) updateGroupBounds(t, gid);
+    if (gid !== targetContainerId) {
+      const g = t.groups.find((x) => x.id === gid);
+      if (g) {
+        g.transform.width = 0;
+        g.transform.height = 0;
+      }
+    }
   }
+}
+
+/**
+ * Deep-clone one stack entry: a layer, or a group with its whole subtree
+ * (nested groups/layers get fresh ids, parent pointers rewired to the clones).
+ * Every oldId -> newId pair is recorded in idMap for timeline duplication.
+ */
+function cloneEntryDeep(t: Template, entry: RootStackEntry, idMap: Map<string, string>): RootStackEntry | null {
+  if (entry.kind === 'layer') {
+    const src = t.layers.find((l) => l.id === entry.id);
+    if (!src) return null;
+    const copy = structuredClone(src);
+    copy.id = createId();
+    idMap.set(src.id, copy.id);
+    t.layers.push(copy);
+    return { kind: 'layer', id: copy.id };
+  }
+  const srcGroup = t.groups.find((g) => g.id === entry.id);
+  if (!srcGroup) return null;
+  const copy = structuredClone(srcGroup);
+  copy.id = createId();
+  idMap.set(srcGroup.id, copy.id);
+  t.groups.push(copy);
+  const childStack: RootStackEntry[] = [];
+  for (const child of t.groupStacks[srcGroup.id] ?? []) {
+    const clonedChild = cloneEntryDeep(t, child, idMap);
+    if (!clonedChild) continue;
+    if (clonedChild.kind === 'layer') {
+      const l = t.layers.find((x) => x.id === clonedChild.id);
+      if (l) l.groupId = copy.id;
+    } else {
+      const g = t.groups.find((x) => x.id === clonedChild.id);
+      if (g) g.parentId = copy.id;
+    }
+    childStack.push(clonedChild);
+  }
+  t.groupStacks[copy.id] = childStack;
+  return { kind: 'group', id: copy.id };
+}
+
+/**
+ * Duplicate timeline data for cloned targets: track -> director assignment is
+ * kept identical to the source (same director), keyframe values are copied
+ * per frame, so the copy animates exactly like the original.
+ */
+function copyTimelineTracks(t: Template, idMap: Map<string, string>): void {
+  for (const [oldId, newId] of idMap) {
+    const directorId = t.timeline.trackDirectors[oldId];
+    if (directorId) t.timeline.trackDirectors[newId] = directorId;
+  }
+  for (const kf of t.timeline.keyframes) {
+    for (const [oldId, newId] of idMap) {
+      if (kf.layers[oldId]) kf.layers[newId] = structuredClone(kf.layers[oldId]);
+      if (kf.groups[oldId]) kf.groups[newId] = structuredClone(kf.groups[oldId]);
+    }
+  }
+}
+
+/**
+ * Copy the given (normalized top-level) entries in place: each clone is
+ * inserted next to its original in the same container, keeping transforms
+ * valid. Returns the keys of the top-level clones (ready to be moved to the
+ * drop target with the regular move helpers).
+ */
+function copyEntries(t: Template, keys: Set<EntryKey>): Set<EntryKey> {
+  const idMap = new Map<string, string>();
+  const newKeys = new Set<EntryKey>();
+  const containerIds: (string | null)[] = [null, ...Object.keys(t.groupStacks)];
+  for (const containerId of containerIds) {
+    const entries = containerEntries(t, containerId);
+    if (!entries.some((e) => keys.has(entryKey(e)))) continue;
+    const next: RootStackEntry[] = [];
+    for (const e of entries) {
+      next.push(e);
+      if (!keys.has(entryKey(e))) continue;
+      const cloned = cloneEntryDeep(t, e, idMap);
+      if (!cloned) continue;
+      const obj = cloned.kind === 'layer'
+        ? t.layers.find((l) => l.id === cloned.id)
+        : t.groups.find((g) => g.id === cloned.id);
+      if (obj) obj.name = `${obj.name} copy`;
+      next.push(cloned);
+      newKeys.add(entryKey(cloned));
+    }
+    setContainerEntries(t, containerId, next);
+  }
+  copyTimelineTracks(t, idMap);
+  return newKeys;
 }
 
 function activeCenter(event: DragMoveEvent | DragOverEvent | DragEndEvent): { x: number; y: number } | null {
@@ -245,11 +319,34 @@ export function LayersPanel() {
   const addLayer = useEditor((s) => s.addLayer);
   const addGroup = useEditor((s) => s.addGroup);
   const patch = useEditor((s) => s.patch);
+  const select = useEditor((s) => s.select);
   const [addOpen, setAddOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<EntryKey>>(() => new Set());
   const [dragIntent, setDragIntent] = useState<DragIntent>(null);
+  // Ctrl/Cmd held -> drag copies instead of moving. Tracked via keyboard +
+  // pointermove (dnd-kit drag events don't carry live modifier state).
+  const copyKeyRef = useRef(false);
+  const [copyHint, setCopyHint] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  useEffect(() => {
+    function sync(e: KeyboardEvent | PointerEvent) {
+      const held = e.ctrlKey || e.metaKey;
+      if (copyKeyRef.current === held) return;
+      copyKeyRef.current = held;
+      setCopyHint(held);
+    }
+    window.addEventListener('keydown', sync);
+    window.addEventListener('keyup', sync);
+    window.addEventListener('pointermove', sync);
+    return () => {
+      window.removeEventListener('keydown', sync);
+      window.removeEventListener('keyup', sync);
+      window.removeEventListener('pointermove', sync);
+    };
+  }, []);
+
   if (!template) return null;
 
   function toggleSelectMode() {
@@ -282,14 +379,25 @@ export function LayersPanel() {
     const activeKey = String(e.active.id) as EntryKey;
     const activeEntry = parseEntryKey(activeKey);
     if (!activeEntry || !intent) return;
+    const isCopy = copyKeyRef.current;
+    let copiedKeys: Set<EntryKey> | null = null;
     patch((t) => {
-      const keys = normalizedMoveKeys(t, selectedKeys, activeKey);
+      let keys = normalizedMoveKeys(t, selectedKeys, activeKey);
+      if (isCopy) {
+        keys = copyEntries(t, keys);
+        copiedKeys = keys;
+      }
       if (intent.type === 'inside') {
         if (!keys.has(`group:${intent.groupId}`)) moveEntriesToGroup(t, keys, intent.groupId);
       } else {
         moveEntriesNear(t, keys, intent.key, intent.type);
       }
     });
+    if (copiedKeys) {
+      const first = [...(copiedKeys as Set<EntryKey>)][0];
+      const firstEntry = first ? parseEntryKey(first) : null;
+      if (firstEntry) select({ kind: firstEntry.kind, id: firstEntry.id });
+    }
   }
 
   function onDragCancel() {
@@ -365,6 +473,7 @@ export function LayersPanel() {
           selectedKeys={selectedKeys}
           onToggleEntry={toggleEntry}
           dragIntent={dragIntent}
+          copyHint={copyHint}
         />
         {template.rootStack.length === 0 && (
           <p className="px-3 py-6 text-center text-[12px] text-ink-faint">
@@ -384,6 +493,7 @@ function Container({
   selectedKeys,
   onToggleEntry,
   dragIntent,
+  copyHint,
 }: {
   entries: RootStackEntry[];
   depth: number;
@@ -391,6 +501,7 @@ function Container({
   selectedKeys: Set<EntryKey>;
   onToggleEntry: (key: EntryKey) => void;
   dragIntent: DragIntent;
+  copyHint: boolean;
 }) {
   // Reversed so frontmost (last in stack) shows on top.
   const display = [...entries].reverse();
@@ -407,6 +518,7 @@ function Container({
           selectedKeys={selectedKeys}
           onToggleEntry={onToggleEntry}
           dragIntent={dragIntent}
+          copyHint={copyHint}
         />
       ))}
     </SortableContext>
@@ -420,6 +532,7 @@ function Row({
   selectedKeys,
   onToggleEntry,
   dragIntent,
+  copyHint,
 }: {
   entry: RootStackEntry;
   depth: number;
@@ -427,12 +540,14 @@ function Row({
   selectedKeys: Set<EntryKey>;
   onToggleEntry: (key: EntryKey) => void;
   dragIntent: DragIntent;
+  copyHint: boolean;
 }) {
   const template = useEditor((s) => s.template)!;
   const selection = useEditor((s) => s.selection);
   const select = useEditor((s) => s.select);
   const toggleVisible = useEditor((s) => s.toggleVisible);
   const toggleLock = useEditor((s) => s.toggleLock);
+  const deleteEntry = useEditor((s) => s.deleteEntry);
   const updateLayer = useEditor((s) => s.updateLayer);
   const patch = useEditor((s) => s.patch);
   const [expanded, setExpanded] = useState(true);
@@ -464,14 +579,15 @@ function Row({
 
   return (
     <div ref={setNodeRef} className="relative" style={{ transform: CSS.Transform.toString(transform), transition }}>
-      {lineBefore && <DropLine position="before" depth={depth} />}
+      {lineBefore && <DropLine position="before" depth={depth} copy={copyHint} />}
       <div
         onClick={() => select({ kind: entry.kind, id: entry.id })}
         className={cn(
           'group flex h-8 items-center gap-1 pr-2 text-[13px] transition-colors',
           selected ? 'bg-primary/15 text-ink' : 'text-ink-muted hover:bg-surface-2',
           checked && 'bg-info/10 text-ink',
-          groupDropActive && 'bg-warning/25 text-ink ring-1 ring-inset ring-warning/80',
+          groupDropActive && !copyHint && 'bg-warning/25 text-ink ring-1 ring-inset ring-warning/80',
+          groupDropActive && copyHint && 'bg-success/25 text-ink ring-1 ring-inset ring-success/80',
           isDragging && 'opacity-60',
         )}
         style={{ paddingLeft: 8 + depth * 14 }}
@@ -516,7 +632,7 @@ function Row({
           className={cn(
             'flex min-w-0 flex-1 items-center gap-1.5 rounded px-0.5 py-0.5',
             !isLayer && 'transition-colors',
-            groupDropActive && 'bg-warning/25',
+            groupDropActive && (copyHint ? 'bg-success/25' : 'bg-warning/25'),
           )}
         >
           <Icon className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
@@ -544,6 +660,17 @@ function Row({
         </div>
 
         <button
+          onClick={(e) => {
+            e.stopPropagation();
+            select({ kind: entry.kind, id: entry.id });
+            deleteEntry(entry.kind, entry.id);
+          }}
+          className="grid h-6 w-6 place-items-center text-ink-faint opacity-0 hover:text-live group-hover:opacity-100"
+          aria-label={`Delete ${obj.name}`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+        <button
           onClick={(e) => { e.stopPropagation(); toggleLock(entry.kind, entry.id); }}
           className={cn('grid h-6 w-6 place-items-center hover:text-ink', obj.locked ? 'text-ink-muted' : 'text-ink-faint opacity-0 group-hover:opacity-100')}
           aria-label={obj.locked ? 'Unlock' : 'Lock'}
@@ -558,7 +685,7 @@ function Row({
           {obj.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
         </button>
       </div>
-      {lineAfter && <DropLine position="after" depth={depth} />}
+      {lineAfter && <DropLine position="after" depth={depth} copy={copyHint} />}
 
       {!isLayer && expanded && (
         <Container
@@ -568,17 +695,21 @@ function Row({
           selectedKeys={selectedKeys}
           onToggleEntry={onToggleEntry}
           dragIntent={dragIntent}
+          copyHint={copyHint}
         />
       )}
     </div>
   );
 }
 
-function DropLine({ position, depth }: { position: 'before' | 'after'; depth: number }) {
+function DropLine({ position, depth, copy }: { position: 'before' | 'after'; depth: number; copy?: boolean }) {
   return (
     <div
       className={cn(
-        'pointer-events-none absolute left-2 right-2 z-sticky h-0.5 rounded-full bg-primary shadow-[0_0_0_1px_oklch(var(--primary)/0.18)]',
+        'pointer-events-none absolute left-2 right-2 z-sticky h-0.5 rounded-full',
+        copy
+          ? 'bg-success shadow-[0_0_0_1px_oklch(var(--success)/0.18)]'
+          : 'bg-primary shadow-[0_0_0_1px_oklch(var(--primary)/0.18)]',
         position === 'before' ? 'top-0' : 'top-8',
       )}
       style={{ marginLeft: 8 + depth * 14 }}

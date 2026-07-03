@@ -9,8 +9,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
-import { groupCanvasAabb } from './groupBounds';
-import { axisCrosshairSize, pivotCanvasPoint } from './pivot';
+import { groupCanvasAabb, groupPivotCanvasPoint, layerCanvasAabb } from './groupBounds';
+import { axisCrosshairSize, mapLayerPointToCanvas, pivotCanvasPoint } from './pivot';
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 type DragMode = 'move' | Handle;
@@ -117,12 +117,29 @@ export function CanvasArea() {
   const cw = template?.canvas.width ?? 1920;
   const ch = template?.canvas.height ?? 1080;
 
+  function groupTransformResolver(
+    tpl: NonNullable<ReturnType<typeof useEditor.getState>['template']>,
+    playhead: number,
+    directorId: string,
+  ): (groupId: string) => Transform | undefined {
+    return (groupId) => {
+      const g = tpl.groups.find((x) => x.id === groupId);
+      if (!g) return undefined;
+      return effectiveTransform(tpl, g.transform, { kind: 'group', id: groupId }, playhead, directorId);
+    };
+  }
+
   function overlayForTransform(
     tpl: NonNullable<ReturnType<typeof useEditor.getState>['template']>,
     target: { kind: 'layer' | 'group'; id: string },
     transform: Transform,
+    playhead: number,
+    directorId: string,
   ): SelectionOverlay | null {
-    const pivot = pivotCanvasPoint(tpl, target, transform);
+    const resolveGroup = groupTransformResolver(tpl, playhead, directorId);
+    const pivot = target.kind === 'group'
+      ? groupPivotCanvasPoint(tpl, target.id, transform, resolveGroup)
+      : pivotCanvasPoint(tpl, target, transform, resolveGroup);
     const axis = { x: pivot.x * zoom, y: pivot.y * zoom };
 
     if (target.kind === 'layer') {
@@ -134,7 +151,10 @@ export function CanvasArea() {
           transform,
           at,
         );
-        const scaled = outline.map((p) => ({ x: p.x * zoom, y: p.y * zoom }));
+        const scaled = outline.map((p) => {
+          const c = mapLayerPointToCanvas(tpl, layer.id, p.x, p.y, resolveGroup);
+          return { x: c.x * zoom, y: c.y * zoom };
+        });
         const xs = scaled.map((p) => p.x);
         const ys = scaled.map((p) => p.y);
         const minX = Math.min(...xs);
@@ -148,6 +168,18 @@ export function CanvasArea() {
           axis,
         };
       }
+
+      const bbox = layerCanvasAabb(tpl, target.id, transform, resolveGroup);
+      return {
+        kind: 'box',
+        box: {
+          left: bbox.left * zoom,
+          top: bbox.top * zoom,
+          width: bbox.width * zoom,
+          height: bbox.height * zoom,
+        },
+        axis,
+      };
     }
 
     if (target.kind === 'group') {
@@ -194,7 +226,13 @@ export function CanvasArea() {
           st.playhead,
           st.activeDirectorId,
         );
-        setOverlay(overlayForTransform(tpl, { kind: 'layer', id: layer.id }, t));
+        setOverlay(overlayForTransform(
+          tpl,
+          { kind: 'layer', id: layer.id },
+          t,
+          st.playhead,
+          st.activeDirectorId,
+        ));
         return;
       }
     }
@@ -203,7 +241,13 @@ export function CanvasArea() {
       const g = tpl.groups.find((x) => x.id === sel.id);
       if (g) {
         const t = effectiveTransform(tpl, g.transform, { kind: 'group', id: g.id }, st.playhead, st.activeDirectorId);
-        setOverlay(overlayForTransform(tpl, { kind: 'group', id: g.id }, t));
+        setOverlay(overlayForTransform(
+          tpl,
+          { kind: 'group', id: g.id },
+          t,
+          st.playhead,
+          st.activeDirectorId,
+        ));
         return;
       }
     }
@@ -343,7 +387,14 @@ export function CanvasArea() {
       d.el.style.top = `${at.top}px`;
       d.el.style.width = `${at.width}px`;
       d.el.style.height = `${at.height}px`;
-      const next = overlayForTransform(template, { kind: 'layer', id: layer.id }, { ...layer.transform, ...partial });
+      const st = useEditor.getState();
+      const next = overlayForTransform(
+        template,
+        { kind: 'layer', id: layer.id },
+        { ...layer.transform, ...partial },
+        st.playhead,
+        st.activeDirectorId,
+      );
       if (next) setOverlay(next);
     }
   }

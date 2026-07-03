@@ -1,10 +1,19 @@
-import { anchorCompensatedUpdate, applyTransform, type RootStackEntry, type Template, type Transform } from '@runtime';
 import {
-  inverseMapPointThroughTransform,
-  localDeltaToCanvas,
-  mapPointThroughTransform,
-  pivotCanvasPoint,
-} from './pivot';
+  anchorCompensatedUpdate,
+  applyTransform,
+  computeGroupBbox,
+  computeGroupUnion,
+  mapPointThroughGroupTransform,
+  type GroupBbox,
+  type RootStackEntry,
+  type Template,
+  type Transform,
+} from '@runtime';
+import { mapLayerPointToCanvas } from './pivot';
+import { pivotCanvasPoint } from './pivot';
+
+export type { GroupBbox };
+export { computeGroupBbox, computeGroupUnion };
 
 export type EntryKey = `${RootStackEntry['kind']}:${string}`;
 
@@ -17,20 +26,6 @@ function entryTransform(t: Template, kind: 'layer' | 'group', id: string): Trans
     return t.layers.find((l) => l.id === id)?.transform ?? null;
   }
   return t.groups.find((g) => g.id === id)?.transform ?? null;
-}
-
-function setEntryTransform(t: Template, kind: 'layer' | 'group', id: string, partial: Partial<Transform>): void {
-  if (kind === 'layer') {
-    const l = t.layers.find((x) => x.id === id);
-    if (l) Object.assign(l.transform, partial);
-    return;
-  }
-  const g = t.groups.find((x) => x.id === id);
-  if (g) {
-    Object.assign(g.transform, partial);
-    g.transform.width = 0;
-    g.transform.height = 0;
-  }
 }
 
 function containerEntries(t: Template, containerId: string | null): RootStackEntry[] {
@@ -46,15 +41,6 @@ export function collectDisplayEntries(t: Template, containerId: string | null = 
   return out;
 }
 
-/** Among moving entries, pick the one highest in the layer tree (frontmost). */
-export function topmostMovingEntry(t: Template, moving: RootStackEntry[]): RootStackEntry {
-  const movingKeys = new Set(moving.map(entryKey));
-  for (const entry of collectDisplayEntries(t)) {
-    if (movingKeys.has(entryKey(entry))) return entry;
-  }
-  return moving[0]!;
-}
-
 /** Capture canvas pivot for each entry while it still lives in its old parent. */
 export function captureGlobalPivots(t: Template, entries: RootStackEntry[]): Map<EntryKey, { x: number; y: number }> {
   const out = new Map<EntryKey, { x: number; y: number }>();
@@ -66,52 +52,33 @@ export function captureGlobalPivots(t: Template, entries: RootStackEntry[]): Map
   return out;
 }
 
-/** Union of direct child AABBs in group-local space (pivot-based transforms). */
-export function computeGroupUnion(t: Template, groupId: string): { minL: number; minT: number; maxR: number; maxB: number } | null {
-  const entries = t.groupStacks[groupId] ?? [];
-  if (entries.length === 0) return null;
-
-  let minL = Infinity;
-  let minT = Infinity;
-  let maxR = -Infinity;
-  let maxB = -Infinity;
-
-  for (const e of entries) {
-    const tr = entryTransform(t, e.kind, e.id);
-    if (!tr) continue;
-    const at = applyTransform(tr, undefined);
-    minL = Math.min(minL, at.left);
-    minT = Math.min(minT, at.top);
-    maxR = Math.max(maxR, at.left + at.width);
-    maxB = Math.max(maxB, at.top + at.height);
-  }
-
-  if (!Number.isFinite(minL)) return null;
-  return { minL, minT, maxR, maxB };
-}
-
-/** Resize group box to wrap direct children; normalize local origin without moving canvas positions. */
+/** Groups keep width/height at 0; bbox is derived from children at render time. */
 export function updateGroupBounds(t: Template, groupId: string): void {
   const g = t.groups.find((x) => x.id === groupId);
   if (!g) return;
-  const union = computeGroupUnion(t, groupId);
-  if (!union) return;
-
-  const { minL, minT } = union;
-
-  if (minL !== 0 || minT !== 0) {
-    for (const e of t.groupStacks[groupId] ?? []) {
-      const tr = entryTransform(t, e.kind, e.id);
-      if (!tr) continue;
-      setEntryTransform(t, e.kind, e.id, { x: tr.x - minL, y: tr.y - minT });
-    }
-    const delta = localDeltaToCanvas(g.transform, minL, minT);
-    g.transform.x += delta.dx;
-    g.transform.y += delta.dy;
-  }
-
   g.transform.width = 0;
   g.transform.height = 0;
+}
+
+/** Canvas-space AABB of a layer (maps through ancestor group transforms). */
+export function layerCanvasAabb(
+  template: Template,
+  layerId: string,
+  layerTransform: Transform,
+  resolveGroupTransform?: (groupId: string) => Transform | undefined,
+): { left: number; top: number; width: number; height: number } {
+  const at = applyTransform(layerTransform, undefined);
+  const corners = [
+    mapLayerPointToCanvas(template, layerId, at.left, at.top, resolveGroupTransform),
+    mapLayerPointToCanvas(template, layerId, at.left + at.width, at.top, resolveGroupTransform),
+    mapLayerPointToCanvas(template, layerId, at.left + at.width, at.top + at.height, resolveGroupTransform),
+    mapLayerPointToCanvas(template, layerId, at.left, at.top + at.height, resolveGroupTransform),
+  ];
+  const xs = corners.map((c) => c.x);
+  const ys = corners.map((c) => c.y);
+  const left = Math.min(...xs);
+  const top = Math.min(...ys);
+  return { left, top, width: Math.max(...xs) - left, height: Math.max(...ys) - top };
 }
 
 /** Canvas-space AABB of a group's children (group transform width/height are always 0). */
@@ -151,72 +118,28 @@ export function localPointToCanvas(
   const gt = groupTransform ?? g.transform;
   let x = localX;
   let y = localY;
-  ({ x, y } = mapPointThroughTransform(gt, x, y));
+  ({ x, y } = mapPointThroughGroupTransform(gt, computeGroupBbox(template, groupId), x, y));
   let parentId = g.parentId;
   while (parentId) {
     const pg = template.groups.find((gr) => gr.id === parentId);
     if (!pg) break;
-    ({ x, y } = mapPointThroughTransform(pg.transform, x, y));
+    const pgt = pg.transform;
+    ({ x, y } = mapPointThroughGroupTransform(pgt, computeGroupBbox(template, parentId), x, y));
     parentId = pg.parentId;
   }
   return { x, y };
 }
 
-function adoptGroupFromReference(
-  t: Template,
-  groupId: string,
-  reference: RootStackEntry,
-  globalPivot: { x: number; y: number },
-): void {
-  const g = t.groups.find((x) => x.id === groupId);
-  const refTr = entryTransform(t, reference.kind, reference.id);
-  if (!g || !refTr) return;
-  g.transform.x = globalPivot.x;
-  g.transform.y = globalPivot.y;
-  g.transform.anchorX = refTr.anchorX;
-  g.transform.anchorY = refTr.anchorY;
-  g.transform.width = 0;
-  g.transform.height = 0;
-}
-
-function convertEntryToGroupLocal(
-  t: Template,
-  groupId: string,
-  entry: RootStackEntry,
-  globalPivot: { x: number; y: number },
-): void {
-  const g = t.groups.find((x) => x.id === groupId);
-  const tr = entryTransform(t, entry.kind, entry.id);
-  if (!g || !tr) return;
-  const local = inverseMapPointThroughTransform(g.transform, globalPivot.x, globalPivot.y);
-  setEntryTransform(t, entry.kind, entry.id, { x: local.x, y: local.y });
-}
-
 /**
- * After stack/parent assignment: place group at reference pivot, convert moved
- * entries to group-local coords so canvas positions stay unchanged.
+ * After stack/parent assignment: keep entry x/y unchanged so the child inherits
+ * the group's position/rotation/scale globally instead of compensating coords.
  */
 export function reparentEntriesIntoGroup(
   t: Template,
   groupId: string,
   moving: RootStackEntry[],
-  targetWasEmpty: boolean,
-  globalPivots: Map<EntryKey, { x: number; y: number }>,
 ): void {
   if (moving.length === 0) return;
-
-  const reference = topmostMovingEntry(t, moving);
-  const refGlobal = globalPivots.get(entryKey(reference));
-  if (targetWasEmpty && refGlobal) {
-    adoptGroupFromReference(t, groupId, reference, refGlobal);
-  }
-
-  for (const entry of moving) {
-    const gp = globalPivots.get(entryKey(entry));
-    if (!gp) continue;
-    convertEntryToGroupLocal(t, groupId, entry, gp);
-  }
-
   updateGroupBounds(t, groupId);
 }
 
@@ -225,67 +148,99 @@ export function finalizeGroupReparent(
   t: Template,
   targetContainerId: string | null,
   moving: RootStackEntry[],
-  targetWasEmpty: boolean,
-  globalPivots?: Map<EntryKey, { x: number; y: number }>,
+  _targetWasEmpty: boolean,
+  _globalPivots?: Map<EntryKey, { x: number; y: number }>,
 ): void {
   if (!targetContainerId) return;
-  const pivots = globalPivots ?? captureGlobalPivots(t, moving);
-  reparentEntriesIntoGroup(t, targetContainerId, moving, targetWasEmpty, pivots);
-}
-
-/** Recompute bounds for every ancestor group of a layer/group id. */
-export function updateAncestorGroupBounds(t: Template, entryId: string): void {
-  for (const [groupId, stack] of Object.entries(t.groupStacks)) {
-    if (stack.some((e) => e.id === entryId)) {
-      updateGroupBounds(t, groupId);
-      updateAncestorGroupBounds(t, groupId);
-    }
-  }
+  reparentEntriesIntoGroup(t, targetContainerId, moving);
 }
 
 export function groupUnionSize(t: Template, groupId: string): { width: number; height: number } {
-  const union = computeGroupUnion(t, groupId);
-  if (!union) return { width: 0, height: 0 };
-  return {
-    width: Math.max(1, union.maxR - union.minL),
-    height: Math.max(1, union.maxB - union.minT),
-  };
+  const bbox = computeGroupBbox(t, groupId);
+  if (!bbox) return { width: 0, height: 0 };
+  return { width: bbox.width, height: bbox.height };
 }
 
-function virtualGroupTransform(t: Transform, unionW: number, unionH: number): Transform {
-  return { ...t, width: unionW, height: unionH };
+/** Pivot of a group in its parent space, derived from children bbox + anchor ratios. */
+export function groupPivotParentPoint(g: Transform, bbox: GroupBbox): { x: number; y: number } {
+  const localX = bbox.minL + bbox.width * g.anchorX;
+  const localY = bbox.minT + bbox.height * g.anchorY;
+  return mapPointThroughGroupTransform(g, bbox, localX, localY);
+}
+
+/** Pivot of a group mapped to canvas space. */
+export function groupPivotCanvasPoint(
+  template: Template,
+  groupId: string,
+  g: Transform,
+  resolveGroupTransform?: (groupId: string) => Transform | undefined,
+): { x: number; y: number } {
+  const bbox = computeGroupBbox(template, groupId);
+  if (!bbox) return walkGroupAncestors(template, groupId, g.x, g.y, resolveGroupTransform);
+  const parentPivot = groupPivotParentPoint(g, bbox);
+  return walkGroupAncestors(template, groupId, parentPivot.x, parentPivot.y, resolveGroupTransform);
+}
+
+function walkGroupAncestors(
+  template: Template,
+  groupId: string,
+  x: number,
+  y: number,
+  resolveGroupTransform?: (groupId: string) => Transform | undefined,
+): { x: number; y: number } {
+  let parentId = template.groups.find((gr) => gr.id === groupId)?.parentId ?? null;
+  while (parentId) {
+    const pg = template.groups.find((gr) => gr.id === parentId);
+    if (!pg) break;
+    const gt = resolveGroupTransform?.(parentId) ?? pg.transform;
+    ({ x, y } = mapPointThroughGroupTransform(gt, computeGroupBbox(template, parentId), x, y));
+    parentId = pg.parentId;
+  }
+  return { x, y };
+}
+
+/**
+ * Change group axis center on the children bbox.
+ * Unlike layers, group x/y is the container origin; child positions are stored
+ * in group-local space and do not depend on anchor ratios. Updating anchor alone
+ * moves the visual pivot on the bbox while children keep global canvas positions.
+ */
+function compensateGroupAnchor(
+  _g: Transform,
+  _bbox: GroupBbox,
+  axis: 'x' | 'y',
+  newRatio: number,
+): Partial<Transform> {
+  return axis === 'x' ? { anchorX: newRatio } : { anchorY: newRatio };
 }
 
 export function axisCenterFromPixelsGroup(
-  t: Transform,
-  unionW: number,
-  unionH: number,
+  g: Transform,
+  bbox: GroupBbox,
   axis: 'x' | 'y',
   px: number,
 ): Partial<Transform> {
-  const v = virtualGroupTransform(t, unionW, unionH);
-  const result = axisCenterFromPixels(v, axis, px);
-  return { x: result.x, y: result.y, anchorX: result.anchorX, anchorY: result.anchorY };
+  const size = axis === 'x' ? bbox.width : bbox.height;
+  if (size <= 0) return {};
+  return compensateGroupAnchor(g, bbox, axis, px / size);
 }
 
 export function axisCenterPresetXGroup(
-  t: Transform,
-  unionW: number,
-  unionH: number,
+  g: Transform,
+  bbox: GroupBbox,
   preset: 'L' | 'C' | 'R',
 ): Partial<Transform> {
-  const result = axisCenterPresetX(virtualGroupTransform(t, unionW, unionH), preset);
-  return { x: result.x, y: result.y, anchorX: result.anchorX, anchorY: result.anchorY };
+  const anchorX = preset === 'L' ? 0 : preset === 'C' ? 0.5 : 1;
+  return compensateGroupAnchor(g, bbox, 'x', anchorX);
 }
 
 export function axisCenterPresetYGroup(
-  t: Transform,
-  unionW: number,
-  unionH: number,
+  g: Transform,
+  bbox: GroupBbox,
   preset: 'T' | 'C' | 'B',
 ): Partial<Transform> {
-  const result = axisCenterPresetY(virtualGroupTransform(t, unionW, unionH), preset);
-  return { x: result.x, y: result.y, anchorX: result.anchorX, anchorY: result.anchorY };
+  const anchorY = preset === 'T' ? 0 : preset === 'C' ? 0.5 : 1;
+  return compensateGroupAnchor(g, bbox, 'y', anchorY);
 }
 
 export function axisCenterPresetX(t: Transform, preset: 'L' | 'C' | 'R'): Partial<Transform> {

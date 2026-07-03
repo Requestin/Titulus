@@ -14,7 +14,7 @@ import {
   axisCenterPresetXGroup,
   axisCenterPresetY,
   axisCenterPresetYGroup,
-  groupUnionSize,
+  computeGroupBbox,
 } from '../groupBounds';
 import { MediaUploadButton } from '../MediaUploadButton';
 import { Field, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
@@ -54,7 +54,13 @@ export function PropertiesPanel() {
             <Input value={g.name} onChange={(e) => patch((t) => { const x = t.groups.find((q) => q.id === g.id); if (x) x.name = e.target.value; })} />
           </Field>
         </Section>
-        <TransformSection
+        <SizeSection
+          id={g.id}
+          kind="group"
+          t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
+          updateTransform={updateTransform}
+        />
+        <PositionSection
           id={g.id}
           kind="group"
           template={template}
@@ -104,7 +110,13 @@ export function PropertiesPanel() {
         </Field>
       </Section>
 
-      <TransformSection
+      <SizeSection
+        id={layer.id}
+        kind="layer"
+        t={effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
+        updateTransform={updateTransform}
+      />
+      <PositionSection
         id={layer.id}
         kind="layer"
         template={template}
@@ -117,7 +129,31 @@ export function PropertiesPanel() {
   );
 }
 
-function TransformSection({
+function SizeSection({
+  id, kind, t, updateTransform,
+}: {
+  id: string;
+  kind: 'layer' | 'group';
+  t: Layer['transform'];
+  updateTransform: (id: string, partial: Partial<Layer['transform']>, kind?: 'layer' | 'group') => void;
+}) {
+  const set = (partial: Partial<Layer['transform']>) => updateTransform(id, partial, kind);
+
+  return (
+    <Section title="Size">
+      {kind === 'layer' && (
+        <>
+          <LabeledNum label="Width" value={t.width} resetValue={300} onChange={(v) => set({ width: v })} />
+          <LabeledNum label="Height" value={t.height} resetValue={80} onChange={(v) => set({ height: v })} />
+        </>
+      )}
+      <LabeledNum label="Scale X" value={t.scaleX} resetValue={1} step={0.05} onChange={(v) => set({ scaleX: v })} />
+      <LabeledNum label="Scale Y" value={t.scaleY} resetValue={1} step={0.05} onChange={(v) => set({ scaleY: v })} />
+    </Section>
+  );
+}
+
+function PositionSection({
   id, kind, template, t, updateTransform,
 }: {
   id: string;
@@ -127,24 +163,15 @@ function TransformSection({
   updateTransform: (id: string, partial: Partial<Layer['transform']>, kind?: 'layer' | 'group') => void;
 }) {
   const set = (partial: Partial<Layer['transform']>) => updateTransform(id, partial, kind);
-  const unionSize = kind === 'group' ? groupUnionSize(template, id) : null;
-  const axisW = unionSize ? unionSize.width : t.width;
-  const axisH = unionSize ? unionSize.height : t.height;
-  const axisPxX = axisW * t.anchorX;
-  const axisPxY = axisH * t.anchorY;
+  const groupBbox = kind === 'group' ? computeGroupBbox(template, id) : null;
+  const axisPxX = groupBbox ? groupBbox.width * t.anchorX : t.width * t.anchorX;
+  const axisPxY = groupBbox ? groupBbox.height * t.anchorY : t.height * t.anchorY;
+  const groupAxisReady = kind !== 'group' || groupBbox !== null;
 
   return (
-    <Section title="Transform">
+    <Section title="Position">
       <LabeledNum label="X" value={t.x} resetValue={0} onChange={(v) => set({ x: v })} />
       <LabeledNum label="Y" value={t.y} resetValue={0} onChange={(v) => set({ y: v })} />
-      {kind === 'layer' && (
-        <>
-          <LabeledNum label="Width" value={t.width} resetValue={300} onChange={(v) => set({ width: v })} />
-          <LabeledNum label="Height" value={t.height} resetValue={80} onChange={(v) => set({ height: v })} />
-        </>
-      )}
-      <LabeledNum label="Scale X" value={t.scaleX} resetValue={1} step={0.05} onChange={(v) => set({ scaleX: v })} />
-      <LabeledNum label="Scale Y" value={t.scaleY} resetValue={1} step={0.05} onChange={(v) => set({ scaleY: v })} />
 
       <div className="pt-1">
         <h4 className="mb-2 text-[11px] font-semibold text-ink-faint">Rotation</h4>
@@ -189,34 +216,46 @@ function TransformSection({
           <AxisCenterRow
             label="X"
             value={axisPxX}
-            resetValue={axisW * 0.5}
+            resetValue={0}
             presets={['L', 'C', 'R']}
-            onChange={(v) => set(
-              kind === 'group'
-                ? axisCenterFromPixelsGroup(t, axisW, axisH, 'x', v)
-                : axisCenterFromPixels(t, 'x', v),
-            )}
-            onPreset={(p) => set(
-              kind === 'group'
-                ? axisCenterPresetXGroup(t, axisW, axisH, p)
-                : axisCenterPresetX(t, p),
-            )}
+            onChange={(v) => {
+              if (!groupAxisReady) return;
+              set(
+                kind === 'group' && groupBbox
+                  ? axisCenterFromPixelsGroup(t, groupBbox, 'x', v)
+                  : axisCenterFromPixels(t, 'x', v),
+              );
+            }}
+            onPreset={(p) => {
+              if (!groupAxisReady) return;
+              set(
+                kind === 'group' && groupBbox
+                  ? axisCenterPresetXGroup(t, groupBbox, p)
+                  : axisCenterPresetX(t, p),
+              );
+            }}
           />
           <AxisCenterRow
             label="Y"
             value={axisPxY}
-            resetValue={axisH * 0.5}
+            resetValue={0}
             presets={['B', 'C', 'T']}
-            onChange={(v) => set(
-              kind === 'group'
-                ? axisCenterFromPixelsGroup(t, axisW, axisH, 'y', v)
-                : axisCenterFromPixels(t, 'y', v),
-            )}
-            onPreset={(p) => set(
-              kind === 'group'
-                ? axisCenterPresetYGroup(t, axisW, axisH, p)
-                : axisCenterPresetY(t, p),
-            )}
+            onChange={(v) => {
+              if (!groupAxisReady) return;
+              set(
+                kind === 'group' && groupBbox
+                  ? axisCenterFromPixelsGroup(t, groupBbox, 'y', v)
+                  : axisCenterFromPixels(t, 'y', v),
+              );
+            }}
+            onPreset={(p) => {
+              if (!groupAxisReady) return;
+              set(
+                kind === 'group' && groupBbox
+                  ? axisCenterPresetYGroup(t, groupBbox, p)
+                  : axisCenterPresetY(t, p),
+              );
+            }}
           />
         </div>
       </div>
