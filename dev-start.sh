@@ -14,7 +14,7 @@ FE_PORT="${TITULUS_FE_PORT:-3011}"
 BE_PORT="${TITULUS_BE_PORT:-3002}"
 BIND_HOST="${TITULUS_HOST:-0.0.0.0}"
 CONNECT_HOST="${TITULUS_CONNECT_HOST:-127.0.0.1}"
-DATA_DIR="${TITULUS_DATA:-/tmp/titulus-dev}"
+DATA_DIR="${TITULUS_DATA:-/var/lib/titulus}"
 LOG_DIR="$ROOT/logs"
 PID_DIR="$LOG_DIR/dev"
 
@@ -23,7 +23,12 @@ log() { printf '[dev-start] %s\n' "$*"; }
 DEFAULT_ENGINE_BIN="$ROOT/engine/build/Release/bg_engine"
 ENGINE_BIN="${ENGINE_BIN:-$DEFAULT_ENGINE_BIN}"
 
-mkdir -p "$PID_DIR" "$DATA_DIR/uploads"
+mkdir -p "$PID_DIR" || exit 1
+if ! mkdir -p "$DATA_DIR/uploads" 2>/dev/null; then
+  log "ERROR: cannot create data dir $DATA_DIR"
+  log "Run once: sudo mkdir -p $DATA_DIR && sudo chown \$USER:\$USER $DATA_DIR"
+  exit 1
+fi
 
 port_busy() {
   ss -ltn 2>/dev/null | awk -v p=":$1" '$4 ~ p {exit 0} END {exit 1}'

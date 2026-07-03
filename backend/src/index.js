@@ -31,11 +31,12 @@ import { wsRouter } from './routes/ws.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, '../..');
 const PUBLIC_DIR = resolve(here, '../public');
-// Data dir (app.db + uploads) is configurable so deployments can point it at a
-// persisted volume (e.g. /var/lib/titulus) and tests at tmpfs.
+// Data dir (app.db + uploads) is configurable via TITULUS_DATA; default is the
+// system persistent path so templates/channels survive reboots.
+const DEFAULT_DATA_DIR = '/var/lib/titulus';
 const DATA_DIR = process.env.TITULUS_DATA
   ? resolve(process.env.TITULUS_DATA)
-  : resolve(ROOT, 'data');
+  : DEFAULT_DATA_DIR;
 const UPLOADS_DIR = resolve(DATA_DIR, 'uploads');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);

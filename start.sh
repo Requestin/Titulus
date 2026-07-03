@@ -16,13 +16,20 @@ cd "$ROOT"
 
 log() { printf '[start] %s\n' "$*"; }
 
+DATA_DIR="${TITULUS_DATA:-/var/lib/titulus}"
+if ! mkdir -p "$DATA_DIR/uploads" 2>/dev/null; then
+  log "ERROR: cannot create data dir $DATA_DIR"
+  log "Run once: sudo mkdir -p $DATA_DIR && sudo chown \$USER:\$USER $DATA_DIR"
+  exit 1
+fi
+
 # Backend ---------------------------------------------------------------------
 if [[ ! -d backend/node_modules ]]; then
   log "installing backend deps..."
   (cd backend && npm install)
 fi
-log "starting backend on :3001 ..."
-(cd backend && npm start) &
+log "starting backend on :3001 (data: ${DATA_DIR}) ..."
+(cd backend && TITULUS_DATA="$DATA_DIR" npm start) &
 BACKEND_PID=$!
 
 # Frontend --------------------------------------------------------------------
