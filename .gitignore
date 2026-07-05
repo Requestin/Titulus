@@ -5,6 +5,8 @@ CasparCG/
 server/
 logs stress test/
 docs archieve/
+docs/development-proposals.md
+docs/dialog-summary.md
 
 # Logs
 logs
