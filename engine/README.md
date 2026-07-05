@@ -1,64 +1,19 @@
-# `engine/` — `bg_engine` native render host (DEVELOPMENT_PROMPT §9)
+# engine/ — bg_engine
 
-C++20 + CEF off-screen rendering host. One `bg_engine` process = one CasparCG
-channel (HTML producer + consumers). CPU-only software rasterization, BGRA
-end-to-end. **Reimplemented by reference from CasparCG Server** — see
-[`CASPARRCG_PORTING.md`](./CASPARRCG_PORTING.md) for the porting map and
-[`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md) for GPL compliance.
+C++20 + CEF OSR render host. Один процесс = один канал. CPU-only, BGRA end-to-end.
 
-## Architecture (per DEVELOPMENT_PROMPT §4.2)
+Документация: `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md`.  
+Porting-map: `../docs/CASPARRCG_PORTING.md`. Consumers: null, pipe, preview, decklink, stream.
 
-```
-channel.html + bg-runtime.js  →  CEF HTML Producer (OSR)
-   → CefRenderHandler::OnPaint(BGRA)
-   → frame ring
-   → Consumer: decklink (scheduled) | ffmpeg | preview (JPEG) | pipe | null
-```
-
-## Status
-
-**Phase 0-10 code path is implemented and in `main`; Phase 11 (CasparCG-parity
-perf pass) is implemented and live-validated on a DeckLink-equipped host, on
-branch `feature/phase-11-casparcg-parity` (not yet committed/merged):**
-
-| Component | Status |
-|---|---|
-| `CMakeLists.txt`, CEF download | ✅ |
-| `src/main.cpp`, `engine_app.*`, `engine_client.*` (CEF OSR host) | ✅ (Phase 11.2/11.4/11.6: decklink-driven clock branch, SCHED_FIFO, background-throttling hardening) |
-| `src/config.*` (CLI), `src/stats.*` (interval/fps/drops), `src/frame_ring.h`, `src/message_pump.h` | ✅ |
-| `consumers/null_consumer.h` | ✅ |
-| `consumers/pipe_consumer.*`, `consumers/preview_writer.*` | ✅ |
-| `consumers/decklink_consumer.*` | ✅ code-complete + live-validated (28.6min 3-channel soak, `docs/phase11-baseline.md`); formal 8h HW closure still pending |
-| `consumers/ffmpeg_consumer.*` | ✅ done (raw BGRA -> ffmpeg stream child) |
-| `src/aligned_buffer.h`, `src/simd_copy.h` | ✅ Phase 11.3 (pooled 64B-aligned buffers, AVX2 non-temporal weave copy) |
-| `run-engines.sh`, `run-channel.sh`, `systemd/bg-engine@.service` | ✅ |
-| `collect-decklink-evidence.sh` (Phase 6.4 handoff) | ✅ |
-
-## CLI (target, per §9.5)
-
-```
-bg_engine --url=URL --width=1920 --height=1080 --fps=50 \
-          --consumer=null|pipe|preview|decklink|stream \
-          --cache-dir=DIR --name=STR --duration=SEC --stats-interval=SEC \
-          [--device-index=N --display-mode=HD1080i50 --keyer=external] \
-          [--preview-out=PATH --preview-fps=10] [--stream-url=URL] [--out=FILE]
-```
-
-## Build (target)
+## Сборка
 
 ```bash
-cd engine && mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j
-./bg_engine --consumer=null --url=http://localhost:3001/channel.html --duration=60
+./third_party/fetch-cef.sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j"$(nproc)"
 ```
 
-CEF distribution is downloaded into `third_party/cef/` by a bootstrap script
-(gitignored). DeckLink SDK header is read from `../../Blackmagic DeckLink SDK 16.0/`
-on the dev server (gitignored, conditional compile in Phase 3).
+Smoke: `./build/Release/bg_engine --consumer=null --fps=50 --duration=3 --url=file://$(pwd)/../bench/bench.html`
 
-## Operational notes
+## Supervisor
 
-- `run-engines.sh` is auth-aware (backend token or login credentials required).
-- Final SDI hardware closure uses `collect-decklink-evidence.sh` +
-  `docs/phase6-decklink-validation-closure.md`.
+`run-engines.sh`, `run-channel.sh` — см. `docs/RUNBOOK.md`.

@@ -45,7 +45,8 @@ class EngineApp : public CefApp,
 // started by the caller (multi_threaded_message_loop=false; we pump with
 // CefDoMessageLoopWork on our own tick — see message_pump.h).
 // Returns false on CefInitialize failure.
-bool EngineInit(CefMainArgs& main_args, const std::string& cache_dir);
+bool EngineInit(CefMainArgs& main_args, const std::string& cache_dir,
+                int remote_debugging_port = 0, int blink_research = 0);
 
 // Shutdown CEF (CefShutdown). Idempotent.
 void EngineShutdown();

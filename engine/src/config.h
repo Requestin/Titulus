@@ -61,6 +61,13 @@ struct Config {
     // Stream (Phase 5).
     std::string stream_url;                  // srt://... | rtmp://...
 
+    // Chrome DevTools protocol (research/diagnostics only). 0 = disabled.
+    int remote_debugging_port = 0;
+
+    // Blink pipeline research (Phase 12b). 0=off, 1=trace+invalidation categories,
+    // 2=+PaintUnderInvalidationChecking (dev-only, may assert on null bench).
+    int blink_research = 0;
+
     // Parse argv into this config. Returns false on a fatal parse error (and
     // prints usage to stderr). Exits the process on --help / a missing required
     // arg so callers don't need to branch.

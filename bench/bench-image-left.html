@@ -1,0 +1,55 @@
+<!doctype html>
+<!--
+  bench/bench-image-left.html — PNG image animated via Titulus x -> left/top (layout path).
+
+  bg_engine --consumer=null --blink-research=1 \
+    --url="file://.../bench/bench-image-left.html" --fps=50 --duration=20 \
+    --cache-dir=/tmp/bench-image-left
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0f1c; }
+  #host { width: 1920px; height: 1080px; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script src="../backend/public/bg-runtime.js"></script>
+<script>
+(function () {
+  var PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJAD9xqQ3fMAAAAAElFTkSuQmCC';
+  var tpl = {
+    id: 'bench-image-left', name: 'bench-image-left',
+    canvas: { width: 1920, height: 1080, background: '#0a0f1c' },
+    variables: [], groups: [],
+    rootStack: [{ kind: 'layer', id: 'img' }],
+    groupStacks: {},
+    layers: [{
+      id: 'img', name: 'Image', type: 'image', visible: true, locked: false, groupId: null,
+      opacity: 1, blendMode: 'normal',
+      transform: { x: 100, y: 400, width: 640, height: 360, rotation: 0, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0, anchorY: 0 },
+      src: PNG, fit: 'cover', cornerRadius: 0,
+    }],
+    timeline: {
+      fps: 50, durationFrames: 200, playbackMode: 'bounded',
+      directors: [{ id: 'd', name: 'd', durationFrames: 200, offsetFrames: 0, autostart: true, loop: true, swing: true }],
+      trackDirectors: {},
+      keyframes: [
+        { id: 'k0', frame: 0, easing: 'linear', layers: { img: { x: 100 } }, groups: {} },
+        { id: 'k1', frame: 100, easing: 'linear', layers: { img: { x: 1200 } }, groups: {} },
+        { id: 'k2', frame: 200, easing: 'linear', layers: { img: { x: 100 } }, groups: {} },
+      ],
+      actions: [],
+    },
+  };
+  var host = document.getElementById('host');
+  var r = new BG.TemplateRenderer(host, { playbackMode: 'raf' });
+  r.syncTemplate(tpl, {});
+  r.play();
+  (function heartbeat() { requestAnimationFrame(heartbeat); })();
+})();
+</script>
+</body>
+</html>

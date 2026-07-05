@@ -1,0 +1,68 @@
+---
+description: "Git workflow: ветка→commit→PR→merge. Обязательно для каждой задачи."
+alwaysApply: true
+---
+# Git workflow
+
+Задача не выполнена, пока PR не merged в `main`.
+
+## Цикл
+
+```
+PLAN → BRANCH → IMPLEMENT → PUSH → PR → REVIEW → MERGE (merge commit) → REPORT
+```
+
+## Session resume
+
+```bash
+cd /home/requestin/Titulus
+git fetch origin && git status && git branch -a
+gh pr list --state open
+```
+
+## Ветки
+
+| Pattern | Пример |
+|---|---|
+| `feature/phase-<N>-<kebab>` | `feature/phase-13-documentation-reworking` |
+| `fix/<kebab>` | `fix/decklink-weave` |
+| `docs/<kebab>` | `docs/architecture-refresh` |
+| `chore/<kebab>` | `chore/deps` |
+| `bench/<kebab>` | `bench/phase0-rerun` |
+
+## Commits (Conventional Commits)
+
+```
+<type>(<scope>): краткое описание
+
+Тело: что, зачем, как проверено
+```
+
+Types: `feat`, `fix`, `docs`, `refactor`, `chore`, `bench`, `engine`.
+
+## PR body
+
+- Summary (1–3 пункта)
+- Task / Phase
+- Changes
+- Test plan
+- Rollback (`git revert <merge-commit>`)
+
+## Policy
+
+- Target: `main`
+- Merge: `gh pr merge --merge` (не squash по умолчанию)
+- Force push to `main` запрещён
+- Один PR = одна логическая задача
+- Не накапливать uncommitted > 1 шага
+- Конец сессии: commit + push
+
+## Не коммитить (gitignore)
+
+DeckLink SDK, CasparCG/, broadcast-graphics/, `data/`, `engine/build/`, `engine/third_party/cef/`, `node_modules/`, `backend/public/bg-runtime.js` (build: `cd runtime && npm run build`)
+
+## Тестовое окружение
+
+- `TITULUS_DATA=/tmp/...` для backend-тестов
+- Запуск: `cd backend && PORT=<port> TITULUS_DATA=/tmp/... node src/index.js` (не subshell)
+- Kill: PID по порту (`ss -ltnp`), не `pkill -f PORT=`

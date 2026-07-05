@@ -1,0 +1,51 @@
+---
+description: "Карта Agent Skills → задачи. Подключать для UI, engine perf, GitHub ops."
+alwaysApply: false
+---
+# Карта skills
+
+24 skills в `.agents/skills/`. При конфликте: `architecture.mdc` + `docs/` > generic skill.
+
+## engine/
+
+| Skill | Когда |
+|---|---|
+| `cpp-coding-standards` | C++ consumers, frame_ring |
+| `latency-critical-systems` | Pipeline, drops, DeckLink pacing |
+| `search-first` | Порт из CasparCG — изучить reference сначала |
+| `oracle` | weave, genlock, clock — second opinion |
+| `cpp-testing` | Только если явно просят тесты |
+
+## runtime + frontend/
+
+| Skill | Когда |
+|---|---|
+| `impeccable` | UI design/craft — нужен `docs/PRODUCT.md` |
+| `make-interfaces-feel-better` | tabular-nums, micro-details |
+| `transitions-dev` | TAKE/CLEAR, modals, dropdowns |
+| `react-patterns` | Components, Zustand |
+| `react-performance` | CanvasArea, Timeline |
+| `vite-patterns` | proxy, HMR |
+| `frontend-a11y` / `accessibility` | Operator UI a11y |
+
+Render-логика — только `@titulus/runtime`.
+
+## backend/
+
+| Skill | Когда |
+|---|---|
+| `api-design` | REST `/api/*` |
+| `error-handling` | Retries, user errors |
+| `security-review` | Upload, auth, secrets |
+
+## workflow
+
+| Skill | Когда |
+|---|---|
+| `git-workflow` | Общие практики (при конфликте — `git-workflow.mdc`) |
+| `github-ops` | PR, CI, issues |
+| `github-deep-review` | Review перед merge |
+| `verification-loop` | Bench/smoke после изменений |
+| `create-cli` | run-engines.sh, bench scripts |
+
+Обновление skills: `npx skills update` из корня (`skills-lock.json`).

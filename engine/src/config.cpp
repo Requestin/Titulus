@@ -53,6 +53,10 @@ void print_usage() {
         "Stream (--consumer=stream, Phase 5):\n"
         "  --stream-url=URL          srt://... | rtmp://...\n"
         "\n"
+        "Diagnostics (research only):\n"
+        "  --remote-debugging-port=N Chrome DevTools port (0=off)\n"
+        "  --blink-research=N        0=off 1=trace+invalidation 2=+paint check\n"
+        "\n"
         "Environment fallbacks: BG_ENGINE_URL, BG_ENGINE_NAME, BG_ENGINE_CACHE_DIR, ...\n",
         stderr);
 }
@@ -160,6 +164,8 @@ bool Config::Parse(int argc, char** argv) {
         else if (match_prefix(arg, "--stats-interval", val, i, argc, argv)) { stats_interval_sec = parse_int(val, ok); }
         else if (match_prefix(arg, "--preview-fps",val, i, argc, argv)) { preview_fps      = parse_int(val, ok); }
         else if (match_prefix(arg, "--device-index", val, i, argc, argv)) { device_index = parse_int(val, ok); }
+        else if (match_prefix(arg, "--remote-debugging-port", val, i, argc, argv)) { remote_debugging_port = parse_int(val, ok); }
+        else if (match_prefix(arg, "--blink-research", val, i, argc, argv)) { blink_research = parse_int(val, ok); }
         else {
             std::fprintf(stderr, "bg_engine: unknown option '%s' (try --help)\n", arg);
             return false;

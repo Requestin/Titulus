@@ -9,8 +9,23 @@
 #include "engine_app.h"
 
 #include <cstdlib>  // getenv
+#include <string>
 
 namespace bg {
+
+namespace {
+// When remote debugging is enabled for research, record a startup trace into
+// the per-channel cache dir (Chromium trace-startup-* switches).
+std::string g_trace_startup_file;
+int g_trace_startup_seconds = 0;
+int g_blink_research = 0;
+
+const char* kTraceStartupCategories =
+    "blink,cc,devtools.timeline,disabled-by-default-devtools.timeline,"
+    "disabled-by-default-devtools.timeline.invalidationTracking,"
+    "disabled-by-default-devtools.timeline.frame,"
+    "disabled-by-default-v8.cpu_profiler,v8";
+}  // namespace
 
 void EngineApp::OnBeforeCommandLineProcessing(const CefString& process_type,
                                               CefRefPtr<CefCommandLine> cmd) {
@@ -57,10 +72,28 @@ void EngineApp::OnBeforeCommandLineProcessing(const CefString& process_type,
         cmd->AppendSwitch("disable-renderer-backgrounding");
         cmd->AppendSwitch("disable-backgrounding-occluded-windows");
         cmd->AppendSwitch("disable-background-timer-throttling");
+
+        // Chrome trace for Blink/cc research (first N seconds after process
+        // start). Gated on remote debugging so production decklink paths stay
+        // untouched unless explicitly opened for DevTools.
+        if (!g_trace_startup_file.empty() && g_trace_startup_seconds > 0) {
+            cmd->AppendSwitchWithValue("trace-startup", kTraceStartupCategories);
+            cmd->AppendSwitchWithValue("trace-startup-file", g_trace_startup_file);
+            cmd->AppendSwitchWithValue("trace-startup-duration",
+                                       std::to_string(g_trace_startup_seconds));
+            cmd->AppendSwitchWithValue("trace-startup-format", "json");
+        }
+        // Dev-only paint invalidation consistency checks (null bench only).
+        if (g_blink_research >= 2) {
+            cmd->AppendSwitchWithValue("enable-blink-features",
+                                       "PaintUnderInvalidationChecking");
+        }
     }
 }
 
-bool EngineInit(CefMainArgs& main_args, const std::string& cache_dir) {
+bool EngineInit(CefMainArgs& main_args, const std::string& cache_dir,
+                int remote_debugging_port, int blink_research) {
+    g_blink_research = blink_research;
     CefSettings settings;
     // OSR (windowless) rendering mode — DEVELOPMENT_PROMPT §9.2.
     settings.windowless_rendering_enabled = true;
@@ -70,6 +103,13 @@ bool EngineInit(CefMainArgs& main_args, const std::string& cache_dir) {
     settings.no_sandbox = true;
     // Let the CEF command-line switches (above) take effect.
     settings.command_line_args_disabled = false;
+    if (remote_debugging_port > 0) {
+        settings.remote_debugging_port = remote_debugging_port;
+    }
+    if ((remote_debugging_port > 0 || blink_research > 0) && !cache_dir.empty()) {
+        g_trace_startup_file = cache_dir + "/blink-trace.json";
+        g_trace_startup_seconds = 15;
+    }
     // Single-process mode by default keeps per-channel overhead low
     // (DEVELOPMENT_PROMPT §9.2). Caller can flip to multi-process via --multi-process.
     // (We leave the default which CEF exposes as a switch we honor in main.cpp.)
