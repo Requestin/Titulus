@@ -1,0 +1,45 @@
+<!doctype html>
+<!--
+  bench/bench-image-transform.html — same PNG, translate-only (no layout).
+
+  bg_engine --consumer=null --blink-research=1 \
+    --url="file://.../bench/bench-image-transform.html" --fps=50 --duration=20 \
+    --cache-dir=/tmp/bench-image-transform
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0f1c; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+  #img {
+    position: absolute; left: 100px; top: 400px;
+    width: 640px; height: 360px; object-fit: cover;
+    will-change: transform;
+    animation: slide 4s ease-in-out infinite alternate;
+  }
+  @keyframes slide {
+    from { transform: translateX(0); }
+    to   { transform: translateX(1100px); }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <img id="img" alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJAD9xqQ3fMAAAAAElFTkSuQmCC">
+</div>
+<script>
+(function () {
+  var beacon = document.createElement('div');
+  beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+  document.body.appendChild(beacon);
+  var n = 0;
+  (function tick() {
+    n++;
+    beacon.style.background = (n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
+    requestAnimationFrame(tick);
+  })();
+})();
+</script>
+</body>
+</html>

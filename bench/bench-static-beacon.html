@@ -1,0 +1,43 @@
+<!doctype html>
+<!--
+  bench/bench-static-beacon.html — static content, optional damage beacon (?beacon=0|1).
+  A/B for DisplayItemList / paint cache reuse study.
+
+  bg_engine --consumer=null --blink-research=1 \
+    --url="file://.../bench/bench-static-beacon.html?beacon=1" ...
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0f1c; }
+  #stage { position: relative; width: 1920px; height: 1080px; }
+  .lt {
+    position: absolute; left: 90px; top: 820px; width: 980px; height: 120px;
+    background: linear-gradient(90deg, rgba(15,23,42,.94), rgba(30,41,59,.82));
+    border-radius: 10px; color: #f1f5f9; padding: 24px 30px; font: 700 40px system-ui, sans-serif;
+  }
+</style>
+</head>
+<body>
+<div id="stage"><div class="lt">STATIC LOWER THIRD — NO ANIMATION</div></div>
+<script>
+(function () {
+  var beaconOn = new URLSearchParams(location.search).get('beacon') !== '0';
+  if (beaconOn) {
+    var beacon = document.createElement('div');
+    beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+    document.body.appendChild(beacon);
+    var n = 0;
+    (function tick() {
+      n++;
+      beacon.style.background = (n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
+      requestAnimationFrame(tick);
+    })();
+  } else {
+    (function tick() { requestAnimationFrame(tick); })();
+  }
+})();
+</script>
+</body>
+</html>

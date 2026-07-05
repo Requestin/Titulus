@@ -43,6 +43,7 @@ DEVICE_INDEX=-1
 DISPLAY_MODE="HD1080i50"
 KEYER="external"
 STREAM_URL=""
+REMOTE_DEBUGGING_PORT="${REMOTE_DEBUGGING_PORT:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -54,6 +55,7 @@ while [[ $# -gt 0 ]]; do
     --keyer=*)        KEYER="${1#*=}" ;;
     --stream-url=*)   STREAM_URL="${1#*=}" ;;
     --cores=*)        CORES="${1#*=}" ;;
+    --remote-debugging-port=*) REMOTE_DEBUGGING_PORT="${1#*=}" ;;
     --dry-run)        DRY_RUN=1 ;;
     -h|--help)        usage; exit 0 ;;
     *) echo "run-channel.sh: unknown option $1" >&2; usage >&2; exit 1 ;;
@@ -122,6 +124,9 @@ run_once() {
     --cache-dir="$CACHE_DIR"
     "${EXTRA_ARGS[@]}"
   )
+  if [[ -n "$REMOTE_DEBUGGING_PORT" ]]; then
+    cmd+=(--remote-debugging-port="$REMOTE_DEBUGGING_PORT")
+  fi
   if [[ "$DRY_RUN" == "1" ]]; then
     printf '[dry-run] '; printf '%q ' "${cmd[@]}"; echo
     return 0

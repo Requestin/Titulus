@@ -1,0 +1,51 @@
+<!doctype html>
+<!--
+  bench/bench-wipe-transform-only.html — translate-only animation, NO clip-path.
+  Baseline for wipe cost comparison.
+
+  bg_engine --consumer=null --blink-research=1 \
+    --url="file://.../bench/bench-wipe-transform-only.html" --fps=50 --duration=20 \
+    --cache-dir=/tmp/bench-wipe-transform
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0f1c; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+  .plate {
+    position: absolute; left: 200px; top: 200px;
+    width: 800px; height: 650px;
+    background: linear-gradient(135deg, #7c3aed, #22d3ee);
+    border-radius: 8px;
+    will-change: transform;
+    animation: slide 4s ease-in-out infinite alternate;
+  }
+  @keyframes slide {
+    from { transform: translateX(0); }
+    to   { transform: translateX(400px); }
+  }
+</style>
+</head>
+<body>
+<div id="stage"><div class="plate"></div></div>
+<script>
+(function () {
+  var beaconOn = new URLSearchParams(location.search).get('beacon') !== '0';
+  if (beaconOn) {
+    var beacon = document.createElement('div');
+    beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+    document.body.appendChild(beacon);
+    var n = 0;
+    (function tick() {
+      n++;
+      beacon.style.background = (n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
+      requestAnimationFrame(tick);
+    })();
+  } else {
+    (function tick() { requestAnimationFrame(tick); })();
+  }
+})();
+</script>
+</body>
+</html>

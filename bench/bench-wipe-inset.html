@@ -1,0 +1,75 @@
+<!doctype html>
+<!--
+  bench/bench-wipe-inset.html — wipe-like reveal via mask width/height (clip-path inset).
+  Mirrors production Mask1 animation pattern.
+
+  cd runtime && npm run build
+  bg_engine --consumer=null --blink-research=1 \
+    --url="file://.../bench/bench-wipe-inset.html" --fps=50 --duration=20 \
+    --cache-dir=/tmp/bench-wipe-inset
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  #host { width: 1920px; height: 1080px; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script src="../backend/public/bg-runtime.js"></script>
+<script>
+(function () {
+  const tpl = {
+    id: 'bench-wipe-inset', name: 'bench-wipe-inset',
+    canvas: { width: 1920, height: 1080, background: '#0a0f1c' },
+    variables: [], groups: [],
+    rootStack: [
+      { kind: 'layer', id: 'bg' },
+      { kind: 'layer', id: 'mask' },
+      { kind: 'layer', id: 'plate' },
+    ],
+    groupStacks: {},
+    layers: [
+      {
+        id: 'bg', name: 'BG', type: 'rect', visible: true, locked: false, groupId: null,
+        opacity: 1, blendMode: 'normal',
+        transform: { x: 0, y: 0, width: 1920, height: 1080, rotation: 0, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0, anchorY: 0 },
+        fill: '#0f172a', cornerRadius: 0, borderColor: '#000', borderWidth: 0,
+      },
+      {
+        id: 'mask', name: 'Mask', type: 'mask', visible: true, locked: false, groupId: null,
+        opacity: 1, blendMode: 'normal',
+        transform: { x: 200, y: 200, width: 370, height: 650, rotation: 0, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0, anchorY: 0 },
+        maskMode: 'normal', shape: 'rect', fill: '#000', cornerRadius: 0, borderColor: '#000', borderWidth: 0,
+      },
+      {
+        id: 'plate', name: 'Plate', type: 'rect', visible: true, locked: false, groupId: null,
+        opacity: 1, blendMode: 'normal',
+        transform: { x: 200, y: 200, width: 800, height: 650, rotation: 0, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0, anchorY: 0 },
+        fill: '#7c3aed', cornerRadius: 8, borderColor: '#000', borderWidth: 0,
+      },
+    ],
+    timeline: {
+      fps: 50, durationFrames: 200, playbackMode: 'bounded',
+      directors: [{ id: 'd', name: 'd', durationFrames: 200, offsetFrames: 0, autostart: true, loop: true, swing: true }],
+      trackDirectors: {},
+      keyframes: [
+        { id: 'k0', frame: 0, easing: 'linear', layers: { mask: { width: 0, height: 0 } }, groups: {} },
+        { id: 'k1', frame: 100, easing: 'linear', layers: { mask: { width: 370, height: 650 } }, groups: {} },
+        { id: 'k2', frame: 200, easing: 'linear', layers: { mask: { width: 0, height: 0 } }, groups: {} },
+      ],
+      actions: [],
+    },
+  };
+
+  const host = document.getElementById('host');
+  const r = new BG.TemplateRenderer(host, { playbackMode: 'raf' });
+  r.syncTemplate(tpl, {});
+  r.play();
+  (function heartbeat() { requestAnimationFrame(heartbeat); })();
+})();
+</script>
+</body>
+</html>

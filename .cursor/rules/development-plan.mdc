@@ -1,0 +1,45 @@
+---
+description: "Прогресс разработки по фазам и следующие задачи. Обновлять при завершении фазы."
+alwaysApply: true
+---
+# План разработки
+
+**Снимок:** июль 2026. `main` содержит Phase 0–12 + Phase 11 (PR #56). Детали — `docs/development-phases/`.
+
+## Фазы (кратко)
+
+| # | Название | Статус | Документ |
+|---|---|---|---|
+| 0 | Engine + bench | DONE | phase-00-engine-bench.md |
+| 1 | Runtime + channel | DONE | phase-01-runtime-channel.md |
+| 2 | Control plane | DONE | phase-02-control-plane.md |
+| 3 | DeckLink SDI | code-complete | phase-03-decklink-sdi.md |
+| 4 | Backend hardening | DONE | phase-04-backend-hardening.md |
+| 5 | Stream + schema | DONE | phase-05-stream-schema.md |
+| 6 | SaaS + DeckLink closure | 6.1–6.3 DONE; 6.4 в процессе | phase-06-saas-decklink.md |
+| 7 | Docs consolidation v1 | DONE | phase-07-docs-consolidation.md |
+| 8 | Rundown v2 | DONE | phase-08-rundown-v2.md |
+| 9 | 2.5D + masks | DONE | phase-09-25d-masks.md |
+| 10 | SDI perf fixes | DONE | phase-10-sdi-perf.md |
+| 11 | CasparCG-parity perf | DONE (PR #56) | phase-11-casparcg-parity.md |
+| 12 | Blink pipeline research | DONE | phase-12-blink-pipeline.md |
+| 13 | Documentation rework | DONE | phase-13-documentation.md |
+
+## Последний milestone в main
+
+PR #56 — Phase 11 CasparCG-parity (clock, SIMD, SCHED_FIFO, 28.6 min soak).
+
+## Следующие задачи
+
+_(заполняется вручную)_
+
+## Как обновлять этот файл
+
+При закрытии фазы N:
+1. Добавить/обновить `docs/development-phases/phase-NN-*.md`
+2. Строку в таблице выше → DONE + ссылка
+3. PR с тегом `[Phase N]` в title
+
+## Точка входа
+
+`docs/GETTING_STARTED.md` → этот файл → нужный phase-документ.

@@ -1,0 +1,99 @@
+---
+description: "Архитектура Titulus, non-negotiables, pipeline, конвенции разработки. Полный справочник — docs/ARCHITECTURE.md"
+alwaysApply: true
+---
+# Архитектура и правила разработки Titulus
+
+Proprietary cloud/on-prem broadcast graphics. Control plane (React + Express) + render plane (`bg_engine`, C++20 + CEF OSR). CasparCG-parity по эфиру — clean-room reimplement by reference.
+
+## Иерархия решений
+
+1. `.cursor/rules/architecture.mdc` + `docs/ARCHITECTURE.md`
+2. CasparCG `server/` — read-only reference (не линкуем, не subprocess)
+3. Собственные решения — если не ломают CPU-only / parity
+
+## Non-negotiables
+
+1. **CPU-only render** — CEF OSR, `--disable-gpu`. GPU только через отдельный gate-doc.
+2. **HTML5/DOM** — единственный template runtime. Нет PIXI/GSAP/WebGL-as-primary.
+3. **Frame-accurate SDI** — DeckLink scheduled playback; для decklink-каналов SDI = master clock.
+4. **Per-channel output** — browser | obs_vmix | decklink | stream.
+5. **Свой control plane** — не AMCP, не CasparCG Client.
+6. **Perf MVP** — ≥3×1080i50, drops <0.1%, mask/alpha overhead ≤5%.
+7. **Git-first** — ветка → commit → PR → merge в `main`. См. `git-workflow.mdc`.
+
+## Topology
+
+```
+frontend :3011  ↔  backend :3002 (REST + WS + SQLite)
+                      ↕ /ws/renderer
+              bg_engine × N (1 process = 1 channel)
+                      ↓
+         null | pipe | preview | decklink | stream
+```
+
+## Frame pipeline
+
+```
+take/update/clear → OnAirManager → ChannelClient → TemplateRenderer
+→ CEF OnPaint(BGRA) → FrameRing → Consumer
+```
+
+**Clock:** decklink → `WaitForTick()` от `ScheduledFrameCompleted`. Остальные consumers → self-timer ~50Hz. **Не трогать** browser/stream path при изменениях decklink.
+
+**channel.html:** perpetual rAF + damage beacon 1×1px (без beacon OSR засыпает на static take).
+
+## Process model
+
+| Процесс | Роль |
+|---|---|
+| backend | API, WS, DB, media |
+| frontend | Editor + control |
+| bg_engine | 1 per channel, taskset 2 phys cores (+ SMT siblings) |
+| ffmpeg child | Только stream consumer |
+
+`SCHED_FIFO` priority 2 — **только** decklink-driven (`HasExternalClock()`). Soft-fail без cap.
+
+## Repo layout
+
+`engine/` `runtime/` `backend/` `frontend/` `shared/` `bench/` `docs/development-phases/`
+
+Porting-map: `docs/CASPARRCG_PORTING.md`. GPL log: `engine/THIRD_PARTY_NOTICES.md`.
+
+## Development rules
+
+- Один `@titulus/runtime` — не дублировать render в frontend
+- Не запускать `casparcg-server` как dependency
+- Bench обязателен при perf-изменениях engine (`bench/run-bench.sh`)
+- Unit-тесты — только по явному запросу
+- `TITULUS_DATA` для data-пути; тесты → `/tmp/...`
+- CEF: unique `cache_path`, `CefExecuteProcess` до arg-parse, `BG_LOG` не `LOG`
+- Backend ESM; TS strict; C++20 no-exceptions hot path
+
+## Pitfalls (обязательно)
+
+- Не запускать backend из subshell `( )` — сброс CWD
+- Не `pkill -f "PORT=..."` — убивать PID слушателя порта (`ss -ltnp`)
+- Перед DeckLink: `pgrep -af "bg_engine|run-channel|run-engines"`
+- Остановить live-канал: убить `run-engines.sh` + `run-channel.sh`, не только `bg_engine`
+- `renice` необратим без sudo; проверять полный cmdline перед kill/renice
+- После Write `.sh` — `chmod +x`
+
+## DeckLink
+
+Code-complete. Dev без платы — compile OK, runtime fail ожидаем. HW-стенд: Quad 2 + genlock — см. `docs/development-phases/phase-06-saas-decklink.md`. Формальный 8h soak — Phase 6.4.
+
+## Engine porting (6 развилок — не переоткрывать)
+
+1. Decklink clock через `WaitForTick` (Phase 11), browser path — self-timer
+2. Keyer: `IDeckLinkKeyer`, не 2dfd profile API
+3. Genlock: `GetReferenceStatus` polling; не `GetHardwareReferenceClock`
+4. BGRA end-to-end, без BGRA→ARGB
+5. Weave — consumer-side UFF
+6. Push-based CEF vs CasparCG pull — другой механизм, тот же эффект (SDI master)
+
+## Прогресс и операционка
+
+- Фазы: `.cursor/rules/development-plan.mdc` → `docs/development-phases/`
+- Старт: `docs/GETTING_STARTED.md`, `docs/RUNBOOK.md`
+- Продукт/UI: `docs/PRODUCT.md`, `docs/DESIGN.md`

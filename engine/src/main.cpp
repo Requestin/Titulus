@@ -147,7 +147,8 @@ int main(int argc, char** argv) {
     }
     BG_LOG("starting " + cfg.Describe());
 
-    if (!bg::EngineInit(main_args, cfg.cache_dir)) {
+    if (!bg::EngineInit(main_args, cfg.cache_dir, cfg.remote_debugging_port,
+                        cfg.blink_research)) {
         std::fprintf(stderr, "bg_engine: CefInitialize failed\n");
         return 1;
     }

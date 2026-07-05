@@ -1,27 +1,13 @@
-# `runtime/` - shared TypeScript render logic (source of truth)
+# runtime/ — @titulus/runtime
 
-`@titulus/runtime` converts JSON template payloads into deterministic DOM output.
-It is reused by:
+Единая render-логика JSON→DOM для engine, editor и browser source.
 
-- engine runtime page (`channel.html` in CEF),
-- frontend editor preview (WYSIWYG),
-- monitoring/auxiliary rendering paths.
-
-## Key modules
-
-- `schema.ts`
-- `timeline.ts`
-- `domRenderer.ts`
-- `channelClient.ts`
-- `easing.ts`, `transform.ts`, `stackOrder.ts`, `clock.ts`, `fonts.ts`
-
-## Build
+## Сборка
 
 ```bash
-cd runtime
-npm run build
+npm install && npm run build
 ```
 
-Output:
+Выход: `backend/public/bg-runtime.js` (`window.BG`).
 
-- `backend/public/bg-runtime.js` (IIFE, `window.BG`)
+Схема: `../shared/template.schema.json`. Архитектура: `../docs/ARCHITECTURE.md`.

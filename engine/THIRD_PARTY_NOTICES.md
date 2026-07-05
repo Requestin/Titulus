@@ -14,7 +14,7 @@ This file tracks every third-party dependency and reference used by `engine/`.
 
 | Reference | License | Path (dev server) | Usage |
 |---|---|---|---|
-| **CasparCG Server** | GPLv3+ | `/root/Titulus/CasparCG/server` (`v2.3.3-lts-stable-436-gd603ee91f`, trunk toward 2.6.0) | Primary render-engine reference. Studied for CEF OSR patterns, DeckLink scheduled playback, weave interlace, ffmpeg consumer. **Reimplemented by reference** — see `CASPARRCG_PORTING.md`. Not linked, not shipped, not a runtime dependency. |
+| **CasparCG Server** | GPLv3+ | `/root/Titulus/CasparCG/server` (`v2.3.3-lts-stable-436-gd603ee91f`, trunk toward 2.6.0) | Primary render-engine reference. Studied for CEF OSR patterns, DeckLink scheduled playback, weave interlace, ffmpeg consumer. **Reimplemented by reference** — see `../docs/CASPARRCG_PORTING.md`. Not linked, not shipped, not a runtime dependency. |
 
 Per §0.1 legal strategy: direct paste of GPLv3 code into proprietary product
 **may impose copyleft**. Acceptable strategies for Titulus:
@@ -49,7 +49,7 @@ legal-review status.
 
 - Update this file whenever a new third-party dependency is introduced or a
   CasparCG module is ported.
-- `CASPARRCG_PORTING.md` tracks the per-file porting status; this file tracks
+- `../docs/CASPARRCG_PORTING.md` tracks the per-file porting status; this file tracks
   licensing/compliance.
 - **Before any commercial release**: legal review of all `GPL-PORT:` entries
   and confirmation that reimplement-by-reference entries are sufficiently
