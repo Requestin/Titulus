@@ -17,7 +17,7 @@
 //   - Audio is dropped (`-an`): title graphics are silent overlays.
 
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -48,8 +48,64 @@ export class MediaJobs {
     return this.jobs.get(id) ?? null;
   }
 
-  _publicUrl(file) {
-    return `/uploads/${file}`;
+  _publicUrl(relativePath) {
+    return `/uploads/${relativePath}`;
+  }
+
+  /**
+   * Ingest into a specific subdirectory under uploads (e.g. Video/).
+   * @param {string} targetDir absolute path to Image/ or Video/ folder
+   * @param {{ path: string, filename: string, originalname: string, mimetype: string, size?: number }} file
+   */
+  ingestTo(targetDir, file) {
+    const id = randomUUID();
+    const type = mediaTypeFor(file.mimetype);
+    const size = typeof file.size === 'number' ? file.size : 0;
+    const folderName = targetDir.endsWith('Video') || targetDir.includes('/Video') ? 'Video' : 'Image';
+
+    if (type === 'image') {
+      const rel = `${folderName}/${file.filename}`;
+      const job = {
+        id, type, status: 'ready',
+        originalName: file.originalname,
+        sourceMime: file.mimetype,
+        sourceSizeBytes: size,
+        src: this._publicUrl(rel),
+        url: this._publicUrl(rel),
+        posterUrl: this._publicUrl(rel),
+        attempts: 0, maxAttempts: 0,
+        error: null, createdAt: nowIso(), updatedAt: nowIso(),
+      };
+      this.jobs.set(id, job);
+      return job;
+    }
+
+    const outName = `${id}.webm`;
+    const posterName = `${id}.jpg`;
+    const outRel = `${folderName}/${outName}`;
+    const posterRel = `${folderName}/${posterName}`;
+    const outPath = resolve(targetDir, outName);
+    const posterPath = resolve(targetDir, posterName);
+    const job = {
+      id, type, status: 'pending',
+      originalName: file.originalname,
+      sourceMime: file.mimetype,
+      sourceSizeBytes: size,
+      src: this._publicUrl(`${folderName}/${file.filename}`),
+      url: this._publicUrl(outRel),
+      posterUrl: this._publicUrl(posterRel),
+      sourcePath: file.path,
+      attempts: 0,
+      maxAttempts: MAX_TRANSCODE_ATTEMPTS,
+      error: null, createdAt: nowIso(), updatedAt: nowIso(),
+    };
+    this.jobs.set(id, job);
+    if (size <= 0) {
+      this._fail(job, { code: 'EMPTY_UPLOAD', message: 'uploaded file is empty' });
+      return job;
+    }
+    this._transcode(job, file.path, outPath, posterPath);
+    return job;
   }
 
   /**
@@ -79,7 +135,7 @@ export class MediaJobs {
       return job;
     }
 
-    // video → transcode
+    // video → transcode (legacy flat uploads/)
     const outName = `${id}.webm`;
     const posterName = `${id}.jpg`;
     const job = {
@@ -90,6 +146,7 @@ export class MediaJobs {
       src: this._publicUrl(file.filename),
       url: this._publicUrl(outName),
       posterUrl: this._publicUrl(posterName),
+      sourcePath: file.path,
       attempts: 0,
       maxAttempts: MAX_TRANSCODE_ATTEMPTS,
       error: null, createdAt: nowIso(), updatedAt: nowIso(),
@@ -191,6 +248,10 @@ export class MediaJobs {
     job.status = 'ready';
     job.error = null;
     job.updatedAt = nowIso();
+    if (job.sourcePath) {
+      try { unlinkSync(job.sourcePath); } catch { /* ignore */ }
+      job.sourcePath = null;
+    }
   }
 
   _fail(job, errObj) {

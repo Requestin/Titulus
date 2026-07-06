@@ -120,6 +120,39 @@ CREATE TABLE IF NOT EXISTS audit_events (
   details     TEXT NOT NULL DEFAULT '{}',
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS media_tags (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS media_assets (
+  id              TEXT PRIMARY KEY,
+  type            TEXT NOT NULL,
+  display_name    TEXT NOT NULL,
+  filename        TEXT NOT NULL,
+  relative_path   TEXT NOT NULL UNIQUE,
+  poster_path     TEXT,
+  format          TEXT NOT NULL DEFAULT '',
+  width           INTEGER NOT NULL DEFAULT 0,
+  height          INTEGER NOT NULL DEFAULT 0,
+  has_alpha       INTEGER NOT NULL DEFAULT 0,
+  duration_sec    REAL,
+  duration_frames INTEGER,
+  fps             REAL,
+  locked          INTEGER NOT NULL DEFAULT 0,
+  status          TEXT NOT NULL DEFAULT 'ready',
+  source_relative_path TEXT,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS media_asset_tags (
+  asset_id TEXT NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,
+  tag_id   TEXT NOT NULL REFERENCES media_tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (asset_id, tag_id)
+);
 `;
 
 /**
@@ -134,6 +167,7 @@ export function openDb(dbPath) {
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
   ensureOnAirOrderIndex(db);
+  ensureMediaAssetColumns(db);
   ensureLicenseRow(db);
   ensureAuthBootstrap(db);
   return db;
@@ -145,6 +179,18 @@ function ensureOnAirOrderIndex(db) {
   const hasOrderIndex = cols.some((c) => c.name === 'order_index');
   if (!hasOrderIndex) {
     db.exec(`ALTER TABLE on_air ADD COLUMN order_index INTEGER NOT NULL DEFAULT 0`);
+  }
+}
+
+/** @param {Database} db */
+function ensureMediaAssetColumns(db) {
+  const cols = db.prepare('PRAGMA table_info(media_assets)').all();
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has('status')) {
+    db.exec(`ALTER TABLE media_assets ADD COLUMN status TEXT NOT NULL DEFAULT 'ready'`);
+  }
+  if (!names.has('source_relative_path')) {
+    db.exec('ALTER TABLE media_assets ADD COLUMN source_relative_path TEXT');
   }
 }
 
@@ -724,5 +770,207 @@ export const onAirDao = (db) => ({
   /** Remove everything for a channel (CLEAR ALL). */
   clearChannel(channelId) {
     db.prepare('DELETE FROM on_air WHERE channel_id = ?').run(channelId);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// media library (tags + assets)
+// ---------------------------------------------------------------------------
+
+function mapMediaAssetRow(row, tagIds = []) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    type: row.type,
+    displayName: row.display_name,
+    filename: row.filename,
+    relativePath: row.relative_path,
+    url: `/uploads/${row.relative_path}`,
+    posterPath: row.poster_path,
+    posterUrl: row.poster_path ? `/uploads/${row.poster_path}` : null,
+    format: row.format,
+    width: row.width,
+    height: row.height,
+    hasAlpha: Boolean(row.has_alpha),
+    durationSec: row.duration_sec,
+    durationFrames: row.duration_frames,
+    fps: row.fps,
+    locked: Boolean(row.locked),
+    status: row.status || 'ready',
+    sourceRelativePath: row.source_relative_path ?? null,
+    tagIds,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export const mediaTagsDao = (db) => ({
+  all(search = '') {
+    const q = search.trim().toLowerCase();
+    if (!q) {
+      return db.prepare('SELECT * FROM media_tags ORDER BY name COLLATE NOCASE ASC').all();
+    }
+    return db.prepare(
+      'SELECT * FROM media_tags WHERE lower(name) LIKE ? ORDER BY name COLLATE NOCASE ASC',
+    ).all(`%${q}%`);
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM media_tags WHERE id = ?').get(id) ?? null;
+  },
+  getByName(name) {
+    return db.prepare('SELECT * FROM media_tags WHERE name = ? COLLATE NOCASE').get(name.trim()) ?? null;
+  },
+  create(name) {
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const existing = this.getByName(trimmed);
+    if (existing) return existing;
+    const id = randomUUID();
+    db.prepare('INSERT INTO media_tags (id, name) VALUES (?, ?)').run(id, trimmed);
+    return this.get(id);
+  },
+  remove(id) {
+    return db.prepare('DELETE FROM media_tags WHERE id = ?').run(id).changes > 0;
+  },
+});
+
+export const mediaAssetsDao = (db) => ({
+  _tagIds(assetId) {
+    return db.prepare(
+      'SELECT tag_id FROM media_asset_tags WHERE asset_id = ?',
+    ).all(assetId).map((r) => r.tag_id);
+  },
+  get(id) {
+    const row = db.prepare('SELECT * FROM media_assets WHERE id = ?').get(id);
+    return mapMediaAssetRow(row, row ? this._tagIds(row.id) : []);
+  },
+  getByRelativePath(relativePath) {
+    const row = db.prepare('SELECT * FROM media_assets WHERE relative_path = ?').get(relativePath);
+    return mapMediaAssetRow(row, row ? this._tagIds(row.id) : []);
+  },
+  getProcessingBySource(sourceRelativePath) {
+    const row = db.prepare(
+      `SELECT * FROM media_assets WHERE source_relative_path = ? AND status = 'processing'`,
+    ).get(sourceRelativePath);
+    return mapMediaAssetRow(row, row ? this._tagIds(row.id) : []);
+  },
+  list({ type, search = '', tagIds = [] } = {}) {
+    const params = [];
+    let sql = 'SELECT DISTINCT a.* FROM media_assets a';
+    if (tagIds.length > 0) {
+      sql += ' JOIN media_asset_tags mat ON mat.asset_id = a.id';
+    }
+    const where = [];
+    if (type) {
+      where.push('a.type = ?');
+      params.push(type);
+    }
+    const q = search.trim().toLowerCase();
+    if (q) {
+      where.push('(lower(a.display_name) LIKE ? OR lower(a.filename) LIKE ?)');
+      params.push(`%${q}%`, `%${q}%`);
+    }
+    if (tagIds.length > 0) {
+      const placeholders = tagIds.map(() => '?').join(',');
+      where.push(`mat.tag_id IN (${placeholders})`);
+      params.push(...tagIds);
+      if (tagIds.length > 1) {
+        sql += ` GROUP BY a.id HAVING COUNT(DISTINCT mat.tag_id) = ${tagIds.length}`;
+      }
+    }
+    if (where.length > 0) {
+      sql += ` WHERE ${where.join(' AND ')}`;
+    }
+    sql += ' ORDER BY a.display_name COLLATE NOCASE ASC';
+    const rows = db.prepare(sql).all(...params);
+    return rows.map((row) => mapMediaAssetRow(row, this._tagIds(row.id)));
+  },
+  create(asset) {
+    db.prepare(
+      `INSERT INTO media_assets (
+        id, type, display_name, filename, relative_path, poster_path, format,
+        width, height, has_alpha, duration_sec, duration_frames, fps, locked,
+        status, source_relative_path
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      asset.id,
+      asset.type,
+      asset.displayName,
+      asset.filename,
+      asset.relativePath,
+      asset.posterPath ?? null,
+      asset.format ?? '',
+      asset.width ?? 0,
+      asset.height ?? 0,
+      asset.hasAlpha ? 1 : 0,
+      asset.durationSec ?? null,
+      asset.durationFrames ?? null,
+      asset.fps ?? null,
+      asset.locked ? 1 : 0,
+      asset.status ?? 'ready',
+      asset.sourceRelativePath ?? null,
+    );
+    if (asset.tagIds?.length) {
+      this.setTags(asset.id, asset.tagIds);
+    }
+    return this.get(asset.id);
+  },
+  update(id, patch) {
+    const cur = db.prepare('SELECT * FROM media_assets WHERE id = ?').get(id);
+    if (!cur) return null;
+    const next = {
+      display_name: patch.displayName ?? cur.display_name,
+      locked: patch.locked !== undefined ? (patch.locked ? 1 : 0) : cur.locked,
+      status: patch.status ?? cur.status,
+      format: patch.format ?? cur.format,
+      width: patch.width ?? cur.width,
+      height: patch.height ?? cur.height,
+      has_alpha: patch.hasAlpha !== undefined ? (patch.hasAlpha ? 1 : 0) : cur.has_alpha,
+      duration_sec: patch.durationSec !== undefined ? patch.durationSec : cur.duration_sec,
+      duration_frames: patch.durationFrames !== undefined ? patch.durationFrames : cur.duration_frames,
+      fps: patch.fps !== undefined ? patch.fps : cur.fps,
+      poster_path: patch.posterPath !== undefined ? patch.posterPath : cur.poster_path,
+      source_relative_path: patch.sourceRelativePath !== undefined
+        ? patch.sourceRelativePath
+        : cur.source_relative_path,
+    };
+    db.prepare(
+      `UPDATE media_assets SET
+        display_name = ?, locked = ?, status = ?, format = ?,
+        width = ?, height = ?, has_alpha = ?,
+        duration_sec = ?, duration_frames = ?, fps = ?,
+        poster_path = ?, source_relative_path = ?,
+        updated_at = datetime('now')
+      WHERE id = ?`,
+    ).run(
+      next.display_name,
+      next.locked,
+      next.status,
+      next.format,
+      next.width,
+      next.height,
+      next.has_alpha,
+      next.duration_sec,
+      next.duration_frames,
+      next.fps,
+      next.poster_path,
+      next.source_relative_path,
+      id,
+    );
+    if (patch.tagIds !== undefined) {
+      this.setTags(id, patch.tagIds);
+    }
+    return this.get(id);
+  },
+  setTags(assetId, tagIds) {
+    db.prepare('DELETE FROM media_asset_tags WHERE asset_id = ?').run(assetId);
+    const ins = db.prepare('INSERT INTO media_asset_tags (asset_id, tag_id) VALUES (?, ?)');
+    for (const tagId of tagIds) {
+      ins.run(assetId, tagId);
+    }
+  },
+  remove(id) {
+    db.prepare('DELETE FROM media_asset_tags WHERE asset_id = ?').run(id);
+    return db.prepare('DELETE FROM media_assets WHERE id = ?').run(id).changes > 0;
   },
 });

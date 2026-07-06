@@ -18,6 +18,7 @@ import { createAuth } from './auth.js';
 import { createAudit } from './audit.js';
 import { OnAirManager } from './onair.js';
 import { MediaJobs } from './media.js';
+import { MediaLibrary } from './mediaLibrary.js';
 import { authRouter } from './routes/auth.js';
 import { auditRouter } from './routes/audit.js';
 import { billingRouter } from './routes/billing.js';
@@ -25,6 +26,7 @@ import { templatesRouter } from './routes/templates.js';
 import { channelsRouter } from './routes/channels.js';
 import { rundownsRouter } from './routes/rundowns.js';
 import { uploadsRouter } from './routes/uploads.js';
+import { mediaRouter } from './routes/media.js';
 import { licenseRouter } from './routes/license.js';
 import { wsRouter } from './routes/ws.js';
 
@@ -88,7 +90,9 @@ app.locals.audit = audit;
 const onAir = new OnAirManager(db);
 app.locals.onAir = onAir;
 const media = new MediaJobs(UPLOADS_DIR);
+const mediaLibrary = new MediaLibrary(db, UPLOADS_DIR, media);
 app.locals.media = media;
+app.locals.mediaLibrary = mediaLibrary;
 
 // ---------------------------------------------------------------------------
 // REST: templates / channels / rundowns / settings (§7.3).
@@ -101,6 +105,7 @@ app.use('/api/templates', auth.requireAuth, templatesRouter(db));
 app.use('/api/channels', auth.requireAuth, auth.requireRole('admin'), channelsRouter(db));
 app.use('/api/rundowns', auth.requireAuth, rundownsRouter(db));
 app.use('/api/uploads', auth.requireAuth, uploadsCors, uploadsRouter(media, UPLOADS_DIR));
+app.use('/api/media', auth.requireAuth, mediaRouter(mediaLibrary, UPLOADS_DIR));
 app.use('/api/license', auth.requireAuth, auth.requireRole('admin'), licenseRouter(db));
 
 // On-air snapshot for the control panel (§7.4). Separate from the WS router so

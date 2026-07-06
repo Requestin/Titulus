@@ -65,6 +65,36 @@ export interface UploadJob {
   updatedAt?: string;
 }
 
+export interface MediaTag {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface MediaAsset {
+  id: string;
+  type: 'image' | 'video';
+  displayName: string;
+  filename: string;
+  relativePath: string;
+  url: string;
+  posterPath: string | null;
+  posterUrl: string | null;
+  format: string;
+  width: number;
+  height: number;
+  hasAlpha: boolean;
+  durationSec: number | null;
+  durationFrames: number | null;
+  fps: number | null;
+  locked: boolean;
+  status: 'ready' | 'processing' | 'error';
+  sourceRelativePath: string | null;
+  tagIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LicenseState {
   status: 'unlicensed' | 'active' | 'expired' | 'invalid';
   plan: string;
@@ -258,6 +288,38 @@ export const api = {
       );
     },
     job: (id: string) => req<UploadJob>(`/api/uploads/jobs/${id}`),
+  },
+  media: {
+    listTags: (q = '') => req<MediaTag[]>(`/api/media/tags${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+    createTag: (name: string) =>
+      req<MediaTag>('/api/media/tags', { method: 'POST', body: JSON.stringify({ name }) }),
+    deleteTag: (id: string) =>
+      req<{ ok: true; id: string; name: string }>(`/api/media/tags/${id}`, { method: 'DELETE' }),
+    list: (opts: { type: 'image' | 'video'; q?: string; tags?: string[] }) => {
+      const p = new URLSearchParams({ type: opts.type });
+      if (opts.q) p.set('q', opts.q);
+      if (opts.tags?.length) p.set('tags', opts.tags.join(','));
+      return req<MediaAsset[]>(`/api/media?${p}`);
+    },
+    get: (id: string) => req<MediaAsset>(`/api/media/${id}`),
+    lookup: (url: string) => req<MediaAsset>(`/api/media/lookup?url=${encodeURIComponent(url)}`),
+    update: (id: string, patch: { displayName?: string; locked?: boolean; tagIds?: string[] }) =>
+      req<MediaAsset>(`/api/media/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    remove: (id: string) => req<{ ok: true }>(`/api/media/${id}`, { method: 'DELETE' }),
+    refresh: (type: 'image' | 'video') =>
+      req<{ imported: MediaAsset[]; count: number }>(`/api/media/refresh?type=${type}`, { method: 'POST' }),
+    import: (file: File, opts?: { displayName?: string; tagIds?: string[] }) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      if (opts?.displayName) fd.append('displayName', opts.displayName);
+      if (opts?.tagIds?.length) fd.append('tagIds', JSON.stringify(opts.tagIds));
+      return req<{ asset: MediaAsset | null; job: UploadJob | null }>('/api/media/import', { method: 'POST', body: fd });
+    },
+    finalizeJob: (jobId: string, opts?: { displayName?: string; tagIds?: string[] }) =>
+      req<{ asset: MediaAsset; job: UploadJob | null }>('/api/media/finalize-job', {
+        method: 'POST',
+        body: JSON.stringify({ jobId, ...opts }),
+      }),
   },
   onair: {
     get: () => req<OnAirSnapshot>('/api/onair'),

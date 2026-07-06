@@ -16,7 +16,7 @@ import {
   axisCenterPresetYGroup,
   computeGroupBbox,
 } from '../groupBounds';
-import { MediaUploadButton } from '../MediaUploadButton';
+import { MediaSourcePicker } from '../media/MediaSourcePicker';
 import { Field, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
 import type { NumberInputExtraAction } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
@@ -392,20 +392,11 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
     case 'video':
       return (
         <Section title={layer.type === 'image' ? 'Image' : 'Video'}>
-          <Field label="Source">
-            <BindableField
-              kind="text"
-              value={layer.src}
-              variables={variables}
-              onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.src = v; })}
-            />
-          </Field>
-          {typeof layer.src !== 'object' && (
-            <MediaUploadButton
-              accept={layer.type === 'image' ? 'image/*' : 'video/*'}
-              onUploaded={(url) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.src = url; })}
-            />
-          )}
+          <MediaSourcePicker
+            type={layer.type}
+            src={typeof layer.src === 'string' ? layer.src : ''}
+            onSelect={(url) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.src = url; })}
+          />
           <Field label="Fit">
             <Select value={layer.fit} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.fit = e.target.value as 'stretch' | 'contain' | 'cover'; })}>
               <option value="cover">cover</option>
