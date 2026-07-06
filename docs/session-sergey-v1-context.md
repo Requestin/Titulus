@@ -25,7 +25,7 @@
 | `7dfcdfe` | 3 июл | `add copy in tree, fix axis center, ui editor` |
 | `98bdadf` | 3 июл | `fix db folder` |
 | `0690c87` | 6 июл | `change md context` |
-| *(pending)* | 6 июл | `add media mam for video and images` |
+| `3dd193f` | 6 июл | `add media mam for video and images` |
 
 ---
 
