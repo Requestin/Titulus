@@ -1,7 +1,7 @@
-# Контекст сессии разработки — ветка `sergey-v1`
+# Ветка `sergey-v1` — контекст и changelog
 
-> Сводка работы Sergey + агент Cursor.  
-> Обновлено: **1 июля 2026**.
+> Сводка работы Sergey + агент Cursor на ветке `sergey-v1`.  
+> Обновлено: **6 июля 2026**.
 
 ---
 
@@ -14,144 +14,59 @@
 | Ветка | `sergey-v1` (tracking `origin/sergey-v1`) |
 | База | `main` |
 
-### Коммиты на ветке (актуально)
+### Коммиты на ветке (хронология)
 
-| Hash | Сообщение |
-|---|---|
-| `1b0eadb` | `add axis center, fix some bugs` |
-| `d396ede` | `fix timeline, add mask, add editor feature` |
-| `d31b1f1` | `new fix mask` |
-| `1a2df0e` | `fix UI editor and mask` |
-
----
-
-## Сессия 1 июля 2026 — editor: axis center, groups, UI polish
-
-### 1. Axis center (ось координат / pivot)
-
-**Смысл:** параметр задаёт точку, относительно которой считаются координаты позиции и вращение объекта. В данных — `transform.anchorX` / `anchorY` (0…1), в UI показываются **пиксели** относительно bounding box.
-
-**UI (`PropertiesPanel.tsx`):**
-- Подраздел **Axis center** в конце Transform (X, Y).
-- Числовое поле + drag, кнопка **R** (сброс в центр).
-- Пресеты: X → **L / C / R**, Y → **B / C / T**.
-- На canvas при выделении — перекрестие осей (красный/live) в точке pivot.
-
-**По умолчанию:** `createDefaultTransform()` → `anchorX: 0.5`, `anchorY: 0.5` (`runtime/src/schema.ts`).
-
-**Новые модули:**
-- `frontend/src/editor/pivot.ts` — `pivotCanvasPoint`, `mapPointThroughTransform`, `inverseMapPointThroughTransform`, `localDeltaToCanvas`.
-- `frontend/src/editor/groupBounds.ts` — axis center helpers, group bounds, reparent.
-
-**Компенсация позиции** при смене anchor: `anchorCompensatedUpdate()` из `@runtime` (визуальная позиция не прыгает).
+| Hash | Дата | Сообщение |
+|---|---|---|
+| `1a2df0e` | 30 июн | `fix UI editor and mask` |
+| `d31b1f1` | 30 июн | `new fix mask` |
+| `d396ede` | 30 июн | `fix timeline, add mask, add editor feature` |
+| `1b0eadb` | 1 июл | `add axis center, fix some bugs` |
+| `7dfcdfe` | 3 июл | `add copy in tree, fix axis center, ui editor` |
+| `98bdadf` | 3 июл | `fix db folder` |
 
 ---
 
-### 2. Rotation — подраздел Transform
+## Хранение данных (templates, channels, settings)
 
-Бывшие **Tilt X / Tilt Y / Rotate** объединены в подраздел **Rotation**:
+Шаблоны, каналы, rundowns, settings, on-air, users и загруженные медиа **не в git** — в SQLite и uploads на диске.
 
-| UI | Поле transform |
-|---|---|
-| X | `rotationX` |
-| Y | `rotationY` |
-| Z | `rotation` |
+| Компонент | Путь |
+|-----------|------|
+| SQLite (`app.db`) | `/var/lib/titulus/app.db` |
+| Медиа | `/var/lib/titulus/uploads/` |
 
-Справа от **R** — кнопки **+45** / **-45** (шаг 45°).
+Переопределение: **`TITULUS_DATA`** (для тестов/CI).
 
-**Perspective** перенесён в подраздел Rotation (последним после X, Y, Z).
+**Проблема (до fix):** `dev-start.sh` использовал `/tmp/titulus-dev` — данные пропадали после reboot.
 
----
+**Решение (коммит `98bdadf`):** единый default `/var/lib/titulus` в `backend/src/index.js`, `dev-start.sh`, `start.sh`.
 
-### 3. Timeline — имена rotation-треков
+### Первичная настройка (один раз)
 
-Отображаемые имена (внутренние ключи без изменений):
+```bash
+sudo mkdir -p /var/lib/titulus/uploads
+sudo chown $USER:$USER /var/lib/titulus
+./dev-stop.sh && ./dev-start.sh
+```
 
-| Было | Стало |
-|---|---|
-| `rotation` | `rotationZ` |
-| `rotationX` | `rotationX` |
-| `rotationY` | `rotationY` |
+В логе: `[titulus-backend] db: /var/lib/titulus/app.db`
 
-Файл: `frontend/src/editor/panels/TimelinePanel.tsx` (`trackPropLabel`).
+### Миграция со старых путей
 
----
+```bash
+# из /tmp (если файл ещё есть)
+cp /tmp/titulus-dev/app.db /var/lib/titulus/app.db
+cp -r /tmp/titulus-dev/uploads/* /var/lib/titulus/uploads/ 2>/dev/null || true
 
-### 4. NumberInput — stepper ↑↓
-
-**Файл:** `frontend/src/components/ui/form.tsx`
-
-Между значением и **R** — две кнопки (↑ / ↓), ±1 (или `stepperStep`).  
-Дополнительно: `extraActions` (используется для +45 / -45 на rotation).
-
----
-
-### 5. Группы — reparent без «улёта» объектов
-
-**Проблема:** при добавлении в группу объекты прыгали на координаты группы.
-
-**Решение (`groupBounds.ts`, `LayersPanel.tsx`, `store.ts`):**
-1. До смены родителя — `captureGlobalPivots()` (canvas pivot каждого объекта).
-2. Пустая группа принимает pivot **верхнего по z-order** объекта из выделения (`topmostMovingEntry`).
-3. Каждый объект переводится в локальные координаты группы через `inverseMapPointThroughTransform` — **глобальная позиция сохраняется**.
-4. `updateGroupBounds` нормализует локальный origin детей с компенсацией pivot группы.
-
-При выносе из группы (dropdown «(none)» или DnD на root) — координаты возвращаются в canvas-space.
+# из <repo>/data/
+cp data/app.db /var/lib/titulus/app.db
+cp -r data/uploads/* /var/lib/titulus/uploads/ 2>/dev/null || true
+```
 
 ---
 
-### 6. Группы — width/height всегда 0
-
-**Требование:** размеры группы не участвуют в позиционировании, всегда `width = 0`, `height = 0`.
-
-- Убраны поля Width/Height из UI группы.
-- Принудительно при: создании, `load()`, `updateTransform`, `updateGroupBounds`, `setEntryTransform`.
-- Selection box группы строится по union детей на canvas (`groupCanvasAabb`), не по `transform.width/height`.
-- Axis center группы в UI использует union детей только для отображения/редактирования anchor (без записи размеров в transform).
-
----
-
-### 7. Save — индикатор несохранённых изменений
-
-**Файл:** `frontend/src/editor/Toolbar.tsx`
-
-При `dirty === true` — жёлтый кружок в левом верхнем углу кнопки **Save**. После сохранения исчезает. Текст «Unsaved» убран.
-
----
-
-### 8. Баг: чёрная страница редактора
-
-**Причина:** в `PropertiesPanel.tsx` случайно удалены импорты `useEditor`, `effectiveTransform`, helpers из `groupBounds` → `ReferenceError` при рендере.
-
-**Исправление:** восстановлены импорты.
-
----
-
-### 9. Directors (справка, без кода)
-
-**Director** — отдельная анимационная под-последовательность в темплейте. Переключение director в timeline меняет контекст редактирования keyframes (активный director, playhead, duration). Keyframes привязываются к director через `trackDirectors`. Dope sheet показывает все треки; playhead относится к выбранному director.
-
----
-
-## Ключевые файлы (сессия 1 июля)
-
-| Область | Файлы |
-|---|---|
-| Axis center / groups | `frontend/src/editor/groupBounds.ts`, `pivot.ts` |
-| Properties UI | `frontend/src/editor/panels/PropertiesPanel.tsx` |
-| Canvas overlay | `frontend/src/editor/CanvasArea.tsx` |
-| Layers DnD + groups | `frontend/src/editor/panels/LayersPanel.tsx` |
-| Store | `frontend/src/editor/store.ts` |
-| Timeline labels | `frontend/src/editor/panels/TimelinePanel.tsx` |
-| NumberInput | `frontend/src/components/ui/form.tsx` |
-| Toolbar dirty dot | `frontend/src/editor/Toolbar.tsx` |
-| Default anchor | `runtime/src/schema.ts` |
-
----
-
-## Сессия 30 июня 2026 (краткая сводка)
-
-Ранее на ветке `sergey-v1`:
+## 30 июня 2026 — editor foundation
 
 - Engine CEF path fix, dev-start LAN (`0.0.0.0`), template schema validation fix.
 - DeckLink `dlsym` fallback (EnableVideoOutput — открытый вопрос на железе).
@@ -162,43 +77,145 @@
 - Resizable timeline, grid snap off by default.
 - NumberInput: negative values, drag, R reset.
 
-Подробности предыдущей сессии — в git history коммитов `1a2df0e`…`d396ede`.
+---
+
+## 1 июля 2026 — axis center, groups, UI polish
+
+### Axis center (pivot)
+
+`transform.anchorX` / `anchorY` (0…1); в UI — пиксели от bbox.
+
+- Подраздел **Axis center** в Properties (X, Y), пресеты L/C/R и B/C/T.
+- Crosshair на canvas при выделении.
+- Модули: `frontend/src/editor/pivot.ts`, `groupBounds.ts`.
+- Для **слоёв**: компенсация через `anchorCompensatedUpdate()` — визуальная позиция не прыгает.
+
+### Rotation
+
+Подраздел **Rotation**: X → `rotationX`, Y → `rotationY`, Z → `rotation`; кнопки ±45°; **Perspective** внутри Rotation.
+
+### Timeline
+
+Отображаемые имена: `rotation` → `rotationZ` (`TimelinePanel.tsx`).
+
+### NumberInput
+
+Stepper ↑↓, `extraActions` для rotation.
+
+### Группы — width/height = 0
+
+Размеры группы не в transform; selection box по union детей (`groupCanvasAabb`).
+
+### Save indicator
+
+Жёлтый dot на кнопке Save при `dirty` (`Toolbar.tsx`).
+
+### Прочее
+
+- Fix чёрной страницы редактора (восстановлены импорты в `PropertiesPanel.tsx`).
+- **Director** — отдельная анимационная под-последовательность; keyframes через `trackDirectors`.
+
+---
+
+## 2–3 июля 2026 — copy in tree, axis center groups, reparent, UI
+
+### Copy в дереве слоёв
+
+- **Ctrl/Cmd + drag** — deep clone слоя/группы с поддеревом.
+- Новые `id`, timeline (`trackDirectors`, keyframes), зелёная подсказка drop.
+
+### Delete в дереве
+
+- Trash на строке (hover); `store.deleteEntry()` с purge поддерева и timeline.
+- Delete убран из Toolbar.
+
+### Axis center — группы
+
+**Смена anchor:** только `anchorX`/`anchorY` — дети на месте, двигается crosshair.
+
+**Вращение:** `runtime/src/groupBounds.ts` — bbox детей → `transform-origin`; `applyGroupTransform` в `domRenderer`; editor overlay синхронизирован.
+
+### Reparent в/из группы — без компенсации координат
+
+- Вложение в группу: `x/y` **не меняются** — transform группы применяется через иерархию.
+- Вытаскивание на root/выше: `x/y` **не меняются**; убраны `captureGlobalPivots` / `unparentEntriesToCanvas` при reparent.
+
+> Ранее (1 июля) была компенсация через `inverseMapPointThroughTransform` для сохранения canvas-позиции — **отменена** 3 июля.
+
+### UI Properties
+
+**Transform** → **Size** (W/H layer, Scale) + **Position** (X/Y, Rotation, Axis center).
+
+### Canvas overlay
+
+`layerCanvasAabb`, mask projection через group chain, `groupPivotCanvasPoint` (timeline-aware).
+
+### Новые слои
+
+`createEditorTransform()` — anchor top-left `(0,0)`, position `(0,0)`.
+
+### Runtime refactor
+
+`computeGroupBbox` / `computeGroupUnion` в `@runtime`; editor реэкспортирует.
+
+---
+
+## Ключевые файлы
+
+| Область | Файлы |
+|---|---|
+| Data path | `backend/src/index.js`, `dev-start.sh`, `start.sh` |
+| Axis center / groups | `frontend/src/editor/groupBounds.ts`, `pivot.ts` |
+| Group bbox (runtime) | `runtime/src/groupBounds.ts`, `domRenderer.ts` |
+| Layers tree | `frontend/src/editor/panels/LayersPanel.tsx` |
+| Properties | `frontend/src/editor/panels/PropertiesPanel.tsx` |
+| Canvas | `frontend/src/editor/CanvasArea.tsx` |
+| Store | `frontend/src/editor/store.ts` |
+| Factories | `frontend/src/editor/factories.ts` |
+| Timeline | `frontend/src/editor/panels/TimelinePanel.tsx` |
+| UI forms | `frontend/src/components/ui/form.tsx` |
 
 ---
 
 ## Операционные заметки
 
 ```bash
-# Dev stack
-./dev-start.sh
-# Frontend :3011, Backend :3002
-
-# После изменений runtime
-cd runtime && npm run build
-
-# Typecheck
+./dev-start.sh          # FE :3011, BE :3002, data: /var/lib/titulus
+cd runtime && npm run build   # после изменений runtime
 cd frontend && npx tsc --noEmit
-
-# Push ветки
 git push -u origin sergey-v1
 ```
 
-- После изменений `runtime/` — пересобрать `bg-runtime.js`.
 - Hard refresh редактора: `Ctrl+Shift+R`.
-- `TITULUS_DATA=/tmp/...` для тестов backend.
+- Тесты backend: `TITULUS_DATA=/tmp/... node src/index.js`.
+
+---
+
+## Чеклист проверки
+
+**Editor:**
+- [ ] Ctrl/Cmd+drag копирует слой/группу в дереве
+- [ ] Delete на строке дерева удаляет элемент
+- [ ] Axis center группы — crosshair двигается, дети на месте
+- [ ] Rotation группы — вокруг выбранного axis center
+- [ ] Drag в/из группы — координаты в Properties не пересчитываются
+
+**Data:**
+- [ ] `ls -la /var/lib/titulus/` — `app.db`, `uploads/`
+- [ ] Шаблон + канал переживают reboot
 
 ---
 
 ## Следующие шаги
 
-1. Push `sergey-v1` → PR в `main` (merge commit).
-2. Проверить axis center + group reparent на реальных шаблонах с вложенными группами и rotation.
+1. PR `sergey-v1` → `main` (merge commit).
+2. Проверить axis center + groups на шаблонах с вложенностью и rotation.
 3. DeckLink `EnableVideoOutput` — валидация на железе.
-4. При необходимости — drag группы на canvas (сейчас только layers).
+4. Drag группы на canvas (сейчас только layers).
 
 ---
 
-## Предпочтения пользователя
+## Предпочтения
 
 - Общение на русском.
 - Ветка `sergey-v1`, коммиты по запросу.
