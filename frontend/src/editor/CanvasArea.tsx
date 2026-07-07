@@ -8,7 +8,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
 import { useEditor } from './store';
-import { effectiveTransform } from './effectiveValues';
+import { effectiveTransform, advanceDirectorRel, directorRelToLocal } from './effectiveValues';
 import { groupCanvasAabb, groupPivotCanvasPoint, layerCanvasAabb } from './groupBounds';
 import { axisCrosshairSize, mapLayerPointToCanvas, pivotCanvasPoint } from './pivot';
 
@@ -81,18 +81,13 @@ export function CanvasArea() {
   const zoom = useEditor((s) => s.zoom);
   const gridSnap = useEditor((s) => s.gridSnap);
   const gridSize = useEditor((s) => s.gridSize);
-  const playhead = useEditor((s) => s.playhead);
+  const playheads = useEditor((s) => s.playheads);
   const playing = useEditor((s) => s.playing);
-  const setPlayhead = useEditor((s) => s.setPlayhead);
+  const setPlayheads = useEditor((s) => s.setPlayheads);
+  const setDirectorRel = useEditor((s) => s.setDirectorRel);
   const setPlaying = useEditor((s) => s.setPlaying);
   const select = useEditor((s) => s.select);
   const updateTransform = useEditor((s) => s.updateTransform);
-
-  function globalFrame(local: number): number {
-    const st = useEditor.getState();
-    const d = st.template?.timeline.directors.find((x) => x.id === st.activeDirectorId);
-    return (d?.offsetFrames ?? 0) + local;
-  }
 
   const stageRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -100,9 +95,6 @@ export function CanvasArea() {
   const dragRef = useRef<DragState | null>(null);
   const [overlay, setOverlay] = useState<SelectionOverlay | null>(null);
 
-  // Renderer lifecycle (static preview: syncTemplate only, no timeline rAF).
-  // useLayoutEffect (not useEffect) so the renderer exists before the sync
-  // layout effect below runs on first mount.
   useLayoutEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -119,13 +111,12 @@ export function CanvasArea() {
 
   function groupTransformResolver(
     tpl: NonNullable<ReturnType<typeof useEditor.getState>['template']>,
-    playhead: number,
-    directorId: string,
+    heads: Record<string, number>,
   ): (groupId: string) => Transform | undefined {
     return (groupId) => {
       const g = tpl.groups.find((x) => x.id === groupId);
       if (!g) return undefined;
-      return effectiveTransform(tpl, g.transform, { kind: 'group', id: groupId }, playhead, directorId);
+      return effectiveTransform(tpl, g.transform, { kind: 'group', id: groupId }, heads);
     };
   }
 
@@ -133,10 +124,9 @@ export function CanvasArea() {
     tpl: NonNullable<ReturnType<typeof useEditor.getState>['template']>,
     target: { kind: 'layer' | 'group'; id: string },
     transform: Transform,
-    playhead: number,
-    directorId: string,
+    heads: Record<string, number>,
   ): SelectionOverlay | null {
-    const resolveGroup = groupTransformResolver(tpl, playhead, directorId);
+    const resolveGroup = groupTransformResolver(tpl, heads);
     const pivot = target.kind === 'group'
       ? groupPivotCanvasPoint(tpl, target.id, transform, resolveGroup)
       : pivotCanvasPoint(tpl, target, transform, resolveGroup);
@@ -223,15 +213,13 @@ export function CanvasArea() {
           tpl,
           layer.transform,
           { kind: 'layer', id: layer.id },
-          st.playhead,
-          st.activeDirectorId,
+          st.playheads,
         );
         setOverlay(overlayForTransform(
           tpl,
           { kind: 'layer', id: layer.id },
           t,
-          st.playhead,
-          st.activeDirectorId,
+          st.playheads,
         ));
         return;
       }
@@ -240,13 +228,12 @@ export function CanvasArea() {
     if (sel.kind === 'group') {
       const g = tpl.groups.find((x) => x.id === sel.id);
       if (g) {
-        const t = effectiveTransform(tpl, g.transform, { kind: 'group', id: g.id }, st.playhead, st.activeDirectorId);
+        const t = effectiveTransform(tpl, g.transform, { kind: 'group', id: g.id }, st.playheads);
         setOverlay(overlayForTransform(
           tpl,
           { kind: 'group', id: g.id },
           t,
-          st.playhead,
-          st.activeDirectorId,
+          st.playheads,
         ));
         return;
       }
@@ -271,7 +258,7 @@ export function CanvasArea() {
     if (!r || !template) return;
     r.syncTemplate(template, resolveVariableMap(template));
     r.resize(cw * zoom, ch * zoom);
-    r.seek(globalFrame(useEditor.getState().playhead));
+    r.seekDirectorLocals(useEditor.getState().playheads);
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template, zoom, cw, ch]);
@@ -285,44 +272,49 @@ export function CanvasArea() {
   useLayoutEffect(() => {
     const r = rendererRef.current;
     if (!r || playing) return;
-    r.seek(globalFrame(playhead));
+    r.seekDirectorLocals(playheads);
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playhead, playing]);
+  }, [playheads, playing]);
 
-  // Playback: advance the playhead at fps, seek each frame (WYSIWYG preview).
+  // Playback: advance each director independently (loop/swing via directorRelToLocal).
   useEffect(() => {
     if (!playing) return;
     const r = rendererRef.current;
     const t = useEditor.getState().template;
     if (!r || !t) return;
-    const dir = t.timeline.directors.find((d) => d.id === useEditor.getState().activeDirectorId);
     const fps = t.timeline.fps || 50;
-    const dur = dir?.durationFrames ?? t.timeline.durationFrames;
-    const offset = dir?.offsetFrames ?? 0;
-    let local = useEditor.getState().playhead;
+    let rel = { ...useEditor.getState().directorRel };
     let last = performance.now();
     let raf = 0;
     const loop = (now: number) => {
-      local += ((now - last) / 1000) * fps;
+      const delta = ((now - last) / 1000) * fps;
       last = now;
-      if (local >= dur) {
-        if (dir?.loop) {
-          local %= dur;
-        } else {
-          r.seek(offset + dur);
-          setPlayhead(dur);
-          setPlaying(false);
-          return;
-        }
+      const nextPlayheads: Record<string, number> = {};
+      let allDone = true;
+      for (const d of t.timeline.directors) {
+        const curRel = rel[d.id] ?? 0;
+        const adv = advanceDirectorRel(d, curRel, delta);
+        rel[d.id] = adv.rel;
+        nextPlayheads[d.id] = directorRelToLocal(d, adv.rel);
+        if (!adv.done || d.loop) allDone = false;
       }
-      r.seek(offset + local);
-      setPlayhead(local);
+      if (allDone) {
+        setPlayheads(nextPlayheads);
+        for (const d of t.timeline.directors) setDirectorRel(d.id, rel[d.id] ?? 0);
+        setPlaying(false);
+        return;
+      }
+      r.seekDirectorLocals(nextPlayheads);
+      setPlayheads(nextPlayheads);
+      for (const d of t.timeline.directors) {
+        setDirectorRel(d.id, rel[d.id] ?? 0);
+      }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [playing, setPlayhead, setPlaying]);
+  }, [playing, setPlayheads, setDirectorRel, setPlaying]);
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (!template) return;
@@ -392,8 +384,7 @@ export function CanvasArea() {
         template,
         { kind: 'layer', id: layer.id },
         { ...layer.transform, ...partial },
-        st.playhead,
-        st.activeDirectorId,
+        st.playheads,
       );
       if (next) setOverlay(next);
     }

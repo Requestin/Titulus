@@ -273,10 +273,23 @@ export interface Timeline {
   durationFrames: number;
   playbackMode: PlaybackMode;
   directors: TimelineDirector[];
-  /** layerId|groupId -> the director that animates it. */
+  /**
+   * Track -> director. Keys are `layer:<id>:<prop>` / `group:<id>:<prop>`.
+   * Legacy templates may still use bare layer/group ids (all props on that target).
+   */
   trackDirectors: Record<string, string>;
+  /** Optional display order of track keys per director (see timelineTrackKey). */
+  trackOrder?: Record<string, string[]>;
   keyframes: TimelineKeyframe[];
   actions: TimelineAction[];
+}
+
+/** Stable key for one animated property track in the editor / trackDirectors map. */
+export function timelineTrackKey(
+  target: { kind: 'layer' | 'group'; id: string },
+  prop: AnimatableProp,
+): string {
+  return `${target.kind}:${target.id}:${prop}`;
 }
 
 // ---------------------------------------------------------------------------

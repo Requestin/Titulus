@@ -21,6 +21,7 @@ import type {
   AnimatableValues,
   AnimatableProp,
 } from './schema.js';
+import { timelineTrackKey } from './schema.js';
 import { getEasing, makeBezierEasing, lerp, type EasingFn } from './easing.js';
 
 /**
@@ -72,6 +73,49 @@ export interface NormalizedTimeline {
   durationFrames: number;
 }
 
+/** Resolve which director owns a single animated property track. */
+export function resolveTrackDirector(
+  tl: Timeline,
+  target: { kind: 'layer' | 'group'; id: string },
+  prop: AnimatableProp,
+): string | undefined {
+  const key = timelineTrackKey(target, prop);
+  if (tl.trackDirectors[key]) return tl.trackDirectors[key];
+  // Legacy: bare target id applies to all props on that target.
+  if (tl.trackDirectors[target.id]) return tl.trackDirectors[target.id];
+  return undefined;
+}
+
+function kfTouchesDirector(tl: Timeline, kf: TimelineKeyframe, directorId: string): boolean {
+  for (const [tid, bag] of Object.entries(kf.layers)) {
+    for (const prop of Object.keys(bag) as AnimatableProp[]) {
+      const did = resolveTrackDirector(tl, { kind: 'layer', id: tid }, prop);
+      if (did === directorId) return true;
+    }
+  }
+  for (const [tid, bag] of Object.entries(kf.groups)) {
+    for (const prop of Object.keys(bag) as AnimatableProp[]) {
+      const did = resolveTrackDirector(tl, { kind: 'group', id: tid }, prop);
+      if (did === directorId) return true;
+    }
+  }
+  return false;
+}
+
+function filterBagForDirector(
+  tl: Timeline,
+  directorId: string,
+  target: { kind: 'layer' | 'group'; id: string },
+  bag: AnimatableValues,
+): AnimatableValues {
+  const out: AnimatableValues = {};
+  for (const prop of Object.keys(bag) as AnimatableProp[]) {
+    const did = resolveTrackDirector(tl, target, prop);
+    if (did === directorId) out[prop] = bag[prop]!;
+  }
+  return out;
+}
+
 /**
  * Build a NormalizedTimeline. A keyframe "belongs" to a director if the
  * director animates any target — we approximate by associating each keyframe
@@ -83,41 +127,27 @@ export interface NormalizedTimeline {
  * touches targets from several directors is duplicated into each.
  */
 export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
-  // trackDirectors: targetId -> directorId. Build the reverse: directorId -> targets.
-  const directorTargets: Record<string, Set<string>> = {};
-  for (const [targetId, directorId] of Object.entries(tl.trackDirectors)) {
-    if (!directorTargets[directorId]) directorTargets[directorId] = new Set();
-    directorTargets[directorId].add(targetId);
-  }
+  const defaultDirectorId = tl.directors[0]?.id ?? 'default';
 
-  // Partition raw keyframes per director (same semantics as before).
   const rawByDirector: Record<string, TimelineKeyframe[]> = {};
   for (const d of tl.directors) rawByDirector[d.id] = [];
 
   for (const kf of tl.keyframes) {
-    const allTargets = new Set([...Object.keys(kf.layers), ...Object.keys(kf.groups)]);
-    // If no explicit track mapping, default director 'default' owns it.
     let assigned = false;
-    for (const target of allTargets) {
-      const did = tl.trackDirectors[target];
-      if (did && rawByDirector[did]) {
-        rawByDirector[did].push(kf);
+    for (const d of tl.directors) {
+      if (kfTouchesDirector(tl, kf, d.id)) {
+        rawByDirector[d.id].push(kf);
         assigned = true;
       }
     }
-    if (!assigned && rawByDirector['default']) {
-      rawByDirector['default'].push(kf);
+    if (!assigned && rawByDirector[defaultDirectorId]) {
+      rawByDirector[defaultDirectorId].push(kf);
     }
   }
   for (const did of Object.keys(rawByDirector)) {
     rawByDirector[did].sort((a, b) => a.frame - b.frame);
   }
 
-  // Compile per-target tracks from the sorted keyframes. For each target we
-  // gather every keyframe that touches it (with its layer OR group bag) plus
-  // the resolved easing function, keeping the result sorted by frame. A target
-  // is animated either as a layer or as a group, so we record which bag it came
-  // from on the track to let the sampler route cheaply.
   const directors: Record<string, CompiledDirector> = {};
   for (const d of tl.directors) {
     const kfs = rawByDirector[d.id] ?? [];
@@ -125,10 +155,16 @@ export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
     for (const kf of kfs) {
       const easing = kf.bezier ? makeBezierEasing(kf.bezier) : getEasing(kf.easing);
       for (const [tid, bag] of Object.entries(kf.layers)) {
-        pushEntry(tracks, tid, kf.frame, bag, easing, true);
+        const filtered = filterBagForDirector(tl, d.id, { kind: 'layer', id: tid }, bag);
+        if (Object.keys(filtered).length > 0) {
+          pushEntry(tracks, tid, kf.frame, filtered, easing, true);
+        }
       }
       for (const [tid, bag] of Object.entries(kf.groups)) {
-        pushEntry(tracks, tid, kf.frame, bag, easing, false);
+        const filtered = filterBagForDirector(tl, d.id, { kind: 'group', id: tid }, bag);
+        if (Object.keys(filtered).length > 0) {
+          pushEntry(tracks, tid, kf.frame, filtered, easing, false);
+        }
       }
     }
     directors[d.id] = {
@@ -164,7 +200,32 @@ function pushEntry(
 ): void {
   let t = tracks.get(tid);
   if (!t) { t = { entries: [], isLayer }; tracks.set(tid, t); }
+  const existing = t.entries.find((e) => e.frame === frame);
+  if (existing) {
+    Object.assign(existing.bag, bag);
+    return;
+  }
   t.entries.push({ frame, bag, easing });
+}
+
+/** Sample one director at an explicit local frame (editor per-director playheads). */
+function sampleDirectorAtLocal(
+  norm: NormalizedTimeline,
+  directorId: string,
+  localFrame: number,
+): DirectorSample {
+  const compiled = norm.directors[directorId];
+  const ds: DirectorSample = { layers: {}, groups: {}, active: true };
+  if (!compiled) return ds;
+  for (const tid of compiled.targetIds) {
+    const track = compiled.tracks.get(tid);
+    if (!track) continue;
+    const vals = sampleTargetTrack(track, localFrame);
+    if (Object.keys(vals).length === 0) continue;
+    if (track.isLayer) ds.layers[tid] = vals;
+    else ds.groups[tid] = vals;
+  }
+  return ds;
 }
 
 /**
@@ -292,6 +353,51 @@ export function sampleAt(
   }
 
   return { directors: perDirector, layers: mergedLayers, groups: mergedGroups };
+}
+
+/**
+ * Sample with independent local playheads per director (editor preview).
+ * Each entry in `localFrames` is the director-local frame index (0..duration).
+ */
+export function sampleAtDirectorLocals(
+  norm: NormalizedTimeline,
+  localFrames: Record<string, number>,
+): TimelineSample {
+  const perDirector: Record<string, DirectorSample> = {};
+  const mergedLayers: Record<string, AnimatableValues> = {};
+  const mergedGroups: Record<string, AnimatableValues> = {};
+
+  for (const d of norm.directorList) {
+    const local = Math.max(0, Math.round(localFrames[d.id] ?? 0));
+    const ds = sampleDirectorAtLocal(norm, d.id, local);
+    perDirector[d.id] = ds;
+    for (const [tid, vals] of Object.entries(ds.layers)) {
+      mergedLayers[tid] = { ...(mergedLayers[tid] || {}), ...vals };
+    }
+    for (const [tid, vals] of Object.entries(ds.groups)) {
+      mergedGroups[tid] = { ...(mergedGroups[tid] || {}), ...vals };
+    }
+  }
+
+  return { directors: perDirector, layers: mergedLayers, groups: mergedGroups };
+}
+
+/** Advance a director's relative elapsed time by delta frames; returns new rel and whether playback finished. */
+export function advanceDirectorRel(
+  d: TimelineDirector,
+  rel: number,
+  delta: number,
+): { rel: number; done: boolean } {
+  const len = Math.max(1, d.durationFrames);
+  const next = rel + delta;
+  if (!d.loop && next >= len) return { rel: len, done: true };
+  return { rel: next, done: false };
+}
+
+/** Map accumulated relative time to display local frame (loop/swing aware). */
+export function directorRelToLocal(d: TimelineDirector, rel: number): number {
+  const local = directorLocalFrame(d, d.offsetFrames + rel);
+  return local ?? d.durationFrames;
 }
 
 /**

@@ -30,7 +30,7 @@ import {
   maskNeedsProjection, projectMaskOutline, projectedMaskClip, maskGeometryKey,
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
-import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
+import { normalizeTimeline, sampleAt, sampleAtDirectorLocals, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
 import { formatClock } from './clock.js';
 import { ensureFonts, collectFonts } from './fonts.js';
 import { type RenderStats, emptyRenderStats, snapshotStats } from './stats.js';
@@ -98,6 +98,8 @@ export class TemplateRenderer {
   private fixedTickRate: number;
   private playing = false;
   private frame = 0;                  // global playhead (frames)
+  /** When set, editor preview uses independent per-director local frames. */
+  private directorLocalFrames: Record<string, number> | null = null;
   private lastFrameSampled: number | null = null;
   private rafId: number | null = null;
   private rafLastWall: number | null = null;
@@ -176,8 +178,19 @@ export class TemplateRenderer {
    */
   seek(frame: number): void {
     this.frame = Math.max(0, Math.round(frame));
+    this.directorLocalFrames = null;
     this.lastFrameSampled = null;
     this.applyState(this.frame);
+  }
+
+  /**
+   * Editor preview: each director has its own local playhead (loop/swing applied
+   * externally before calling). Clears global-frame mode.
+   */
+  seekDirectorLocals(localFrames: Record<string, number>): void {
+    this.directorLocalFrames = { ...localFrames };
+    this.lastFrameSampled = null;
+    this.applyStateFromLocals();
   }
 
   /** Current playhead frame. */
@@ -497,15 +510,12 @@ export class TemplateRenderer {
     if (!this.template || !this.norm) return;
     const startWall = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
-    // Reset per-frame stats counters (the snapshot handed to onFrame is taken
-    // from these after all writes complete).
     this.stats.styleWrites = 0;
     this.stats.skippedWrites = 0;
     this.stats.frameTimeMs = 0;
 
     const sample: TimelineSample = sampleAt(this.norm, frame);
 
-    // Fire actions crossed since the last sampled frame (cue points).
     if (this.lastFrameSampled !== null && frame > this.lastFrameSampled) {
       for (const d of this.norm.directorList) {
         const acts = actionsCrossed(this.norm, d.id, this.lastFrameSampled, frame);
@@ -514,7 +524,23 @@ export class TemplateRenderer {
     }
     this.lastFrameSampled = frame;
 
-    // Apply animated overrides per layer/group.
+    this.applySample(sample, frame, tickFps, startWall);
+  }
+
+  private applyStateFromLocals(tickFps?: number): void {
+    if (!this.template || !this.norm || !this.directorLocalFrames) return;
+    const startWall = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+    this.stats.styleWrites = 0;
+    this.stats.skippedWrites = 0;
+    this.stats.frameTimeMs = 0;
+
+    const sample = sampleAtDirectorLocals(this.norm, this.directorLocalFrames);
+    this.applySample(sample, this.frame, tickFps, startWall);
+  }
+
+  private applySample(sample: TimelineSample, frame: number, tickFps: number | undefined, startWall: number): void {
+    if (!this.template) return;
     for (const layer of this.template.layers) {
       const anim = sample.layers[layer.id];
       this.applyLayerState(layer, anim);

@@ -11,10 +11,11 @@ import type {
   Template, Layer, LayerType, Variable, Transform, RootStackEntry,
   TimelineDirector, TimelineKeyframe, AnimatableProp, EasingType,
 } from '@runtime';
-import { ANIMATABLE_PROPS, createDefaultTransform } from '@runtime';
+import { ANIMATABLE_PROPS, createDefaultTransform, resolveTrackDirector } from '@runtime';
 import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
 import { reparentEntriesIntoGroup } from './groupBounds';
+import { trackKey, type TimelineTrack } from './timelineTracks';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
 export type Target = { kind: 'layer' | 'group'; id: string };
@@ -57,19 +58,64 @@ function hasAnimatedProp(t: Template, target: Target, prop: AnimatableProp): boo
   });
 }
 
-/** Keep keyframes at the current playhead in sync when base props are edited. */
 function syncAnimatedPropsAtPlayhead(
   t: Template,
   target: Target,
   values: Partial<Record<AnimatableProp, number>>,
   localFrame: number,
+  directorId: string,
 ): void {
   const frame = Math.round(localFrame);
   for (const [prop, value] of Object.entries(values) as [AnimatableProp, number][]) {
     if (value === undefined || !hasAnimatedProp(t, target, prop)) continue;
+    const did = resolveTrackDirector(t.timeline, target, prop);
+    if (did && did !== directorId) continue;
     const kf = kfAt(t, frame);
     const sec = target.kind === 'layer' ? kf.layers : kf.groups;
     (sec[target.id] ??= {})[prop] = value;
+  }
+}
+
+function ensureDefaultDirector(t: Template): string {
+  if (t.timeline.directors.length === 0) {
+    t.timeline.directors.push({
+      id: 'default',
+      name: 'default',
+      durationFrames: t.timeline.durationFrames,
+      offsetFrames: 0,
+      autostart: true,
+      loop: false,
+      swing: false,
+    });
+  }
+  return t.timeline.directors[0]!.id;
+}
+
+function initPlayheads(directors: TimelineDirector[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const d of directors) out[d.id] = 0;
+  return out;
+}
+
+function assignTrackDirector(t: Template, track: TimelineTrack, directorId: string): void {
+  const key = trackKey(track.target, track.prop);
+  t.timeline.trackDirectors[key] = directorId;
+  // Drop legacy bare target mapping when reassigning a single prop track.
+  if (t.timeline.trackDirectors[track.target.id] === directorId) {
+    delete t.timeline.trackDirectors[track.target.id];
+  }
+}
+
+function appendTrackOrder(t: Template, directorId: string, key: string): void {
+  t.timeline.trackOrder ??= {};
+  const list = t.timeline.trackOrder[directorId] ??= [];
+  if (!list.includes(key)) list.push(key);
+}
+
+function removeFromTrackOrder(t: Template, key: string): void {
+  if (!t.timeline.trackOrder) return;
+  for (const did of Object.keys(t.timeline.trackOrder)) {
+    t.timeline.trackOrder[did] = t.timeline.trackOrder[did]!.filter((k) => k !== key);
   }
 }
 
@@ -116,20 +162,27 @@ interface EditorState {
   updateVariable: (id: string, partial: Partial<Variable>) => void;
   removeVariable: (id: string) => void;
 
-  // timeline + playback (playhead/playing/activeDirectorId are transient)
-  playhead: number;
+  // timeline + playback (playheads/playing/activeDirectorId are transient)
+  playheads: Record<string, number>;
+  /** Per-director elapsed rel time for loop/swing playback (transient). */
+  directorRel: Record<string, number>;
   playing: boolean;
   activeDirectorId: string;
-  setPlayhead: (frame: number) => void;
+  setPlayhead: (directorId: string, frame: number) => void;
+  setPlayheads: (playheads: Record<string, number>) => void;
+  setDirectorRel: (directorId: string, rel: number) => void;
   setPlaying: (playing: boolean) => void;
   setActiveDirector: (id: string) => void;
   setTimelineMeta: (partial: { fps?: number; durationFrames?: number; playbackMode?: 'bounded' | 'infinite' }) => void;
   addDirector: () => void;
   updateDirector: (id: string, partial: Partial<TimelineDirector>) => void;
   removeDirector: (id: string) => void;
-  assignTrack: (targetId: string, directorId: string) => void;
-  setKeyframeValue: (target: Target, frame: number, prop: AnimatableProp, value: number) => void;
+  assignTrack: (track: TimelineTrack, directorId: string) => void;
+  reorderTracks: (directorId: string, trackKeys: string[]) => void;
+  moveTrackToDirector: (track: TimelineTrack, toDirectorId: string, toIndex?: number) => void;
+  setKeyframeValue: (target: Target, frame: number, prop: AnimatableProp, value: number, directorId?: string) => void;
   movePoint: (target: Target, prop: AnimatableProp, fromFrame: number, toFrame: number) => void;
+  moveKeyframeSegment: (target: Target, prop: AnimatableProp, edgeIndex: number, deltaFrames: number) => void;
   deletePoint: (target: Target, prop: AnimatableProp, frame: number) => void;
   removeTrack: (target: Target, prop: AnimatableProp) => void;
   setKeyframeEasing: (frame: number, easing: EasingType) => void;
@@ -139,6 +192,14 @@ interface EditorState {
 function purgeTimelineTargets(t: Template, ids: string[]): void {
   for (const id of ids) {
     delete t.timeline.trackDirectors[id];
+    for (const key of Object.keys(t.timeline.trackDirectors)) {
+      if (key.includes(`:${id}:`)) delete t.timeline.trackDirectors[key];
+    }
+    if (t.timeline.trackOrder) {
+      for (const did of Object.keys(t.timeline.trackOrder)) {
+        t.timeline.trackOrder[did] = t.timeline.trackOrder[did]!.filter((k) => !k.includes(`:${id}:`));
+      }
+    }
     for (const kf of t.timeline.keyframes) {
       delete kf.layers[id];
       delete kf.groups[id];
@@ -189,7 +250,8 @@ export const useEditor = create<EditorState>()(
       zoom: 0.45,
       gridSnap: false,
       gridSize: 8,
-      playhead: 0,
+      playheads: {},
+      directorRel: {},
       playing: false,
       activeDirectorId: 'default',
 
@@ -203,7 +265,8 @@ export const useEditor = create<EditorState>()(
           template: normalized,
           selection: null,
           dirty: false,
-          playhead: 0,
+          playheads: initPlayheads(normalized.timeline.directors),
+          directorRel: initPlayheads(normalized.timeline.directors),
           playing: false,
           activeDirectorId: t.timeline.directors[0]?.id ?? 'default',
         });
@@ -237,7 +300,8 @@ export const useEditor = create<EditorState>()(
             t,
             { kind: 'layer', id },
             { opacity: l.opacity },
-            get().playhead,
+            get().playheads[get().activeDirectorId] ?? 0,
+            get().activeDirectorId,
           );
         }),
 
@@ -255,7 +319,8 @@ export const useEditor = create<EditorState>()(
             t,
             { kind, id },
             animatableFromTransformPartial(partial),
-            get().playhead,
+            get().playheads[get().activeDirectorId] ?? 0,
+            get().activeDirectorId,
           );
         }),
 
@@ -396,9 +461,16 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => { t.variables = t.variables.filter((v) => v.id !== id); }),
 
       // --- timeline + playback ---
-      setPlayhead: (frame) => set({ playhead: Math.max(0, Math.round(frame)) }),
+      setPlayhead: (directorId, frame) =>
+        set((s) => ({
+          playheads: { ...s.playheads, [directorId]: Math.max(0, Math.round(frame)) },
+          directorRel: { ...s.directorRel, [directorId]: Math.max(0, Math.round(frame)) },
+        })),
+      setPlayheads: (playheads) => set({ playheads }),
+      setDirectorRel: (directorId, rel) =>
+        set((s) => ({ directorRel: { ...s.directorRel, [directorId]: Math.max(0, rel) } })),
       setPlaying: (playing) => set({ playing }),
-      setActiveDirector: (id) => set({ activeDirectorId: id, playhead: 0, playing: false }),
+      setActiveDirector: (id) => set({ activeDirectorId: id, playing: false }),
 
       setTimelineMeta: (partial) => get().patch((t) => { Object.assign(t.timeline, partial); }),
 
@@ -413,8 +485,14 @@ export const useEditor = create<EditorState>()(
             durationFrames: t.timeline.durationFrames, offsetFrames: 0,
             autostart: true, loop: false, swing: false,
           });
+          t.timeline.trackOrder ??= {};
+          t.timeline.trackOrder[id] = [];
         });
-        set({ activeDirectorId: id, playhead: 0 });
+        set((s) => ({
+          activeDirectorId: id,
+          playheads: { ...s.playheads, [id]: 0 },
+          directorRel: { ...s.directorRel, [id]: 0 },
+        }));
       },
 
       updateDirector: (id, partial) =>
@@ -425,28 +503,98 @@ export const useEditor = create<EditorState>()(
 
       removeDirector: (id) => {
         const t0 = get().template;
-        if (!t0 || t0.timeline.directors.length <= 1) return;
+        if (!t0) return;
+        const treeDirector = t0.timeline.directors.find((d) => d.id === id);
+        if (!treeDirector) return;
+
         get().patch((t) => {
+          const tracksToRemove: TimelineTrack[] = [];
+          for (const [key, did] of Object.entries(t.timeline.trackDirectors)) {
+            if (did !== id) continue;
+            const parsed = key.includes(':') ? key.split(':') : null;
+            if (parsed && parsed.length >= 3) {
+              tracksToRemove.push({
+                target: { kind: parsed[0] as 'layer' | 'group', id: parsed[1]! },
+                prop: parsed.slice(2).join(':') as AnimatableProp,
+              });
+            }
+          }
+          for (const track of tracksToRemove) {
+            for (const kf of t.timeline.keyframes) {
+              const sec = track.target.kind === 'layer' ? kf.layers : kf.groups;
+              const bag = sec[track.target.id];
+              if (!bag || bag[track.prop] === undefined) continue;
+              delete bag[track.prop];
+              if (Object.keys(bag).length === 0) delete sec[track.target.id];
+              if (Object.keys(kf.layers).length === 0 && Object.keys(kf.groups).length === 0) {
+                t.timeline.keyframes = t.timeline.keyframes.filter((k) => k !== kf);
+              }
+            }
+            delete t.timeline.trackDirectors[trackKey(track.target, track.prop)];
+            removeFromTrackOrder(t, trackKey(track.target, track.prop));
+          }
+
           t.timeline.directors = t.timeline.directors.filter((d) => d.id !== id);
           for (const k of Object.keys(t.timeline.trackDirectors)) {
             if (t.timeline.trackDirectors[k] === id) delete t.timeline.trackDirectors[k];
           }
+          if (t.timeline.trackOrder) delete t.timeline.trackOrder[id];
           t.timeline.actions = t.timeline.actions.filter((a) => a.directorId !== id);
         });
-        if (get().activeDirectorId === id) {
-          set({ activeDirectorId: get().template?.timeline.directors[0]?.id ?? 'default', playhead: 0 });
-        }
+
+        const next = get().template?.timeline.directors[0]?.id;
+        set((s) => {
+          const playheads = { ...s.playheads };
+          const directorRel = { ...s.directorRel };
+          delete playheads[id];
+          delete directorRel[id];
+          return {
+            activeDirectorId: s.activeDirectorId === id ? (next ?? 'default') : s.activeDirectorId,
+            playheads,
+            directorRel,
+          };
+        });
       },
 
-      assignTrack: (targetId, directorId) =>
-        get().patch((t) => { t.timeline.trackDirectors[targetId] = directorId; }),
-
-      setKeyframeValue: (target, frame, prop, value) =>
+      assignTrack: (track, directorId) =>
         get().patch((t) => {
+          assignTrackDirector(t, track, directorId);
+          appendTrackOrder(t, directorId, trackKey(track.target, track.prop));
+        }),
+
+      reorderTracks: (directorId, trackKeys) =>
+        get().patch((t) => {
+          t.timeline.trackOrder ??= {};
+          t.timeline.trackOrder[directorId] = [...trackKeys];
+        }),
+
+      moveTrackToDirector: (track, toDirectorId, toIndex) =>
+        get().patch((t) => {
+          const key = trackKey(track.target, track.prop);
+          const fromDirector = resolveTrackDirector(t.timeline, track.target, track.prop)
+            ?? t.timeline.directors[0]?.id
+            ?? 'default';
+          assignTrackDirector(t, track, toDirectorId);
+          t.timeline.trackOrder ??= {};
+          if (fromDirector !== toDirectorId && t.timeline.trackOrder[fromDirector]) {
+            t.timeline.trackOrder[fromDirector] = t.timeline.trackOrder[fromDirector]!.filter((k) => k !== key);
+          }
+          const dest = t.timeline.trackOrder[toDirectorId] ??= [];
+          const without = dest.filter((k) => k !== key);
+          const idx = toIndex === undefined ? without.length : Math.max(0, Math.min(toIndex, without.length));
+          without.splice(idx, 0, key);
+          t.timeline.trackOrder[toDirectorId] = without;
+        }),
+
+      setKeyframeValue: (target, frame, prop, value, directorId) =>
+        get().patch((t) => {
+          const did = directorId ?? get().activeDirectorId;
+          ensureDefaultDirector(t);
           const kf = kfAt(t, Math.round(frame));
           const sec = target.kind === 'layer' ? kf.layers : kf.groups;
           (sec[target.id] ??= {})[prop] = value;
-          if (!t.timeline.trackDirectors[target.id]) t.timeline.trackDirectors[target.id] = get().activeDirectorId;
+          assignTrackDirector(t, { target, prop }, did);
+          appendTrackOrder(t, did, trackKey(target, prop));
         }),
 
       movePoint: (target, prop, fromFrame, toFrame) => {
@@ -464,6 +612,58 @@ export const useEditor = create<EditorState>()(
           const to = kfAt(t, Math.round(toFrame));
           const tsec = target.kind === 'layer' ? to.layers : to.groups;
           (tsec[target.id] ??= {})[prop] = val;
+        });
+      },
+
+      moveKeyframeSegment: (target, prop, edgeIndex, deltaFrames) => {
+        if (deltaFrames === 0) return;
+        get().patch((t) => {
+          const points: { frame: number; value: number }[] = [];
+          for (const k of t.timeline.keyframes) {
+            const bag = (target.kind === 'layer' ? k.layers : k.groups)[target.id];
+            if (bag && bag[prop] !== undefined) points.push({ frame: k.frame, value: bag[prop] as number });
+          }
+          points.sort((a, b) => a.frame - b.frame);
+          if (edgeIndex < 0 || edgeIndex >= points.length - 1) return;
+
+          const component = new Set<number>();
+          const stack = [edgeIndex, edgeIndex + 1];
+          while (stack.length) {
+            const i = stack.pop()!;
+            if (component.has(i)) continue;
+            component.add(i);
+            if (i > 0 && points[i - 1]!.value !== points[i]!.value) stack.push(i - 1);
+            if (i < points.length - 1 && points[i]!.value !== points[i + 1]!.value) stack.push(i + 1);
+          }
+
+          const moving = [...component].sort((a, b) => a - b).map((i) => points[i]!.frame);
+          const fixed = new Set(points.map((p) => p.frame).filter((f) => !moving.includes(f)));
+          const delta = deltaFrames;
+
+          const targetFrames = moving.map((f) => Math.max(0, f + delta));
+          for (let i = 1; i < targetFrames.length; i++) {
+            if (targetFrames[i]! <= targetFrames[i - 1]!) targetFrames[i] = targetFrames[i - 1]! + 1;
+          }
+          for (const tf of targetFrames) {
+            if (fixed.has(tf)) return;
+          }
+
+          const frameMap = new Map(moving.map((f, i) => [f, targetFrames[i]!]));
+          for (const [from, to] of frameMap) {
+            if (from === to) continue;
+            const kfFrom = t.timeline.keyframes.find((k) => k.frame === from);
+            if (!kfFrom) continue;
+            const sec = target.kind === 'layer' ? kfFrom.layers : kfFrom.groups;
+            const bag = sec[target.id];
+            if (!bag || bag[prop] === undefined) continue;
+            const val = bag[prop] as number;
+            delete bag[prop];
+            if (Object.keys(bag).length === 0) delete sec[target.id];
+            pruneKf(t, kfFrom);
+            const kfTo = kfAt(t, to);
+            const tsec = target.kind === 'layer' ? kfTo.layers : kfTo.groups;
+            (tsec[target.id] ??= {})[prop] = val;
+          }
         });
       },
 
@@ -489,11 +689,9 @@ export const useEditor = create<EditorState>()(
             if (Object.keys(bag).length === 0) delete sec[target.id];
             pruneKf(t, kf);
           }
-          const stillAnimated = t.timeline.keyframes.some((k) => {
-            const bag = (target.kind === 'layer' ? k.layers : k.groups)[target.id];
-            return bag && Object.keys(bag).length > 0;
-          });
-          if (!stillAnimated) delete t.timeline.trackDirectors[target.id];
+          delete t.timeline.trackDirectors[trackKey(target, prop)];
+          delete t.timeline.trackDirectors[target.id];
+          removeFromTrackOrder(t, trackKey(target, prop));
         }),
 
       setKeyframeEasing: (frame, easing) =>
@@ -503,12 +701,16 @@ export const useEditor = create<EditorState>()(
         }),
 
       addTrackAtPlayhead: (target, prop) => {
-        const ph = get().playhead;
+        const st = get();
+        const ph = st.playheads[st.activeDirectorId] ?? 0;
         get().patch((t) => {
+          const did = ensureDefaultDirector(t);
+          const directorId = st.activeDirectorId || did;
           const kf = kfAt(t, ph);
           const sec = target.kind === 'layer' ? kf.layers : kf.groups;
           (sec[target.id] ??= {})[prop] = baseValue(t, target, prop);
-          if (!t.timeline.trackDirectors[target.id]) t.timeline.trackDirectors[target.id] = get().activeDirectorId;
+          assignTrackDirector(t, { target, prop }, directorId);
+          appendTrackOrder(t, directorId, trackKey(target, prop));
         });
       },
     }),

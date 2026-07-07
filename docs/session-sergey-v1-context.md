@@ -1,7 +1,7 @@
 # Ветка `sergey-v1` — контекст и changelog
 
 > Сводка работы Sergey + агент Cursor на ветке `sergey-v1`.  
-> Обновлено: **6 июля 2026**.
+> Обновлено: **7 июля 2026**.
 
 ---
 
@@ -26,6 +26,68 @@
 | `98bdadf` | 3 июл | `fix db folder` |
 | `0690c87` | 6 июл | `change md context` |
 | `3dd193f` | 6 июл | `add media mam for video and images` |
+| `60a8457` | 7 июл | `change timeline,directors` |
+
+---
+
+## 7 июля 2026 — Timeline v2: directors tree, dope sheet, multi-playhead
+
+Крупный рефакторинг панели таймлайна: директора как дерево папок, неограниченное число треков на директора, независимые playhead'ы, drag-and-drop треков и сегментов анимации.
+
+### Модель данных
+
+| Поле | Назначение |
+|------|------------|
+| `timeline.trackDirectors` | Ключ трека `layer:<id>:<prop>` / `group:<id>:<prop>` → `directorId` |
+| `timeline.trackOrder` | Порядок треков внутри каждого директора (`Record<directorId, trackKey[]>`) |
+| `timeline.directors[]` | Независимые под-последовательности: `durationFrames`, `loop`, `swing` |
+
+- Схема: `shared/template.schema.json` — добавлен optional `trackOrder` (fix validation при Save).
+- Runtime: `timelineTrackKey`, `resolveTrackDirector`, `sampleAtDirectorLocals`, `seekDirectorLocals` — превью с учётом swing и локальных playhead'ов директоров.
+- `domRenderer.ts` — сэмплинг анимации через director-local координаты.
+
+### UI таймлайна (`TimelinePanel.tsx`)
+
+- **Дерево директоров:** collapse/expand, иконка папки, удаление на hover; ruler и playhead **на каждый директор**.
+- **Dope sheet:** треки вложены под директором; клик по треку — только выбор (без создания keyframe по клику на lane).
+- **+D** — новый директор внизу; **+Track** — меню свойств (portal, fixed z-index); **+K / −K** — add/delete keyframe у выбранного трека.
+- **DnD треков** (dnd-kit): reorder внутри директора, перенос между директорами, drop-line before/after, `DragOverlay` с подписью.
+- **Drag сегментов** — горизонтальные линии между keyframe с разными значениями; двигает связанную группу keyframe с сохранением интервалов.
+- **Transport:** `SkipBack` (все playhead → 0) слева от Play; Stop только останавливает playback.
+- **Views:** Dope sheet | Curve (один активный трек).
+- **Горизонтальный скролл:** sticky-колонка названий `z-[30]`, непрозрачный `bg-surface`, тень — кейфреймы и линии не просвечивают под заголовками.
+
+### Store (`store.ts`)
+
+- Transient: `playheads`, `directorRel`, `activeDirectorId`, `playing`.
+- `addDirector` / `removeDirector`, `moveTrackToDirector`, `reorderTracks`, `moveKeyframeSegment`.
+- При добавлении трека без директоров — auto `default` director.
+- При duplicate слоя в дереве — копирование per-prop `trackDirectors` (`LayersPanel.tsx`).
+
+### Preview
+
+- `CanvasArea.tsx` + `effectiveValues.ts` — multi-director preview, swing через `directorRelToLocal`, scrub/playhead по активному директору.
+- `PropertiesPanel.tsx` — привязка к активному director/track.
+
+### Ключевые файлы (timeline v2)
+
+| Область | Файлы |
+|---------|-------|
+| UI | `frontend/src/editor/panels/TimelinePanel.tsx` |
+| Helpers | `frontend/src/editor/timelineTracks.ts` (новый) |
+| Store | `frontend/src/editor/store.ts` |
+| Preview | `frontend/src/editor/CanvasArea.tsx`, `effectiveValues.ts` |
+| Runtime | `runtime/src/timeline.ts`, `schema.ts`, `domRenderer.ts` |
+| Schema | `shared/template.schema.json` |
+
+### Чеклист timeline v2
+
+- [ ] +D → директор, +Track → свойство слоя/группы, трек появляется под директором
+- [ ] Drag трека между директорами и reorder внутри
+- [ ] +K / −K на выбранном треке; drag keyframe и сегмента между keyframe
+- [ ] Play / swing / loop per director; SkipBack сбрасывает все playhead'ы
+- [ ] Save шаблона с двумя директорами и перенесённым треком — без validation error
+- [ ] Горизонтальный скролл — названия треков поверх линий и ромбов keyframe
 
 ---
 
@@ -238,7 +300,8 @@ Stepper ↑↓, `extraActions` для rotation.
 | Canvas | `frontend/src/editor/CanvasArea.tsx` |
 | Store | `frontend/src/editor/store.ts` |
 | Factories | `frontend/src/editor/factories.ts` |
-| Timeline | `frontend/src/editor/panels/TimelinePanel.tsx` |
+| Timeline | `frontend/src/editor/panels/TimelinePanel.tsx`, `timelineTracks.ts` |
+| Timeline runtime | `runtime/src/timeline.ts`, `shared/template.schema.json` |
 | UI forms | `frontend/src/components/ui/form.tsx` |
 
 ---
@@ -274,10 +337,11 @@ git push -u origin sergey-v1
 
 ## Следующие шаги
 
-1. PR `sergey-v1` → `main` (merge commit), включая media library.
-2. Проверить axis center + groups на шаблонах с вложенностью и rotation.
-3. DeckLink `EnableVideoOutput` — валидация на железе.
-4. Drag группы на canvas (сейчас только layers).
+1. PR `sergey-v1` → `main` (merge commit): media library + timeline v2.
+2. Ручная проверка timeline v2 (чеклист выше) на шаблонах с несколькими директорами.
+3. Проверить axis center + groups на шаблонах с вложенностью и rotation.
+4. DeckLink `EnableVideoOutput` — валидация на железе.
+5. Drag группы на canvas (сейчас только layers).
 
 ---
 

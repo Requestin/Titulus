@@ -6,7 +6,7 @@
 import { Braces } from 'lucide-react';
 import type { Layer, Template, Variable, VariableBinding, BlendMode } from '@runtime';
 import { useEditor } from '../store';
-import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
+import { effectiveOpacityForDirector, effectiveTransformForDirector } from '../effectiveValues';
 import {
   axisCenterFromPixels,
   axisCenterFromPixelsGroup,
@@ -29,8 +29,9 @@ export function PropertiesPanel() {
   const updateLayer = useEditor((s) => s.updateLayer);
   const setLayerOpacity = useEditor((s) => s.setLayerOpacity);
   const updateTransform = useEditor((s) => s.updateTransform);
-  const playhead = useEditor((s) => s.playhead);
+  const playheads = useEditor((s) => s.playheads);
   const activeDirectorId = useEditor((s) => s.activeDirectorId);
+  const activePlayhead = playheads[activeDirectorId] ?? 0;
   const setLayerGroup = useEditor((s) => s.setLayerGroup);
   const patch = useEditor((s) => s.patch);
 
@@ -57,14 +58,14 @@ export function PropertiesPanel() {
         <SizeSection
           id={g.id}
           kind="group"
-          t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
+          t={effectiveTransformForDirector(template, g.transform, { kind: 'group', id: g.id }, activePlayhead, activeDirectorId)}
           updateTransform={updateTransform}
         />
         <PositionSection
           id={g.id}
           kind="group"
           template={template}
-          t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
+          t={effectiveTransformForDirector(template, g.transform, { kind: 'group', id: g.id }, activePlayhead, activeDirectorId)}
           updateTransform={updateTransform}
         />
       </div>
@@ -84,7 +85,7 @@ export function PropertiesPanel() {
           <>
             <Field label="Opacity">
               <NumberInput
-                value={effectiveOpacity(template, layer.opacity, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
+                value={effectiveOpacityForDirector(template, layer.opacity, { kind: 'layer', id: layer.id }, activePlayhead, activeDirectorId)}
                 min={0}
                 max={1}
                 step={0.05}
@@ -113,14 +114,14 @@ export function PropertiesPanel() {
       <SizeSection
         id={layer.id}
         kind="layer"
-        t={effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
+        t={effectiveTransformForDirector(template, layer.transform, { kind: 'layer', id: layer.id }, activePlayhead, activeDirectorId)}
         updateTransform={updateTransform}
       />
       <PositionSection
         id={layer.id}
         kind="layer"
         template={template}
-        t={effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
+        t={effectiveTransformForDirector(template, layer.transform, { kind: 'layer', id: layer.id }, activePlayhead, activeDirectorId)}
         updateTransform={updateTransform}
       />
 

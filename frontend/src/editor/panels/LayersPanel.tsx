@@ -239,6 +239,11 @@ function copyTimelineTracks(t: Template, idMap: Map<string, string>): void {
   for (const [oldId, newId] of idMap) {
     const directorId = t.timeline.trackDirectors[oldId];
     if (directorId) t.timeline.trackDirectors[newId] = directorId;
+    for (const [key, did] of Object.entries(t.timeline.trackDirectors)) {
+      if (!key.includes(`:${oldId}:`)) continue;
+      const nextKey = key.replace(`:${oldId}:`, `:${newId}:`);
+      t.timeline.trackDirectors[nextKey] = did;
+    }
   }
   for (const kf of t.timeline.keyframes) {
     for (const [oldId, newId] of idMap) {

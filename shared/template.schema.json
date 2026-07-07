@@ -404,7 +404,16 @@
         "directors": { "type": "array", "items": { "$ref": "#/$defs/director" } },
         "trackDirectors": {
           "type": "object",
+          "description": "Animated track key (layer:<id>:<prop> or group:<id>:<prop>, legacy: bare target id) -> director id",
           "additionalProperties": { "type": "string", "minLength": 1 }
+        },
+        "trackOrder": {
+          "type": "object",
+          "description": "Optional display order of track keys per director",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
         },
         "keyframes": { "type": "array", "items": { "$ref": "#/$defs/keyframe" } },
         "actions": { "type": "array", "items": { "$ref": "#/$defs/action" } }
