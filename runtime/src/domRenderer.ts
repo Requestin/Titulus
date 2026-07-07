@@ -137,13 +137,22 @@ export class TemplateRenderer {
       template.canvas.background === 'transparent' ? 'transparent' : template.canvas.background;
 
     this.buildDom();
-    this.applyState(this.frame);
+    this.applyCurrentState();
 
     // Re-trigger font load for any new text/clock layers, then re-sync so text
     // measures with the real font.
     const fonts = collectFonts(template.layers);
     if (fonts.length) {
-      ensureFonts(fonts).then(() => this.applyState(this.frame)).catch(() => {});
+      ensureFonts(fonts).then(() => this.applyCurrentState()).catch(() => {});
+    }
+  }
+
+  /** Apply either per-director local frames (editor) or global frame (engine). */
+  private applyCurrentState(tickFps?: number): void {
+    if (this.directorLocalFrames) {
+      this.applyStateFromLocals(tickFps);
+    } else {
+      this.applyState(this.frame, tickFps);
     }
   }
 

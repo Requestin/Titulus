@@ -172,6 +172,7 @@ export function TimelinePanel() {
   const playing = useEditor((s) => s.playing);
   const activeDirectorId = useEditor((s) => s.activeDirectorId);
   const setPlayhead = useEditor((s) => s.setPlayhead);
+  const setGlobalPlayhead = useEditor((s) => s.setGlobalPlayhead);
   const setPlaying = useEditor((s) => s.setPlaying);
   const setActiveDirector = useEditor((s) => s.setActiveDirector);
   const addDirector = useEditor((s) => s.addDirector);
@@ -201,7 +202,7 @@ export function TimelinePanel() {
   if (!template) return null;
 
   const dir = template.timeline.directors.find((d) => d.id === activeDirectorId) ?? template.timeline.directors[0];
-  const activePlayhead = playheads[dir?.id ?? ''] ?? 0;
+  const globalPlayhead = deriveGlobalPlayhead(template, playheads, activeDirectorId);
   const dur = dir?.durationFrames ?? template.timeline.durationFrames;
   const maxDur = Math.max(...template.timeline.directors.map((d) => d.durationFrames), template.timeline.durationFrames);
   const timelineWidth = Math.max(maxDur * pxPerFrame + 24, 100);
@@ -242,6 +243,11 @@ export function TimelinePanel() {
     return Math.min(maxFrame, Math.max(0, xToFrame(x)));
   }
 
+  function scrubGlobal(maxFrame: number, e: ReactPointerEvent, el: Element) {
+    setPlaying(false);
+    setGlobalPlayhead(frameFromContentX(e.clientX, el, maxFrame));
+  }
+
   function scrubDirector(directorId: string, maxFrame: number, e: ReactPointerEvent, el: Element) {
     setPlaying(false);
     setActiveDirector(directorId);
@@ -267,8 +273,7 @@ export function TimelinePanel() {
 
   function jumpToBeginning() {
     if (!template) return;
-    setPlaying(false);
-    for (const d of template.timeline.directors) setPlayhead(d.id, 0);
+    setGlobalPlayhead(0);
   }
 
   function stopPlayback() {
@@ -360,8 +365,8 @@ export function TimelinePanel() {
         >
           <Square className="h-3.5 w-3.5" />
         </button>
-        <span className="w-28 text-center text-[12px] tabular-nums text-ink-muted">
-          {Math.round(activePlayhead)} / {dur}
+        <span className="w-28 text-center text-[12px] tabular-nums text-white/90">
+          {Math.round(globalPlayhead)} / {maxDur}
         </span>
 
         <div className="ml-auto flex items-center gap-1">
@@ -455,6 +460,13 @@ export function TimelinePanel() {
           <div style={{ width: HEADER_W + timelineWidth }}>
             {view === 'dope' && (
               <>
+                <GlobalPlayheadRow
+                  maxDur={maxDur}
+                  pxPerFrame={pxPerFrame}
+                  timelineWidth={timelineWidth}
+                  playhead={globalPlayhead}
+                  onScrub={(e, el) => scrubGlobal(maxDur, e, el)}
+                />
                 {directorTree.map(({ directorId, tracks }) => {
                   const d = template.timeline.directors.find((x) => x.id === directorId);
                   if (!d) return null;
@@ -694,6 +706,63 @@ function DirectorDropLane({ timelineWidth }: { timelineWidth: number }) {
   );
 }
 
+function deriveGlobalPlayhead(
+  template: NonNullable<ReturnType<typeof useEditor.getState>['template']>,
+  playheads: Record<string, number>,
+  activeDirectorId: string,
+): number {
+  const dirs = template.timeline.directors;
+  if (dirs.length === 0) return 0;
+  const values = dirs.map((d) => playheads[d.id] ?? 0);
+  const first = values[0] ?? 0;
+  if (values.every((v) => v === first)) return first;
+  return playheads[activeDirectorId] ?? first;
+}
+
+function GlobalPlayheadRow({
+  maxDur,
+  pxPerFrame,
+  timelineWidth,
+  playhead,
+  onScrub,
+}: {
+  maxDur: number;
+  pxPerFrame: number;
+  timelineWidth: number;
+  playhead: number;
+  onScrub: (e: ReactPointerEvent, el: Element) => void;
+}) {
+  return (
+    <div className="flex border-b border-border bg-surface-2/80">
+      <div
+        style={{ width: HEADER_W, height: DIRECTOR_HDR_H }}
+        className={cn(
+          'sticky left-0 flex shrink-0 items-center border-r border-border/60 px-2 text-[11px] font-semibold text-white',
+          TRACK_HEADER_Z,
+          DIRECTOR_HEADER_BG,
+          TRACK_HEADER_SHADOW,
+        )}
+      >
+        Global
+      </div>
+      <div className="relative z-0 shrink-0" style={{ width: timelineWidth }}>
+        <DirectorRuler
+          dur={maxDur}
+          pxPerFrame={pxPerFrame}
+          onScrub={onScrub}
+          className="bg-surface-2/60"
+        />
+        <div
+          className="pointer-events-none absolute top-0 z-sticky w-0.5 bg-white/95"
+          style={{ left: playhead * pxPerFrame, height: DIRECTOR_HDR_H }}
+        >
+          <div className="pointer-events-auto absolute -left-1 top-0 h-2 w-2 rounded-sm bg-white shadow-[0_0_4px_rgba(255,255,255,0.6)]" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DirectorHeader({
   name, selected, collapsed, onToggleCollapse, onSelect, onRemove,
 }: {
@@ -740,11 +809,12 @@ function DirectorHeader({
 }
 
 function DirectorRuler({
-  dur, pxPerFrame, onScrub,
+  dur, pxPerFrame, onScrub, className,
 }: {
   dur: number;
   pxPerFrame: number;
   onScrub: (e: ReactPointerEvent, el: Element) => void;
+  className?: string;
 }) {
   const step = pxPerFrame < 4 ? 50 : pxPerFrame < 10 ? 25 : 10;
   const ticks: number[] = [];
@@ -753,7 +823,7 @@ function DirectorRuler({
 
   return (
     <div
-      className="relative cursor-pointer select-none border-b border-border/40 bg-surface/80"
+      className={cn('relative cursor-pointer select-none border-b border-border/40 bg-surface/80', className)}
       style={{ height: DIRECTOR_HDR_H, width: w }}
       onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); onScrub(e, e.currentTarget); }}
       onPointerMove={(e) => { if (e.buttons === 1) onScrub(e, e.currentTarget); }}

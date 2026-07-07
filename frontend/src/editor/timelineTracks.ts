@@ -40,6 +40,18 @@ export function directorForTrack(template: Template, track: TimelineTrack): stri
   );
 }
 
+/** First director that owns any animated prop on this target (for editor focus). */
+export function primaryDirectorForTarget(template: Template, target: Target): string {
+  for (const k of template.timeline.keyframes) {
+    const bag = (target.kind === 'layer' ? k.layers : k.groups)[target.id];
+    if (!bag) continue;
+    for (const prop of Object.keys(bag) as AnimatableProp[]) {
+      return directorForTrack(template, { target, prop });
+    }
+  }
+  return template.timeline.directors[0]?.id ?? 'default';
+}
+
 export function collectAllTracks(template: Template): TimelineTrack[] {
   const seen = new Set<string>();
   const tracks: TimelineTrack[] = [];

@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
 import { useEditor } from './store';
 import { effectiveTransform, advanceDirectorRel, directorRelToLocal } from './effectiveValues';
+import { primaryDirectorForTarget } from './timelineTracks';
 import { groupCanvasAabb, groupPivotCanvasPoint, layerCanvasAabb } from './groupBounds';
 import { axisCrosshairSize, mapLayerPointToCanvas, pivotCanvasPoint } from './pivot';
 
@@ -87,6 +88,7 @@ export function CanvasArea() {
   const setDirectorRel = useEditor((s) => s.setDirectorRel);
   const setPlaying = useEditor((s) => s.setPlaying);
   const select = useEditor((s) => s.select);
+  const setActiveDirector = useEditor((s) => s.setActiveDirector);
   const updateTransform = useEditor((s) => s.updateTransform);
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -284,12 +286,28 @@ export function CanvasArea() {
     const t = useEditor.getState().template;
     if (!r || !t) return;
     const fps = t.timeline.fps || 50;
+
+    const startPlayheads = { ...useEditor.getState().playheads };
     let rel = { ...useEditor.getState().directorRel };
-    let last = performance.now();
+    for (const d of t.timeline.directors) {
+      rel[d.id] = startPlayheads[d.id] ?? 0;
+    }
+    r.seekDirectorLocals(startPlayheads);
+
+    let last: number | null = null;
     let raf = 0;
     const loop = (now: number) => {
+      if (last === null) {
+        last = now;
+        raf = requestAnimationFrame(loop);
+        return;
+      }
       const delta = ((now - last) / 1000) * fps;
       last = now;
+      if (delta <= 0) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
       const nextPlayheads: Record<string, number> = {};
       let allDone = true;
       for (const d of t.timeline.directors) {
@@ -334,7 +352,10 @@ export function CanvasArea() {
       const layerEl = target.closest('[data-layer-id]') as HTMLElement | null;
       if (layerEl) {
         id = layerEl.dataset.layerId ?? null;
-        if (id) select({ kind: 'layer', id });
+        if (id) {
+          select({ kind: 'layer', id });
+          setActiveDirector(primaryDirectorForTarget(template, { kind: 'layer', id }));
+        }
       } else {
         select(null);
         return;
@@ -345,16 +366,24 @@ export function CanvasArea() {
     const layer = template.layers.find((l) => l.id === id);
     if (!layer || layer.locked) return;
 
+    const heads = useEditor.getState().playheads;
+    const effective = effectiveTransform(
+      template,
+      layer.transform,
+      { kind: 'layer', id },
+      heads,
+    );
+
     dragRef.current = {
       id,
       mode,
       startPX: e.clientX,
       startPY: e.clientY,
       start: {
-        x: layer.transform.x,
-        y: layer.transform.y,
-        width: layer.transform.width,
-        height: layer.transform.height,
+        x: effective.x,
+        y: effective.y,
+        width: effective.width,
+        height: effective.height,
       },
       el: stageRef.current?.querySelector(`[data-layer-id="${id}"]`) as HTMLElement | null,
       moved: false,
@@ -404,6 +433,7 @@ export function CanvasArea() {
       t = { x: snap(t.x), y: snap(t.y), width: snap(t.width), height: snap(t.height) };
     }
     updateTransform(d.id, t);
+    rendererRef.current?.seekDirectorLocals(useEditor.getState().playheads);
   }
 
   if (!template) {

@@ -62,14 +62,13 @@ function syncAnimatedPropsAtPlayhead(
   t: Template,
   target: Target,
   values: Partial<Record<AnimatableProp, number>>,
-  localFrame: number,
-  directorId: string,
+  playheads: Record<string, number>,
 ): void {
-  const frame = Math.round(localFrame);
   for (const [prop, value] of Object.entries(values) as [AnimatableProp, number][]) {
     if (value === undefined || !hasAnimatedProp(t, target, prop)) continue;
     const did = resolveTrackDirector(t.timeline, target, prop);
-    if (did && did !== directorId) continue;
+    if (!did) continue;
+    const frame = Math.round(playheads[did] ?? 0);
     const kf = kfAt(t, frame);
     const sec = target.kind === 'layer' ? kf.layers : kf.groups;
     (sec[target.id] ??= {})[prop] = value;
@@ -170,6 +169,8 @@ interface EditorState {
   activeDirectorId: string;
   setPlayhead: (directorId: string, frame: number) => void;
   setPlayheads: (playheads: Record<string, number>) => void;
+  /** Set the same local frame on every director (global scrub). */
+  setGlobalPlayhead: (frame: number) => void;
   setDirectorRel: (directorId: string, rel: number) => void;
   setPlaying: (playing: boolean) => void;
   setActiveDirector: (id: string) => void;
@@ -300,8 +301,7 @@ export const useEditor = create<EditorState>()(
             t,
             { kind: 'layer', id },
             { opacity: l.opacity },
-            get().playheads[get().activeDirectorId] ?? 0,
-            get().activeDirectorId,
+            get().playheads,
           );
         }),
 
@@ -319,8 +319,7 @@ export const useEditor = create<EditorState>()(
             t,
             { kind, id },
             animatableFromTransformPartial(partial),
-            get().playheads[get().activeDirectorId] ?? 0,
-            get().activeDirectorId,
+            get().playheads,
           );
         }),
 
@@ -467,9 +466,32 @@ export const useEditor = create<EditorState>()(
           directorRel: { ...s.directorRel, [directorId]: Math.max(0, Math.round(frame)) },
         })),
       setPlayheads: (playheads) => set({ playheads }),
+      setGlobalPlayhead: (frame) => {
+        const t = get().template;
+        if (!t) return;
+        const f = Math.max(0, Math.round(frame));
+        set((s) => {
+          const playheads = { ...s.playheads };
+          const directorRel = { ...s.directorRel };
+          for (const d of t.timeline.directors) {
+            const local = Math.min(f, d.durationFrames);
+            playheads[d.id] = local;
+            directorRel[d.id] = local;
+          }
+          return { playheads, directorRel, playing: false };
+        });
+      },
       setDirectorRel: (directorId, rel) =>
         set((s) => ({ directorRel: { ...s.directorRel, [directorId]: Math.max(0, rel) } })),
-      setPlaying: (playing) => set({ playing }),
+      setPlaying: (playing) => set((s) => {
+        if (!playing) return { playing: false };
+        const t = get().template;
+        const directorRel = { ...s.directorRel };
+        for (const d of t?.timeline.directors ?? []) {
+          directorRel[d.id] = s.playheads[d.id] ?? 0;
+        }
+        return { playing: true, directorRel };
+      }),
       setActiveDirector: (id) => set({ activeDirectorId: id, playing: false }),
 
       setTimelineMeta: (partial) => get().patch((t) => { Object.assign(t.timeline, partial); }),

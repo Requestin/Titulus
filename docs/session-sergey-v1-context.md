@@ -27,6 +27,50 @@
 | `0690c87` | 6 июл | `change md context` |
 | `3dd193f` | 6 июл | `add media mam for video and images` |
 | `426fc10` | 7 июл | `change timeline,directors` |
+| *(см. ниже)* | 7 июл | `fix bugs at timeline` |
+
+---
+
+## 7 июля 2026 (продолжение) — Timeline bugs: global playhead, multi-director preview
+
+Исправления после timeline v2: воспроизведение, глобальный playhead, preview при редактировании нескольких директоров.
+
+### Global playhead
+
+- Строка **Global** вверху dope sheet: белая подпись и белая линия playhead (директорские — красные `bg-live`).
+- Scrub global ruler → `setGlobalPlayhead(frame)` — все директоры на тот же локальный кадр (clamp по `durationFrames`).
+- **SkipBack** и счётчик transport (`текст белее`) используют global playhead.
+- Store: `setGlobalPlayhead`, `deriveGlobalPlayhead` в UI.
+
+### Bugfix: первый кадр при Play «из середины»
+
+- **Причина:** `directorRel` мог расходиться с `playheads`; первый rAF сразу сдвигал время.
+- **Fix:** `setPlaying(true)` синхронизирует `directorRel` ← `playheads`; playback loop делает seek на стартовых позициях, первый rAF без advance (baseline).
+
+### Bugfix: второй объект исчезает при drag/edit (2 директора)
+
+- **Причина:** `syncTemplate` после patch всегда вызывал `applyState(globalFrame=0)`, игнорируя per-director playhead'ы; async font reload повторял сброс.
+- **Fix runtime:** `applyCurrentState()` — если заданы `directorLocalFrames`, использует `applyStateFromLocals` (в `syncTemplate` и font callback).
+- **Fix store:** `syncAnimatedPropsAtPlayhead` пишет keyframes по **director'у трека** и его playhead, не только `activeDirectorId`.
+- **PropertiesPanel:** `effectiveTransform` / `effectiveOpacity` со **всеми** playhead'ами (не `effectiveTransformForDirector`).
+- **CanvasArea:** drag от effective-позиции; после commit — `seekDirectorLocals`; select слоя → `primaryDirectorForTarget`.
+
+### Ключевые файлы (timeline bugfixes)
+
+| Область | Файлы |
+|---------|-------|
+| Global playhead UI | `TimelinePanel.tsx`, `store.ts` |
+| Multi-director preview | `runtime/src/domRenderer.ts`, `CanvasArea.tsx` |
+| Keyframe sync | `store.ts` (`syncAnimatedPropsAtPlayhead`) |
+| Properties | `PropertiesPanel.tsx` |
+| Helpers | `timelineTracks.ts` (`primaryDirectorForTarget`) |
+
+### Чеклист bugfixes
+
+- [ ] Global scrub → все director playhead'ы синхронны; SkipBack → 0 везде
+- [ ] Play с кадра 0 — первый кадр = keyframe на 0, без «прыжка из середины»
+- [ ] 2 объекта в разных директорах, global playhead — оба видны; drag/edit одного — второй не исчезает
+- [ ] Properties X/Y drag при multi-director — canvas не сбрасывается
 
 ---
 
@@ -337,8 +381,8 @@ git push -u origin sergey-v1
 
 ## Следующие шаги
 
-1. PR `sergey-v1` → `main` (merge commit): media library + timeline v2.
-2. Ручная проверка timeline v2 (чеклист выше) на шаблонах с несколькими директорами.
+1. PR `sergey-v1` → `main` (merge commit): media library + timeline v2 + timeline bugfixes.
+2. Ручная проверка timeline (чеклисты v2 + bugfixes выше).
 3. Проверить axis center + groups на шаблонах с вложенностью и rotation.
 4. DeckLink `EnableVideoOutput` — валидация на железе.
 5. Drag группы на canvas (сейчас только layers).
