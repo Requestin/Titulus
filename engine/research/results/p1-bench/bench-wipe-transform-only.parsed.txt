@@ -1,0 +1,41 @@
+Trace: /tmp/p15-bench-cache-bench-wipe-transform-only/blink-trace.json
+Duration: ~15s | events=268724 | frames≈2985 (SendBeginMainFrame=3981)
+Per-frame slicing marker: BeginFrame | slices=996
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.51
+  Paint:   2.25
+  Raster:  0.27
+  Style:   2.26
+  JS ev:   0.25
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  6 / 6 / 18
+  Paint events:   9 / 9 / 13
+  Raster events:  1 / 1 / 61
+  Raster ms:      0 / 0 / 9.896
+
+Heavy frames (raster events > 2x p50, floor=2.0): 1
+  frame#0 raster=61 (9.896ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=998 durMs=192.32
+  style.recalc: count=997 durMs=146.13
+  paint.paint: count=1990 durMs=79.25
+  invalidation: count=3002 durMs=3.01
+  raster.task: count=12 durMs=2.85
+  layout.performLayout: count=2 durMs=0.43
+  raster.drawFrame: count=995 durMs=0
+
+Total duration (ms, slice dur sum where present):
+  Layout=633.58 Paint=616.1 Raster=9.9 Style=532.55 JS=176.74
+
+Top JS symbols (sample weight):
+  tick: 172346
+  (idle): 90
+  (program): 1
+  requestAnimationFrame: 1
+  (garbage collector): 1
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-wipe-transform-only.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-wipe-transform-only.csv (996 rows)

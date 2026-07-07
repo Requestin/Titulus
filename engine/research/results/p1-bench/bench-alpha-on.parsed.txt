@@ -1,0 +1,43 @@
+Trace: /tmp/p15-bench-cache-bench-alpha-on/blink-trace.json
+Duration: ~15s | events=257518 | frames≈2454 (SendBeginMainFrame=3273)
+Per-frame slicing marker: BeginFrame | slices=819
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.52
+  Paint:   2.25
+  Raster:  0.35
+  Style:   3.76
+  JS ev:   0.25
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  6 / 6 / 17
+  Paint events:   9 / 9 / 19
+  Raster events:  1 / 1 / 247
+  Raster ms:      0 / 0 / 140.005
+
+Heavy frames (raster events > 2x p50, floor=2.0): 2
+  frame#0 raster=73 (127.106ms)
+  frame#1 raster=247 (140.005ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=821 durMs=213.56
+  style.recalc: count=821 durMs=162.07
+  raster.task: count=64 durMs=70.71
+  paint.paint: count=1638 durMs=68.54
+  layout.performLayout: count=2 durMs=11.39
+  invalidation: count=4927 durMs=2.39
+  raster.drawFrame: count=816 durMs=0
+
+Total duration (ms, slice dur sum where present):
+  Layout=766.63 Paint=579.8 Raster=267.11 Style=595.92 JS=135.78
+
+Top JS symbols (sample weight):
+  frame: 133350
+  (idle): 91
+  (program): 2
+  getElementById: 1
+  requestAnimationFrame: 1
+  (garbage collector): 1
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-alpha-on.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-alpha-on.csv (819 rows)

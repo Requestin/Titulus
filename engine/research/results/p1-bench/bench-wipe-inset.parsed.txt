@@ -1,0 +1,51 @@
+Trace: /tmp/p15-bench-cache-bench-wipe-inset/blink-trace.json
+Duration: ~15s | events=258965 | frames≈2985 (SendBeginMainFrame=3980)
+Per-frame slicing marker: BeginFrame | slices=995
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.51
+  Paint:   2.25
+  Raster:  0.26
+  Style:   1.76
+  JS ev:   0.51
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  6 / 6 / 32
+  Paint events:   9 / 9 / 11
+  Raster events:  1 / 1 / 59
+  Raster ms:      0 / 0 / 5.19
+
+Heavy frames (raster events > 2x p50, floor=2.0): 1
+  frame#0 raster=59 (5.19ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=998 durMs=151.65
+  style.recalc: count=997 durMs=109.18
+  paint.paint: count=1989 durMs=97.96
+  invalidation: count=2013 durMs=3.19
+  raster.task: count=10 durMs=1.62
+  layout.performLayout: count=2 durMs=0.36
+  raster.drawFrame: count=995 durMs=0
+
+Total duration (ms, slice dur sum where present):
+  Layout=527.08 Paint=604.01 Raster=5.19 Style=413.13 JS=338.25
+
+Top JS symbols (sample weight):
+  e: 185031
+  heartbeat: 136027
+  (idle): 93
+  syncTemplate: 8
+  setStyle: 4
+  get: 2
+  N: 2
+  requestAnimationFrame: 2
+  (program): 1
+  ue: 1
+  fe: 1
+  getElementById: 1
+  M: 1
+  O: 1
+  H: 1
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-wipe-inset.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-wipe-inset.csv (995 rows)

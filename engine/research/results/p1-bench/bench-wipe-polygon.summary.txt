@@ -1,0 +1,1 @@
+SUMMARY frames=990 fps=49.84 interval_p50_us=20029 interval_p99_us=24715 interval_p999_us=36159 late=3 drops=0.303%

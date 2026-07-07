@@ -167,8 +167,12 @@ backend/public/bg-runtime.js
 
 # Engine build artifacts
 engine/build/
+engine/build-p15/
 engine/third_party/cef/
 engine/third_party/cef_*.tar.bz2
+
+# Impeccable design hook (local cache, not for VCS)
+.impeccable/
 
 # Preview output (runtime-generated JPEGs)
 /tmp/bg-preview/

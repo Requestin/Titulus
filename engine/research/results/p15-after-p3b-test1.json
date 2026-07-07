@@ -1,0 +1,376 @@
+{
+  "source": "/tmp/p15-cache-test1-newrt/blink-trace.json",
+  "durationSec": 15,
+  "eventCount": 543846,
+  "beginFrames": 1854,
+  "drawFrames": 460,
+  "frameCount": 1389,
+  "frameMarkerUsedForSlicing": "BeginFrame",
+  "perFrameSliceCount": 465,
+  "perFrame": {
+    "layout": 13.24,
+    "paint": 5.96,
+    "raster": 76.2,
+    "style": 13.87,
+    "jsEvents": 0.26
+  },
+  "perFrameDistribution": {
+    "layoutEvents": {
+      "p50": 53,
+      "p95": 56,
+      "max": 87
+    },
+    "paintEvents": {
+      "p50": 24,
+      "p95": 24,
+      "max": 30
+    },
+    "rasterEvents": {
+      "p50": 305,
+      "p95": 370,
+      "max": 464
+    },
+    "rasterMs": {
+      "p50": 160.094,
+      "p95": 215.633,
+      "max": 437.636
+    }
+  },
+  "heavyFrames": [],
+  "subCategoryBreakdown": [
+    {
+      "name": "raster.task",
+      "count": 27716,
+      "durMs": 19602.98
+    },
+    {
+      "name": "layout.updateLayout",
+      "count": 920,
+      "durMs": 1424.11
+    },
+    {
+      "name": "style.recalc",
+      "count": 920,
+      "durMs": 1324.32
+    },
+    {
+      "name": "paint.paint",
+      "count": 2310,
+      "durMs": 576.01
+    },
+    {
+      "name": "layout.performLayout",
+      "count": 1375,
+      "durMs": 215.22
+    },
+    {
+      "name": "invalidation",
+      "count": 22669,
+      "durMs": 1.41
+    },
+    {
+      "name": "raster.drawFrame",
+      "count": 460,
+      "durMs": 0
+    }
+  ],
+  "totals": {
+    "layout": 24538,
+    "paint": 11058,
+    "raster": 141278,
+    "style": 25710,
+    "js": 485,
+    "other": 153312
+  },
+  "durMs": {
+    "layout": 5445.93,
+    "paint": 2225.72,
+    "raster": 75997.15,
+    "style": 4004.47,
+    "js": 506.98
+  },
+  "topEventNames": [
+    {
+      "name": "LayerTreeHostImpl::NotifyTileStateChanged",
+      "count": 62891
+    },
+    {
+      "name": "RunTask",
+      "count": 39146
+    },
+    {
+      "name": "auto cc::(anonymous namespace)::InsertNodeForTask(TaskGraph *, TileTask *, uint16_t, uint16_t, size_t, bool)::(anonymous class)::operator()()::(anonymous class)::operator()(uint32_t) const",
+      "count": 32260
+    },
+    {
+      "name": "RasterSource::PerformSolidColorAnalysis",
+      "count": 29954
+    },
+    {
+      "name": "RasterizerTaskImpl::RunOnWorkerThread",
+      "count": 27716
+    },
+    {
+      "name": "RasterTask",
+      "count": 27716
+    },
+    {
+      "name": "ZeroCopyRasterBuffer::Playback",
+      "count": 27716
+    },
+    {
+      "name": "DisplayItemList::Raster",
+      "count": 27716
+    },
+    {
+      "name": "StyleRecalcInvalidationTracking",
+      "count": 12381
+    },
+    {
+      "name": "Document::SetReadyState",
+      "count": 10758
+    },
+    {
+      "name": "LayoutInvalidationTracking",
+      "count": 7951
+    },
+    {
+      "name": "StyleResolver::ResolveStyle",
+      "count": 7381
+    },
+    {
+      "name": "AsyncTask Scheduled",
+      "count": 4598
+    },
+    {
+      "name": "LocalFrameView::ScheduleAnimation",
+      "count": 4118
+    },
+    {
+      "name": "Document::CancelParsing",
+      "count": 3873
+    },
+    {
+      "name": "RenderSurfaceReasonCount",
+      "count": 3688
+    },
+    {
+      "name": "TileTaskManagerImpl::CheckForCompletedTasks",
+      "count": 3369
+    },
+    {
+      "name": "UpdateLayer",
+      "count": 3231
+    },
+    {
+      "name": "EventDispatch",
+      "count": 3201
+    },
+    {
+      "name": "ScheduledTasksState",
+      "count": 3167
+    },
+    {
+      "name": "TileManager::CheckPendingGpuWorkAndIssueSignals",
+      "count": 2778
+    },
+    {
+      "name": "Document::Initialize",
+      "count": 2736
+    },
+    {
+      "name": "Document::OpenForNavigation",
+      "count": 2736
+    },
+    {
+      "name": "Document::FinishedParsing",
+      "count": 2736
+    },
+    {
+      "name": "Document::Document",
+      "count": 2622
+    },
+    {
+      "name": "SoftwareImageDecodeCache::ReduceCacheUsageUntilWithinLimit",
+      "count": 2402
+    },
+    {
+      "name": "RecordingSource::FinishDisplayItemListUpdate",
+      "count": 2330
+    },
+    {
+      "name": "DiscardableImageMap::Generate",
+      "count": 2330
+    },
+    {
+      "name": "TileManager::CheckForCompletedTasksAndIssueSignals",
+      "count": 2316
+    },
+    {
+      "name": "Paint",
+      "count": 2310
+    },
+    {
+      "name": "LocalFrameView::UpdateStyleAndLayout",
+      "count": 2298
+    },
+    {
+      "name": "TaskSetFinishedTaskImpl::RunOnWorkerThread",
+      "count": 2111
+    },
+    {
+      "name": "ScheduledTasks",
+      "count": 2110
+    },
+    {
+      "name": "InvalidateLayout",
+      "count": 1872
+    },
+    {
+      "name": "PipelineReporter",
+      "count": 1850
+    },
+    {
+      "name": "BeginImplFrameToSendBeginMainFrame",
+      "count": 1850
+    },
+    {
+      "name": "AnimationFrame",
+      "count": 1846
+    },
+    {
+      "name": "EndActivateToSubmitCompositorFrame",
+      "count": 1836
+    },
+    {
+      "name": "SubmitCompositorFrameToPresentationCompositorFrame",
+      "count": 1836
+    },
+    {
+      "name": "SubmitToReceiveCompositorFrame",
+      "count": 1836
+    }
+  ],
+  "topJsSymbols": [
+    {
+      "name": "heartbeat",
+      "value": 486277
+    },
+    {
+      "name": "ws.onmessage",
+      "value": 6550
+    },
+    {
+      "name": "ws.onopen",
+      "value": 318
+    },
+    {
+      "name": "setStyle",
+      "value": 12
+    },
+    {
+      "name": "paintHud",
+      "value": 4
+    },
+    {
+      "name": "(idle)",
+      "value": 3
+    },
+    {
+      "name": "syncTemplate",
+      "value": 3
+    },
+    {
+      "name": "buildDom",
+      "value": 3
+    },
+    {
+      "name": "formatClock",
+      "value": 3
+    },
+    {
+      "name": "ancestorGroupIds",
+      "value": 3
+    },
+    {
+      "name": "(program)",
+      "value": 2
+    },
+    {
+      "name": "__export",
+      "value": 2
+    },
+    {
+      "name": "connect",
+      "value": 2
+    },
+    {
+      "name": "normalizeTimeline",
+      "value": 2
+    },
+    {
+      "name": "ensureMaskScope",
+      "value": 2
+    },
+    {
+      "name": "applyState",
+      "value": 2
+    },
+    {
+      "name": "opacityCss",
+      "value": 2
+    },
+    {
+      "name": "paintLayerContent",
+      "value": 2
+    },
+    {
+      "name": "applyMaskScopes",
+      "value": 2
+    },
+    {
+      "name": "sampleTargetTrack",
+      "value": 2
+    },
+    {
+      "name": "applyTransform",
+      "value": 2
+    },
+    {
+      "name": "__copyProps",
+      "value": 1
+    },
+    {
+      "name": "get",
+      "value": 1
+    },
+    {
+      "name": "(garbage collector)",
+      "value": 1
+    },
+    {
+      "name": "buildUrl",
+      "value": 1
+    },
+    {
+      "name": "playTimeline",
+      "value": 1
+    },
+    {
+      "name": "ensureLayerNode",
+      "value": 1
+    },
+    {
+      "name": "createLayerElement",
+      "value": 1
+    },
+    {
+      "name": "mountStack",
+      "value": 1
+    },
+    {
+      "name": "ensureFonts",
+      "value": 1
+    }
+  ]
+}

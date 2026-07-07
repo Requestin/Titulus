@@ -1,0 +1,44 @@
+Trace: /tmp/p15-bench-cache-bench-25d/blink-trace.json
+Duration: ~15s | events=161454 | frames≈1497 (SendBeginMainFrame=1997)
+Per-frame slicing marker: BeginFrame | slices=500
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.54
+  Paint:   2.51
+  Raster:  0.52
+  Style:   6.27
+  JS ev:   0.25
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  6 / 6 / 12
+  Paint events:   10 / 10 / 28
+  Raster events:  1 / 1 / 360
+  Raster ms:      0 / 0 / 267.213
+
+Heavy frames (raster events > 2x p50, floor=2.0): 3
+  frame#0 raster=360 (267.213ms)
+  frame#1 raster=80 (16.37ms)
+  frame#63 raster=101 (88.046ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=502 durMs=153
+  style.recalc: count=501 durMs=125.83
+  raster.task: count=108 durMs=98.17
+  paint.paint: count=1007 durMs=42.36
+  layout.performLayout: count=2 durMs=4.86
+  invalidation: count=5531 durMs=1.65
+  raster.drawFrame: count=497 durMs=0
+
+Total duration (ms, slice dur sum where present):
+  Layout=522.61 Paint=473.77 Raster=371.63 Style=448.22 JS=229.54
+
+Top JS symbols (sample weight):
+  tick: 224520
+  (idle): 88
+  (program): 3
+  requestAnimationFrame: 1
+  (garbage collector): 1
+  RegExp: rotateX\([^)]+\): 1
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-25d.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-25d.csv (500 rows)

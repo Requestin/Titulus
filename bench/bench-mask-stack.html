@@ -82,10 +82,20 @@
 
   const host = document.getElementById('host');
   const r = new BG.TemplateRenderer(host, { playbackMode: 'raf' });
-  r.syncTemplate(tpl, {});
-  r.play();
+  // Phase 15 P1 fix: see bench-image-left.html — playTimeline() replaces the
+  // old syncTemplate()+play() pair (r.play() no longer exists).
+  r.playTimeline(tpl, {});
 
+  // Phase 15 P1 fix: see bench-image-left.html for why a bare rAF loop
+  // isn't enough — this beacon guarantees real compositor damage so the
+  // engine's 200ms paint watchdog never becomes the effective frame rate.
+  const beacon = document.createElement('div');
+  beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+  document.body.appendChild(beacon);
+  let __n = 0;
   (function heartbeat() {
+    __n++;
+    beacon.style.background = (__n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
     requestAnimationFrame(heartbeat);
   })();
 })();
