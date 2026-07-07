@@ -26,7 +26,7 @@
 | `98bdadf` | 3 июл | `fix db folder` |
 | `0690c87` | 6 июл | `change md context` |
 | `3dd193f` | 6 июл | `add media mam for video and images` |
-| `60a8457` | 7 июл | `change timeline,directors` |
+| `426fc10` | 7 июл | `change timeline,directors` |
 
 ---
 
