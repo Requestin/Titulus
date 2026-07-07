@@ -67,7 +67,17 @@
     el.style.transform = 'rotateX(' + tiltX + 'deg) rotateY(' + tiltY + 'deg) translateZ(' + (i * 18) + 'px)';
     row.appendChild(el);
   }
+  // Phase 15 P1: add the standard beacon defensively alongside the existing
+  // per-card transform mutation, ruling out any compositor damage elision
+  // on frames where the sine-wobble delta rounds to a visually identical
+  // matrix (see bench-image-left.html for the full explanation).
+  const beacon = document.createElement('div');
+  beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+  document.body.appendChild(beacon);
+  let __n = 0;
   function tick() {
+    __n++;
+    beacon.style.background = (__n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
     const t = performance.now() / 1000;
     for (let i = 0; i < row.children.length; i++) {
       const el = row.children[i];

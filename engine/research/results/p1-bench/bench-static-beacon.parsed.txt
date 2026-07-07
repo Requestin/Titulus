@@ -1,0 +1,42 @@
+Trace: /tmp/p15-bench-cache-bench-static-beacon/blink-trace.json
+Duration: ~15s | events=244438 | frames≈2979 (SendBeginMainFrame=3972)
+Per-frame slicing marker: BeginFrame | slices=993
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.51
+  Paint:   2.25
+  Raster:  0.27
+  Style:   1.76
+  JS ev:   0.25
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  6 / 6 / 12
+  Paint events:   9 / 9 / 16
+  Raster events:  1 / 1 / 61
+  Raster ms:      0 / 0 / 17.697
+
+Heavy frames (raster events > 2x p50, floor=2.0): 1
+  frame#0 raster=61 (17.697ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=996 durMs=137.88
+  style.recalc: count=995 durMs=99.84
+  paint.paint: count=1985 durMs=93.53
+  raster.task: count=5 durMs=4.4
+  invalidation: count=2006 durMs=2.79
+  layout.performLayout: count=2 durMs=2.73
+  raster.drawFrame: count=993 durMs=0
+
+Total duration (ms, slice dur sum where present):
+  Layout=483.63 Paint=541.44 Raster=17.7 Style=375.81 JS=203.18
+
+Top JS symbols (sample weight):
+  tick: 200204
+  (idle): 94
+  (program): 1
+  createElement: 1
+  requestAnimationFrame: 1
+  (garbage collector): 1
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-static-beacon.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-static-beacon.csv (993 rows)

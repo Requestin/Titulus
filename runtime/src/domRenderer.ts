@@ -663,37 +663,58 @@ export class TemplateRenderer {
           shape: layer.shape,
           cornerRadius: layer.cornerRadius,
         };
-        const outline = projectMaskOutline(maskSpec, mergedT, clipAt);
-        const geoKey = `${maskGeometryKey(outline)}|${layer.shape}|${layer.cornerRadius}|${layer.maskMode}`;
-        const degenerate = isDegenerateProjectedOutline(outline, containerW, containerH);
+        // Phase 15 P3-B: projectMaskOutline/projectedMaskClip recompute the
+        // full polygon every single frame, even when this mask's geometry
+        // hasn't changed (e.g. a static mask elsewhere in a template whose
+        // *other* masks are animating). The cost matrix (p15-cost-matrix.md)
+        // showed mask raster cost scales with count/complexity, and this
+        // JS-side recomputation was unconditional — memoize on a cheap input
+        // signature and skip straight to the cached clipPath/overflow when
+        // nothing that feeds the projection actually changed.
+        const inputSig =
+          `${mergedT.x},${mergedT.y},${mergedT.width},${mergedT.height},` +
+          `${mergedT.rotation},${mergedT.rotationX},${mergedT.rotationY},${mergedT.perspective},` +
+          `${mergedT.scaleX},${mergedT.scaleY},${mergedT.anchorX},${mergedT.anchorY},` +
+          `${containerW},${containerH},${clipAt.left},${clipAt.top},` +
+          `${layer.shape},${layer.cornerRadius},${layer.maskMode}`;
         let clipPath: string;
         let overflow: string;
-        if (degenerate) {
-          // Hold the last good polygon — a collapsed projection at rotationY ~ 90°
-          // would clip the whole group to black for a frame (Phase 10.6).
-          if (cache.lastValidClipPath) {
-            clipPath = cache.lastValidClipPath;
-            overflow = cache.lastValidClipOverflow ?? 'hidden';
-          } else {
-            clipPath = 'none';
-            overflow = 'visible';
-          }
+        if (cache.lastInputSig === inputSig && cache.lastValidClipPath !== undefined) {
+          clipPath = cache.lastValidClipPath;
+          overflow = cache.lastValidClipOverflow ?? 'hidden';
         } else {
-          const proj = projectedMaskClip(maskSpec, outline, containerW, containerH);
-          clipPath = proj.clipPath;
-          overflow = proj.overflow;
-          cache.lastValidClipPath = clipPath;
-          cache.lastValidClipOverflow = overflow;
-          cache.lastValidClipGeoKey = geoKey;
+          const outline = projectMaskOutline(maskSpec, mergedT, clipAt);
+          const geoKey = `${maskGeometryKey(outline)}|${layer.shape}|${layer.cornerRadius}|${layer.maskMode}`;
+          const degenerate = isDegenerateProjectedOutline(outline, containerW, containerH);
+          if (degenerate) {
+            // Hold the last good polygon — a collapsed projection at rotationY ~ 90°
+            // would clip the whole group to black for a frame (Phase 10.6).
+            if (cache.lastValidClipPath) {
+              clipPath = cache.lastValidClipPath;
+              overflow = cache.lastValidClipOverflow ?? 'hidden';
+            } else {
+              clipPath = 'none';
+              overflow = 'visible';
+            }
+          } else {
+            const proj = projectedMaskClip(maskSpec, outline, containerW, containerH);
+            clipPath = proj.clipPath;
+            overflow = proj.overflow;
+            cache.lastValidClipPath = clipPath;
+            cache.lastValidClipOverflow = overflow;
+            cache.lastValidClipGeoKey = geoKey;
+          }
+          // Only remember this signature as "stable" once we got a real
+          // (non-degenerate) projection — a degenerate frame must keep
+          // recomputing until the outline recovers, so it can't be memoized.
+          if (degenerate) delete cache.lastInputSig;
+          else cache.lastInputSig = inputSig;
         }
         this.setStyle(node.clipHost, cache, 'left', '0');
         this.setStyle(node.clipHost, cache, 'top', '0');
         this.setStyle(node.clipHost, cache, 'width', `${containerW}px`);
         this.setStyle(node.clipHost, cache, 'height', `${containerH}px`);
         this.setStyle(node.clipHost, cache, 'overflow', overflow);
-        if (cache.clipGeoKey !== geoKey && !degenerate) {
-          cache.clipGeoKey = geoKey;
-        }
         this.setStyle(node.clipHost, cache, 'clipPath', clipPath);
         this.setStyle(node.clipHost, cache, 'borderRadius', '0');
         this.setStyle(node.clipHost, cache, 'maskImage', 'none');
@@ -712,6 +733,7 @@ export class TemplateRenderer {
         delete cache.lastValidClipPath;
         delete cache.lastValidClipOverflow;
         delete cache.lastValidClipGeoKey;
+        delete cache.lastInputSig;
         const clip = maskClipStyle(layer, clipAt, containerW, containerH);
 
         this.setStyle(node.clipHost, cache, 'left', '0');

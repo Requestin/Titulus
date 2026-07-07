@@ -1,0 +1,287 @@
+{
+  "source": "/tmp/p15-bench-cache-bench-image-transform/blink-trace.json",
+  "durationSec": 15,
+  "eventCount": 277372,
+  "beginFrames": 3973,
+  "drawFrames": 993,
+  "frameCount": 2979,
+  "frameMarkerUsedForSlicing": "BeginFrame",
+  "perFrameSliceCount": 994,
+  "perFrame": {
+    "layout": 1.51,
+    "paint": 2.25,
+    "raster": 0.25,
+    "style": 2.26,
+    "jsEvents": 0.25
+  },
+  "perFrameDistribution": {
+    "layoutEvents": {
+      "p50": 6,
+      "p95": 6,
+      "max": 12
+    },
+    "paintEvents": {
+      "p50": 9,
+      "p95": 9,
+      "max": 18
+    },
+    "rasterEvents": {
+      "p50": 1,
+      "p95": 1,
+      "max": 6
+    },
+    "rasterMs": {
+      "p50": 0,
+      "p95": 0,
+      "max": 0.37
+    }
+  },
+  "heavyFrames": [
+    {
+      "frameIdx": 0,
+      "tsStart": 24543607172,
+      "raster": 6,
+      "rasterMs": 0.37
+    }
+  ],
+  "subCategoryBreakdown": [
+    {
+      "name": "layout.updateLayout",
+      "count": 996,
+      "durMs": 238.9
+    },
+    {
+      "name": "style.recalc",
+      "count": 996,
+      "durMs": 183.74
+    },
+    {
+      "name": "paint.paint",
+      "count": 1986,
+      "durMs": 93.56
+    },
+    {
+      "name": "invalidation",
+      "count": 2999,
+      "durMs": 3.15
+    },
+    {
+      "name": "layout.performLayout",
+      "count": 2,
+      "durMs": 0.54
+    },
+    {
+      "name": "raster.task",
+      "count": 1,
+      "durMs": 0.1
+    },
+    {
+      "name": "raster.drawFrame",
+      "count": 993,
+      "durMs": 0
+    }
+  ],
+  "totals": {
+    "layout": 6010,
+    "paint": 8949,
+    "raster": 998,
+    "style": 8989,
+    "js": 994,
+    "other": 110609
+  },
+  "durMs": {
+    "layout": 787.03,
+    "paint": 719.52,
+    "raster": 0.37,
+    "style": 661.95,
+    "js": 201.45
+  },
+  "topEventNames": [
+    {
+      "name": "RunTask",
+      "count": 27774
+    },
+    {
+      "name": "PipelineReporter",
+      "count": 3972
+    },
+    {
+      "name": "BeginImplFrameToSendBeginMainFrame",
+      "count": 3972
+    },
+    {
+      "name": "ProxyImpl::SetNeedsOneBeginImplFrameOnImplThread",
+      "count": 3972
+    },
+    {
+      "name": "AnimationFrame",
+      "count": 3968
+    },
+    {
+      "name": "EndActivateToSubmitCompositorFrame",
+      "count": 3966
+    },
+    {
+      "name": "SubmitCompositorFrameToPresentationCompositorFrame",
+      "count": 3966
+    },
+    {
+      "name": "SubmitToReceiveCompositorFrame",
+      "count": 3966
+    },
+    {
+      "name": "ReceiveCompositorFrameToStartDraw",
+      "count": 3966
+    },
+    {
+      "name": "StartDrawToSwapStart",
+      "count": 3966
+    },
+    {
+      "name": "SwapEndToPresentationCompositorFrame",
+      "count": 3966
+    },
+    {
+      "name": "auto cc::(anonymous namespace)::InsertNodeForTask(TaskGraph *, TileTask *, uint16_t, uint16_t, size_t, bool)::(anonymous class)::operator()()::(anonymous class)::operator()(uint32_t) const",
+      "count": 3002
+    },
+    {
+      "name": "ScheduledTasksState",
+      "count": 3000
+    },
+    {
+      "name": "AsyncTask Scheduled",
+      "count": 2992
+    },
+    {
+      "name": "AnimationHost::TickAnimations",
+      "count": 2988
+    },
+    {
+      "name": "LayerTreeHostImpl::CommitComplete",
+      "count": 2985
+    },
+    {
+      "name": "Commit",
+      "count": 2981
+    },
+    {
+      "name": "LayerTreeHostImpl::ActivateSyncTree",
+      "count": 2981
+    },
+    {
+      "name": "SendBeginMainFrame",
+      "count": 2979
+    },
+    {
+      "name": "ProxyMain::BeginMainFrame",
+      "count": 2979
+    },
+    {
+      "name": "ProxyMain::BeginMainFrame::commit",
+      "count": 2979
+    },
+    {
+      "name": "ProxyImpl::ReadyToCommit",
+      "count": 2979
+    },
+    {
+      "name": "ProxyImpl::Commit",
+      "count": 2979
+    },
+    {
+      "name": "ProxyImpl::ReadyToActivate",
+      "count": 2979
+    },
+    {
+      "name": "NeedsTickAnimations",
+      "count": 2978
+    },
+    {
+      "name": "Frame ",
+      "count": 2656
+    },
+    {
+      "name": "Frame   ",
+      "count": 2632
+    },
+    {
+      "name": "Frame",
+      "count": 2632
+    },
+    {
+      "name": "StyleResolver::ResolveStyle",
+      "count": 2002
+    },
+    {
+      "name": "ScheduledTasks",
+      "count": 2000
+    },
+    {
+      "name": "TaskSetFinishedTaskImpl::RunOnWorkerThread",
+      "count": 2000
+    },
+    {
+      "name": "LocalFrameView::ScheduleAnimation",
+      "count": 1998
+    },
+    {
+      "name": "TileTaskManagerImpl::CheckForCompletedTasks",
+      "count": 1997
+    },
+    {
+      "name": "TileManager::CheckPendingGpuWorkAndIssueSignals",
+      "count": 1996
+    },
+    {
+      "name": "auto cc::SchedulerStateMachine::ShouldThrottleSendBeginMainFrame()::(anonymous class)::operator()(uint32_t) const",
+      "count": 1993
+    },
+    {
+      "name": "StyleRecalcInvalidationTracking",
+      "count": 1990
+    },
+    {
+      "name": "ProxyImpl::OnCanDrawStateChanged",
+      "count": 1990
+    },
+    {
+      "name": "Scheduler:pending_submit_frames",
+      "count": 1990
+    },
+    {
+      "name": "LayerTreeImpl::UpdateDrawProperties",
+      "count": 1988
+    },
+    {
+      "name": "LayerTreeImpl::UpdateDrawProperties::CalculateDrawProperties",
+      "count": 1988
+    }
+  ],
+  "topJsSymbols": [
+    {
+      "name": "tick",
+      "value": 199198
+    },
+    {
+      "name": "(idle)",
+      "value": 95
+    },
+    {
+      "name": "(program)",
+      "value": 1
+    },
+    {
+      "name": "createElement",
+      "value": 1
+    },
+    {
+      "name": "requestAnimationFrame",
+      "value": 1
+    },
+    {
+      "name": "(garbage collector)",
+      "value": 1
+    }
+  ]
+}

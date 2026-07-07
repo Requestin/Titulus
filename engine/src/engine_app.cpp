@@ -20,11 +20,29 @@ std::string g_trace_startup_file;
 int g_trace_startup_seconds = 0;
 int g_blink_research = 0;
 
-const char* kTraceStartupCategories =
+const char* kDefaultTraceStartupCategories =
     "blink,cc,devtools.timeline,disabled-by-default-devtools.timeline,"
     "disabled-by-default-devtools.timeline.invalidationTracking,"
     "disabled-by-default-devtools.timeline.frame,"
     "disabled-by-default-v8.cpu_profiler,v8";
+
+// Phase 15 P0: allow overriding the trace categories/duration without a
+// rebuild, so soak runs on the live decklink channels can capture longer /
+// differently-scoped traces (e.g. to isolate the mask raster cost, class B)
+// without needing a remote-debugging port open. Empty env = keep defaults.
+const char* TraceCategories() {
+    if (const char* v = std::getenv("BG_TRACE_CATEGORIES")) return v;
+    return kDefaultTraceStartupCategories;
+}
+
+// Returns the env-var override for trace duration, or 0 if unset/invalid.
+int TraceSecondsOverride() {
+    if (const char* v = std::getenv("BG_TRACE_SECONDS")) {
+        int secs = std::atoi(v);
+        if (secs > 0) return secs;
+    }
+    return 0;
+}
 }  // namespace
 
 void EngineApp::OnBeforeCommandLineProcessing(const CefString& process_type,
@@ -74,10 +92,11 @@ void EngineApp::OnBeforeCommandLineProcessing(const CefString& process_type,
         cmd->AppendSwitch("disable-background-timer-throttling");
 
         // Chrome trace for Blink/cc research (first N seconds after process
-        // start). Gated on remote debugging so production decklink paths stay
-        // untouched unless explicitly opened for DevTools.
+        // start). Gated on remote debugging (or blink_research, or an explicit
+        // BG_TRACE_SECONDS env override) so production decklink paths stay
+        // untouched unless explicitly opened for research.
         if (!g_trace_startup_file.empty() && g_trace_startup_seconds > 0) {
-            cmd->AppendSwitchWithValue("trace-startup", kTraceStartupCategories);
+            cmd->AppendSwitchWithValue("trace-startup", TraceCategories());
             cmd->AppendSwitchWithValue("trace-startup-file", g_trace_startup_file);
             cmd->AppendSwitchWithValue("trace-startup-duration",
                                        std::to_string(g_trace_startup_seconds));
@@ -106,9 +125,15 @@ bool EngineInit(CefMainArgs& main_args, const std::string& cache_dir,
     if (remote_debugging_port > 0) {
         settings.remote_debugging_port = remote_debugging_port;
     }
-    if ((remote_debugging_port > 0 || blink_research > 0) && !cache_dir.empty()) {
+    const int trace_seconds_override = TraceSecondsOverride();
+    if ((remote_debugging_port > 0 || blink_research > 0 || trace_seconds_override > 0)
+        && !cache_dir.empty()) {
         g_trace_startup_file = cache_dir + "/blink-trace.json";
-        g_trace_startup_seconds = 15;
+        // Phase 15 P0: BG_TRACE_SECONDS lets soak runs capture a trace window
+        // longer than the 15s research default (still bounded — Chromium's
+        // startup tracing buffers in memory, so keep this sane; 60s is the
+        // largest window used by the Phase 15 baseline/soak scripts).
+        g_trace_startup_seconds = trace_seconds_override > 0 ? trace_seconds_override : 15;
     }
     // Single-process mode by default keeps per-channel overhead low
     // (DEVELOPMENT_PROMPT §9.2). Caller can flip to multi-process via --multi-process.

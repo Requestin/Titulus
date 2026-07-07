@@ -129,11 +129,19 @@
   const masks = params.get('masks') !== '0';  // default ON
   document.getElementById('maskwrap').classList.toggle('enabled', masks);
 
-  // Perpetual rAF heartbeat — keeps CEF external begin-frame painting (§10).
-  // A tiny transform nudge guarantees compositor damage each frame.
-  const stage = document.getElementById('stage');
+  // Phase 15 P1 fix: the previous opacity-nudge (0.999..1.0) quantizes back
+  // to the same 8-bit alpha most frames — Blink's compositor detects "no
+  // real change" and skips the paint, so this measured the paint watchdog's
+  // ~25-28fps fallback cadence, not the scene's real cost. Swapped for the
+  // same beacon pattern channel.html uses (§10): a genuinely alternating
+  // pixel color is never quantized away.
+  const beacon = document.createElement('div');
+  beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+  document.body.appendChild(beacon);
+  let __n = 0;
   function frame() {
-    stage.style.opacity = (0.999 + Math.random() * 0.001).toString();
+    __n++;
+    beacon.style.background = (__n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

@@ -1,0 +1,287 @@
+{
+  "source": "/tmp/p15-bench-cache-bench-alpha-off/blink-trace.json",
+  "durationSec": 15,
+  "eventCount": 285037,
+  "beginFrames": 3865,
+  "drawFrames": 965,
+  "frameCount": 2898,
+  "frameMarkerUsedForSlicing": "BeginFrame",
+  "perFrameSliceCount": 967,
+  "perFrame": {
+    "layout": 1.52,
+    "paint": 2.25,
+    "raster": 0.32,
+    "style": 3.76,
+    "jsEvents": 0.25
+  },
+  "perFrameDistribution": {
+    "layoutEvents": {
+      "p50": 6,
+      "p95": 6,
+      "max": 12
+    },
+    "paintEvents": {
+      "p50": 9,
+      "p95": 9,
+      "max": 19
+    },
+    "rasterEvents": {
+      "p50": 1,
+      "p95": 1,
+      "max": 260
+    },
+    "rasterMs": {
+      "p50": 0,
+      "p95": 0,
+      "max": 161.506
+    }
+  },
+  "heavyFrames": [
+    {
+      "frameIdx": 0,
+      "tsStart": 24716775025,
+      "raster": 260,
+      "rasterMs": 161.506
+    }
+  ],
+  "subCategoryBreakdown": [
+    {
+      "name": "layout.updateLayout",
+      "count": 969,
+      "durMs": 240.62
+    },
+    {
+      "name": "style.recalc",
+      "count": 968,
+      "durMs": 181.84
+    },
+    {
+      "name": "paint.paint",
+      "count": 1934,
+      "durMs": 75.37
+    },
+    {
+      "name": "raster.task",
+      "count": 52,
+      "durMs": 42.57
+    },
+    {
+      "name": "layout.performLayout",
+      "count": 2,
+      "durMs": 8.45
+    },
+    {
+      "name": "invalidation",
+      "count": 5817,
+      "durMs": 3.35
+    },
+    {
+      "name": "raster.drawFrame",
+      "count": 965,
+      "durMs": 0
+    }
+  ],
+  "totals": {
+    "layout": 5858,
+    "paint": 8712,
+    "raster": 1225,
+    "style": 14527,
+    "js": 967,
+    "other": 110751
+  },
+  "durMs": {
+    "layout": 831.56,
+    "paint": 605.46,
+    "raster": 161.51,
+    "style": 669.37,
+    "js": 151.81
+  },
+  "topEventNames": [
+    {
+      "name": "RunTask",
+      "count": 27258
+    },
+    {
+      "name": "RenderSurfaceReasonCount",
+      "count": 5793
+    },
+    {
+      "name": "StyleResolver::ResolveStyle",
+      "count": 4842
+    },
+    {
+      "name": "UpdateLayer",
+      "count": 4830
+    },
+    {
+      "name": "StyleRecalcInvalidationTracking",
+      "count": 4825
+    },
+    {
+      "name": "PipelineReporter",
+      "count": 3866
+    },
+    {
+      "name": "BeginImplFrameToSendBeginMainFrame",
+      "count": 3866
+    },
+    {
+      "name": "ProxyImpl::SetNeedsOneBeginImplFrameOnImplThread",
+      "count": 3863
+    },
+    {
+      "name": "AnimationFrame",
+      "count": 3860
+    },
+    {
+      "name": "EndActivateToSubmitCompositorFrame",
+      "count": 3858
+    },
+    {
+      "name": "SubmitCompositorFrameToPresentationCompositorFrame",
+      "count": 3858
+    },
+    {
+      "name": "SubmitToReceiveCompositorFrame",
+      "count": 3858
+    },
+    {
+      "name": "ReceiveCompositorFrameToStartDraw",
+      "count": 3858
+    },
+    {
+      "name": "StartDrawToSwapStart",
+      "count": 3858
+    },
+    {
+      "name": "SwapEndToPresentationCompositorFrame",
+      "count": 3858
+    },
+    {
+      "name": "auto cc::(anonymous namespace)::InsertNodeForTask(TaskGraph *, TileTask *, uint16_t, uint16_t, size_t, bool)::(anonymous class)::operator()()::(anonymous class)::operator()(uint32_t) const",
+      "count": 2974
+    },
+    {
+      "name": "ScheduledTasksState",
+      "count": 2920
+    },
+    {
+      "name": "AsyncTask Scheduled",
+      "count": 2908
+    },
+    {
+      "name": "AnimationHost::TickAnimations",
+      "count": 2907
+    },
+    {
+      "name": "LayerTreeHostImpl::CommitComplete",
+      "count": 2904
+    },
+    {
+      "name": "Commit",
+      "count": 2900
+    },
+    {
+      "name": "LayerTreeHostImpl::ActivateSyncTree",
+      "count": 2900
+    },
+    {
+      "name": "SendBeginMainFrame",
+      "count": 2898
+    },
+    {
+      "name": "ProxyMain::BeginMainFrame",
+      "count": 2898
+    },
+    {
+      "name": "ProxyMain::BeginMainFrame::commit",
+      "count": 2898
+    },
+    {
+      "name": "ProxyImpl::ReadyToCommit",
+      "count": 2898
+    },
+    {
+      "name": "ProxyImpl::Commit",
+      "count": 2898
+    },
+    {
+      "name": "ProxyImpl::ReadyToActivate",
+      "count": 2898
+    },
+    {
+      "name": "NeedsTickAnimations",
+      "count": 2897
+    },
+    {
+      "name": "Frame ",
+      "count": 2576
+    },
+    {
+      "name": "Frame   ",
+      "count": 2576
+    },
+    {
+      "name": "Frame",
+      "count": 2552
+    },
+    {
+      "name": "LocalFrameView::ScheduleAnimation",
+      "count": 1951
+    },
+    {
+      "name": "TaskSetFinishedTaskImpl::RunOnWorkerThread",
+      "count": 1948
+    },
+    {
+      "name": "ScheduledTasks",
+      "count": 1946
+    },
+    {
+      "name": "TileTaskManagerImpl::CheckForCompletedTasks",
+      "count": 1945
+    },
+    {
+      "name": "TileManager::CheckPendingGpuWorkAndIssueSignals",
+      "count": 1942
+    },
+    {
+      "name": "auto cc::SchedulerStateMachine::ShouldThrottleSendBeginMainFrame()::(anonymous class)::operator()(uint32_t) const",
+      "count": 1939
+    },
+    {
+      "name": "ProxyImpl::OnCanDrawStateChanged",
+      "count": 1936
+    },
+    {
+      "name": "Paint",
+      "count": 1934
+    }
+  ],
+  "topJsSymbols": [
+    {
+      "name": "frame",
+      "value": 148978
+    },
+    {
+      "name": "(idle)",
+      "value": 91
+    },
+    {
+      "name": "(program)",
+      "value": 1
+    },
+    {
+      "name": "appendChild",
+      "value": 1
+    },
+    {
+      "name": "requestAnimationFrame",
+      "value": 1
+    },
+    {
+      "name": "(garbage collector)",
+      "value": 1
+    }
+  ]
+}

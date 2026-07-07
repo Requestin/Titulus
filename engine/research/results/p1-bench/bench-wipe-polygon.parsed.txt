@@ -1,0 +1,51 @@
+Trace: /tmp/p15-bench-cache-bench-wipe-polygon/blink-trace.json
+Duration: ~15s | events=258316 | frames≈2979 (SendBeginMainFrame=3972)
+Per-frame slicing marker: BeginFrame | slices=993
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.52
+  Paint:   2.25
+  Raster:  0.26
+  Style:   1.77
+  JS ev:   0.5
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  6 / 6 / 39
+  Paint events:   9 / 9 / 12
+  Raster events:  1 / 1 / 59
+  Raster ms:      0 / 0 / 5.904
+
+Heavy frames (raster events > 2x p50, floor=2.0): 1
+  frame#1 raster=59 (5.904ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=996 durMs=188.42
+  style.recalc: count=995 durMs=133.69
+  paint.paint: count=1986 durMs=120.2
+  invalidation: count=2022 durMs=3.51
+  raster.task: count=10 durMs=1.84
+  layout.performLayout: count=3 durMs=0.54
+  raster.drawFrame: count=992 durMs=0
+
+Total duration (ms, slice dur sum where present):
+  Layout=640.6 Paint=743.16 Raster=5.9 Style=507.82 JS=444.31
+
+Top JS symbols (sample weight):
+  e: 262001
+  heartbeat: 169620
+  (idle): 18
+  setStyle: 5
+  (program): 3
+  requestAnimationFrame: 3
+  get: 2
+  templateHas3D: 2
+  applyMaskScopes: 2
+  X: 2
+  x: 2
+  parentPerspectiveForGroup: 2
+  (garbage collector): 1
+  applyLayerState: 1
+  startRaf: 1
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-wipe-polygon.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-wipe-polygon.csv (993 rows)

@@ -1,0 +1,51 @@
+Trace: /tmp/p15-bench-cache-bench-mask-stack/blink-trace.json
+Duration: ~15s | events=259281 | frames≈2979 (SendBeginMainFrame=3972)
+Per-frame slicing marker: BeginFrame | slices=993
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.52
+  Paint:   2.25
+  Raster:  0.29
+  Style:   1.77
+  JS ev:   0.5
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  6 / 6 / 43
+  Paint events:   9 / 9 / 12
+  Raster events:  1 / 1 / 161
+  Raster ms:      0 / 0 / 20.925
+
+Heavy frames (raster events > 2x p50, floor=2.0): 1
+  frame#1 raster=161 (20.925ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=996 durMs=192.06
+  style.recalc: count=996 durMs=135.43
+  paint.paint: count=1986 durMs=122.63
+  raster.task: count=31 durMs=6.02
+  invalidation: count=2027 durMs=3.62
+  layout.performLayout: count=3 durMs=0.48
+  raster.drawFrame: count=992 durMs=0
+
+Total duration (ms, slice dur sum where present):
+  Layout=649.83 Paint=755.92 Raster=20.93 Style=517.73 JS=576.31
+
+Top JS symbols (sample weight):
+  e: 382932
+  heartbeat: 177271
+  (idle): 10
+  setStyle: 7
+  applyState: 4
+  K: 4
+  N: 3
+  applyLayerState: 3
+  applyMaskScopes: 2
+  o: 2
+  _: 2
+  requestAnimationFrame: 2
+  x: 2
+  j: 2
+  A: 2
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-mask-stack.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p1-bench/bench-mask-stack.csv (993 rows)
