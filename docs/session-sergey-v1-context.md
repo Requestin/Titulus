@@ -28,7 +28,7 @@
 | `3dd193f` | 6 июл | `add media mam for video and images` |
 | `426fc10` | 7 июл | `change timeline,directors` |
 | `2eb7940` | 7 июл | `fix bugs at timeline` |
-| *(см. ниже)* | 7 июл | `fix bugs at timeline(change runtime)` |
+| `71390b0` | 7 июл | `fix bugs at timeline(change runtime)` |
 
 ---
 
