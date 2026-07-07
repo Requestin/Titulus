@@ -28,6 +28,26 @@
 | `3dd193f` | 6 июл | `add media mam for video and images` |
 | `426fc10` | 7 июл | `change timeline,directors` |
 | `2eb7940` | 7 июл | `fix bugs at timeline` |
+| *(см. ниже)* | 7 июл | `fix bugs at timeline(change runtime)` |
+
+---
+
+## 7 июля 2026 — Runtime: per-property tracks в одном director
+
+### Bugfix: opacity + X в одном director — анимация за 1 кадр
+
+**Симптом:** у одного слоя треки `opacity` и `x` в **одном** director — один из них анимируется за 1 кадр вместо 100; в **разных** director'ах всё работает.
+
+**Причина:** `normalizeTimeline` компилировал все свойства слоя в **один** список keyframe'ов по кадрам. Keyframe только с `x` на кадре 50 «ломал» интервал для `opacity` (0→50 вместо 0→100), или давал скачок за 1 кадр между соседними точками общего списка.
+
+**Fix (`runtime/src/timeline.ts`):** у каждого `(target, prop)` свой независимый `CompiledTrackEntry[]`; `samplePropTrack` интерполирует только между keyframe'ами **этого** свойства. `pushPropEntry` при compile вместо merge bag'ов на target.
+
+После изменения: `cd runtime && npm run build` + hard refresh редактора.
+
+### Чеклист
+
+- [ ] Opacity 0→1 и X за 100 кадров на одном слое в **одном** director — оба трека за полную длительность
+- [ ] Разные keyframe-кадры у opacity и x (напр. x только 0/100, opacity 0/50/100) — каждый трек интерполируется по своим точкам
 
 ---
 

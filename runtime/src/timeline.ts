@@ -32,18 +32,18 @@ import { getEasing, makeBezierEasing, lerp, type EasingFn } from './easing.js';
  */
 interface CompiledTrackEntry {
   frame: number;
-  bag: AnimatableValues;
+  value: number;
   easing: EasingFn;
 }
 
 /**
- * Per-target compiled tracks. A target is animated either as a layer or as a
- * group (never both); `isLayer` records which bag contributed so the sampler
- * can route the result without rescanning the keyframes each frame. Sorted by
- * `frame` at compile time.
+ * Per-target compiled tracks — one independent entry list per animated property.
+ * Props on the same layer MUST NOT share a single keyframe timeline; otherwise
+ * a keyframe for opacity at frame 100 and x at frame 0 would make opacity tween
+ * over 1 frame (0→100 bracket polluted by x-only entries).
  */
 interface CompiledTargetTracks {
-  entries: CompiledTrackEntry[];
+  props: Map<AnimatableProp, CompiledTrackEntry[]>;
   isLayer: boolean;
 }
 
@@ -156,15 +156,20 @@ export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
       const easing = kf.bezier ? makeBezierEasing(kf.bezier) : getEasing(kf.easing);
       for (const [tid, bag] of Object.entries(kf.layers)) {
         const filtered = filterBagForDirector(tl, d.id, { kind: 'layer', id: tid }, bag);
-        if (Object.keys(filtered).length > 0) {
-          pushEntry(tracks, tid, kf.frame, filtered, easing, true);
+        for (const prop of Object.keys(filtered) as AnimatableProp[]) {
+          pushPropEntry(tracks, tid, prop, kf.frame, filtered[prop]!, easing, true);
         }
       }
       for (const [tid, bag] of Object.entries(kf.groups)) {
         const filtered = filterBagForDirector(tl, d.id, { kind: 'group', id: tid }, bag);
-        if (Object.keys(filtered).length > 0) {
-          pushEntry(tracks, tid, kf.frame, filtered, easing, false);
+        for (const prop of Object.keys(filtered) as AnimatableProp[]) {
+          pushPropEntry(tracks, tid, prop, kf.frame, filtered[prop]!, easing, false);
         }
+      }
+    }
+    for (const track of tracks.values()) {
+      for (const entries of track.props.values()) {
+        entries.sort((a, b) => a.frame - b.frame);
       }
     }
     directors[d.id] = {
@@ -190,22 +195,31 @@ export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
   };
 }
 
-function pushEntry(
+function pushPropEntry(
   tracks: Map<string, CompiledTargetTracks>,
   tid: string,
+  prop: AnimatableProp,
   frame: number,
-  bag: AnimatableValues,
+  value: number,
   easing: EasingFn,
   isLayer: boolean,
 ): void {
   let t = tracks.get(tid);
-  if (!t) { t = { entries: [], isLayer }; tracks.set(tid, t); }
-  const existing = t.entries.find((e) => e.frame === frame);
+  if (!t) {
+    t = { props: new Map(), isLayer };
+    tracks.set(tid, t);
+  }
+  let entries = t.props.get(prop);
+  if (!entries) {
+    entries = [];
+    t.props.set(prop, entries);
+  }
+  const existing = entries.find((e) => e.frame === frame);
   if (existing) {
-    Object.assign(existing.bag, bag);
+    existing.value = value;
     return;
   }
-  t.entries.push({ frame, bag, easing });
+  entries.push({ frame, value, easing });
 }
 
 /** Sample one director at an explicit local frame (editor per-director playheads). */
@@ -250,46 +264,37 @@ export function directorLocalFrame(d: TimelineDirector, globalFrame: number): nu
   return rel;
 }
 
-/** Interpolate animated values for one target from its compiled track. */
-function sampleTargetTrack(
-  track: CompiledTargetTracks,
-  localFrame: number,
-): AnimatableValues {
-  const entries = track.entries;
+/** Interpolate one property from its own compiled entry list. */
+function samplePropTrack(entries: CompiledTrackEntry[], localFrame: number): number | undefined {
   const n = entries.length;
-  if (n === 0) return {};
+  if (n === 0) return undefined;
 
-  // Before first / after last keyframe: hold the boundary value.
-  if (localFrame <= entries[0].frame) return { ...entries[0].bag };
-  if (localFrame >= entries[n - 1].frame) return { ...entries[n - 1].bag };
+  if (localFrame <= entries[0]!.frame) return entries[0]!.value;
+  if (localFrame >= entries[n - 1]!.frame) return entries[n - 1]!.value;
 
-  // Binary-search the bracketing pair. Entries are sorted by frame at compile
-  // time, so this is O(log n) per frame instead of the previous linear scan.
   let lo = 0;
   let hi = n - 1;
   while (lo < hi - 1) {
     const mid = (lo + hi) >> 1;
-    if (entries[mid].frame <= localFrame) lo = mid;
+    if (entries[mid]!.frame <= localFrame) lo = mid;
     else hi = mid;
   }
-  const a = entries[lo];
-  const b = entries[hi];
-
+  const a = entries[lo]!;
+  const b = entries[hi]!;
   const span = b.frame - a.frame || 1;
   const rawT = (localFrame - a.frame) / span;
-  const eased = a.easing(rawT);
+  return lerp(a.value, b.value, a.easing(rawT));
+}
 
+/** Interpolate all animated properties for one target (independent per prop). */
+function sampleTargetTrack(
+  track: CompiledTargetTracks,
+  localFrame: number,
+): AnimatableValues {
   const out: AnimatableValues = {};
-  const props = new Set<AnimatableProp>([
-    ...(Object.keys(a.bag) as AnimatableProp[]),
-    ...(Object.keys(b.bag) as AnimatableProp[]),
-  ]);
-  for (const p of props) {
-    const va = a.bag[p];
-    const vb = b.bag[p];
-    if (va === undefined) out[p] = vb;
-    else if (vb === undefined) out[p] = va;
-    else out[p] = lerp(va, vb, eased);
+  for (const [prop, entries] of track.props) {
+    const v = samplePropTrack(entries, localFrame);
+    if (v !== undefined) out[prop] = v;
   }
   return out;
 }
