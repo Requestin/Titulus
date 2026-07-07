@@ -27,7 +27,7 @@
 | `0690c87` | 6 июл | `change md context` |
 | `3dd193f` | 6 июл | `add media mam for video and images` |
 | `426fc10` | 7 июл | `change timeline,directors` |
-| *(см. ниже)* | 7 июл | `fix bugs at timeline` |
+| `2eb7940` | 7 июл | `fix bugs at timeline` |
 
 ---
 
