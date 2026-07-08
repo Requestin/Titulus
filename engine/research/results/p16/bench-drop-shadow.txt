@@ -1,0 +1,36 @@
+Trace: /tmp/p16-bench-drop-shadow/blink-trace.json
+Duration: ~15s | events=221855 | frames≈2904 (SendBeginMainFrame=2904)
+Per-frame slicing marker: SendBeginMainFrame | slices=2904
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.35
+  Paint:   2.33
+  Raster:  1.07
+  Style:   1.34
+  JS ev:   0
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  0 / 4 / 10
+  Paint events:   0 / 7 / 7
+  Raster events:  0 / 3 / 102
+  Raster ms:      0 / 0.007 / 19.433
+
+Heavy frames (raster events > 2x p50, floor=3.0): 3
+  frame#2 raster=102 (17.244ms)
+  frame#5 raster=99 (19.433ms)
+  frame#557 raster=4 (0.009ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=971 durMs=123.64
+  style.recalc: count=970 durMs=88.68
+  raster.task: count=72 durMs=13.87
+  invalidation: count=1941 durMs=4.18
+  layout.performLayout: count=2 durMs=0.26
+
+Total duration (ms, slice dur sum where present):
+  Layout=412.48 Paint=482.9 Raster=42.27 Style=335.8 JS=0
+
+Top JS symbols (sample weight):
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-drop-shadow.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-drop-shadow.csv (2904 rows)

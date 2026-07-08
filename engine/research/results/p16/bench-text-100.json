@@ -1,0 +1,1098 @@
+{
+  "source": "/tmp/p16-bench-text-100/blink-trace.json",
+  "durationSec": 15,
+  "eventCount": 267884,
+  "beginFrames": 2991,
+  "drawFrames": 0,
+  "frameCount": 2991,
+  "frameMarkerUsedForSlicing": "SendBeginMainFrame",
+  "perFrameSliceCount": 2991,
+  "perFrame": {
+    "layout": 3.01,
+    "paint": 2.01,
+    "raster": 6.61,
+    "style": 1.34,
+    "jsEvents": 0
+  },
+  "perFrameDistribution": {
+    "layoutEvents": {
+      "p50": 0,
+      "p95": 9,
+      "max": 15
+    },
+    "paintEvents": {
+      "p50": 0,
+      "p95": 6,
+      "max": 7
+    },
+    "rasterEvents": {
+      "p50": 0,
+      "p95": 19,
+      "max": 270
+    },
+    "rasterMs": {
+      "p50": 0,
+      "p95": 2.654,
+      "max": 77.647
+    }
+  },
+  "heavyFrames": [
+    {
+      "frameIdx": 2,
+      "tsStart": 8036096460,
+      "raster": 270,
+      "rasterMs": 50.331
+    },
+    {
+      "frameIdx": 5,
+      "tsStart": 8036133182,
+      "raster": 267,
+      "rasterMs": 77.647
+    },
+    {
+      "frameIdx": 65,
+      "tsStart": 8036548921,
+      "raster": 35,
+      "rasterMs": 3.324
+    },
+    {
+      "frameIdx": 68,
+      "tsStart": 8036568888,
+      "raster": 35,
+      "rasterMs": 3.365
+    },
+    {
+      "frameIdx": 71,
+      "tsStart": 8036588894,
+      "raster": 35,
+      "rasterMs": 3.445
+    },
+    {
+      "frameIdx": 77,
+      "tsStart": 8036628912,
+      "raster": 35,
+      "rasterMs": 4.248
+    },
+    {
+      "frameIdx": 80,
+      "tsStart": 8036649030,
+      "raster": 35,
+      "rasterMs": 3.102
+    },
+    {
+      "frameIdx": 83,
+      "tsStart": 8036668938,
+      "raster": 35,
+      "rasterMs": 3.042
+    },
+    {
+      "frameIdx": 89,
+      "tsStart": 8036708870,
+      "raster": 35,
+      "rasterMs": 2.209
+    },
+    {
+      "frameIdx": 215,
+      "tsStart": 8037549144,
+      "raster": 35,
+      "rasterMs": 3.163
+    },
+    {
+      "frameIdx": 218,
+      "tsStart": 8037569206,
+      "raster": 35,
+      "rasterMs": 3.464
+    },
+    {
+      "frameIdx": 221,
+      "tsStart": 8037589106,
+      "raster": 35,
+      "rasterMs": 3.241
+    },
+    {
+      "frameIdx": 227,
+      "tsStart": 8037629140,
+      "raster": 35,
+      "rasterMs": 3.149
+    },
+    {
+      "frameIdx": 230,
+      "tsStart": 8037649101,
+      "raster": 35,
+      "rasterMs": 3.065
+    },
+    {
+      "frameIdx": 233,
+      "tsStart": 8037669099,
+      "raster": 35,
+      "rasterMs": 3.194
+    },
+    {
+      "frameIdx": 239,
+      "tsStart": 8037709168,
+      "raster": 35,
+      "rasterMs": 2.368
+    },
+    {
+      "frameIdx": 365,
+      "tsStart": 8038549165,
+      "raster": 35,
+      "rasterMs": 3.463
+    },
+    {
+      "frameIdx": 368,
+      "tsStart": 8038569084,
+      "raster": 35,
+      "rasterMs": 2.415
+    },
+    {
+      "frameIdx": 371,
+      "tsStart": 8038589128,
+      "raster": 35,
+      "rasterMs": 2.128
+    },
+    {
+      "frameIdx": 377,
+      "tsStart": 8038629195,
+      "raster": 35,
+      "rasterMs": 2.006
+    },
+    {
+      "frameIdx": 380,
+      "tsStart": 8038648998,
+      "raster": 35,
+      "rasterMs": 1.79
+    },
+    {
+      "frameIdx": 383,
+      "tsStart": 8038668989,
+      "raster": 35,
+      "rasterMs": 2.13
+    },
+    {
+      "frameIdx": 389,
+      "tsStart": 8038709117,
+      "raster": 35,
+      "rasterMs": 2.269
+    },
+    {
+      "frameIdx": 515,
+      "tsStart": 8039549136,
+      "raster": 35,
+      "rasterMs": 2.944
+    },
+    {
+      "frameIdx": 518,
+      "tsStart": 8039569087,
+      "raster": 35,
+      "rasterMs": 3.023
+    },
+    {
+      "frameIdx": 521,
+      "tsStart": 8039589122,
+      "raster": 35,
+      "rasterMs": 3.05
+    },
+    {
+      "frameIdx": 527,
+      "tsStart": 8039629098,
+      "raster": 35,
+      "rasterMs": 2.979
+    },
+    {
+      "frameIdx": 530,
+      "tsStart": 8039649100,
+      "raster": 35,
+      "rasterMs": 2.994
+    },
+    {
+      "frameIdx": 533,
+      "tsStart": 8039669094,
+      "raster": 35,
+      "rasterMs": 3.168
+    },
+    {
+      "frameIdx": 539,
+      "tsStart": 8039709088,
+      "raster": 35,
+      "rasterMs": 2.398
+    },
+    {
+      "frameIdx": 665,
+      "tsStart": 8040549232,
+      "raster": 35,
+      "rasterMs": 3.686
+    },
+    {
+      "frameIdx": 668,
+      "tsStart": 8040569268,
+      "raster": 35,
+      "rasterMs": 3.864
+    },
+    {
+      "frameIdx": 671,
+      "tsStart": 8040589274,
+      "raster": 35,
+      "rasterMs": 3.958
+    },
+    {
+      "frameIdx": 677,
+      "tsStart": 8040629219,
+      "raster": 35,
+      "rasterMs": 3.778
+    },
+    {
+      "frameIdx": 680,
+      "tsStart": 8040649236,
+      "raster": 35,
+      "rasterMs": 3.768
+    },
+    {
+      "frameIdx": 683,
+      "tsStart": 8040669255,
+      "raster": 35,
+      "rasterMs": 3.934
+    },
+    {
+      "frameIdx": 689,
+      "tsStart": 8040709226,
+      "raster": 35,
+      "rasterMs": 2.479
+    },
+    {
+      "frameIdx": 815,
+      "tsStart": 8041549204,
+      "raster": 35,
+      "rasterMs": 5.129
+    },
+    {
+      "frameIdx": 818,
+      "tsStart": 8041569120,
+      "raster": 35,
+      "rasterMs": 2.048
+    },
+    {
+      "frameIdx": 821,
+      "tsStart": 8041589060,
+      "raster": 35,
+      "rasterMs": 3.379
+    },
+    {
+      "frameIdx": 827,
+      "tsStart": 8041629142,
+      "raster": 35,
+      "rasterMs": 2.645
+    },
+    {
+      "frameIdx": 830,
+      "tsStart": 8041649062,
+      "raster": 35,
+      "rasterMs": 4.692
+    },
+    {
+      "frameIdx": 833,
+      "tsStart": 8041669122,
+      "raster": 35,
+      "rasterMs": 6.241
+    },
+    {
+      "frameIdx": 839,
+      "tsStart": 8041709262,
+      "raster": 35,
+      "rasterMs": 2.932
+    },
+    {
+      "frameIdx": 965,
+      "tsStart": 8042549182,
+      "raster": 35,
+      "rasterMs": 3.064
+    },
+    {
+      "frameIdx": 968,
+      "tsStart": 8042569144,
+      "raster": 35,
+      "rasterMs": 2.926
+    },
+    {
+      "frameIdx": 971,
+      "tsStart": 8042589187,
+      "raster": 35,
+      "rasterMs": 3.038
+    },
+    {
+      "frameIdx": 977,
+      "tsStart": 8042629191,
+      "raster": 35,
+      "rasterMs": 2.892
+    },
+    {
+      "frameIdx": 980,
+      "tsStart": 8042649195,
+      "raster": 35,
+      "rasterMs": 2.875
+    },
+    {
+      "frameIdx": 983,
+      "tsStart": 8042669190,
+      "raster": 35,
+      "rasterMs": 3.404
+    },
+    {
+      "frameIdx": 989,
+      "tsStart": 8042709177,
+      "raster": 35,
+      "rasterMs": 3.328
+    },
+    {
+      "frameIdx": 1115,
+      "tsStart": 8043549154,
+      "raster": 35,
+      "rasterMs": 3.754
+    },
+    {
+      "frameIdx": 1118,
+      "tsStart": 8043569165,
+      "raster": 35,
+      "rasterMs": 3.143
+    },
+    {
+      "frameIdx": 1121,
+      "tsStart": 8043589157,
+      "raster": 35,
+      "rasterMs": 6.142
+    },
+    {
+      "frameIdx": 1127,
+      "tsStart": 8043629117,
+      "raster": 35,
+      "rasterMs": 3.387
+    },
+    {
+      "frameIdx": 1130,
+      "tsStart": 8043649074,
+      "raster": 35,
+      "rasterMs": 5.052
+    },
+    {
+      "frameIdx": 1133,
+      "tsStart": 8043668971,
+      "raster": 35,
+      "rasterMs": 5.127
+    },
+    {
+      "frameIdx": 1139,
+      "tsStart": 8043708978,
+      "raster": 35,
+      "rasterMs": 2.466
+    },
+    {
+      "frameIdx": 1265,
+      "tsStart": 8044549176,
+      "raster": 35,
+      "rasterMs": 3.215
+    },
+    {
+      "frameIdx": 1268,
+      "tsStart": 8044569489,
+      "raster": 35,
+      "rasterMs": 2.48
+    },
+    {
+      "frameIdx": 1271,
+      "tsStart": 8044589170,
+      "raster": 35,
+      "rasterMs": 2.204
+    },
+    {
+      "frameIdx": 1277,
+      "tsStart": 8044629137,
+      "raster": 35,
+      "rasterMs": 2.16
+    },
+    {
+      "frameIdx": 1280,
+      "tsStart": 8044649094,
+      "raster": 35,
+      "rasterMs": 2.127
+    },
+    {
+      "frameIdx": 1283,
+      "tsStart": 8044669025,
+      "raster": 35,
+      "rasterMs": 4.168
+    },
+    {
+      "frameIdx": 1289,
+      "tsStart": 8044709176,
+      "raster": 35,
+      "rasterMs": 2.516
+    },
+    {
+      "frameIdx": 1415,
+      "tsStart": 8045549152,
+      "raster": 35,
+      "rasterMs": 5.72
+    },
+    {
+      "frameIdx": 1418,
+      "tsStart": 8045569187,
+      "raster": 35,
+      "rasterMs": 3.194
+    },
+    {
+      "frameIdx": 1421,
+      "tsStart": 8045589131,
+      "raster": 35,
+      "rasterMs": 3.275
+    },
+    {
+      "frameIdx": 1427,
+      "tsStart": 8045629178,
+      "raster": 35,
+      "rasterMs": 4.122
+    },
+    {
+      "frameIdx": 1430,
+      "tsStart": 8045649295,
+      "raster": 35,
+      "rasterMs": 6.905
+    },
+    {
+      "frameIdx": 1433,
+      "tsStart": 8045669319,
+      "raster": 35,
+      "rasterMs": 6.588
+    },
+    {
+      "frameIdx": 1439,
+      "tsStart": 8045709393,
+      "raster": 35,
+      "rasterMs": 3.287
+    },
+    {
+      "frameIdx": 1565,
+      "tsStart": 8046549131,
+      "raster": 35,
+      "rasterMs": 2.984
+    },
+    {
+      "frameIdx": 1568,
+      "tsStart": 8046569162,
+      "raster": 35,
+      "rasterMs": 2.898
+    },
+    {
+      "frameIdx": 1571,
+      "tsStart": 8046589129,
+      "raster": 35,
+      "rasterMs": 2.849
+    },
+    {
+      "frameIdx": 1577,
+      "tsStart": 8046629143,
+      "raster": 35,
+      "rasterMs": 2.901
+    },
+    {
+      "frameIdx": 1580,
+      "tsStart": 8046649198,
+      "raster": 35,
+      "rasterMs": 3.298
+    },
+    {
+      "frameIdx": 1583,
+      "tsStart": 8046669116,
+      "raster": 35,
+      "rasterMs": 3.431
+    },
+    {
+      "frameIdx": 1589,
+      "tsStart": 8046709138,
+      "raster": 35,
+      "rasterMs": 3.438
+    },
+    {
+      "frameIdx": 1715,
+      "tsStart": 8047549221,
+      "raster": 35,
+      "rasterMs": 3.29
+    },
+    {
+      "frameIdx": 1718,
+      "tsStart": 8047569179,
+      "raster": 35,
+      "rasterMs": 2.162
+    },
+    {
+      "frameIdx": 1721,
+      "tsStart": 8047589100,
+      "raster": 35,
+      "rasterMs": 2.437
+    },
+    {
+      "frameIdx": 1727,
+      "tsStart": 8047629113,
+      "raster": 35,
+      "rasterMs": 2.018
+    },
+    {
+      "frameIdx": 1730,
+      "tsStart": 8047649062,
+      "raster": 35,
+      "rasterMs": 3.158
+    },
+    {
+      "frameIdx": 1733,
+      "tsStart": 8047669020,
+      "raster": 35,
+      "rasterMs": 5.886
+    },
+    {
+      "frameIdx": 1739,
+      "tsStart": 8047709145,
+      "raster": 35,
+      "rasterMs": 2.688
+    },
+    {
+      "frameIdx": 1865,
+      "tsStart": 8048549423,
+      "raster": 35,
+      "rasterMs": 4.619
+    },
+    {
+      "frameIdx": 1868,
+      "tsStart": 8048569234,
+      "raster": 35,
+      "rasterMs": 2.845
+    },
+    {
+      "frameIdx": 1871,
+      "tsStart": 8048589280,
+      "raster": 35,
+      "rasterMs": 2.734
+    },
+    {
+      "frameIdx": 1877,
+      "tsStart": 8048629235,
+      "raster": 35,
+      "rasterMs": 2.783
+    },
+    {
+      "frameIdx": 1880,
+      "tsStart": 8048649238,
+      "raster": 35,
+      "rasterMs": 2.691
+    },
+    {
+      "frameIdx": 1883,
+      "tsStart": 8048669233,
+      "raster": 35,
+      "rasterMs": 3.221
+    },
+    {
+      "frameIdx": 1889,
+      "tsStart": 8048709232,
+      "raster": 35,
+      "rasterMs": 3.262
+    },
+    {
+      "frameIdx": 2015,
+      "tsStart": 8049549169,
+      "raster": 35,
+      "rasterMs": 2.937
+    },
+    {
+      "frameIdx": 2018,
+      "tsStart": 8049569143,
+      "raster": 35,
+      "rasterMs": 2.945
+    },
+    {
+      "frameIdx": 2021,
+      "tsStart": 8049589172,
+      "raster": 35,
+      "rasterMs": 2.958
+    },
+    {
+      "frameIdx": 2027,
+      "tsStart": 8049629147,
+      "raster": 35,
+      "rasterMs": 2.901
+    },
+    {
+      "frameIdx": 2030,
+      "tsStart": 8049649140,
+      "raster": 35,
+      "rasterMs": 4.165
+    },
+    {
+      "frameIdx": 2033,
+      "tsStart": 8049669145,
+      "raster": 35,
+      "rasterMs": 4.137
+    },
+    {
+      "frameIdx": 2039,
+      "tsStart": 8049709174,
+      "raster": 35,
+      "rasterMs": 2.214
+    },
+    {
+      "frameIdx": 2165,
+      "tsStart": 8050549161,
+      "raster": 35,
+      "rasterMs": 4.279
+    },
+    {
+      "frameIdx": 2168,
+      "tsStart": 8050569141,
+      "raster": 35,
+      "rasterMs": 2.386
+    },
+    {
+      "frameIdx": 2171,
+      "tsStart": 8050589178,
+      "raster": 35,
+      "rasterMs": 2.26
+    },
+    {
+      "frameIdx": 2177,
+      "tsStart": 8050629121,
+      "raster": 35,
+      "rasterMs": 1.902
+    },
+    {
+      "frameIdx": 2180,
+      "tsStart": 8050649101,
+      "raster": 35,
+      "rasterMs": 2.866
+    },
+    {
+      "frameIdx": 2183,
+      "tsStart": 8050669058,
+      "raster": 35,
+      "rasterMs": 3.56
+    },
+    {
+      "frameIdx": 2189,
+      "tsStart": 8050709156,
+      "raster": 35,
+      "rasterMs": 2.292
+    },
+    {
+      "frameIdx": 2315,
+      "tsStart": 8051549124,
+      "raster": 35,
+      "rasterMs": 3.057
+    },
+    {
+      "frameIdx": 2318,
+      "tsStart": 8051569178,
+      "raster": 35,
+      "rasterMs": 2.938
+    },
+    {
+      "frameIdx": 2321,
+      "tsStart": 8051589164,
+      "raster": 35,
+      "rasterMs": 2.932
+    },
+    {
+      "frameIdx": 2327,
+      "tsStart": 8051629157,
+      "raster": 35,
+      "rasterMs": 3.117
+    },
+    {
+      "frameIdx": 2330,
+      "tsStart": 8051649161,
+      "raster": 35,
+      "rasterMs": 4.646
+    },
+    {
+      "frameIdx": 2333,
+      "tsStart": 8051669155,
+      "raster": 35,
+      "rasterMs": 4.477
+    },
+    {
+      "frameIdx": 2339,
+      "tsStart": 8051709114,
+      "raster": 35,
+      "rasterMs": 2.308
+    },
+    {
+      "frameIdx": 2465,
+      "tsStart": 8052549159,
+      "raster": 35,
+      "rasterMs": 3.069
+    },
+    {
+      "frameIdx": 2468,
+      "tsStart": 8052569172,
+      "raster": 35,
+      "rasterMs": 2.91
+    },
+    {
+      "frameIdx": 2471,
+      "tsStart": 8052589138,
+      "raster": 35,
+      "rasterMs": 3.53
+    },
+    {
+      "frameIdx": 2477,
+      "tsStart": 8052629187,
+      "raster": 35,
+      "rasterMs": 4.483
+    },
+    {
+      "frameIdx": 2480,
+      "tsStart": 8052649191,
+      "raster": 35,
+      "rasterMs": 3.436
+    },
+    {
+      "frameIdx": 2483,
+      "tsStart": 8052669207,
+      "raster": 35,
+      "rasterMs": 3.514
+    },
+    {
+      "frameIdx": 2489,
+      "tsStart": 8052709160,
+      "raster": 35,
+      "rasterMs": 3.401
+    },
+    {
+      "frameIdx": 2615,
+      "tsStart": 8053549162,
+      "raster": 35,
+      "rasterMs": 3.079
+    },
+    {
+      "frameIdx": 2618,
+      "tsStart": 8053569155,
+      "raster": 35,
+      "rasterMs": 2.894
+    },
+    {
+      "frameIdx": 2621,
+      "tsStart": 8053589032,
+      "raster": 35,
+      "rasterMs": 2.358
+    },
+    {
+      "frameIdx": 2627,
+      "tsStart": 8053629137,
+      "raster": 35,
+      "rasterMs": 3.056
+    },
+    {
+      "frameIdx": 2630,
+      "tsStart": 8053649060,
+      "raster": 35,
+      "rasterMs": 4.701
+    },
+    {
+      "frameIdx": 2633,
+      "tsStart": 8053669018,
+      "raster": 35,
+      "rasterMs": 4.949
+    },
+    {
+      "frameIdx": 2639,
+      "tsStart": 8053709252,
+      "raster": 35,
+      "rasterMs": 2.679
+    },
+    {
+      "frameIdx": 2765,
+      "tsStart": 8054549138,
+      "raster": 35,
+      "rasterMs": 3.228
+    },
+    {
+      "frameIdx": 2768,
+      "tsStart": 8054569134,
+      "raster": 35,
+      "rasterMs": 3.465
+    },
+    {
+      "frameIdx": 2771,
+      "tsStart": 8054589123,
+      "raster": 35,
+      "rasterMs": 3.1
+    },
+    {
+      "frameIdx": 2777,
+      "tsStart": 8054629137,
+      "raster": 35,
+      "rasterMs": 3.007
+    },
+    {
+      "frameIdx": 2780,
+      "tsStart": 8054649143,
+      "raster": 35,
+      "rasterMs": 2.916
+    },
+    {
+      "frameIdx": 2783,
+      "tsStart": 8054669178,
+      "raster": 35,
+      "rasterMs": 3.473
+    },
+    {
+      "frameIdx": 2789,
+      "tsStart": 8054709164,
+      "raster": 35,
+      "rasterMs": 3.299
+    },
+    {
+      "frameIdx": 2915,
+      "tsStart": 8055549194,
+      "raster": 35,
+      "rasterMs": 3.25
+    },
+    {
+      "frameIdx": 2918,
+      "tsStart": 8055569179,
+      "raster": 35,
+      "rasterMs": 3.225
+    },
+    {
+      "frameIdx": 2921,
+      "tsStart": 8055589157,
+      "raster": 35,
+      "rasterMs": 3.365
+    },
+    {
+      "frameIdx": 2927,
+      "tsStart": 8055629164,
+      "raster": 35,
+      "rasterMs": 3.614
+    },
+    {
+      "frameIdx": 2930,
+      "tsStart": 8055649193,
+      "raster": 35,
+      "rasterMs": 4.479
+    },
+    {
+      "frameIdx": 2933,
+      "tsStart": 8055669070,
+      "raster": 35,
+      "rasterMs": 4.217
+    },
+    {
+      "frameIdx": 2939,
+      "tsStart": 8055708994,
+      "raster": 35,
+      "rasterMs": 2.382
+    }
+  ],
+  "subCategoryBreakdown": [
+    {
+      "name": "raster.task",
+      "count": 6282,
+      "durMs": 416.27
+    },
+    {
+      "name": "layout.performLayout",
+      "count": 999,
+      "durMs": 193.64
+    },
+    {
+      "name": "layout.updateLayout",
+      "count": 1000,
+      "durMs": 66.35
+    },
+    {
+      "name": "style.recalc",
+      "count": 999,
+      "durMs": 31.51
+    },
+    {
+      "name": "invalidation",
+      "count": 1997,
+      "durMs": 4.52
+    }
+  ],
+  "totals": {
+    "layout": 9010,
+    "paint": 6013,
+    "raster": 19760,
+    "style": 4016,
+    "js": 0,
+    "other": 54288
+  },
+  "durMs": {
+    "layout": 1279.57,
+    "paint": 2171.62,
+    "raster": 1862.44,
+    "style": 164.69,
+    "js": 0
+  },
+  "topEventNames": [
+    {
+      "name": "Not activating sync tree due to no pending tree",
+      "count": 8011
+    },
+    {
+      "name": "SolidColorAnalyzer::CheckIfSolidShape",
+      "count": 6330
+    },
+    {
+      "name": "AsyncTask Scheduled",
+      "count": 5993
+    },
+    {
+      "name": "auto cc::(anonymous namespace)::InsertNodeForTask(TaskGraph *, TileTask *, uint16_t, uint16_t, size_t, bool)::(anonymous class)::operator()()::(anonymous class)::operator()(uint32_t) const",
+      "count": 5085
+    },
+    {
+      "name": "TileManager::CreateRasterTask",
+      "count": 4188
+    },
+    {
+      "name": "LayerTreeHostImpl::NotifyTileStateChanged",
+      "count": 4180
+    },
+    {
+      "name": "LocalFrameView::ScheduleAnimation",
+      "count": 3001
+    },
+    {
+      "name": "AnimationHost::TickAnimations",
+      "count": 2998
+    },
+    {
+      "name": "LayerTreeHostImpl::CommitComplete",
+      "count": 2994
+    },
+    {
+      "name": "LayerTreeHostImpl::BuildRasterQueue",
+      "count": 2992
+    },
+    {
+      "name": "LayerTreeHostImpl::ActivateSyncTree",
+      "count": 2992
+    },
+    {
+      "name": "TileTaskManagerImpl::CheckForCompletedTasks",
+      "count": 2992
+    },
+    {
+      "name": "SendBeginMainFrame",
+      "count": 2991
+    },
+    {
+      "name": "ScheduledTasksState",
+      "count": 2991
+    },
+    {
+      "name": "TileManager::CheckPendingGpuWorkAndIssueSignals",
+      "count": 2991
+    },
+    {
+      "name": "ProxyMain::BeginMainFrame",
+      "count": 2989
+    },
+    {
+      "name": "ProxyMain::BeginMainFrame::commit",
+      "count": 2988
+    },
+    {
+      "name": "ProxyImpl::ReadyToCommit",
+      "count": 2988
+    },
+    {
+      "name": "ProxyImpl::Commit",
+      "count": 2988
+    },
+    {
+      "name": "CategorizedWorkerPool::CollectCompletedTasks",
+      "count": 2988
+    },
+    {
+      "name": "ProxyImpl::ReadyToActivate",
+      "count": 2988
+    },
+    {
+      "name": "RasterSource::PerformSolidColorAnalysis",
+      "count": 2110
+    },
+    {
+      "name": "RasterizerTaskImpl::RunOnWorkerThread",
+      "count": 2094
+    },
+    {
+      "name": "RasterTask",
+      "count": 2094
+    },
+    {
+      "name": "ZeroCopyRasterBuffer::Playback",
+      "count": 2094
+    },
+    {
+      "name": "RasterBufferProvider::PlaybackToMemory",
+      "count": 2094
+    },
+    {
+      "name": "DisplayItemList::Raster",
+      "count": 2094
+    },
+    {
+      "name": "cc::Tile",
+      "count": 2070
+    },
+    {
+      "name": "ProxyImpl::SetNeedsRedrawOnImplThread",
+      "count": 2070
+    },
+    {
+      "name": "auto cc::SchedulerStateMachine::ShouldThrottleSendBeginMainFrame()::(anonymous class)::operator()(uint32_t) const",
+      "count": 2000
+    },
+    {
+      "name": "Layer::PushPropertiesTo",
+      "count": 1998
+    },
+    {
+      "name": "Scheduler::ScheduleBeginImplFrameDeadline",
+      "count": 1997
+    },
+    {
+      "name": "ProxyImpl::OnCanDrawStateChanged",
+      "count": 1996
+    },
+    {
+      "name": "AsyncTask Run",
+      "count": 1996
+    },
+    {
+      "name": "PipelineReporter",
+      "count": 1996
+    },
+    {
+      "name": "BeginImplFrameToSendBeginMainFrame",
+      "count": 1996
+    },
+    {
+      "name": "Scheduler:pending_submit_frames",
+      "count": 1996
+    },
+    {
+      "name": "LayerTreeImpl::UpdateDrawProperties",
+      "count": 1994
+    },
+    {
+      "name": "LayerTreeImpl::UpdateDrawProperties::CalculateDrawProperties",
+      "count": 1994
+    },
+    {
+      "name": "draw_property_utils::FindLayersThatNeedUpdates",
+      "count": 1994
+    }
+  ],
+  "topJsSymbols": []
+}

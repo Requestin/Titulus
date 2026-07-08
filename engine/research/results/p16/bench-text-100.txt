@@ -1,0 +1,43 @@
+Trace: /tmp/p16-bench-text-100/blink-trace.json
+Duration: ~15s | events=267884 | frames≈2991 (SendBeginMainFrame=2991)
+Per-frame slicing marker: SendBeginMainFrame | slices=2991
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  3.01
+  Paint:   2.01
+  Raster:  6.61
+  Style:   1.34
+  JS ev:   0
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  0 / 9 / 15
+  Paint events:   0 / 6 / 7
+  Raster events:  0 / 19 / 270
+  Raster ms:      0 / 2.654 / 77.647
+
+Heavy frames (raster events > 2x p50, floor=19.0): 142
+  frame#2 raster=270 (50.331ms)
+  frame#5 raster=267 (77.647ms)
+  frame#65 raster=35 (3.324ms)
+  frame#68 raster=35 (3.365ms)
+  frame#71 raster=35 (3.445ms)
+  frame#77 raster=35 (4.248ms)
+  frame#80 raster=35 (3.102ms)
+  frame#83 raster=35 (3.042ms)
+  frame#89 raster=35 (2.209ms)
+  frame#215 raster=35 (3.163ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  raster.task: count=6282 durMs=416.27
+  layout.performLayout: count=999 durMs=193.64
+  layout.updateLayout: count=1000 durMs=66.35
+  style.recalc: count=999 durMs=31.51
+  invalidation: count=1997 durMs=4.52
+
+Total duration (ms, slice dur sum where present):
+  Layout=1279.57 Paint=2171.62 Raster=1862.44 Style=164.69 JS=0
+
+Top JS symbols (sample weight):
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-text-100.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-text-100.csv (2991 rows)

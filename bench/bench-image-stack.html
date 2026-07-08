@@ -1,0 +1,78 @@
+<!doctype html>
+<!--
+  bench/bench-image-stack.html — multiple large images animated in parallel.
+  P0 Performance Matrix entry: image rendering cost (Class B-adjacent +
+  raster pressure from large bitmaps). 6 PNG plates sliding in parallel,
+  each 400x300 with corner radius (like the 3 image layers in test1).
+
+  bg_engine --consumer=null --blink-research=1 \
+    --url="file://.../bench/bench-image-stack.html" --fps=50 --duration=20 \
+    --cache-dir=/tmp/bench-image-stack
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+  .img {
+    position: absolute; width: 400px; height: 300px;
+    object-fit: cover; border-radius: 12px;
+    will-change: transform;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <img class="img" id="i0" alt="">
+  <img class="img" id="i1" alt="">
+  <img class="img" id="i2" alt="">
+  <img class="img" id="i3" alt="">
+  <img class="img" id="i4" alt="">
+  <img class="img" id="i5" alt="">
+</div>
+<script>
+(function () {
+  // Small distinct PNGs (2x2 colored) decoded into 400x300 boxes.
+  const PNGS = [
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR42mNk+M9QDwADhgHQAwECNwIAAAD+OwMAFwCbHwYB0h8AAAAASUVORK5CYII=',
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR42mNkYPjHwADhgHQAwECNwIAAAD+OwMAFwCbHwYB0h8AAAAASUVORK5CYII=',
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR42mNk+M9QDwY7i0tAwECNwIAAAD+OwMAFwCbHwYB0h8AAAAASUVORK5CYII=',
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR42mNk+M9QDwY7h0ZGgwECNwIAAAD+OwMAFwCbHwYB0h8AAAAASUVORK5CYII=',
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR42mNk+M9QDwZ9h4eBAECNwIAAAD+OwMAFwCbHwYB0h8AAAAASUVORK5CYII=',
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR42mNk+M9QDwY7jIyMgwECNwIAAAD+OwMAFwCbHwYB0h8AAAAASUVORK5CYII=',
+  ];
+  const els = PNGS.map((src, i) => {
+    const el = document.getElementById('i' + i);
+    el.src = src;
+    return el;
+  });
+
+  let frame = 0;
+  function step() {
+    const t = (frame % 200) / 200; // 0..1
+    // Each plate slides a different distance, all re-raster every frame
+    // (large bitmap moved => raster invalidated).
+    for (let i = 0; i < els.length; i++) {
+      const x = ((i + 1) * 100) + t * (400 + i * 120);
+      const y = 100 + i * 150;
+      els[i].style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y + 'px,0)';
+    }
+    frame++;
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+
+  const beacon = document.createElement('div');
+  beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+  document.body.appendChild(beacon);
+  let n = 0;
+  (function tick() {
+    n++;
+    beacon.style.background = (n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
+    requestAnimationFrame(tick);
+  })();
+})();
+</script>
+</body>
+</html>

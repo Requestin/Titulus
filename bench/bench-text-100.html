@@ -1,0 +1,80 @@
+<!doctype html>
+<!--
+  bench/bench-text-100.html — 100 text layers with per-frame data binding.
+  P0 Performance Matrix entry: text rendering cost (Class D). Each frame
+  re-binds the visible value of one rotating layer to force text re-raster
+  (text-shadow + tabular-nums clock pattern, like the clock in test1).
+
+  bg_engine --consumer=null --blink-research=1 \
+    --url="file://.../bench/bench-text-100.html" --fps=50 --duration=20 \
+    --cache-dir=/tmp/bench-text-100
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  #stage {
+    position: relative; width: 1920px; height: 1080px; overflow: hidden;
+    background: #0a0f1c;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  #grid { position: absolute; inset: 0; }
+  .cell {
+    position: absolute; width: 180px; height: 48px;
+    color: #f1f5f9; font-size: 28px; font-weight: 600;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="grid"></div>
+</div>
+<script>
+(function () {
+  const grid = document.getElementById('grid');
+  const COLS = 10;
+  const ROWS = 10;
+  const cells = [];
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < COLS * ROWS; i++) {
+    const col = i % COLS;
+    const row = Math.floor(i / COLS);
+    const el = document.createElement('div');
+    el.className = 'cell';
+    el.style.left = (40 + col * 188) + 'px';
+    el.style.top  = (40 + row * 100) + 'px';
+    el.textContent = '00:00:00.00';
+    frag.appendChild(el);
+    cells.push(el);
+  }
+  grid.appendChild(frag);
+
+  // Per-frame: rotate which cell gets a new value, forcing a text re-raster
+  // on exactly one cell per frame (steady churn, like a live clock row).
+  let frame = 0;
+  function step() {
+    const i = frame % cells.length;
+    const t = (frame / 50).toFixed(2).padStart(6, '0');
+    cells[i].textContent = '12:' + t;
+    frame++;
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+
+  const beacon = document.createElement('div');
+  beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+  document.body.appendChild(beacon);
+  let n = 0;
+  (function tick() {
+    n++;
+    beacon.style.background = (n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
+    requestAnimationFrame(tick);
+  })();
+})();
+</script>
+</body>
+</html>

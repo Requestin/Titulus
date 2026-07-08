@@ -4,7 +4,7 @@ alwaysApply: true
 ---
 # План разработки
 
-**Снимок:** июль 2026. `main` содержит Phase 0–12 + Phase 11 (PR #56). Детали — `docs/development-phases/`.
+**Снимок:** июль 2026. `main` содержит Phase 0–15 (после PR #58). Детали — `docs/development-phases/`.
 
 ## Фазы (кратко)
 
@@ -24,10 +24,13 @@ alwaysApply: true
 | 11 | CasparCG-parity perf | DONE (PR #56) | phase-11-casparcg-parity.md |
 | 12 | Blink pipeline research | DONE | phase-12-blink-pipeline.md |
 | 13 | Documentation rework | DONE | phase-13-documentation.md |
+| 14 | Microfreeze investigation | SKIPPED (намеренно) | PHASE_14_MICROFREEZE_PLAN.md |
+| 15 | Transform optimization | DONE (PR #58) | phase-15-transform-optimization.md |
+| 16 | Performance matrix + layer promotion | DONE | phase-16-performance-matrix.md |
 
 ## Последний milestone в main
 
-PR #56 — Phase 11 CasparCG-parity (clock, SIMD, SCHED_FIFO, 28.6 min soak).
+PR #58 — Phase 15 Transform optimization (mask memoization, trace telemetry, 3-channel DeckLink soak).
 
 ## Следующие задачи
 

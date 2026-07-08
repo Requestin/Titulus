@@ -1,0 +1,83 @@
+<!doctype html>
+<!--
+  bench/bench-clip-circle.html — clip-path: circle() with animated radius.
+  P0 Performance Matrix entry: mask shape 'ellipse' with 1:1 aspect via
+  width/height animation (engine has no native circle clip; projectMaskOutline
+  samples ELLIPSE_SEGMENTS=32 outline).
+
+  bg_engine --consumer=null --blink-research=1 \
+    --url="file://.../bench/bench-clip-circle.html" --fps=50 --duration=20 \
+    --cache-dir=/tmp/bench-clip-circle
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  #host { width: 1920px; height: 1080px; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script src="../backend/public/bg-runtime.js"></script>
+<script>
+(function () {
+  const tpl = {
+    id: 'bench-clip-circle', name: 'bench-clip-circle',
+    canvas: { width: 1920, height: 1080, background: '#0a0f1c' },
+    variables: [], groups: [],
+    rootStack: [
+      { kind: 'layer', id: 'bg' },
+      { kind: 'layer', id: 'mask' },
+      { kind: 'layer', id: 'plate' },
+    ],
+    groupStacks: {},
+    layers: [
+      {
+        id: 'bg', name: 'BG', type: 'rect', visible: true, locked: false, groupId: null,
+        opacity: 1, blendMode: 'normal',
+        transform: { x: 0, y: 0, width: 1920, height: 1080, rotation: 0, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0, anchorY: 0 },
+        fill: '#0f172a', cornerRadius: 0, borderColor: '#000', borderWidth: 0,
+      },
+      {
+        id: 'mask', name: 'Mask', type: 'mask', visible: true, locked: false, groupId: null,
+        opacity: 1, blendMode: 'normal',
+        transform: { x: 760, y: 340, width: 400, height: 400, rotation: 0, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0.5, anchorY: 0.5 },
+        maskMode: 'normal', shape: 'ellipse', fill: '#000', cornerRadius: 0, borderColor: '#000', borderWidth: 0,
+      },
+      {
+        id: 'plate', name: 'Plate', type: 'rect', visible: true, locked: false, groupId: null,
+        opacity: 1, blendMode: 'normal',
+        transform: { x: 560, y: 140, width: 800, height: 800, rotation: 0, rotationX: 0, rotationY: 0, perspective: 1000, scaleX: 1, scaleY: 1, anchorX: 0, anchorY: 0 },
+        fill: '#22d3ee', cornerRadius: 0, borderColor: '#000', borderWidth: 0,
+      },
+    ],
+    timeline: {
+      fps: 50, durationFrames: 200, playbackMode: 'bounded',
+      directors: [{ id: 'd', name: 'd', durationFrames: 200, offsetFrames: 0, autostart: true, loop: true, swing: true }],
+      trackDirectors: {},
+      keyframes: [
+        { id: 'k0', frame: 0, easing: 'linear', layers: { mask: { width: 100, height: 100 } }, groups: {} },
+        { id: 'k1', frame: 100, easing: 'linear', layers: { mask: { width: 500, height: 500 } }, groups: {} },
+        { id: 'k2', frame: 200, easing: 'linear', layers: { mask: { width: 100, height: 100 } }, groups: {} },
+      ],
+      actions: [],
+    },
+  };
+
+  const host = document.getElementById('host');
+  const r = new BG.TemplateRenderer(host, { playbackMode: 'raf' });
+  r.playTimeline(tpl, {});
+  const beacon = document.createElement('div');
+  beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+  document.body.appendChild(beacon);
+  let __n = 0;
+  (function heartbeat() {
+    __n++;
+    beacon.style.background = (__n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
+    requestAnimationFrame(heartbeat);
+  })();
+})();
+</script>
+</body>
+</html>

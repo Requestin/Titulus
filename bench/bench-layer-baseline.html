@@ -1,0 +1,64 @@
+<!doctype html>
+<!--
+  bench/bench-layer-baseline.html — several animated layers, NO layer promotion.
+  P1 Layer promotion A/B entry: baseline (no will-change, no contain).
+  Identical scene to bench-layer-willchange.html and bench-layer-contain.html
+  except for the promotion strategy, so raster ms deltas are attributable
+  to the promotion choice.
+
+  bg_engine --consumer=null --blink-research=1 \
+    --url="file://.../bench/bench-layer-baseline.html" --fps=50 --duration=20 \
+    --cache-dir=/tmp/bench-layer-baseline
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #0a0f1c; }
+  .layer {
+    position: absolute; width: 600px; height: 340px;
+    border-radius: 14px;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="layer" id="L0" style="left:40px; top:80px; background:linear-gradient(135deg,#22d3ee,#3b82f6);"></div>
+  <div class="layer" id="L1" style="left:760px; top:80px; background:linear-gradient(135deg,#a855f7,#7c3aed);"></div>
+  <div class="layer" id="L2" style="left:40px; top:520px; background:linear-gradient(135deg,#f59e0b,#ef4444);"></div>
+  <div class="layer" id="L3" style="left:760px; top:520px; background:linear-gradient(135deg,#10b981,#06b6d4);"></div>
+  <div class="layer" id="L4" style="left:1320px; top:80px; background:linear-gradient(135deg,#ec4899,#8b5cf6);"></div>
+  <div class="layer" id="L5" style="left:1320px; top:520px; background:linear-gradient(135deg,#84cc16,#22c55e);"></div>
+</div>
+<script>
+(function () {
+  const els = ['L0','L1','L2','L3','L4','L5'].map(id => document.getElementById(id));
+  let frame = 0;
+  function step() {
+    const t = (frame % 200) / 200;
+    for (let i = 0; i < els.length; i++) {
+      // All layers move + rotate every frame (parallel animation).
+      const dx = Math.sin(t * Math.PI * 2 + i) * 200;
+      const dy = Math.cos(t * Math.PI * 2 + i) * 60;
+      const rot = Math.sin(t * Math.PI * 2 + i) * 10;
+      els[i].style.transform = 'translate3d(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px,0) rotate(' + rot.toFixed(1) + 'deg)';
+    }
+    frame++;
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+
+  const beacon = document.createElement('div');
+  beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+  document.body.appendChild(beacon);
+  let n = 0;
+  (function tick() {
+    n++;
+    beacon.style.background = (n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
+    requestAnimationFrame(tick);
+  })();
+})();
+</script>
+</body>
+</html>

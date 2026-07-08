@@ -1,0 +1,36 @@
+Trace: /tmp/p16-bench-clip-circle/blink-trace.json
+Duration: ~15s | events=221625 | frames≈2994 (SendBeginMainFrame=2994)
+Per-frame slicing marker: SendBeginMainFrame | slices=2994
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.35
+  Paint:   2
+  Raster:  1.01
+  Style:   1.34
+  JS ev:   0
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  0 / 4 / 10
+  Paint events:   0 / 6 / 7
+  Raster events:  0 / 3 / 14
+  Raster ms:      0 / 0.006 / 3.191
+
+Heavy frames (raster events > 2x p50, floor=3.0): 3
+  frame#2 raster=14 (3.191ms)
+  frame#5 raster=11 (2.99ms)
+  frame#599 raster=4 (0.008ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=1002 durMs=83.36
+  style.recalc: count=1001 durMs=50.14
+  invalidation: count=2001 durMs=4.36
+  raster.task: count=6 durMs=2.49
+  layout.performLayout: count=2 durMs=0.27
+
+Total duration (ms, slice dur sum where present):
+  Layout=294.57 Paint=309.06 Raster=11.79 Style=215.21 JS=0
+
+Top JS symbols (sample weight):
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-clip-circle.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-clip-circle.csv (2994 rows)

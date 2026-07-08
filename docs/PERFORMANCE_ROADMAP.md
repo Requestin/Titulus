@@ -44,16 +44,22 @@ flowchart TD
 
 ---
 
-## Phase 16 — Performance Matrix + layer promotion
+## Phase 16 — Performance Matrix + layer promotion (ЗАВЕРШЕНО, 8 июля 2026)
+
+**Деливерабл:** [docs/development-phases/phase-16-performance-matrix.md](development-phases/phase-16-performance-matrix.md).
 
 **Цель:** систематизировать стоимость всех CSS-свойств в нашем CPU-renderer и зафиксировать layer promotion стратегию.
 
-- Расширить bench-набор из P1 (Phase 15) до полной матрицы: `clip-path` варианты (inset/polygon/circle/SVG mask), CSS filters (blur с разными радиусами, drop-shadow, opacity), text rendering (100 строк vs 100 div), image rendering.
-- Свести в `docs/development-phases/phase-16-performance-matrix.md`.
-- Принять решение по умолчанию для runtime: `will-change: transform` on animated layers? `contain: layout style paint`?
-- Опционально: добавить в [runtime/src/domRenderer.ts](../runtime/src/domRenderer.ts) автоматическое присвоение `will-change` для слоёв, чей timeline их анимирует (heap-профит только для анимируемых).
+- Расширен bench-набор (clip-circle, css-blur, drop-shadow, text-100, image-stack, gradients + layer A/B стенды).
+- Построена матрица 20+ свойств/паттернов с измерениями.
+- Layer promotion A/B: `will-change` и `contain` не дали статистически значимого выигрыша в CPU-only OSR (решение: не включать в runtime по умолчанию).
+- Реализован Class A (composited position в `transform.ts`/`domRenderer.ts`), сохранён контракт editor overlay (`left/top/width/height`).
+- Валидация: editor без визуальных регрессий, 3-канальный DeckLink soak 15 мин (`fps≈24.98`, `d_late=0`, `d_dropped=0`).
 
-**Критерий успеха:** таблица из 20+ свойств с измеренной стоимостью; принятое решение по layer promotion, применённое в коде.
+**Критерий успеха:** таблица из 20+ свойств с измеренной стоимостью; принятое решение по layer promotion.
+
+**Фактический результат:** критерий выполнен. Дополнительно закрыт перенос из
+Phase 15: Class A реализован и validated.
 
 **Зависимости:** Phase 15 завершена (чтобы baseline-числа были после основных оптимизаций, а не до).
 

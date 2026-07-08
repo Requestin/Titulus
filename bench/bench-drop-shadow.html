@@ -1,0 +1,56 @@
+<!doctype html>
+<!--
+  bench/bench-drop-shadow.html — filter: drop-shadow() on an animated plate.
+  P0 Performance Matrix entry: CSS filter cost, shadow path (Class C).
+
+  bg_engine --consumer=null --blink-research=1 \
+    --url="file://.../bench/bench-drop-shadow.html" --fps=50 --duration=20 \
+    --cache-dir=/tmp/bench-drop-shadow
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+  #plate {
+    position: absolute; left: 200px; top: 200px;
+    width: 900px; height: 600px;
+    background: linear-gradient(135deg, #22d3ee 0%, #7c3aed 100%);
+    border-radius: 12px;
+    filter: drop-shadow(0 0 0px rgba(0,0,0,0.5));
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="plate"></div>
+</div>
+<script>
+(function () {
+  const plate = document.getElementById('plate');
+  let frame = 0;
+  function step() {
+    const t = (frame % 200) / 200;
+    plate.style.transform = 'translate3d(' + (t * 600) + 'px,0,0)';
+    // Modulate drop-shadow radius 0..40px.
+    const r = (Math.sin(t * Math.PI) * 40).toFixed(2);
+    plate.style.filter = 'drop-shadow(0 0 ' + r + 'px rgba(0,0,0,0.5))';
+    frame++;
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+
+  const beacon = document.createElement('div');
+  beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+  document.body.appendChild(beacon);
+  let n = 0;
+  (function tick() {
+    n++;
+    beacon.style.background = (n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
+    requestAnimationFrame(tick);
+  })();
+})();
+</script>
+</body>
+</html>

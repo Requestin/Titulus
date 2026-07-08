@@ -596,13 +596,30 @@ export class TemplateRenderer {
     const at: AppliedTransform = applyTransform(
       layer.transform,
       anim as Partial<import('./schema.js').Transform> | undefined,
-      { skipPerspective: this.parentPerspective(layer) > 0 },
+      {
+        skipPerspective: this.parentPerspective(layer) > 0,
+        // Phase 16 Class A: composite the position (x/y) and pivot into the
+        // transform string so left/top become 0 constants and stop triggering
+        // Layout on every x/y/rotation keyframe. width/height are still written
+        // (they define the CSS box content lays out into), so Layout is still
+        // possible when width/height themselves animate — but that is rarer
+        // than x/y and the bench matrix (Phase 15 P1) showed the position path
+        // is the dominant Layout source.
+        compositePosition: true,
+      },
     );
-    this.setStyle(el, cache, 'left', `${at.left}px`);
-    this.setStyle(el, cache, 'top', `${at.top}px`);
+    if (at.useCompositedPosition) {
+      // Position lives in `transform` now; left/top are 0 constants.
+      this.setStyle(el, cache, 'left', '0px');
+      this.setStyle(el, cache, 'top', '0px');
+      this.setStyle(el, cache, 'transformOrigin', '0px 0px');
+    } else {
+      this.setStyle(el, cache, 'left', `${at.left}px`);
+      this.setStyle(el, cache, 'top', `${at.top}px`);
+      this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
+    }
     this.setStyle(el, cache, 'width', `${at.width}px`);
     this.setStyle(el, cache, 'height', `${at.height}px`);
-    this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
     this.setStyle(el, cache, 'transform', at.transform);
     const layerT = anim ? { ...layer.transform, ...anim } : layer.transform;
     if (transformHas3D(layerT)) {
@@ -767,13 +784,24 @@ export class TemplateRenderer {
     const at = applyTransform(
       group.transform,
       anim as Partial<import('./schema.js').Transform> | undefined,
-      { skipPerspective: this.parentPerspectiveForGroup(group.parentId) > 0 },
+      {
+        skipPerspective: this.parentPerspectiveForGroup(group.parentId) > 0,
+        // Phase 16 Class A: see applyLayerState — composite position so the
+        // group's left/top don't trigger Layout on x/y/rotation animation.
+        compositePosition: true,
+      },
     );
-    this.setStyle(el, cache, 'left', `${at.left}px`);
-    this.setStyle(el, cache, 'top', `${at.top}px`);
+    if (at.useCompositedPosition) {
+      this.setStyle(el, cache, 'left', '0px');
+      this.setStyle(el, cache, 'top', '0px');
+      this.setStyle(el, cache, 'transformOrigin', '0px 0px');
+    } else {
+      this.setStyle(el, cache, 'left', `${at.left}px`);
+      this.setStyle(el, cache, 'top', `${at.top}px`);
+      this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
+    }
     this.setStyle(el, cache, 'width', `${at.width}px`);
     this.setStyle(el, cache, 'height', `${at.height}px`);
-    this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
     this.setStyle(el, cache, 'transform', at.transform);
     this.setStyle(el, cache, 'perspective', gt.perspective > 0 ? `${gt.perspective}px` : 'none');
     const needs3d = transformHas3D(gt) || this.groupSubtreeHas3D(group.id);
