@@ -43,6 +43,18 @@ int TraceSecondsOverride() {
     }
     return 0;
 }
+
+// Phase 17 P0-b: env-only override for Chromium's raster thread pool size
+// (renderer process). Unset by default — Chromium picks its own default (2
+// on this host) — so production decklink/browser channels are unaffected
+// until a Phase 17 A/B experiment explicitly sets this. Returns empty string
+// if unset/invalid.
+std::string NumRasterThreadsOverride() {
+    if (const char* v = std::getenv("BG_NUM_RASTER_THREADS")) {
+        if (std::atoi(v) > 0) return v;
+    }
+    return "";
+}
 }  // namespace
 
 void EngineApp::OnBeforeCommandLineProcessing(const CefString& process_type,
@@ -54,6 +66,17 @@ void EngineApp::OnBeforeCommandLineProcessing(const CefString& process_type,
     // The channel page may load media from the backend origin over http in dev;
     // CasparCG sets this for template-host convenience.
     cmd->AppendSwitch("disable-web-security");
+
+    // Phase 17 P0-b: optional override of Chromium's raster worker pool size
+    // (renderer-process compositor). No-op unless BG_NUM_RASTER_THREADS is
+    // set — Chromium's own default (2 on this host, unset otherwise) is
+    // unaffected in production. Applied for every process type like the
+    // switches above so the renderer subprocess (where rasterization
+    // actually happens) picks it up.
+    const std::string num_raster_threads = NumRasterThreadsOverride();
+    if (!num_raster_threads.empty()) {
+        cmd->AppendSwitchWithValue("num-raster-threads", num_raster_threads);
+    }
 
 #if defined(__linux__)
     // Without an X server, Chromium's UI compositor needs the Ozone headless

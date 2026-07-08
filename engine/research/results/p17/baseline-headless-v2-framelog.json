@@ -1,0 +1,26 @@
+{
+  "source": "engine/research/results/p17/baseline-headless-v2-frame-log.csv",
+  "totalRows": 2999,
+  "deliveredFrames": 2467,
+  "timedOutTicks": 531,
+  "intervalUs": {
+    "p50": 20038,
+    "p95": 40019,
+    "max": 59993,
+    "mean": 24238.76
+  },
+  "pumpActiveUs": {
+    "p50": 907,
+    "p95": 1033,
+    "max": 39164,
+    "mean": 812.95
+  },
+  "paintLatencyUs": {
+    "p50": 23,
+    "p95": 33,
+    "max": 32603,
+    "mean": 35.04
+  },
+  "pumpActiveRatio": 0.0326,
+  "effectiveFps": 41.26
+}

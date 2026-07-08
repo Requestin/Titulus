@@ -1,0 +1,16 @@
+Frame log: engine/research/results/p17/baseline-headless-v2-frame-log.csv
+Rows: 2999 | delivered=2467 | timedOutTicks=531
+
+interval_us (delivered frames only) p50/p95/max/mean:
+  20038 / 40019 / 59993 / 24238.76
+pump_active_us (all rows) p50/p95/max/mean:
+  907 / 1033 / 39164 / 812.95
+paint_latency_us (all rows) p50/p95/max/mean:
+  23 / 33 / 32603 / 35.04
+
+pumpActiveRatio (sum(pump_active_us)/sum(interval_us), delivered frames): 0.0326
+effectiveFps (1e6 / mean interval_us): 41.26
+
+Heuristic hint: large idle/latency gap relative to pump work (hypothesis B signal)
+
+[analyze] wrote engine/research/results/p17/baseline-headless-v2-framelog.json
