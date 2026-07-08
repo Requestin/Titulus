@@ -1,0 +1,16 @@
+Frame log: engine/research/results/p17/p2-decklink-n3-frame-log.csv
+Rows: 2995 | delivered=2370 | timedOutTicks=624
+
+interval_us (delivered frames only) p50/p95/max/mean:
+  21616 / 40390 / 58085 / 25246.63
+pump_active_us (all rows) p50/p95/max/mean:
+  907 / 1096 / 27660 / 796.43
+paint_latency_us (all rows) p50/p95/max/mean:
+  20076 / 21705 / 27660 / 17539.64
+
+pumpActiveRatio (sum(pump_active_us)/sum(interval_us), delivered frames): 0.037
+effectiveFps (1e6 / mean interval_us): 39.61
+
+Heuristic hint: large idle/latency gap relative to pump work (hypothesis B signal)
+
+[analyze] wrote engine/research/results/p17/p2-decklink-n3-framelog.json

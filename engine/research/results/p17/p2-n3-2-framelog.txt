@@ -1,0 +1,16 @@
+Frame log: engine/research/results/p17/p2-n3-2-frame-log.csv
+Rows: 2999 | delivered=2342 | timedOutTicks=656
+
+interval_us (delivered frames only) p50/p95/max/mean:
+  21787 / 38932 / 57069 / 25540.04
+pump_active_us (all rows) p50/p95/max/mean:
+  901 / 1046 / 38251 / 777.88
+paint_latency_us (all rows) p50/p95/max/mean:
+  21 / 30 / 33296 / 34.23
+
+pumpActiveRatio (sum(pump_active_us)/sum(interval_us), delivered frames): 0.0289
+effectiveFps (1e6 / mean interval_us): 39.15
+
+Heuristic hint: large idle/latency gap relative to pump work (hypothesis B signal)
+
+[analyze] wrote engine/research/results/p17/p2-n3-2-framelog.json

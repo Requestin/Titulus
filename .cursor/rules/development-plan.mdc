@@ -4,7 +4,7 @@ alwaysApply: true
 ---
 # План разработки
 
-**Снимок:** июль 2026. `main` содержит Phase 0–15 (после PR #58). Детали — `docs/development-phases/`.
+**Снимок:** июль 2026. `main` содержит Phase 0–16 (после PR #59). Детали — `docs/development-phases/`.
 
 ## Фазы (кратко)
 
@@ -27,10 +27,11 @@ alwaysApply: true
 | 14 | Microfreeze investigation | SKIPPED (намеренно) | PHASE_14_MICROFREEZE_PLAN.md |
 | 15 | Transform optimization | DONE (PR #58) | phase-15-transform-optimization.md |
 | 16 | Performance matrix + layer promotion | DONE | phase-16-performance-matrix.md |
+| 17 | Raster pool vs latency | DONE | phase-17-raster-latency.md |
 
 ## Последний milestone в main
 
-PR #58 — Phase 15 Transform optimization (mask memoization, trace telemetry, 3-channel DeckLink soak).
+PR #59 — Phase 16 Performance matrix + layer promotion (Class A implementation, 3-channel DeckLink soak).
 
 ## Следующие задачи
 

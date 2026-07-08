@@ -1,6 +1,14 @@
 # Phase 17 — заметки для возобновления сессии (8 июля 2026, ~19:45)
 
-## Статус
+**UPDATE (8 июля, ~22:15):** Фаза завершена. После второй перезагрузки
+сервера пользователем `ERR_ABORTED` исчез (см. итог ниже). P2-P5 выполнены —
+финальные результаты в [p2-raster-threads-ab.md](p2-raster-threads-ab.md),
+[p3-verdict.md](p3-verdict.md), [p4-soak-validation.md](p4-soak-validation.md)
+и [../../../docs/development-phases/phase-17-raster-latency.md](../../../docs/development-phases/phase-17-raster-latency.md).
+Этот файл оставлен как есть — документирует полезный урок про
+self-matching `pgrep -f` и диагностику сетевого сбоя после ребута.
+
+## Статус (на момент первой паузы)
 
 Ветка: `feature/phase-17-raster-latency` (не смёржена, PR не создан).
 Работа приостановлена пользователем: сервер будет перезагружен ещё раз, чтобы

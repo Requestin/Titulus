@@ -1,0 +1,26 @@
+{
+  "source": "engine/research/results/p17/p2-n4-2-frame-log.csv",
+  "totalRows": 2999,
+  "deliveredFrames": 2346,
+  "timedOutTicks": 652,
+  "intervalUs": {
+    "p50": 21646,
+    "p95": 39794,
+    "max": 42185,
+    "mean": 25496.65
+  },
+  "pumpActiveUs": {
+    "p50": 910,
+    "p95": 1072,
+    "max": 38965,
+    "mean": 790.39
+  },
+  "paintLatencyUs": {
+    "p50": 21,
+    "p95": 30,
+    "max": 31673,
+    "mean": 33.14
+  },
+  "pumpActiveRatio": 0.0296,
+  "effectiveFps": 39.22
+}
