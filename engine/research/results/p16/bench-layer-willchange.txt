@@ -1,0 +1,36 @@
+Trace: /tmp/p16-bench-layer-willchange/blink-trace.json
+Duration: ~15s | events=237695 | frames≈2985 (SendBeginMainFrame=2985)
+Per-frame slicing marker: SendBeginMainFrame | slices=2985
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.35
+  Paint:   2.33
+  Raster:  1.2
+  Style:   1.34
+  JS ev:   0
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  0 / 4 / 10
+  Paint events:   0 / 7 / 7
+  Raster events:  0 / 3 / 297
+  Raster ms:      0 / 0.007 / 65.846
+
+Heavy frames (raster events > 2x p50, floor=3.0): 3
+  frame#2 raster=297 (44.218ms)
+  frame#5 raster=294 (65.846ms)
+  frame#590 raster=4 (0.006ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=998 durMs=132.41
+  style.recalc: count=997 durMs=92.76
+  raster.task: count=216 durMs=48.8
+  invalidation: count=1995 durMs=4.32
+  layout.performLayout: count=2 durMs=0.27
+
+Total duration (ms, slice dur sum where present):
+  Layout=437.54 Paint=515.17 Raster=116 Style=357.79 JS=0
+
+Top JS symbols (sample weight):
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-layer-willchange.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-layer-willchange.csv (2985 rows)

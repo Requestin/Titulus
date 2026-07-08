@@ -1,0 +1,36 @@
+Trace: /tmp/p16-bench-css-blur/blink-trace.json
+Duration: ~15s | events=228254 | frames≈2988 (SendBeginMainFrame=2988)
+Per-frame slicing marker: SendBeginMainFrame | slices=2988
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.35
+  Paint:   2.33
+  Raster:  1.07
+  Style:   1.34
+  JS ev:   0
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  0 / 4 / 10
+  Paint events:   0 / 7 / 7
+  Raster events:  0 / 3 / 102
+  Raster ms:      0 / 0.007 / 16.819
+
+Heavy frames (raster events > 2x p50, floor=3.0): 3
+  frame#2 raster=102 (15.386ms)
+  frame#5 raster=99 (16.819ms)
+  frame#593 raster=4 (0.008ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=999 durMs=103.87
+  style.recalc: count=999 durMs=72.48
+  raster.task: count=72 durMs=12.15
+  invalidation: count=1997 durMs=4.34
+  layout.performLayout: count=2 durMs=0.24
+
+Total duration (ms, slice dur sum where present):
+  Layout=351.47 Paint=473.42 Raster=37.91 Style=280.67 JS=0
+
+Top JS symbols (sample weight):
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-css-blur.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-css-blur.csv (2988 rows)

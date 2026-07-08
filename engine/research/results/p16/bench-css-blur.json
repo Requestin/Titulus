@@ -1,0 +1,264 @@
+{
+  "source": "/tmp/p16-bench-css-blur/blink-trace.json",
+  "durationSec": 15,
+  "eventCount": 228254,
+  "beginFrames": 2988,
+  "drawFrames": 0,
+  "frameCount": 2988,
+  "frameMarkerUsedForSlicing": "SendBeginMainFrame",
+  "perFrameSliceCount": 2988,
+  "perFrame": {
+    "layout": 1.35,
+    "paint": 2.33,
+    "raster": 1.07,
+    "style": 1.34,
+    "jsEvents": 0
+  },
+  "perFrameDistribution": {
+    "layoutEvents": {
+      "p50": 0,
+      "p95": 4,
+      "max": 10
+    },
+    "paintEvents": {
+      "p50": 0,
+      "p95": 7,
+      "max": 7
+    },
+    "rasterEvents": {
+      "p50": 0,
+      "p95": 3,
+      "max": 102
+    },
+    "rasterMs": {
+      "p50": 0,
+      "p95": 0.007,
+      "max": 16.819
+    }
+  },
+  "heavyFrames": [
+    {
+      "frameIdx": 2,
+      "tsStart": 7961576161,
+      "raster": 102,
+      "rasterMs": 15.386
+    },
+    {
+      "frameIdx": 5,
+      "tsStart": 7961612227,
+      "raster": 99,
+      "rasterMs": 16.819
+    },
+    {
+      "frameIdx": 593,
+      "tsStart": 7965568358,
+      "raster": 4,
+      "rasterMs": 0.008
+    }
+  ],
+  "subCategoryBreakdown": [
+    {
+      "name": "layout.updateLayout",
+      "count": 999,
+      "durMs": 103.87
+    },
+    {
+      "name": "style.recalc",
+      "count": 999,
+      "durMs": 72.48
+    },
+    {
+      "name": "raster.task",
+      "count": 72,
+      "durMs": 12.15
+    },
+    {
+      "name": "invalidation",
+      "count": 1997,
+      "durMs": 4.34
+    },
+    {
+      "name": "layout.performLayout",
+      "count": 2,
+      "durMs": 0.24
+    }
+  ],
+  "totals": {
+    "layout": 4021,
+    "paint": 6974,
+    "raster": 3184,
+    "style": 4012,
+    "js": 0,
+    "other": 52089
+  },
+  "durMs": {
+    "layout": 351.47,
+    "paint": 473.42,
+    "raster": 37.91,
+    "style": 280.67,
+    "js": 0
+  },
+  "topEventNames": [
+    {
+      "name": "Not activating sync tree due to no pending tree",
+      "count": 8009
+    },
+    {
+      "name": "AsyncTask Scheduled",
+      "count": 5987
+    },
+    {
+      "name": "RenderSurfaceReasonCount",
+      "count": 5976
+    },
+    {
+      "name": "auto cc::(anonymous namespace)::InsertNodeForTask(TaskGraph *, TileTask *, uint16_t, uint16_t, size_t, bool)::(anonymous class)::operator()()::(anonymous class)::operator()(uint32_t) const",
+      "count": 3015
+    },
+    {
+      "name": "LocalFrameView::ScheduleAnimation",
+      "count": 2998
+    },
+    {
+      "name": "AnimationHost::TickAnimations",
+      "count": 2996
+    },
+    {
+      "name": "Layer::PushPropertiesTo",
+      "count": 2995
+    },
+    {
+      "name": "LayerTreeHostImpl::CommitComplete",
+      "count": 2994
+    },
+    {
+      "name": "LayerTreeHostImpl::BuildRasterQueue",
+      "count": 2992
+    },
+    {
+      "name": "LayerTreeHostImpl::ActivateSyncTree",
+      "count": 2992
+    },
+    {
+      "name": "ScheduledTasksState",
+      "count": 2991
+    },
+    {
+      "name": "SendBeginMainFrame",
+      "count": 2988
+    },
+    {
+      "name": "ProxyMain::BeginMainFrame",
+      "count": 2988
+    },
+    {
+      "name": "ScrollTree::SetScrollOffset",
+      "count": 2988
+    },
+    {
+      "name": "ProxyMain::BeginMainFrame::commit",
+      "count": 2988
+    },
+    {
+      "name": "ProxyImpl::ReadyToCommit",
+      "count": 2988
+    },
+    {
+      "name": "ProxyImpl::Commit",
+      "count": 2988
+    },
+    {
+      "name": "ProxyImpl::ReadyToActivate",
+      "count": 2988
+    },
+    {
+      "name": "auto cc::SchedulerStateMachine::ShouldThrottleSendBeginMainFrame()::(anonymous class)::operator()(uint32_t) const",
+      "count": 1998
+    },
+    {
+      "name": "TileTaskManagerImpl::CheckForCompletedTasks",
+      "count": 1998
+    },
+    {
+      "name": "TileManager::CheckPendingGpuWorkAndIssueSignals",
+      "count": 1997
+    },
+    {
+      "name": "ProxyImpl::OnCanDrawStateChanged",
+      "count": 1996
+    },
+    {
+      "name": "PipelineReporter",
+      "count": 1996
+    },
+    {
+      "name": "BeginImplFrameToSendBeginMainFrame",
+      "count": 1996
+    },
+    {
+      "name": "Scheduler::ScheduleBeginImplFrameDeadline",
+      "count": 1996
+    },
+    {
+      "name": "Scheduler:pending_submit_frames",
+      "count": 1995
+    },
+    {
+      "name": "AsyncTask Run",
+      "count": 1994
+    },
+    {
+      "name": "LayerTreeImpl::UpdateDrawProperties",
+      "count": 1994
+    },
+    {
+      "name": "LayerTreeImpl::UpdateDrawProperties::CalculateDrawProperties",
+      "count": 1994
+    },
+    {
+      "name": "draw_property_utils::FindLayersThatNeedUpdates",
+      "count": 1994
+    },
+    {
+      "name": "draw_property_utils::ComputeDrawPropertiesOfVisibleLayers",
+      "count": 1994
+    },
+    {
+      "name": "CalculateRenderSurfaceLayerList",
+      "count": 1994
+    },
+    {
+      "name": "LayerTreeImpl::UpdateDrawProperties::Occlusion",
+      "count": 1994
+    },
+    {
+      "name": "LayerTreeImpl::UpdateTiles",
+      "count": 1994
+    },
+    {
+      "name": "ScheduledTasks",
+      "count": 1994
+    },
+    {
+      "name": "CheckerImageTracker::ScheduleNextImageDecode",
+      "count": 1994
+    },
+    {
+      "name": "TaskSetFinishedTaskImpl::RunOnWorkerThread",
+      "count": 1994
+    },
+    {
+      "name": "CategorizedWorkerPool::CollectCompletedTasks",
+      "count": 1994
+    },
+    {
+      "name": "SendBeginMainFrameToCommit",
+      "count": 1992
+    },
+    {
+      "name": "PictureLayer::Update",
+      "count": 1992
+    }
+  ],
+  "topJsSymbols": []
+}

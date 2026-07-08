@@ -1,0 +1,61 @@
+<!doctype html>
+<!--
+  bench/bench-css-blur.html — filter: blur() on an animated plate.
+  P0 Performance Matrix entry: CSS filter cost (Class C-adjacent). No
+  Titulus runtime support for filters yet — this measures raw CSS path
+  by hand-styling a plate div that we mutate via rAF.
+
+  bg_engine --consumer=null --blink-research=1 \
+    --url="file://.../bench/bench-css-blur.html" --fps=50 --duration=20 \
+    --cache-dir=/tmp/bench-css-blur
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+  /* A flat gradient plate that we blur + slide via rAF. */
+  #plate {
+    position: absolute; left: 200px; top: 200px;
+    width: 900px; height: 600px;
+    background: linear-gradient(135deg, #22d3ee 0%, #7c3aed 100%);
+    border-radius: 12px;
+    /* filter mutated per-frame from JS; starting value keeps it valid. */
+    filter: blur(0px);
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="plate"></div>
+</div>
+<script>
+(function () {
+  const plate = document.getElementById('plate');
+  let frame = 0;
+  function step() {
+    const t = (frame % 200) / 200; // 0..1 over 200 frames
+    // Slide horizontally + modulate blur radius 0..30px.
+    plate.style.transform = 'translate3d(' + (t * 600) + 'px,0,0)';
+    const blur = (Math.sin(t * Math.PI) * 30).toFixed(2);
+    plate.style.filter = 'blur(' + blur + 'px)';
+    frame++;
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+
+  // Damage beacon (see bench-image-left.html for rationale).
+  const beacon = document.createElement('div');
+  beacon.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;';
+  document.body.appendChild(beacon);
+  let n = 0;
+  (function tick() {
+    n++;
+    beacon.style.background = (n & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
+    requestAnimationFrame(tick);
+  })();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+Trace: /tmp/p16-bench-gradients/blink-trace.json
+Duration: ~15s | events=609758 | frames≈2994 (SendBeginMainFrame=2994)
+Per-frame slicing marker: SendBeginMainFrame | slices=2994
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.35
+  Paint:   2
+  Raster:  64.99
+  Style:   1.34
+  JS ev:   0
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  0 / 4 / 10
+  Paint events:   0 / 6 / 7
+  Raster events:  0 / 195 / 214
+  Raster ms:      0 / 41.642 / 52.619
+
+Heavy frames (raster events > 2x p50, floor=195.0): 3
+  frame#2 raster=214 (38.079ms)
+  frame#5 raster=211 (51.851ms)
+  frame#599 raster=196 (35.467ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  raster.task: count=71845 durMs=7264.52
+  layout.updateLayout: count=1001 durMs=93.56
+  style.recalc: count=1000 durMs=61.99
+  invalidation: count=2001 durMs=4.35
+  layout.performLayout: count=2 durMs=0.22
+
+Total duration (ms, slice dur sum where present):
+  Layout=325.28 Paint=404.96 Raster=35132.88 Style=249.19 JS=0
+
+Top JS symbols (sample weight):
+
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-gradients.json
+[parse] wrote /home/requestin/Titulus/engine/research/results/p16/bench-gradients.csv (2994 rows)

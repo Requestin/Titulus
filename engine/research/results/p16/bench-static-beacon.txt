@@ -1,0 +1,36 @@
+Trace: /tmp/p16-bench-static-beacon/blink-trace.json
+Duration: ~15s | events=213165 | frames≈2979 (SendBeginMainFrame=2979)
+Per-frame slicing marker: SendBeginMainFrame | slices=2979
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  1.35
+  Paint:   2
+  Raster:  1.05
+  Style:   1.34
+  JS ev:   0
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  0 / 4 / 17
+  Paint events:   0 / 6 / 7
+  Raster events:  0 / 3 / 78
+  Raster ms:      0 / 0.006 / 16.143
+
+Heavy frames (raster events > 2x p50, floor=3.0): 3
+  frame#2 raster=78 (16.143ms)
+  frame#5 raster=78 (14.031ms)
+  frame#596 raster=4 (0.009ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  layout.updateLayout: count=996 durMs=67.73
+  style.recalc: count=995 durMs=39.78
+  raster.task: count=30 durMs=9.69
+  layout.performLayout: count=2 durMs=6.3
+  invalidation: count=1991 durMs=4.23
+
+Total duration (ms, slice dur sum where present):
+  Layout=272.11 Paint=308.64 Raster=35.66 Style=192.26 JS=0
+
+Top JS symbols (sample weight):
+
+[parse] wrote engine/research/results/p16/bench-static-beacon.json
+[parse] wrote engine/research/results/p16/bench-static-beacon.csv (2979 rows)

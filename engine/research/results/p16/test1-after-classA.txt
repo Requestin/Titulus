@@ -1,0 +1,43 @@
+Trace: /tmp/p16-after-classA/blink-trace.json
+Duration: ~15s | events=926105 | frames≈2682 (SendBeginMainFrame=2682)
+Per-frame slicing marker: SendBeginMainFrame | slices=2682
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  8.67
+  Paint:   4.33
+  Raster:  110.97
+  Style:   3.33
+  JS ev:   0
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  0 / 26 / 27
+  Paint events:   0 / 13 / 13
+  Raster events:  0 / 334 / 466
+  Raster ms:      0 / 255.406 / 372.837
+
+Heavy frames (raster events > 2x p50, floor=334.0): 26
+  frame#8 raster=362 (115.692ms)
+  frame#11 raster=466 (258.18ms)
+  frame#14 raster=335 (252.631ms)
+  frame#503 raster=335 (230.782ms)
+  frame#509 raster=335 (229.35ms)
+  frame#587 raster=409 (264.936ms)
+  frame#590 raster=335 (200.041ms)
+  frame#641 raster=434 (318.008ms)
+  frame#644 raster=335 (243.814ms)
+  frame#1220 raster=409 (234.486ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  raster.task: count=109623 durMs=40011.95
+  layout.updateLayout: count=1788 durMs=1526.39
+  style.recalc: count=1788 durMs=1428.71
+  layout.performLayout: count=2677 durMs=110.29
+  invalidation: count=1789 durMs=3.9
+
+Total duration (ms, slice dur sum where present):
+  Layout=5016.82 Paint=1500.71 Raster=196276.22 Style=4337.06 JS=0
+
+Top JS symbols (sample weight):
+
+[parse] wrote engine/research/results/p16/test1-after-classA.json
+[parse] wrote engine/research/results/p16/test1-after-classA.csv (2682 rows)

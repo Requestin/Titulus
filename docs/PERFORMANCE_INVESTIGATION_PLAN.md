@@ -227,9 +227,15 @@ ms/frame за счёт P3-B (мемоизация projected-mask геометр�
 
 **Главная находка:** [runtime/src/transform.ts](../runtime/src/transform.ts) и [runtime/src/domRenderer.ts](../runtime/src/domRenderer.ts) пишут `left`/`top` в CSS на каждый кадр — это триггерит Layout в Blink и делает кадр в ~10× дороже raster, чем нужно. Перевод `x`/`y`/`rotation` в единый `transform: translate3d(...) rotate(...)` — главное направление. **Цель:** `in_fps` на `test1` с ~24 → 25 (достигнуть движкового потолка). Реальные 50 — Phase 18.
 
-## Phase 16 — Performance Matrix + layer promotion (2-3 дня)
+## Phase 16 — Performance Matrix + layer promotion (ЗАВЕРШЕНО, 8 июля 2026)
 
-Систематизировать стоимость всех CSS-свойств в нашем CPU-renderer. Расширить bench-набор (clip-path варианты, CSS filters, text rendering). Принять стратегию layer promotion (`will-change`, `contain`). Зависит от Phase 15.
+Деливерабл: [docs/development-phases/phase-16-performance-matrix.md](development-phases/phase-16-performance-matrix.md).
+
+Краткий итог:
+- Расширена матрица bench-стендов (clip-circle, css-blur, drop-shadow, text-100, image-stack, gradients + layer A/B).
+- Layer promotion (`will-change`, `contain`) в CPU-only OSR не дал выигрыша (в пределах шума), поэтому не включён в runtime.
+- Реализован перенос Class A из Phase 15: composited position (`left/top -> transform`) с сохранением editor-совместимого контракта `AppliedTransform`.
+- Валидация: editor без визуальных регрессий; 3-канальный DeckLink soak 15 минут около потолка `in_fps≈25` (`d_late=0`, `d_dropped=0`).
 
 ## Phase 17 — Почему CPU ~60%, а не 100%? (1-2 дня)
 

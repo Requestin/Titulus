@@ -1,0 +1,402 @@
+{
+  "source": "/tmp/p16-after-classA/blink-trace.json",
+  "durationSec": 15,
+  "eventCount": 926105,
+  "beginFrames": 2682,
+  "drawFrames": 0,
+  "frameCount": 2682,
+  "frameMarkerUsedForSlicing": "SendBeginMainFrame",
+  "perFrameSliceCount": 2682,
+  "perFrame": {
+    "layout": 8.67,
+    "paint": 4.33,
+    "raster": 110.97,
+    "style": 3.33,
+    "jsEvents": 0
+  },
+  "perFrameDistribution": {
+    "layoutEvents": {
+      "p50": 0,
+      "p95": 26,
+      "max": 27
+    },
+    "paintEvents": {
+      "p50": 0,
+      "p95": 13,
+      "max": 13
+    },
+    "rasterEvents": {
+      "p50": 0,
+      "p95": 334,
+      "max": 466
+    },
+    "rasterMs": {
+      "p50": 0,
+      "p95": 255.406,
+      "max": 372.837
+    }
+  },
+  "heavyFrames": [
+    {
+      "frameIdx": 8,
+      "tsStart": 8572313630,
+      "raster": 362,
+      "rasterMs": 115.692
+    },
+    {
+      "frameIdx": 11,
+      "tsStart": 8572336884,
+      "raster": 466,
+      "rasterMs": 258.18
+    },
+    {
+      "frameIdx": 14,
+      "tsStart": 8572394563,
+      "raster": 335,
+      "rasterMs": 252.631
+    },
+    {
+      "frameIdx": 503,
+      "tsStart": 8576274707,
+      "raster": 335,
+      "rasterMs": 230.782
+    },
+    {
+      "frameIdx": 509,
+      "tsStart": 8576334340,
+      "raster": 335,
+      "rasterMs": 229.35
+    },
+    {
+      "frameIdx": 587,
+      "tsStart": 8576877219,
+      "raster": 409,
+      "rasterMs": 264.936
+    },
+    {
+      "frameIdx": 590,
+      "tsStart": 8576914460,
+      "raster": 335,
+      "rasterMs": 200.041
+    },
+    {
+      "frameIdx": 641,
+      "tsStart": 8577254663,
+      "raster": 434,
+      "rasterMs": 318.008
+    },
+    {
+      "frameIdx": 644,
+      "tsStart": 8577294524,
+      "raster": 335,
+      "rasterMs": 243.814
+    },
+    {
+      "frameIdx": 1220,
+      "tsStart": 8581595350,
+      "raster": 409,
+      "rasterMs": 234.486
+    },
+    {
+      "frameIdx": 1976,
+      "tsStart": 8587074608,
+      "raster": 409,
+      "rasterMs": 273.694
+    },
+    {
+      "frameIdx": 2018,
+      "tsStart": 8587357985,
+      "raster": 419,
+      "rasterMs": 287.591
+    },
+    {
+      "frameIdx": 2021,
+      "tsStart": 8587394491,
+      "raster": 335,
+      "rasterMs": 204.762
+    },
+    {
+      "frameIdx": 2189,
+      "tsStart": 8588814607,
+      "raster": 335,
+      "rasterMs": 272.061
+    },
+    {
+      "frameIdx": 2195,
+      "tsStart": 8588854581,
+      "raster": 335,
+      "rasterMs": 271.413
+    },
+    {
+      "frameIdx": 2204,
+      "tsStart": 8588914485,
+      "raster": 345,
+      "rasterMs": 262.226
+    },
+    {
+      "frameIdx": 2216,
+      "tsStart": 8588994560,
+      "raster": 459,
+      "rasterMs": 372.837
+    },
+    {
+      "frameIdx": 2228,
+      "tsStart": 8589094661,
+      "raster": 340,
+      "rasterMs": 279.038
+    },
+    {
+      "frameIdx": 2231,
+      "tsStart": 8589114501,
+      "raster": 354,
+      "rasterMs": 282.579
+    },
+    {
+      "frameIdx": 2246,
+      "tsStart": 8589214538,
+      "raster": 346,
+      "rasterMs": 241.357
+    },
+    {
+      "frameIdx": 2405,
+      "tsStart": 8590274653,
+      "raster": 459,
+      "rasterMs": 319.387
+    },
+    {
+      "frameIdx": 2408,
+      "tsStart": 8590314409,
+      "raster": 335,
+      "rasterMs": 224.893
+    },
+    {
+      "frameIdx": 2597,
+      "tsStart": 8591594484,
+      "raster": 335,
+      "rasterMs": 252.78
+    },
+    {
+      "frameIdx": 2627,
+      "tsStart": 8591834563,
+      "raster": 335,
+      "rasterMs": 273.802
+    },
+    {
+      "frameIdx": 2633,
+      "tsStart": 8591874610,
+      "raster": 339,
+      "rasterMs": 274.281
+    },
+    {
+      "frameIdx": 2636,
+      "tsStart": 8591894621,
+      "raster": 335,
+      "rasterMs": 249.337
+    }
+  ],
+  "subCategoryBreakdown": [
+    {
+      "name": "raster.task",
+      "count": 109623,
+      "durMs": 40011.95
+    },
+    {
+      "name": "layout.updateLayout",
+      "count": 1788,
+      "durMs": 1526.39
+    },
+    {
+      "name": "style.recalc",
+      "count": 1788,
+      "durMs": 1428.71
+    },
+    {
+      "name": "layout.performLayout",
+      "count": 2677,
+      "durMs": 110.29
+    },
+    {
+      "name": "invalidation",
+      "count": 1789,
+      "durMs": 3.9
+    }
+  ],
+  "totals": {
+    "layout": 23262,
+    "paint": 11609,
+    "raster": 297626,
+    "style": 8922,
+    "js": 0,
+    "other": 174481
+  },
+  "durMs": {
+    "layout": 5016.82,
+    "paint": 1500.71,
+    "raster": 196276.22,
+    "style": 4337.06,
+    "js": 0
+  },
+  "topEventNames": [
+    {
+      "name": "TileManager::CreateRasterTask",
+      "count": 73100
+    },
+    {
+      "name": "LayerTreeHostImpl::NotifyTileStateChanged",
+      "count": 73013
+    },
+    {
+      "name": "auto cc::(anonymous namespace)::InsertNodeForTask(TaskGraph *, TileTask *, uint16_t, uint16_t, size_t, bool)::(anonymous class)::operator()()::(anonymous class)::operator()(uint32_t) const",
+      "count": 41930
+    },
+    {
+      "name": "RasterSource::PerformSolidColorAnalysis",
+      "count": 36551
+    },
+    {
+      "name": "RasterizerTaskImpl::RunOnWorkerThread",
+      "count": 36523
+    },
+    {
+      "name": "RasterTask",
+      "count": 36523
+    },
+    {
+      "name": "ZeroCopyRasterBuffer::Playback",
+      "count": 36523
+    },
+    {
+      "name": "RasterBufferProvider::PlaybackToMemory",
+      "count": 36523
+    },
+    {
+      "name": "DisplayItemList::Raster",
+      "count": 36523
+    },
+    {
+      "name": "cc::Tile",
+      "count": 36495
+    },
+    {
+      "name": "ProxyImpl::SetNeedsRedrawOnImplThread",
+      "count": 36457
+    },
+    {
+      "name": "Document::SetReadyState",
+      "count": 22283
+    },
+    {
+      "name": "Layer::PushPropertiesTo",
+      "count": 19603
+    },
+    {
+      "name": "PictureLayer::PushPropertiesTo",
+      "count": 17814
+    },
+    {
+      "name": "AsyncTask Scheduled",
+      "count": 8953
+    },
+    {
+      "name": "LocalFrameView::ScheduleAnimation",
+      "count": 8032
+    },
+    {
+      "name": "Document::CancelParsing",
+      "count": 7833
+    },
+    {
+      "name": "RenderSurfaceReasonCount",
+      "count": 7132
+    },
+    {
+      "name": "Not activating sync tree due to no pending tree",
+      "count": 7128
+    },
+    {
+      "name": "PictureLayer::Update",
+      "count": 6244
+    },
+    {
+      "name": "ScheduledTasksState",
+      "count": 5378
+    },
+    {
+      "name": "TileTaskManagerImpl::CheckForCompletedTasks",
+      "count": 5361
+    },
+    {
+      "name": "LayerTreeHostImpl::BuildRasterQueue",
+      "count": 5360
+    },
+    {
+      "name": "CategorizedWorkerPool::CollectCompletedTasks",
+      "count": 5357
+    },
+    {
+      "name": "Document::Initialize",
+      "count": 5352
+    },
+    {
+      "name": "Document::OpenForNavigation",
+      "count": 5352
+    },
+    {
+      "name": "Document::FinishedParsing",
+      "count": 5352
+    },
+    {
+      "name": "TileManager::CheckPendingGpuWorkAndIssueSignals",
+      "count": 4469
+    },
+    {
+      "name": "LocalFrameView::UpdateStyleAndLayout",
+      "count": 4465
+    },
+    {
+      "name": "Document::Document",
+      "count": 4228
+    },
+    {
+      "name": "ScheduledTasks",
+      "count": 3585
+    },
+    {
+      "name": "TaskSetFinishedTaskImpl::RunOnWorkerThread",
+      "count": 3585
+    },
+    {
+      "name": "PipelineReporter",
+      "count": 3576
+    },
+    {
+      "name": "BeginImplFrameToSendBeginMainFrame",
+      "count": 3576
+    },
+    {
+      "name": "TileManager::CheckForCompletedTasksAndIssueSignals",
+      "count": 3576
+    },
+    {
+      "name": "Document::BeginLifecycleUpdatesIfRenderingReady",
+      "count": 3568
+    },
+    {
+      "name": "LocalFrameView::BeginLifecycleUpdates",
+      "count": 3568
+    },
+    {
+      "name": "EndActivateToSubmitCompositorFrame",
+      "count": 3562
+    },
+    {
+      "name": "SubmitCompositorFrameToPresentationCompositorFrame",
+      "count": 3562
+    },
+    {
+      "name": "SubmitToReceiveCompositorFrame",
+      "count": 3562
+    }
+  ],
+  "topJsSymbols": []
+}
