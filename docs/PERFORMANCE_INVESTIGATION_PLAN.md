@@ -97,7 +97,7 @@ in_fps=24.6 out_fps=25.0 queue=0 d_pairs=0-9 d_singles=110-120 d_starved=1-10 ..
 | 2 | Таймлайн анимирует `left`/`top` вместо `transform` → лишний Layout на каждый кадр | **Подтверждено** Phase 12 research |
 | 3 | DeckLink pipeline — не узкое место (~9-11% бюджета) | Подтверждено, не проблема |
 | 4 | `SCHED_FIFO` недоступен | Подтверждено, второстепенно, может усиливать джиттер |
-| 5 | Chromium raster-пул может не насыщать 4 выделенных логических ядра на канал (объясняет «60% CPU при нехватке FPS») | Гипотеза, требует измерения (Phase 17) |
+| 5 | Chromium raster-пул может не насыщать 4 выделенных логических ядра на канал (объясняет «60% CPU при нехватке FPS») | **Частично подтверждено** Phase 17 — верно для self-timer/headless пути, для production DeckLink-пути доминирует латентность pump-цикла, не raster |
 
 ## 1.5 Разовая аномалия Channel 3 (не подтверждена, низкий приоритет)
 
@@ -237,9 +237,17 @@ ms/frame за счёт P3-B (мемоизация projected-mask геометр�
 - Реализован перенос Class A из Phase 15: composited position (`left/top -> transform`) с сохранением editor-совместимого контракта `AppliedTransform`.
 - Валидация: editor без визуальных регрессий; 3-канальный DeckLink soak 15 минут около потолка `in_fps≈25` (`d_late=0`, `d_dropped=0`).
 
-## Phase 17 — Почему CPU ~60%, а не 100%? (1-2 дня)
+## Phase 17 — Почему CPU ~60%, а не 100%? (ЗАВЕРШЕНО, 8 июля 2026)
 
-Количественный ответ: raster-пул недонасыщен (тогда `--num-raster-threads=N` поможет) или латентность (тогда CPU не поможет, нужна переработка pump-цикла). Зависит от Phase 15.
+Деливерабл: [docs/development-phases/phase-17-raster-latency.md](development-phases/phase-17-raster-latency.md).
+
+Вердикт смешанный: raster-пул недонасыщен для self-timer/headless пути
+(`num-raster-threads=3` даёт +5.6% fps / −44% paint-latency p95), но для
+production DeckLink-пути доминирует латентность pump-цикла (+1.6% fps —
+CPU не является главным ограничителем там). `num-raster-threads = N_cores −
+1` закреплён как default в `run-channel.sh`. 3-канальный soak (~16.7 мин)
+подтвердил отсутствие регрессии (`d_late=0 d_dropped=0`). Для Phase 18 вывод:
+нужна переработка pump-архитектуры, не просто больше CPU.
 
 ## Phase 18 — Реальный 50p progressive pipeline (5-10 дней)
 

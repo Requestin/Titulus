@@ -56,6 +56,7 @@ void print_usage() {
         "Diagnostics (research only):\n"
         "  --remote-debugging-port=N Chrome DevTools port (0=off)\n"
         "  --blink-research=N        0=off 1=trace+invalidation 2=+paint check\n"
+        "  --frame-log=PATH          per-frame CSV (pump_active_us/paint_latency_us), off by default\n"
         "\n"
         "Environment fallbacks: BG_ENGINE_URL, BG_ENGINE_NAME, BG_ENGINE_CACHE_DIR, ...\n",
         stderr);
@@ -121,6 +122,7 @@ bool Config::Parse(int argc, char** argv) {
     cache_dir       = env_or("CACHE_DIR",    cache_dir.c_str());
     preview_out     = env_or("PREVIEW_OUT",  preview_out.c_str());
     stream_url      = env_or("STREAM_URL",   stream_url.c_str());
+    frame_log       = env_or("FRAME_LOG",    frame_log.c_str());
     if (const char* v = std::getenv("BG_ENGINE_FPS"))        fps    = std::atoi(v);
     if (const char* v = std::getenv("BG_ENGINE_WIDTH"))      width  = std::atoi(v);
     if (const char* v = std::getenv("BG_ENGINE_HEIGHT"))     height = std::atoi(v);
@@ -141,6 +143,7 @@ bool Config::Parse(int argc, char** argv) {
         if (match_prefix(arg, "--out",           val, i, argc, argv)) { pipe_out = val; continue; }
         if (match_prefix(arg, "--display-mode",  val, i, argc, argv)) { display_mode = val; continue; }
         if (match_prefix(arg, "--stream-url",    val, i, argc, argv)) { stream_url = val; continue; }
+        if (match_prefix(arg, "--frame-log",     val, i, argc, argv)) { frame_log = val; continue; }
         if (match_prefix(arg, "--consumer",      val, i, argc, argv)) {
             if      (val == "null")     consumer = ConsumerKind::Null;
             else if (val == "pipe")     consumer = ConsumerKind::Pipe;

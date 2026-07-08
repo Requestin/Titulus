@@ -110,10 +110,41 @@ PAGE_URL="http://${BACKEND_HOST}/channel.html?channel=${CH_ID}&engine=1&engine_f
 CACHE_DIR="${CACHE_ROOT}/cache-${CH_ID}"
 mkdir -p "$CACHE_DIR"
 
+# Phase 17 P3: count logical cores in a taskset spec ("0,6,1,7" or "0-3" or a
+# mix). Used below to derive a default --num-raster-threads.
+count_cores() {
+  local spec="$1" total=0 part lo hi
+  IFS=',' read -ra parts <<< "$spec"
+  for part in "${parts[@]}"; do
+    if [[ "$part" == *-* ]]; then
+      lo="${part%-*}"; hi="${part#*-}"
+      total=$((total + hi - lo + 1))
+    else
+      total=$((total + 1))
+    fi
+  done
+  echo "$total"
+}
+
 run_once() {
   local -a cmd=()
   if [[ -n "$CORES" ]]; then
     cmd=(taskset -c "$CORES")
+    # A/B on test1 (Phase 17 P2, engine/research/results/p17/
+    # p2-raster-threads-ab.md) measured (pinned logical cores - 1) as a
+    # repeatable sweet spot: +5.6% fps / -44% paint-latency p95 / -16%
+    # timed-out ticks vs Chromium's own default (2) in the self-timer/browser
+    # path; +1.6% fps in the DeckLink-driven path (smaller, but no regression
+    # measured). Using all pinned cores for raster (e.g. N=4 on a 4-core mask)
+    # gave no further gain over N-1 — likely SMT-sibling contention with the
+    # main/compositor thread. Only applied for a "channel-sized" pin (2-8
+    # cores); wider or absent pinning (editor preview, dev runs) keeps
+    # Chromium's own heuristic untouched — that regime wasn't measured.
+    local n_cores
+    n_cores="$(count_cores "$CORES")"
+    if [[ "$n_cores" -ge 2 && "$n_cores" -le 8 ]]; then
+      export BG_NUM_RASTER_THREADS=$((n_cores - 1))
+    fi
   fi
   cmd+=("$ENGINE_BIN"
     --name="$CH_NAME"

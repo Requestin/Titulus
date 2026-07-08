@@ -19,6 +19,7 @@
 #if defined(BG_ENABLE_DECKLINK)
 #include "consumers/decklink_consumer.h"
 #endif
+#include "frame_log.h"
 #include "frame_ring.h"
 #include "message_pump.h"
 #include "stats.h"
@@ -88,6 +89,7 @@ bg::Config cfg;
 bg::Stats stats;
 bg::FrameRing ring;
 std::unique_ptr<bg::Consumer> consumer;
+std::unique_ptr<bg::FrameLog> frame_log;
 std::atomic<bool> browser_ready{false};
 std::atomic<uint64_t> paint_seq{0};
 // Track the previous paint sequence so we only record a stat / deliver a frame
@@ -146,6 +148,10 @@ int main(int argc, char** argv) {
         return 2;
     }
     BG_LOG("starting " + cfg.Describe());
+    frame_log = std::make_unique<bg::FrameLog>(cfg.frame_log);
+    if (frame_log->enabled()) {
+        BG_LOG("frame-log enabled -> " + cfg.frame_log);
+    }
 
     if (!bg::EngineInit(main_args, cfg.cache_dir, cfg.remote_debugging_port,
                         cfg.blink_research)) {
@@ -219,14 +225,24 @@ int main(int argc, char** argv) {
             const int run_ticks = requested_ticks > 0 ? requested_ticks : 1;
 
             for (int t = 0; t < run_ticks; ++t) {
-                const auto tick_deadline =
-                    std::chrono::steady_clock::now() + std::chrono::microseconds(expected_us);
+                const auto tick_start = std::chrono::steady_clock::now();
+                const auto tick_deadline = tick_start + std::chrono::microseconds(expected_us);
 
                 if (browser_ready.load(std::memory_order_acquire)) {
                     if (CefRefPtr<CefBrowser> b = client->browser()) {
                         if (auto host = b->GetHost()) host->SendExternalBeginFrame();
                     }
                 }
+
+                // Phase 17 P0: pump_active_us accumulates the wall-clock time
+                // spent inside CefDoMessageLoopWork() itself (not the sleeps
+                // between slices) — the discriminator between a throughput-
+                // bound raster pool (high pump_active/interval ratio) and a
+                // latency-bound IPC round-trip (low ratio, most of the tick
+                // spent sleeping/waiting on OnPaint). Zero-cost when
+                // --frame-log is unset (two steady_clock::now() calls per
+                // 4ms slice either way; only the CSV write is gated).
+                uint64_t pump_active_us = 0;
 
                 // Pump CEF in <=4ms slices for up to one full field period,
                 // bailing out early once the paint we asked for lands.
@@ -239,7 +255,10 @@ int main(int argc, char** argv) {
                 // half rate. Each requested tick gets its own full ~20ms
                 // budget here, same as the self-timer path used to give it.
                 while (true) {
+                    const auto pump_t0 = std::chrono::steady_clock::now();
                     CefDoMessageLoopWork();
+                    pump_active_us += std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now() - pump_t0).count();
                     if (paint_seq.load(std::memory_order_acquire) != last_delivered_seq) break;
                     const auto now = std::chrono::steady_clock::now();
                     if (now >= tick_deadline) break;
@@ -251,22 +270,33 @@ int main(int argc, char** argv) {
                 }
 
                 const uint64_t cur_seq = paint_seq.load(std::memory_order_acquire);
-                if (browser_ready.load(std::memory_order_acquire) && cur_seq != last_delivered_seq) {
+                const bool got_new_paint = cur_seq != last_delivered_seq;
+                auto delivery_time = std::chrono::steady_clock::now();
+                uint64_t interval_us = 0;
+                if (browser_ready.load(std::memory_order_acquire) && got_new_paint) {
                     last_delivered_seq = cur_seq;
                     ring.Latest([&](const bg::Frame& f) {
                         if (consumer) consumer->OnFrame(f);
                     });
 
-                    const auto now = std::chrono::steady_clock::now();
-                    uint64_t interval_us = 0;
+                    delivery_time = std::chrono::steady_clock::now();
                     if (have_last_paint) {
                         interval_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                            now - last_paint_time).count();
+                            delivery_time - last_paint_time).count();
                     }
                     stats.RecordFrame(interval_us, expected_us);
-                    last_paint_time = now;
+                    last_paint_time = delivery_time;
                     have_last_paint = true;
-                    last_any_paint = now;
+                    last_any_paint = delivery_time;
+                }
+
+                if (frame_log && frame_log->enabled()) {
+                    const uint64_t paint_latency_us = std::chrono::duration_cast<
+                        std::chrono::microseconds>(delivery_time - tick_start).count();
+                    const uint64_t wall_clock_us = std::chrono::duration_cast<
+                        std::chrono::microseconds>(delivery_time.time_since_epoch()).count();
+                    frame_log->RecordTick(wall_clock_us, interval_us, cur_seq, pump_active_us,
+                                          paint_latency_us, got_new_paint ? 0 : 1);
                 }
 
                 if (browser_ready.load(std::memory_order_acquire)) {
@@ -323,6 +353,8 @@ int main(int argc, char** argv) {
     } else {
     // Main loop: pump CEF, deliver latest frame to consumer, record cadence.
     while (true) {
+        const auto tick_start = std::chrono::steady_clock::now();
+
         // Drive the compositor: one external BeginFrame per channel tick
         // (window_info.external_begin_frame_enabled). rAF, CSS animations and
         // video then advance exactly once per tick and every composite carries
@@ -334,28 +366,37 @@ int main(int argc, char** argv) {
             }
         }
 
+        // Phase 17 P0: see the decklink-driven branch above for rationale.
+        // pump.Tick() itself calls CefDoMessageLoopWork() once; time it here
+        // and accumulate the remaining_us slice loop below into the same
+        // per-tick total.
+        const auto pump_tick_t0 = std::chrono::steady_clock::now();
         const int64_t sleep_us = pump.Tick(/*out_painted=*/false);
+        uint64_t pump_active_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - pump_tick_t0).count();
 
         // Deliver the latest painted frame to the consumer, but only when a new
         // OnPaint actually arrived (avoid double-counting / re-delivering).
         const uint64_t cur_seq = paint_seq.load(std::memory_order_acquire);
-        if (browser_ready.load(std::memory_order_acquire) && cur_seq != last_delivered_seq) {
+        const bool got_new_paint = cur_seq != last_delivered_seq;
+        uint64_t interval_us = 0;
+        auto delivery_time = std::chrono::steady_clock::now();
+        if (browser_ready.load(std::memory_order_acquire) && got_new_paint) {
             last_delivered_seq = cur_seq;
             ring.Latest([&](const bg::Frame& f) {
                 if (consumer) consumer->OnFrame(f);
             });
 
             // Record cadence against the previous paint time.
-            const auto now = std::chrono::steady_clock::now();
-            uint64_t interval_us = 0;
+            delivery_time = std::chrono::steady_clock::now();
             if (have_last_paint) {
                 interval_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                    now - last_paint_time).count();
+                    delivery_time - last_paint_time).count();
             }
             stats.RecordFrame(interval_us, expected_us);
-            last_paint_time = now;
+            last_paint_time = delivery_time;
             have_last_paint = true;
-            last_any_paint = now;
+            last_any_paint = delivery_time;
         }
 
         // Paint watchdog: the channel.html damage beacon keeps OnPaint alive at
@@ -406,8 +447,20 @@ int main(int argc, char** argv) {
         while (remaining_us > 0) {
             const int64_t slice_us = remaining_us < 4000 ? remaining_us : 4000;
             std::this_thread::sleep_for(std::chrono::microseconds(slice_us));
+            const auto slice_t0 = std::chrono::steady_clock::now();
             CefDoMessageLoopWork();
+            pump_active_us += std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - slice_t0).count();
             remaining_us -= slice_us;
+        }
+
+        if (frame_log && frame_log->enabled()) {
+            const uint64_t paint_latency_us = std::chrono::duration_cast<
+                std::chrono::microseconds>(delivery_time - tick_start).count();
+            const uint64_t wall_clock_us = std::chrono::duration_cast<
+                std::chrono::microseconds>(delivery_time.time_since_epoch()).count();
+            frame_log->RecordTick(wall_clock_us, interval_us, cur_seq, pump_active_us,
+                                  paint_latency_us, got_new_paint ? 0 : 1);
         }
     }
     }  // decklink_driven / self-timer loop selection

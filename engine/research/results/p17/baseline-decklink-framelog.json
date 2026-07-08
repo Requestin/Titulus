@@ -1,0 +1,26 @@
+{
+  "source": "engine/research/results/p17/baseline-decklink-frame-log.csv",
+  "totalRows": 2969,
+  "deliveredFrames": 2453,
+  "timedOutTicks": 515,
+  "intervalUs": {
+    "p50": 21767,
+    "p95": 40384,
+    "max": 52601,
+    "mean": 24991.77
+  },
+  "pumpActiveUs": {
+    "p50": 974,
+    "p95": 1173,
+    "max": 29722,
+    "mean": 867.97
+  },
+  "paintLatencyUs": {
+    "p50": 20089,
+    "p95": 21848,
+    "max": 29722,
+    "mean": 17986.02
+  },
+  "pumpActiveRatio": 0.0396,
+  "effectiveFps": 40.01
+}

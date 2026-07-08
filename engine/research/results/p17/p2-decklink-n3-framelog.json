@@ -1,0 +1,26 @@
+{
+  "source": "engine/research/results/p17/p2-decklink-n3-frame-log.csv",
+  "totalRows": 2995,
+  "deliveredFrames": 2370,
+  "timedOutTicks": 624,
+  "intervalUs": {
+    "p50": 21616,
+    "p95": 40390,
+    "max": 58085,
+    "mean": 25246.63
+  },
+  "pumpActiveUs": {
+    "p50": 907,
+    "p95": 1096,
+    "max": 27660,
+    "mean": 796.43
+  },
+  "paintLatencyUs": {
+    "p50": 20076,
+    "p95": 21705,
+    "max": 27660,
+    "mean": 17539.64
+  },
+  "pumpActiveRatio": 0.037,
+  "effectiveFps": 39.61
+}

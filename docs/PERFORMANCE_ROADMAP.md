@@ -65,24 +65,38 @@ Phase 15: Class A реализован и validated.
 
 ---
 
-## Phase 17 — Почему CPU ~60%, а не 100%?
+## Phase 17 — Почему CPU ~60%, а не 100%? (ЗАВЕРШЕНО, 8 июля 2026)
+
+**Деливерабл:** [docs/development-phases/phase-17-raster-latency.md](development-phases/phase-17-raster-latency.md).
 
 **Цель:** количественный ответ на вопрос пользователя «почему ядра не загружены полностью?».
 
-Два кандидата, оба правдоподобны:
+**Вердикт — смешанный, по pump-режиму:**
+- **Self-timer/headless** (editor-preview, browser/OBS·vMix): гипотеза A
+  (raster pool) подтверждена — `num-raster-threads=3` (вместо
+  Chromium-автовыбора 2) даёт +5.6% fps / −44% paint-latency p95 на `test1`.
+- **DeckLink-driven** (production): гипотеза B (латентность/архитектура)
+  доминирует — pump-цикл синхронно опрашивает `paint_seq` до дедлайна поля
+  независимо от скорости raster; выигрыш от N=3 всего +1.6% fps.
 
-1. **Raster pool Chromium не насыщает все ядра.** По умолчанию Chromium сам выбирает `num-raster-threads`. Можно явно выставить `--num-raster-threads=N` (через плюмбинг в [engine/src/engine_app.cpp](../engine/src/engine_app.cpp)) и посмотреть, вырастет ли `in_fps` и CPU%.
-2. **Латентность, не throughput.** Если между `SendExternalBeginFrame()` и приходом `OnPaint()` ~10-15мс (IPC round-trip через renderer), то даже при свободных ядрах движок физически не успевает дать больше кадров — упирается в latency одного composite-цикла. Это видно через расширение `--frame-log` (Phase 14.5 / Phase 15 P0): если `pump_active_us << interval_us`, то узкое место — ожидание, не raster.
+**Реализовано:**
+- `--frame-log` (`pump_active_us`/`paint_latency_us`/`waited_deadline`) +
+  `engine/research/analyze-frame-log.mjs`.
+- `BG_NUM_RASTER_THREADS` env-hook в `engine_app.cpp`; закреплён как default
+  `(закреплённые логические ядра канала − 1)` в
+  [engine/run-channel.sh](../engine/run-channel.sh).
+- 3-канальный DeckLink soak (~16.7 мин): `d_late=0 d_dropped=0` на всех
+  каналах, без регрессии.
 
-**Действия:**
+**Критерий успеха:** выполнен — однозначный (хоть и по-разному для двух
+pump-режимов) ответ получен с числами.
 
-- Замер активных raster-потоков: `ps -T -p $renderer_pid -o pid,tid,pcpu,stat,comm | sort -k3 -n -r` под нагрузкой.
-- Явно `--num-raster-threads=4` (по числу выделенных каналу ядер), A/B против умолчания.
-- Расширить `--frame-log` полем `pump_active_us` (сколько времени в тике ушло на `CefDoMessageLoopWork()` vs сон).
+**Для Phase 18:** увеличение raster-параллелизма НЕ решает потолок
+`in_fps=25` на production DeckLink-пути — нужна переработка pump-архитектуры
+(например, конвейеризация кадров in-flight), не просто больше CPU.
 
-**Критерий успеха:** однозначный ответ — либо «raster pool недонасыщен, +X% fps при увеличении параллелизма», либо «латентность, добавление CPU не поможет, нужно менять IPC/pump-архитектуру».
-
-**Зависимости:** Phase 15 (после перевода на transform — реальная картина raster-нагрузки может сильно измениться).
+**Зависимости:** Phase 15/16 (после Class A — реальная картина raster-нагрузки
+изменилась, замеры Phase 17 сделаны поверх неё).
 
 ---
 

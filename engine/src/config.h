@@ -68,6 +68,11 @@ struct Config {
     // 2=+PaintUnderInvalidationChecking (dev-only, may assert on null bench).
     int blink_research = 0;
 
+    // Phase 17 P0: optional per-frame CSV diagnostic log (pump_active_us /
+    // paint_latency_us). Empty = disabled (default, zero overhead on the
+    // production decklink/browser paths).
+    std::string frame_log;
+
     // Parse argv into this config. Returns false on a fatal parse error (and
     // prints usage to stderr). Exits the process on --help / a missing required
     // arg so callers don't need to branch.

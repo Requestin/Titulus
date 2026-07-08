@@ -62,12 +62,14 @@ set(BG_SOURCES
   src/engine_client.cpp
   src/config.cpp
   src/stats.cpp
+  src/frame_log.cpp
 )
 set(BG_HEADERS
   src/engine_app.h
   src/engine_client.h
   src/config.h
   src/stats.h
+  src/frame_log.h
   src/frame_ring.h
   src/message_pump.h
   src/consumers/consumer.h
