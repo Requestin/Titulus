@@ -767,8 +767,11 @@ export class TemplateRenderer {
     this.setStyle(el, cache, 'height', `${at.height}px`);
     this.setStyle(el, cache, 'transformOrigin', `${at.originX}px ${at.originY}px`);
     this.setStyle(el, cache, 'transform', at.transform);
-    this.setStyle(el, cache, 'perspective', gt.perspective > 0 ? `${gt.perspective}px` : 'none');
+    // CSS perspective only when this group (or subtree) actually tilts — default
+    // perspective:1000 must not create a 3D context that breaks 2D scale on CEF.
     const needs3d = transformHas3D(gt) || this.groupSubtreeHas3D(group.id);
+    const persp = needs3d && gt.perspective > 0 ? `${gt.perspective}px` : 'none';
+    this.setStyle(el, cache, 'perspective', persp);
     this.setStyle(el, cache, 'transformStyle', needs3d ? 'preserve-3d' : 'flat');
   }
 
@@ -781,7 +784,11 @@ export class TemplateRenderer {
     if (!this.template || !groupId) return 0;
     for (const gid of this.ancestorGroupIds(groupId)) {
       const g = this.template.groups.find((x) => x.id === gid);
-      if (g && g.transform.perspective > 0) return g.transform.perspective;
+      if (!g) continue;
+      // Only inherit when the ancestor actually establishes a 3D context.
+      if ((transformHas3D(g.transform) || this.groupSubtreeHas3D(gid)) && g.transform.perspective > 0) {
+        return g.transform.perspective;
+      }
     }
     return 0;
   }

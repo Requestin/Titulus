@@ -19,9 +19,10 @@ function quantize(n: number): number {
   return Math.round(n / QUANT_PX) * QUANT_PX;
 }
 
-/** True when axis-aligned overflow clip is insufficient (any rotation/tilt). */
+/** True when axis-aligned overflow clip is insufficient (rotation/tilt/non-1 scale). */
 export function maskNeedsProjection(t: Transform): boolean {
-  return t.rotation !== 0 || t.rotationX !== 0 || t.rotationY !== 0;
+  return t.rotation !== 0 || t.rotationX !== 0 || t.rotationY !== 0
+    || t.scaleX !== 1 || t.scaleY !== 1;
 }
 
 export interface MaskShapeSpec {

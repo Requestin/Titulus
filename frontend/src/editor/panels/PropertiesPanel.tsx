@@ -3,7 +3,8 @@
 // Inspector for the current selection: base props, transform, type-specific
 // style, and variable bindings on string fields (content / fill / src).
 
-import { Braces } from 'lucide-react';
+import { useState } from 'react';
+import { Braces, Lock, Unlock } from 'lucide-react';
 import type { Layer, Template, Variable, VariableBinding, BlendMode } from '@runtime';
 import { useEditor } from '../store';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
@@ -19,6 +20,7 @@ import {
 import { MediaSourcePicker } from '../media/MediaSourcePicker';
 import { Field, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
 import type { NumberInputExtraAction } from '@/components/ui/form';
+import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 
 const BLEND_MODES: BlendMode[] = ['normal', 'multiply', 'screen', 'add', 'overlay', 'darken', 'lighten'];
@@ -56,6 +58,7 @@ export function PropertiesPanel() {
         <SizeSection
           id={g.id}
           kind="group"
+          canvas={template.canvas}
           t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playheads)}
           updateTransform={updateTransform}
         />
@@ -112,6 +115,7 @@ export function PropertiesPanel() {
       <SizeSection
         id={layer.id}
         kind="layer"
+        canvas={template.canvas}
         t={effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playheads)}
         updateTransform={updateTransform}
       />
@@ -129,25 +133,76 @@ export function PropertiesPanel() {
 }
 
 function SizeSection({
-  id, kind, t, updateTransform,
+  id, kind, canvas, t, updateTransform,
 }: {
   id: string;
   kind: 'layer' | 'group';
+  canvas: Template['canvas'];
   t: Layer['transform'];
   updateTransform: (id: string, partial: Partial<Layer['transform']>, kind?: 'layer' | 'group') => void;
 }) {
+  const [scaleLocked, setScaleLocked] = useState(true);
   const set = (partial: Partial<Layer['transform']>) => updateTransform(id, partial, kind);
+
+  function setScaleX(v: number) {
+    if (scaleLocked) set({ scaleX: v, scaleY: v });
+    else set({ scaleX: v });
+  }
+  function setScaleY(v: number) {
+    if (scaleLocked) set({ scaleX: v, scaleY: v });
+    else set({ scaleY: v });
+  }
 
   return (
     <Section title="Size">
       {kind === 'layer' && (
         <>
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            <Button
+              size="sm"
+              variant="neutral"
+              title={`Set size to canvas ${canvas.width}×${canvas.height}`}
+              onClick={() => set({ width: canvas.width, height: canvas.height })}
+            >
+              Screen
+            </Button>
+            <Button
+              size="sm"
+              variant="neutral"
+              title={`Set height to canvas height (${canvas.height})`}
+              onClick={() => set({ height: canvas.height })}
+            >
+              Height
+            </Button>
+            <Button
+              size="sm"
+              variant="neutral"
+              title={`Set width to canvas width (${canvas.width})`}
+              onClick={() => set({ width: canvas.width })}
+            >
+              Width
+            </Button>
+          </div>
           <LabeledNum label="Width" value={t.width} resetValue={300} onChange={(v) => set({ width: v })} />
           <LabeledNum label="Height" value={t.height} resetValue={80} onChange={(v) => set({ height: v })} />
         </>
       )}
-      <LabeledNum label="Scale X" value={t.scaleX} resetValue={1} step={0.05} onChange={(v) => set({ scaleX: v })} />
-      <LabeledNum label="Scale Y" value={t.scaleY} resetValue={1} step={0.05} onChange={(v) => set({ scaleY: v })} />
+      <LabeledNum label="Scale X" value={t.scaleX} resetValue={1} step={0.05} onChange={setScaleX} />
+      <div className="flex justify-center py-0.5">
+        <button
+          type="button"
+          title={scaleLocked ? 'Unlock scale X/Y' : 'Lock scale X/Y'}
+          aria-pressed={scaleLocked}
+          onClick={() => setScaleLocked((v) => !v)}
+          className={cn(
+            'grid h-7 w-7 place-items-center rounded-md border border-border',
+            scaleLocked ? 'border-primary/50 bg-primary/15 text-primary' : 'text-ink-faint hover:text-ink',
+          )}
+        >
+          {scaleLocked ? <Lock className="h-3.5 w-3.5" aria-hidden /> : <Unlock className="h-3.5 w-3.5" aria-hidden />}
+        </button>
+      </div>
+      <LabeledNum label="Scale Y" value={t.scaleY} resetValue={1} step={0.05} onChange={setScaleY} />
     </Section>
   );
 }

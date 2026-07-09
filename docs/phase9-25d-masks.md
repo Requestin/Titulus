@@ -219,7 +219,7 @@ stack container (root или groupStacks[gid])
 
 **Реализация:**
 
-- `transformHas3D(t)` — `rotationX≠0 || rotationY≠0 || perspective>0`.
+- `transformHas3D(t)` — `rotationX≠0 || rotationY≠0` (default `perspective:1000` alone is **not** 3D; treating it as 3D forced `preserve-3d` on every layer and broke CSS `scale()` under CEF).
 - Root + groups: `transform-style: preserve-3d` только если subtree has 3D.
 - Group: CSS `perspective: Npx` на element; дети получают `skipPerspective` в `applyTransform` если ancestor уже задал perspective.
 

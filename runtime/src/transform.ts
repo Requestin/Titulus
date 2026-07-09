@@ -81,9 +81,14 @@ export function anchorCompensatedUpdate(
   };
 }
 
-/** True when the transform uses 2.5D (tilt or explicit perspective). */
+/**
+ * True when the transform uses real 2.5D tilt (rotationX/Y).
+ * Default `perspective: 1000` alone is NOT 3D — treating it as such forced
+ * `preserve-3d` on every layer and broke CSS `scale()` under CEF CPU raster
+ * (editor GPU path still looked fine; SDI/engine did not).
+ */
 export function transformHas3D(t: Transform): boolean {
-  return t.rotationX !== 0 || t.rotationY !== 0 || t.perspective > 0;
+  return t.rotationX !== 0 || t.rotationY !== 0;
 }
 
 /** CSS blend-mode string for a layer. */
