@@ -1,0 +1,5 @@
+2026-07-09T15:45:29Z chunk=1/4 engines=3 onair=3 slots 3 ch
+2026-07-09T15:49:29Z chunk=2/4 engines=3 onair=3 slots 3 ch
+2026-07-09T15:53:29Z chunk=3/4 engines=3 onair=3 slots 3 ch
+2026-07-09T15:57:29Z chunk=4/4 engines=3 onair=3 slots 3 ch
+SOAK_DONE 2026-07-09T15:57:29Z

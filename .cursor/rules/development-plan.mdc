@@ -4,7 +4,7 @@ alwaysApply: true
 ---
 # План разработки
 
-**Снимок:** июль 2026. `main` содержит Phase 0–16 (после PR #59). Детали — `docs/development-phases/`.
+**Снимок:** июль 2026. `main` содержит Phase 0–18 (после PR #61). Детали — `docs/development-phases/`.
 
 ## Фазы (кратко)
 
@@ -27,15 +27,17 @@ alwaysApply: true
 | 14 | Microfreeze investigation | SKIPPED (намеренно) | PHASE_14_MICROFREEZE_PLAN.md |
 | 15 | Transform optimization | DONE (PR #58) | phase-15-transform-optimization.md |
 | 16 | Performance matrix + layer promotion | DONE | phase-16-performance-matrix.md |
-| 17 | Raster pool vs latency | DONE | phase-17-raster-latency.md |
+| 17 | Raster pool vs latency | DONE (PR #60) | phase-17-raster-latency.md |
+| 18 | True 50p progressive pipeline | DONE (потолок задокументирован) | phase-18-true-50p-pipeline.md |
 
 ## Последний milestone в main
 
-PR #59 — Phase 16 Performance matrix + layer promotion (Class A implementation, 3-channel DeckLink soak).
+PR #61 — Phase 18 True 50p: Fallback + Decision Gate; на `test1` потолок ~25 unique fps подтверждён (не поднят); P3.3 визуально «без разницы».
 
 ## Следующие задачи
 
-_(заполняется вручную)_
+- Phase 19 — Style Guide + cost model (снижение стоимости кадра до уровня `test`)
+- Повторный true-50p gate, когда headless `test1` ≥45–50 fps
 
 ## Как обновлять этот файл
 

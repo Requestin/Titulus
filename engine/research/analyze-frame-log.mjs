@@ -56,6 +56,8 @@ function main() {
   const iPumpActive = col('pump_active_us');
   const iPaintLatency = col('paint_latency_us');
   const iWaited = col('waited_deadline');
+  const iInflight = col('inflight_depth');
+  const iPaintDelta = col('paint_seq_delta');
 
   const dataLines = lines.slice(1);
   const totalRows = dataLines.length;
@@ -63,10 +65,14 @@ function main() {
   const intervalDelivered = [];
   const pumpActiveAll = [];
   const paintLatencyAll = [];
+  const paintSeqDeltaAll = [];
   let deliveredFrames = 0;
   let timedOutTicks = 0;
   let sumPumpActiveDelivered = 0;
   let sumIntervalDelivered = 0;
+  let ticksWithDeltaGe2 = 0;
+  let ticksWithDeltaGe1 = 0;
+  let maxInflight = 0;
 
   for (const line of dataLines) {
     const cells = line.split(',');
@@ -74,10 +80,16 @@ function main() {
     const pumpActiveUs = Number(cells[iPumpActive]);
     const paintLatencyUs = Number(cells[iPaintLatency]);
     const waitedDeadline = Number(cells[iWaited]);
+    const inflight = iInflight >= 0 ? Number(cells[iInflight]) : 0;
+    const paintDelta = iPaintDelta >= 0 ? Number(cells[iPaintDelta]) : 0;
 
     pumpActiveAll.push(pumpActiveUs);
     paintLatencyAll.push(paintLatencyUs);
+    if (iPaintDelta >= 0) paintSeqDeltaAll.push(paintDelta);
     if (waitedDeadline === 1) timedOutTicks += 1;
+    if (paintDelta >= 2) ticksWithDeltaGe2 += 1;
+    if (paintDelta >= 1) ticksWithDeltaGe1 += 1;
+    if (inflight > maxInflight) maxInflight = inflight;
 
     // interval_us === 0 means no frame was delivered this row — exclude
     // from interval stats but keep counted in the all-rows stats above.
@@ -92,6 +104,7 @@ function main() {
   const intervalUsDist = distribution(intervalDelivered);
   const pumpActiveUsDist = distribution(pumpActiveAll);
   const paintLatencyUsDist = distribution(paintLatencyAll);
+  const paintSeqDeltaDist = distribution(paintSeqDeltaAll);
 
   // sum/sum instead of mean-of-per-row-ratios: robust to outlier rows
   // (e.g. a single tick with near-zero interval_us would otherwise blow up
@@ -109,6 +122,12 @@ function main() {
     paintLatencyUs: paintLatencyUsDist,
     pumpActiveRatio,
     effectiveFps,
+    // Phase 18 P0.2 fields (0/absent when probe off / old CSV).
+    paintSeqDelta: paintSeqDeltaDist,
+    ticksWithDeltaGe2,
+    ticksWithDeltaGe1,
+    maxInflight,
+    pctTicksDeltaGe2: totalRows ? Number(((100 * ticksWithDeltaGe2) / totalRows).toFixed(2)) : 0,
   };
 
   const lines_ = [
@@ -127,10 +146,29 @@ function main() {
     '',
   ];
 
+  if (iPaintDelta >= 0) {
+    lines_.push(
+      'Phase 18 P0.2 paint_seq_delta (unique OnPaints per tick) p50/p95/max/mean:',
+      `  ${paintSeqDeltaDist.p50} / ${paintSeqDeltaDist.p95} / ${paintSeqDeltaDist.max} / ${paintSeqDeltaDist.mean}`,
+      `ticks with paint_seq_delta≥2: ${ticksWithDeltaGe2}/${totalRows} (${report.pctTicksDeltaGe2}%)`,
+      `ticks with paint_seq_delta≥1: ${ticksWithDeltaGe1}/${totalRows}`,
+      `max inflight_depth observed: ${maxInflight}`,
+      '',
+    );
+  }
+
   // Heuristic hint only — NOT a conclusion. The real Phase 17 A/B verdict
   // is decided by a human after the full experiment; this is just a nudge
   // toward which hypothesis's supporting numbers to look at next.
-  if (pumpActiveRatio > 0.6) {
+  if (iPaintDelta >= 0 && maxInflight >= 2) {
+    if (report.pctTicksDeltaGe2 >= 50) {
+      lines_.push('Heuristic hint (P18): CEF likely pipelines dual BeginFrame (Approach A signal)');
+    } else if (report.pctTicksDeltaGe2 < 5) {
+      lines_.push('Heuristic hint (P18): CEF coalesces dual BeginFrame (Approach B / Fallback signal)');
+    } else {
+      lines_.push('Heuristic hint (P18): partial pipeline — inspect paint_seq_delta distribution');
+    }
+  } else if (pumpActiveRatio > 0.6) {
     lines_.push('Heuristic hint: raster pool likely saturated (hypothesis A signal)');
   } else if (pumpActiveRatio < 0.3) {
     lines_.push('Heuristic hint: large idle/latency gap relative to pump work (hypothesis B signal)');

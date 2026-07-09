@@ -987,11 +987,12 @@ struct DecklinkConsumer::Impl {
 
     // Phase 11.2 made DeckLink the render pump's clock (WaitForTick requests
     // exactly the fields it's about to consume, paced ~1 field apart), so
-    // the queue should hover at 0-1 in steady state; depth 2 = 40ms max
-    // buffered input at 50fps is now plenty of slack for jitter without
-    // adding latency drift on top of an already-synchronized clock (the old
-    // depth 4 / 80ms predates 11.2's pull-based pacing).
-    static constexpr size_t kMaxQueuedFrames = 2;
+    // the queue should hover at 0-1 in steady state. Phase 18 Fallback may
+    // deliver two unique bitmaps back-to-back within one output-frame window
+    // (eager sequential field packing); depth 3 absorbs that burst without
+    // frames_overwritten dropping the intermediate field needed for d_pairs.
+    // (Depth 2 = 40ms was enough pre-18; depth 4 / 80ms predates 11.2.)
+    static constexpr size_t kMaxQueuedFrames = 3;
     static constexpr size_t kMaxRecycledBuffers = 8;
 
     int device_index_ = -1;

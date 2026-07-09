@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p18/p02-control-r1-frame-log.csv",
+  "totalRows": 2999,
+  "deliveredFrames": 2044,
+  "timedOutTicks": 954,
+  "intervalUs": {
+    "p50": 23091,
+    "p95": 41747,
+    "max": 78244,
+    "mean": 29272.64
+  },
+  "pumpActiveUs": {
+    "p50": 901,
+    "p95": 1264,
+    "max": 34672,
+    "mean": 758.86
+  },
+  "paintLatencyUs": {
+    "p50": 21,
+    "p95": 51,
+    "max": 30605,
+    "mean": 51.85
+  },
+  "pumpActiveRatio": 0.0214,
+  "effectiveFps": 34.16,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 1,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 5,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

@@ -1,0 +1,437 @@
+{
+  "source": "engine/research/results/p18/p01-test1-trace.json",
+  "durationSec": 15,
+  "eventCount": 321296,
+  "beginFrames": 1224,
+  "drawFrames": 0,
+  "frameCount": 1224,
+  "frameMarkerUsedForSlicing": "SendBeginMainFrame",
+  "perFrameSliceCount": 1224,
+  "perFrame": {
+    "layout": 8.7,
+    "paint": 4.33,
+    "raster": 68.59,
+    "style": 3.31,
+    "jsEvents": 0
+  },
+  "perFrameDistribution": {
+    "layoutEvents": {
+      "p50": 0,
+      "p95": 26,
+      "max": 33
+    },
+    "paintEvents": {
+      "p50": 0,
+      "p95": 13,
+      "max": 14
+    },
+    "rasterEvents": {
+      "p50": 0,
+      "p95": 206,
+      "max": 274
+    },
+    "rasterMs": {
+      "p50": 0,
+      "p95": 190.645,
+      "max": 299.462
+    }
+  },
+  "heavyFrames": [
+    {
+      "frameIdx": 5,
+      "tsStart": 11874084155,
+      "raster": 230,
+      "rasterMs": 203.196
+    },
+    {
+      "frameIdx": 8,
+      "tsStart": 11874125746,
+      "raster": 274,
+      "rasterMs": 299.462
+    },
+    {
+      "frameIdx": 68,
+      "tsStart": 11874924816,
+      "raster": 211,
+      "rasterMs": 187.519
+    },
+    {
+      "frameIdx": 80,
+      "tsStart": 11875083536,
+      "raster": 211,
+      "rasterMs": 199.438
+    },
+    {
+      "frameIdx": 152,
+      "tsStart": 11875925759,
+      "raster": 211,
+      "rasterMs": 175.946
+    },
+    {
+      "frameIdx": 167,
+      "tsStart": 11876067251,
+      "raster": 211,
+      "rasterMs": 165.735
+    },
+    {
+      "frameIdx": 242,
+      "tsStart": 11876944239,
+      "raster": 211,
+      "rasterMs": 194.028
+    },
+    {
+      "frameIdx": 251,
+      "tsStart": 11877064468,
+      "raster": 211,
+      "rasterMs": 186.132
+    },
+    {
+      "frameIdx": 317,
+      "tsStart": 11877924199,
+      "raster": 211,
+      "rasterMs": 189.563
+    },
+    {
+      "frameIdx": 329,
+      "tsStart": 11878083757,
+      "raster": 211,
+      "rasterMs": 167.37
+    },
+    {
+      "frameIdx": 392,
+      "tsStart": 11878923652,
+      "raster": 211,
+      "rasterMs": 181.518
+    },
+    {
+      "frameIdx": 404,
+      "tsStart": 11879067064,
+      "raster": 211,
+      "rasterMs": 175.768
+    },
+    {
+      "frameIdx": 485,
+      "tsStart": 11879927493,
+      "raster": 211,
+      "rasterMs": 216.221
+    },
+    {
+      "frameIdx": 500,
+      "tsStart": 11880066932,
+      "raster": 211,
+      "rasterMs": 181.537
+    },
+    {
+      "frameIdx": 572,
+      "tsStart": 11880924380,
+      "raster": 211,
+      "rasterMs": 188.999
+    },
+    {
+      "frameIdx": 584,
+      "tsStart": 11881084008,
+      "raster": 211,
+      "rasterMs": 188.363
+    },
+    {
+      "frameIdx": 647,
+      "tsStart": 11881923637,
+      "raster": 211,
+      "rasterMs": 189.73
+    },
+    {
+      "frameIdx": 659,
+      "tsStart": 11882083615,
+      "raster": 211,
+      "rasterMs": 165.398
+    },
+    {
+      "frameIdx": 725,
+      "tsStart": 11882923714,
+      "raster": 211,
+      "rasterMs": 169.295
+    },
+    {
+      "frameIdx": 737,
+      "tsStart": 11883064366,
+      "raster": 211,
+      "rasterMs": 181.56
+    },
+    {
+      "frameIdx": 812,
+      "tsStart": 11883944143,
+      "raster": 211,
+      "rasterMs": 182.863
+    },
+    {
+      "frameIdx": 824,
+      "tsStart": 11884066141,
+      "raster": 211,
+      "rasterMs": 169.453
+    },
+    {
+      "frameIdx": 896,
+      "tsStart": 11884925606,
+      "raster": 211,
+      "rasterMs": 203.877
+    },
+    {
+      "frameIdx": 908,
+      "tsStart": 11885085977,
+      "raster": 211,
+      "rasterMs": 181.321
+    },
+    {
+      "frameIdx": 971,
+      "tsStart": 11885924233,
+      "raster": 211,
+      "rasterMs": 187.238
+    },
+    {
+      "frameIdx": 983,
+      "tsStart": 11886083600,
+      "raster": 211,
+      "rasterMs": 184.962
+    },
+    {
+      "frameIdx": 1049,
+      "tsStart": 11886945292,
+      "raster": 211,
+      "rasterMs": 172.259
+    },
+    {
+      "frameIdx": 1058,
+      "tsStart": 11887065530,
+      "raster": 211,
+      "rasterMs": 182.381
+    },
+    {
+      "frameIdx": 1133,
+      "tsStart": 11887925731,
+      "raster": 211,
+      "rasterMs": 173.77
+    },
+    {
+      "frameIdx": 1145,
+      "tsStart": 11888063916,
+      "raster": 211,
+      "rasterMs": 184.713
+    },
+    {
+      "frameIdx": 1220,
+      "tsStart": 11888928909,
+      "raster": 211,
+      "rasterMs": 165.556
+    }
+  ],
+  "subCategoryBreakdown": [
+    {
+      "name": "raster.task",
+      "count": 16705,
+      "durMs": 16494.59
+    },
+    {
+      "name": "raster.drawFrame",
+      "count": 408,
+      "durMs": 9145.47
+    },
+    {
+      "name": "layout.updateLayout",
+      "count": 817,
+      "durMs": 670.47
+    },
+    {
+      "name": "style.recalc",
+      "count": 817,
+      "durMs": 628.84
+    },
+    {
+      "name": "layout.performLayout",
+      "count": 1222,
+      "durMs": 55.59
+    },
+    {
+      "name": "invalidation",
+      "count": 411,
+      "durMs": 1.11
+    }
+  ],
+  "totals": {
+    "layout": 10647,
+    "paint": 5298,
+    "raster": 83956,
+    "style": 4054,
+    "js": 0,
+    "other": 78910
+  },
+  "durMs": {
+    "layout": 2251.47,
+    "paint": 521.96,
+    "raster": 74000.62,
+    "style": 1911.13,
+    "js": 0
+  },
+  "topEventNames": [
+    {
+      "name": "LayerTreeHostImpl::NotifyTileStateChanged",
+      "count": 33345
+    },
+    {
+      "name": "auto cc::(anonymous namespace)::InsertNodeForTask(TaskGraph *, TileTask *, uint16_t, uint16_t, size_t, bool)::(anonymous class)::operator()()::(anonymous class)::operator()(uint32_t) const",
+      "count": 19187
+    },
+    {
+      "name": "RasterSource::PerformSolidColorAnalysis",
+      "count": 16728
+    },
+    {
+      "name": "RasterizerTaskImpl::RunOnWorkerThread",
+      "count": 16705
+    },
+    {
+      "name": "RasterTask",
+      "count": 16705
+    },
+    {
+      "name": "ZeroCopyRasterBuffer::Playback",
+      "count": 16705
+    },
+    {
+      "name": "DisplayItemList::Raster",
+      "count": 16705
+    },
+    {
+      "name": "Graphics.Pipeline",
+      "count": 12726
+    },
+    {
+      "name": "Document::SetReadyState",
+      "count": 9752
+    },
+    {
+      "name": "AsyncTask Scheduled",
+      "count": 4094
+    },
+    {
+      "name": "LocalFrameView::ScheduleAnimation",
+      "count": 3667
+    },
+    {
+      "name": "Document::CancelParsing",
+      "count": 3384
+    },
+    {
+      "name": "RenderSurfaceReasonCount",
+      "count": 3260
+    },
+    {
+      "name": "ScheduledTasksState",
+      "count": 2455
+    },
+    {
+      "name": "Document::Initialize",
+      "count": 2442
+    },
+    {
+      "name": "Document::OpenForNavigation",
+      "count": 2442
+    },
+    {
+      "name": "Document::FinishedParsing",
+      "count": 2442
+    },
+    {
+      "name": "TileTaskManagerImpl::CheckForCompletedTasks",
+      "count": 2381
+    },
+    {
+      "name": "Document::Document",
+      "count": 2094
+    },
+    {
+      "name": "LocalFrameView::UpdateStyleAndLayout",
+      "count": 2041
+    },
+    {
+      "name": "TileManager::CheckPendingGpuWorkAndIssueSignals",
+      "count": 1975
+    },
+    {
+      "name": "TaskSetFinishedTaskImpl::RunOnWorkerThread",
+      "count": 1637
+    },
+    {
+      "name": "PipelineReporter",
+      "count": 1636
+    },
+    {
+      "name": "BeginImplFrameToSendBeginMainFrame",
+      "count": 1636
+    },
+    {
+      "name": "ScheduledTasks",
+      "count": 1635
+    },
+    {
+      "name": "Document::BeginLifecycleUpdatesIfRenderingReady",
+      "count": 1628
+    },
+    {
+      "name": "LocalFrameView::BeginLifecycleUpdates",
+      "count": 1628
+    },
+    {
+      "name": "EndActivateToSubmitCompositorFrame",
+      "count": 1626
+    },
+    {
+      "name": "SubmitCompositorFrameToPresentationCompositorFrame",
+      "count": 1626
+    },
+    {
+      "name": "SubmitToReceiveCompositorFrame",
+      "count": 1626
+    },
+    {
+      "name": "ReceiveCompositorFrameToStartDraw",
+      "count": 1626
+    },
+    {
+      "name": "StartDrawToSwapStart",
+      "count": 1626
+    },
+    {
+      "name": "SwapEndToPresentationCompositorFrame",
+      "count": 1626
+    },
+    {
+      "name": "TileManager::CheckForCompletedTasksAndIssueSignals",
+      "count": 1566
+    },
+    {
+      "name": "AsyncTask Run",
+      "count": 1309
+    },
+    {
+      "name": "AnimationHost::TickAnimations",
+      "count": 1235
+    },
+    {
+      "name": "HTMLDocumentParser::PumpTokenizerIfPossible",
+      "count": 1233
+    },
+    {
+      "name": "LayerTreeHostImpl::CommitComplete",
+      "count": 1228
+    },
+    {
+      "name": "LayerTreeHostImpl::ActivateSyncTree",
+      "count": 1225
+    },
+    {
+      "name": "HTMLDocumentParser::Flush",
+      "count": 1224
+    }
+  ],
+  "topJsSymbols": []
+}

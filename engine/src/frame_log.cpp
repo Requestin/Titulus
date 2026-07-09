@@ -14,7 +14,8 @@ FrameLog::FrameLog(const std::string& path) {
     file_ = std::fopen(path.c_str(), "w");
     if (!file_) return;
     std::fputs(
-        "wall_clock_us,interval_us,paint_seq,pump_active_us,paint_latency_us,waited_deadline\n",
+        "wall_clock_us,interval_us,paint_seq,pump_active_us,paint_latency_us,"
+        "waited_deadline,inflight_depth,paint_seq_delta\n",
         file_);
     buffer_.reserve(kFlushBytes + 256);
     last_flush_ = std::chrono::steady_clock::now();
@@ -28,16 +29,16 @@ FrameLog::~FrameLog() {
 
 void FrameLog::RecordTick(uint64_t wall_clock_us, uint64_t interval_us, uint64_t paint_seq,
                           uint64_t pump_active_us, uint64_t paint_latency_us,
-                          int waited_deadline) {
+                          int waited_deadline, int inflight_depth, int paint_seq_delta) {
     if (!file_) return;
-    char line[160];
-    const int n = std::snprintf(line, sizeof(line), "%llu,%llu,%llu,%llu,%llu,%d\n",
+    char line[192];
+    const int n = std::snprintf(line, sizeof(line), "%llu,%llu,%llu,%llu,%llu,%d,%d,%d\n",
                                 static_cast<unsigned long long>(wall_clock_us),
                                 static_cast<unsigned long long>(interval_us),
                                 static_cast<unsigned long long>(paint_seq),
                                 static_cast<unsigned long long>(pump_active_us),
                                 static_cast<unsigned long long>(paint_latency_us),
-                                waited_deadline);
+                                waited_deadline, inflight_depth, paint_seq_delta);
     if (n > 0) buffer_.append(line, static_cast<size_t>(n));
 
     const auto now = std::chrono::steady_clock::now();

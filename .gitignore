@@ -182,3 +182,4 @@ engine/third_party/cef_*.tar.bz2
 # Preview thumbnails cache
 data/preview/
 
+engine/build-p18/

@@ -1,0 +1,175 @@
+{
+  "span_s": 12034.39,
+  "events": 509356,
+  "mojoNames": 12901,
+  "channelMojo": 0,
+  "syncChannel": 0,
+  "sumDur": {
+    "ipcMojoNameMs": 893.8,
+    "rasterTaskMs": 20127.1
+  },
+  "steady": {
+    "mojoReceiveSumMs": 842,
+    "rasterTaskSumMs": 20127.1,
+    "ratio": 23.9
+  },
+  "stages": {
+    "ProxyMain_BeginMainFrame_us": {
+      "n": 391,
+      "p50": 2643,
+      "p95": 6556,
+      "p99": 10972,
+      "avg": 3091.6,
+      "max": 12652,
+      "min": 816
+    },
+    "MainFrame_Draw_us": {
+      "n": 388,
+      "p50": 388,
+      "p95": 549,
+      "p99": 2619,
+      "avg": 452.1,
+      "max": 6231,
+      "min": 298
+    },
+    "RasterTask_us": {
+      "n": 16045,
+      "p50": 906,
+      "p95": 4306,
+      "p99": 7139,
+      "avg": 1254.4,
+      "max": 13724,
+      "min": 20
+    },
+    "Receive_mojo_message_us": {
+      "n": 7142,
+      "p50": 11,
+      "p95": 845,
+      "p99": 1408,
+      "avg": 117.9,
+      "max": 72488,
+      "min": 1
+    }
+  },
+  "perBeginImpl": {
+    "rasterCpuSum_us": {
+      "n": 391,
+      "p50": 49892,
+      "p95": 74574,
+      "p99": 86239,
+      "avg": 51372.3,
+      "max": 136613,
+      "min": 5142
+    },
+    "mojoCpuSum_us": {
+      "n": 396,
+      "p50": 1373,
+      "p95": 3600,
+      "p99": 19256,
+      "avg": 1992.3,
+      "max": 74999,
+      "min": 92
+    }
+  },
+  "breakdown": {
+    "paint_us": {
+      "n": 390,
+      "p50": 295,
+      "p95": 592,
+      "p99": 4213,
+      "avg": 422.5,
+      "max": 9659,
+      "min": 0
+    },
+    "layout_update_us": {
+      "n": 390,
+      "p50": 49,
+      "p95": 150,
+      "p99": 248,
+      "avg": 84.7,
+      "max": 8721,
+      "min": 0
+    },
+    "style_update_us": {
+      "n": 390,
+      "p50": 1424,
+      "p95": 1983,
+      "p99": 5056,
+      "avg": 1547.5,
+      "max": 10547,
+      "min": 0
+    },
+    "begin_main_sent_to_started_us": {
+      "n": 390,
+      "p50": 76,
+      "p95": 1314,
+      "p99": 6834,
+      "avg": 47299343747923470,
+      "max": 18446744061690083000,
+      "min": 29
+    },
+    "animate_us": {
+      "n": 390,
+      "p50": 444,
+      "p95": 679,
+      "p99": 1728,
+      "avg": 476.1,
+      "max": 3627,
+      "min": 0
+    },
+    "prepaint_us": {
+      "n": 390,
+      "p50": 73,
+      "p95": 105,
+      "p99": 147,
+      "avg": 90.6,
+      "max": 3604,
+      "min": 0
+    },
+    "composite_commit_us": {
+      "n": 390,
+      "p50": 121,
+      "p95": 185,
+      "p99": 1935,
+      "avg": 155.1,
+      "max": 4189,
+      "min": 0
+    },
+    "compositing_inputs_us": {
+      "n": 390,
+      "p50": 11,
+      "p95": 20,
+      "p99": 26,
+      "avg": 12.3,
+      "max": 41,
+      "min": 0
+    },
+    "update_layers_us": {
+      "n": 390,
+      "p50": 45,
+      "p95": 60,
+      "p99": 95,
+      "avg": 56.4,
+      "max": 3653,
+      "min": 0
+    },
+    "handle_input_events_us": {
+      "n": 390,
+      "p50": 1,
+      "p95": 2,
+      "p99": 3,
+      "avg": 1.5,
+      "max": 3,
+      "min": 0
+    },
+    "accessibility_update_us": {
+      "n": 390,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "avg": 0,
+      "max": 0,
+      "min": 0
+    }
+  }
+}
