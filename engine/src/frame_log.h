@@ -33,8 +33,12 @@ class FrameLog {
 
     // One row per pump tick (whether or not it delivered a new painted frame).
     // interval_us is 0 when no frame was delivered this tick.
+    // Phase 18 P0.2: inflight_depth = BeginFrames sent this tick before waiting;
+    // paint_seq_delta = unique OnPaint arrivals observed during the tick window
+    // (0/1/2+). Both default to 0 when the pipeline probe is off.
     void RecordTick(uint64_t wall_clock_us, uint64_t interval_us, uint64_t paint_seq,
-                    uint64_t pump_active_us, uint64_t paint_latency_us, int waited_deadline);
+                    uint64_t pump_active_us, uint64_t paint_latency_us, int waited_deadline,
+                    int inflight_depth = 0, int paint_seq_delta = 0);
 
   private:
     void Flush_();

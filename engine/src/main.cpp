@@ -351,18 +351,44 @@ int main(int argc, char** argv) {
             }
         }
     } else {
+    // Phase 18 P0.2: optional in-flight BeginFrame probe. When
+    // BG_P18_PIPELINE_PROBE=1, the self-timer path fires TWO external
+    // BeginFrames back-to-back at the start of each tick (without waiting
+    // for the first OnPaint), then pumps CEF for one field period and
+    // records how many unique paint_seq values arrived. Decision Gate uses
+    // paint_seq_delta ≥ 2 as evidence that CEF OSR can pipeline composites.
+    // Default (env unset) keeps the original single-BeginFrame path untouched.
+    const bool pipeline_probe = [] {
+        if (const char* v = std::getenv("BG_P18_PIPELINE_PROBE")) {
+            return std::atoi(v) > 0;
+        }
+        return false;
+    }();
+    if (pipeline_probe) {
+        BG_LOG("Phase 18 P0.2: BG_P18_PIPELINE_PROBE=1 — dual BeginFrame in-flight probe");
+    }
+
     // Main loop: pump CEF, deliver latest frame to consumer, record cadence.
     while (true) {
         const auto tick_start = std::chrono::steady_clock::now();
+        const uint64_t seq_at_tick_start = paint_seq.load(std::memory_order_acquire);
+        int inflight_depth = 0;
 
-        // Drive the compositor: one external BeginFrame per channel tick
-        // (window_info.external_begin_frame_enabled). rAF, CSS animations and
-        // video then advance exactly once per tick and every composite carries
-        // full, correct content. This is the CasparCG html_producer path on
-        // modern CEF; damage-driven scheduling coalesced paints to ~25-30fps.
+        // Drive the compositor: one (or two, under pipeline probe) external
+        // BeginFrame(s) per channel tick. rAF/CSS/video follow the channel
+        // cadence under external begin-frame scheduling.
         if (browser_ready.load(std::memory_order_acquire)) {
             if (CefRefPtr<CefBrowser> b = client->browser()) {
-                if (auto host = b->GetHost()) host->SendExternalBeginFrame();
+                if (auto host = b->GetHost()) {
+                    host->SendExternalBeginFrame();
+                    inflight_depth = 1;
+                    if (pipeline_probe) {
+                        // Second BeginFrame WITHOUT waiting for the first
+                        // OnPaint — the whole point of the probe.
+                        host->SendExternalBeginFrame();
+                        inflight_depth = 2;
+                    }
+                }
             }
         }
 
@@ -377,8 +403,13 @@ int main(int argc, char** argv) {
 
         // Deliver the latest painted frame to the consumer, but only when a new
         // OnPaint actually arrived (avoid double-counting / re-delivering).
+        // Under pipeline_probe we may see paint_seq jump by >1; still deliver
+        // only the latest (FrameRing is latest-only) — the probe cares about
+        // the delta, not about delivering every intermediate bitmap.
         const uint64_t cur_seq = paint_seq.load(std::memory_order_acquire);
         const bool got_new_paint = cur_seq != last_delivered_seq;
+        const int paint_seq_delta = static_cast<int>(
+            cur_seq >= seq_at_tick_start ? cur_seq - seq_at_tick_start : 0);
         uint64_t interval_us = 0;
         auto delivery_time = std::chrono::steady_clock::now();
         if (browser_ready.load(std::memory_order_acquire) && got_new_paint) {
@@ -454,13 +485,45 @@ int main(int argc, char** argv) {
             remaining_us -= slice_us;
         }
 
+        // Re-sample paint_seq after the sleep window so paint_seq_delta
+        // includes paints that landed during the remaining_us slices (the
+        // probe's whole point — did the second BeginFrame produce a second
+        // OnPaint within one field period?). Only under pipeline_probe do we
+        // also deliver a late paint here — the default path keeps the
+        // pre-Phase-18 behaviour (deliver on the next tick).
+        const uint64_t seq_after_sleep = paint_seq.load(std::memory_order_acquire);
+        const int paint_seq_delta_final = static_cast<int>(
+            seq_after_sleep >= seq_at_tick_start ? seq_after_sleep - seq_at_tick_start : 0);
+        if (pipeline_probe && browser_ready.load(std::memory_order_acquire) &&
+            seq_after_sleep != last_delivered_seq) {
+            last_delivered_seq = seq_after_sleep;
+            ring.Latest([&](const bg::Frame& f) {
+                if (consumer) consumer->OnFrame(f);
+            });
+            delivery_time = std::chrono::steady_clock::now();
+            if (have_last_paint) {
+                interval_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    delivery_time - last_paint_time).count();
+            }
+            if (interval_us > 0) stats.RecordFrame(interval_us, expected_us);
+            last_paint_time = delivery_time;
+            have_last_paint = true;
+            last_any_paint = delivery_time;
+        }
+
         if (frame_log && frame_log->enabled()) {
             const uint64_t paint_latency_us = std::chrono::duration_cast<
                 std::chrono::microseconds>(delivery_time - tick_start).count();
             const uint64_t wall_clock_us = std::chrono::duration_cast<
                 std::chrono::microseconds>(delivery_time.time_since_epoch()).count();
-            frame_log->RecordTick(wall_clock_us, interval_us, cur_seq, pump_active_us,
-                                  paint_latency_us, got_new_paint ? 0 : 1);
+            const bool delivered = got_new_paint ||
+                (pipeline_probe && seq_after_sleep != seq_at_tick_start);
+            frame_log->RecordTick(wall_clock_us, interval_us,
+                                  pipeline_probe ? seq_after_sleep : cur_seq,
+                                  pump_active_us, paint_latency_us,
+                                  delivered ? 0 : 1,
+                                  inflight_depth,
+                                  pipeline_probe ? paint_seq_delta_final : paint_seq_delta);
         }
     }
     }  // decklink_driven / self-timer loop selection
