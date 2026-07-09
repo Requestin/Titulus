@@ -246,14 +246,12 @@ int main(int argc, char** argv) {
 
                 // Pump CEF in <=4ms slices for up to one full field period,
                 // bailing out early once the paint we asked for lands.
-                // IMPORTANT: CEF's renderer-process IPC round-trip for a
-                // composite needs real wall-clock time (~10-15ms observed) —
-                // firing back-to-back BeginFrames a few ms apart (an earlier
-                // version of this loop did 8x500us = 4ms total) does NOT
-                // yield two distinct painted frames; it just re-delivers the
-                // same paint_seq twice and the queue silently starves down to
-                // half rate. Each requested tick gets its own full ~20ms
-                // budget here, same as the self-timer path used to give it.
+                // IMPORTANT (P0.2 / Phase 18): CEF OSR coalesces dual in-flight
+                // BeginFrames — never fire a second BF until paint_seq moves
+                // (or this field's deadline expires). Each sub-tick still owns
+                // up to ~20ms of wait budget; Phase 18 Fallback only removes
+                // the *post*-paint sleep before the next sub-tick so two
+                // sequential rasters can share one ~40ms output-frame window.
                 while (true) {
                     const auto pump_t0 = std::chrono::steady_clock::now();
                     CefDoMessageLoopWork();
@@ -309,22 +307,21 @@ int main(int argc, char** argv) {
                     }
                 }
 
-                // Pace the next sub-tick's BeginFrame to the same ~1 field
-                // period even when this tick's paint landed early — sending
-                // two BeginFrames close together defeats the purpose (see
-                // comment above) regardless of which one finished first.
+                // Phase 18 Fallback (see docs/development-phases/phase-18-decision.md):
+                // do NOT burn the remaining field budget after an early paint
+                // before starting the next sub-tick's BeginFrame. P0.2 showed
+                // CEF coalesces dual in-flight BeginFrames, so we still send
+                // only one BF per sub-tick and wait for its paint_seq (or the
+                // per-field deadline). But within one WaitForTick batch
+                // (typically 2 fields / ~40ms for 1080i50) we start the next
+                // BF immediately after delivery — giving the second raster the
+                // leftover wall-clock of the output frame instead of sleeping
+                // it away. That is sequential packing, not Approach A pipeline.
+                //
+                // Keep pumping CEF briefly so late IPC from the just-delivered
+                // paint can settle, without waiting out tick_deadline.
                 if (t + 1 < run_ticks) {
-                    const auto now = std::chrono::steady_clock::now();
-                    if (now < tick_deadline) {
-                        int64_t remaining_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                            tick_deadline - now).count();
-                        while (remaining_us > 0) {
-                            const int64_t slice_us = remaining_us < 4000 ? remaining_us : 4000;
-                            std::this_thread::sleep_for(std::chrono::microseconds(slice_us));
-                            CefDoMessageLoopWork();
-                            remaining_us -= slice_us;
-                        }
-                    }
+                    CefDoMessageLoopWork();
                 }
             }
 

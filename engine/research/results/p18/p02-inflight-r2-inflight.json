@@ -1,0 +1,38 @@
+{
+  "source": "engine/research/results/p18/p02-inflight-r2-frame-log.csv",
+  "totalRows": 2999,
+  "deliveredFrames": 2379,
+  "timedOutTicks": 619,
+  "intervalUs": {
+    "p50": 21241,
+    "p95": 38413,
+    "max": 41819,
+    "mean": 25151.42
+  },
+  "pumpActiveUs": {
+    "p50": 900,
+    "p95": 1011,
+    "max": 37971,
+    "mean": 775.8
+  },
+  "paintLatencyUs": {
+    "p50": 19738,
+    "p95": 22983,
+    "max": 31797,
+    "mean": 16145.42
+  },
+  "pumpActiveRatio": 0.0363,
+  "effectiveFps": 39.76,
+  "paintSeqDelta": {
+    "p50": 1,
+    "p95": 1,
+    "max": 1,
+    "mean": 0.79
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 2380,
+  "maxInflight": 2,
+  "pctTicksDeltaGe2": 0,
+  "decisionHint": "APPROACH_B_OR_FALLBACK",
+  "decisionRule": "pctTicksDeltaGe2>=50 → Approach A (pipeline); <5 → B/Fallback; else partial"
+}
