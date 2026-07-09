@@ -32,7 +32,7 @@ alwaysApply: true
 
 ## Последний milestone в main
 
-PR #60 — Phase 17 Raster pool vs latency. Phase 18 (true 50p): Fallback + Decision Gate; на `test1` потолок ~25 unique fps подтверждён (не поднят).
+PR #61 — Phase 18 True 50p: Fallback + Decision Gate; на `test1` потолок ~25 unique fps подтверждён (не поднят); P3.3 визуально «без разницы».
 
 ## Следующие задачи
 
