@@ -4,7 +4,7 @@ alwaysApply: true
 ---
 # План разработки
 
-**Снимок:** июль 2026. `main` содержит Phase 0–17 (после PR #60); Phase 18 — в PR. Детали — `docs/development-phases/`.
+**Снимок:** июль 2026. `main` содержит Phase 0–18 (после PR #61). Детали — `docs/development-phases/`.
 
 ## Фазы (кратко)
 
