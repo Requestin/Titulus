@@ -1,7 +1,7 @@
 # Ветка `sergey-v1` — контекст и changelog
 
 > Сводка работы Sergey + агент Cursor на ветке `sergey-v1`.  
-> Обновлено: **7 июля 2026**.
+> Обновлено: **9 июля 2026**.
 
 ---
 
@@ -29,6 +29,92 @@
 | `426fc10` | 7 июл | `change timeline,directors` |
 | `2eb7940` | 7 июл | `fix bugs at timeline` |
 | `71390b0` | 7 июл | `fix bugs at timeline(change runtime)` |
+| `d2e3562` | 7 июл | `docs(sergey-v1): fix commit hash in session context` |
+| `599d4c8` | 9 июл | `fix ui` |
+
+---
+
+## 9 июля 2026 — Control, Templates, Editor UI fixes
+
+Пакет правок по операторскому UI (Control/Rundowns), шаблонам, медиа-библиотеке и редактору.
+
+### Control — Rundowns: drag-and-drop reorder
+
+- Список **rundown** и список **slots** внутри rundown: перетаскивание через grip (6 точек, `GripVertical`) слева от текста — по аналогии с деревом слоёв в редакторе (`@dnd-kit`).
+- Кнопки-стрелки ↑↓ для сортировки **убраны** (и у rundown, и у slots).
+- Порядок rundown сохраняется через `api.rundowns.reorder`; порядок slots — autosave rundown.
+
+### Control — TAKE не двигает курсор
+
+- После TAKE (кнопка transport, TAKE на слоте, Space) **фокус остаётся** на текущей строке — не переходит на следующую.
+- PREV/NEXT по-прежнему меняют `focusIdx` и берут выбранный слот.
+
+### Control — копирование Browser Source URL
+
+- Кнопка Copy рядом с URL рендера в шапке Control: `navigator.clipboard` + fallback `document.execCommand('copy')`.
+- При успехе: toast **«Copied»**, иконка галочки на 1.5 с.
+
+### Control — кнопка Update (справка)
+
+- **Update** обновляет переменные **уже эфирного** шаблона без повторного TAKE (без перезапуска in-анимации).
+- WS: `{ type: 'update', channelId, templateId, variables }`.
+- Активна только если шаблон в `live`; при правке полей в панели — debounce ~400 ms и update уходит сам.
+
+### App shell — убран «Open renderer»
+
+- Ссылка **Open renderer** (`/renderer`) удалена из левого меню — для OBS/vMix используются per-channel URL (`/channel.html?channel=<id>`) из Control.
+
+### Templates — подтверждение удаления in-app
+
+- Вместо `window.confirm` — модальный диалог в стиле приложения.
+- Текст: `Delete "<name>"? This cannot be undone.`
+- Кнопки: **Delete** (красная, `variant="danger"`) и **Cancel**.
+
+### Media picker — обновление списка тегов
+
+- После **Add tag** в `TagManagerModal` или в `AssetEditModal` список тегов в окне выбора файла и панель Info обновляются **сразу** при возврате (без перезахода и без поиска).
+- `AssetEditModal`: `onTagsChanged`, `refreshTags()` при закрытии tag manager; Info показывает выбранные теги до сохранения (`previewAsset`).
+
+### Editor — clock layer: start/target time
+
+- В Properties для слоя **clock**:
+  - `countup` → поле **Start time** (`datetime-local` → `startTime` epoch ms).
+  - `countdown` → поле **Target time** (`datetime-local` → `targetTime` epoch ms).
+
+### Editor — Variables panel UX
+
+- Переработан layout строки переменной: stacked labels, редактируемый **ID** (карандаш → inline input).
+- Подсказки через `title` на label.
+
+### Ключевые файлы (9 июля)
+
+| Область | Файлы |
+|---|---|
+| Rundown DnD + TAKE | `frontend/src/control/RundownTab.tsx` |
+| Copy URL | `frontend/src/pages/ControlPage.tsx` |
+| Delete confirm | `frontend/src/pages/TemplatesPage.tsx` |
+| Open renderer removed | `frontend/src/components/AppShell.tsx` |
+| Media tags refresh | `frontend/src/editor/media/MediaPickerModal.tsx` |
+| Clock start/target | `frontend/src/editor/panels/PropertiesPanel.tsx` |
+| Variables UX | `frontend/src/editor/panels/VariablesPanel.tsx` |
+
+### Чеклист (9 июля)
+
+**Control / Rundowns:**
+- [ ] Grip слева — drag rundown и slots; стрелок нет
+- [ ] TAKE не сдвигает выделение на следующую строку
+- [ ] Copy URL → toast «Copied», вставка в буфер работает
+- [ ] Update на Templates tab меняет переменные у live-шаблона
+
+**Templates:**
+- [ ] Корзина → in-app диалог Delete/Cancel, не browser confirm
+
+**Media picker:**
+- [ ] Add tag в edit asset → тег сразу в списке слева и в Info
+
+**Editor:**
+- [ ] Clock countup/countdown — datetime-local в Properties
+- [ ] Variables — редактирование ID, новый layout
 
 ---
 
@@ -367,6 +453,10 @@ Stepper ↑↓, `extraActions` для rotation.
 | Timeline | `frontend/src/editor/panels/TimelinePanel.tsx`, `timelineTracks.ts` |
 | Timeline runtime | `runtime/src/timeline.ts`, `shared/template.schema.json` |
 | UI forms | `frontend/src/components/ui/form.tsx` |
+| Control / Rundowns | `frontend/src/control/RundownTab.tsx`, `frontend/src/pages/ControlPage.tsx` |
+| Templates list | `frontend/src/pages/TemplatesPage.tsx` |
+| App shell | `frontend/src/components/AppShell.tsx` |
+| Variables | `frontend/src/editor/panels/VariablesPanel.tsx` |
 
 ---
 

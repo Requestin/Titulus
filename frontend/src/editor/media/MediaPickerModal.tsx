@@ -117,21 +117,30 @@ function AssetEditModal({
   tags,
   onClose,
   onSaved,
+  onTagsChanged,
 }: {
   asset: MediaAsset;
   tags: MediaTag[];
   onClose: () => void;
   onSaved: (a: MediaAsset) => void;
+  onTagsChanged?: () => void;
 }) {
   const [displayName, setDisplayName] = useState(asset.displayName);
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set(asset.tagIds));
   const [tagSearch, setTagSearch] = useState('');
   const [showTagManager, setShowTagManager] = useState(false);
   const [allTags, setAllTags] = useState(tags);
+  const previewAsset = { ...asset, displayName, tagIds: [...selectedTags] };
 
   const filteredTags = allTags.filter((t) =>
     t.name.toLowerCase().includes(tagSearch.trim().toLowerCase()),
   );
+
+  async function refreshTags() {
+    const next = await api.media.listTags();
+    setAllTags(next);
+    onTagsChanged?.();
+  }
 
   async function save() {
     const updated = await api.media.update(asset.id, {
@@ -184,7 +193,7 @@ function AssetEditModal({
                 </div>
               </div>
             </div>
-            <AssetInfoPanel asset={asset} tags={allTags} />
+            <AssetInfoPanel asset={previewAsset} tags={allTags} />
           </div>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="primary" onClick={() => { void save(); }}>OK</Button>
@@ -194,8 +203,11 @@ function AssetEditModal({
       </div>
       {showTagManager && (
         <TagManagerModal
-          onClose={() => setShowTagManager(false)}
-          onChanged={async () => setAllTags(await api.media.listTags())}
+          onClose={() => {
+            setShowTagManager(false);
+            void refreshTags();
+          }}
+          onChanged={() => { void refreshTags(); }}
         />
       )}
     </>
@@ -553,16 +565,18 @@ export function MediaPickerModal({
         <AssetEditModal
           asset={editAsset}
           tags={tags}
-          onClose={() => setEditAsset(null)}
-          onSaved={() => { void loadFiles(); setEditAsset(null); }}
+          onClose={() => { void loadTags(); setEditAsset(null); }}
+          onTagsChanged={() => { void loadTags(); }}
+          onSaved={() => { void loadTags(); void loadFiles(); setEditAsset(null); }}
         />
       )}
       {importEdit && (
         <AssetEditModal
           asset={importEdit}
           tags={tags}
-          onClose={() => setImportEdit(null)}
-          onSaved={(a) => { setImportEdit(null); setSelected(a); void loadFiles(); }}
+          onClose={() => { void loadTags(); setImportEdit(null); }}
+          onTagsChanged={() => { void loadTags(); }}
+          onSaved={(a) => { setImportEdit(null); setSelected(a); void loadTags(); void loadFiles(); }}
         />
       )}
       {pendingDelete && (

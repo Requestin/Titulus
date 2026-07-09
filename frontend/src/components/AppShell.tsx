@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LayoutTemplate, SlidersHorizontal, Settings, MonitorPlay, LogOut } from 'lucide-react';
+import { LayoutTemplate, SlidersHorizontal, Settings, LogOut } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { AuthUser } from '@/core/api';
 import { WsStatus } from './WsStatus';
@@ -51,15 +51,6 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
           ))}
         </nav>
 
-        <a
-          href="/renderer"
-          target="_blank"
-          rel="noreferrer"
-          className="m-2 flex items-center gap-2 rounded-md px-3 py-2 text-[13px] text-ink-muted transition-colors hover:bg-surface hover:text-ink"
-        >
-          <MonitorPlay className="h-4 w-4 shrink-0" aria-hidden />
-          Open renderer
-        </a>
         <div className="mx-2 mb-2 rounded-md border border-border bg-surface px-3 py-2 text-[12px] text-ink-muted">
           <div className="truncate font-medium text-ink">{user.username}</div>
           <div className="mt-0.5 tnum text-[11px] uppercase tracking-wide">{user.role}</div>

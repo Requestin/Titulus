@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Variable } from '@runtime';
 import {
-  Plus, FileUp, FileDown, Copy, Trash2, Pencil, Check, ChevronDown, ChevronRight, ArrowUp, ArrowDown,
+  Plus, FileUp, FileDown, Copy, Trash2, Pencil, Check, ChevronDown, ChevronRight, GripVertical,
 } from 'lucide-react';
+import {
+  DndContext, PointerSensor, closestCenter, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, useSortable, verticalListSortingStrategy, arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import {
   api,
   type Channel,
@@ -62,6 +70,7 @@ export function RundownTab({
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveUpdateTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
   const importRef = useRef<HTMLInputElement>(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   const active = useMemo(() => rundowns.find((r) => r.id === activeId) ?? null, [rundowns, activeId]);
   const channelId = active?.channel_id || fallbackChannelId || 'default';
@@ -129,7 +138,7 @@ export function RundownTab({
         setFocusIdx((i) => Math.max(i - 1, 0));
       } else if (e.key === ' ') {
         e.preventDefault();
-        void takeAt(focusIdx, true);
+        void takeAt(focusIdx);
       } else if (e.key === 'Backspace' || e.key === 'Delete') {
         e.preventDefault();
         const s = active.slots[focusIdx];
@@ -162,7 +171,7 @@ export function RundownTab({
     return v;
   }
 
-  async function takeAt(index: number, advanceFocus = false) {
+  async function takeAt(index: number) {
     if (!active) return;
     const slot = active.slots[index];
     if (!slot) return;
@@ -177,7 +186,6 @@ export function RundownTab({
     });
     if (!ok) return toast.error('Control socket disconnected');
     patchOnAir(channelId, (cur) => Array.from(new Set([...cur, slot.slotId])));
-    if (advanceFocus) setFocusIdx((i) => Math.min(i + 1, active.slots.length - 1));
   }
 
   function clearSlot(slotId: string) {
@@ -233,15 +241,35 @@ export function RundownTab({
     if (activeId === id) setActiveId(next[0]?.id ?? null);
   }
 
-  async function moveRundown(id: string, dir: -1 | 1) {
-    const idx = rundowns.findIndex((r) => r.id === id);
-    const to = idx + dir;
-    if (idx < 0 || to < 0 || to >= rundowns.length) return;
-    const next = [...rundowns];
-    const [item] = next.splice(idx, 1);
-    next.splice(to, 0, item);
+  async function onRundownDragEnd(event: DragEndEvent) {
+    const { active: dragActive, over } = event;
+    if (!over || dragActive.id === over.id) return;
+    const from = rundowns.findIndex((r) => r.id === dragActive.id);
+    const to = rundowns.findIndex((r) => r.id === over.id);
+    if (from < 0 || to < 0) return;
+    const next = arrayMove(rundowns, from, to);
     setRundowns(next);
-    await api.rundowns.reorder(next.map((r) => r.id));
+    try {
+      await api.rundowns.reorder(next.map((r) => r.id));
+    } catch (e) {
+      toast.error(`Reorder failed: ${(e as Error).message}`);
+    }
+  }
+
+  function onSlotDragEnd(event: DragEndEvent) {
+    if (!active) return;
+    const { active: dragActive, over } = event;
+    if (!over || dragActive.id === over.id) return;
+    const from = active.slots.findIndex((s) => s.slotId === dragActive.id);
+    const to = active.slots.findIndex((s) => s.slotId === over.id);
+    if (from < 0 || to < 0) return;
+    const focusedSlotId = active.slots[focusIdx]?.slotId;
+    patchActive((r) => ({ ...r, slots: arrayMove(r.slots, from, to) }));
+    if (focusedSlotId) {
+      // Keep focus on the same slot after reorder (index may change).
+      const nextIdx = arrayMove(active.slots, from, to).findIndex((s) => s.slotId === focusedSlotId);
+      if (nextIdx >= 0) setFocusIdx(nextIdx);
+    }
   }
 
   async function importRundown(file: File) {
@@ -264,19 +292,6 @@ export function RundownTab({
     a.download = `${rd.name.replace(/[^a-zA-Z0-9_-]+/g, '_') || 'rundown'}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  }
-
-  function moveSlot(slotId: string, dir: -1 | 1) {
-    if (!active) return;
-    const idx = active.slots.findIndex((s) => s.slotId === slotId);
-    const to = idx + dir;
-    if (idx < 0 || to < 0 || to >= active.slots.length) return;
-    patchActive((r) => {
-      const next = [...r.slots];
-      const [item] = next.splice(idx, 1);
-      next.splice(to, 0, item);
-      return { ...r, slots: next };
-    });
   }
 
   if (!dataLoaded || bootstrapping) {
@@ -326,33 +341,40 @@ export function RundownTab({
             <button className="text-ink-faint hover:text-ink" onClick={() => void createRundown().catch((e) => toast.error((e as Error).message))}><Plus className="h-4 w-4" /></button>
           </div>
         </div>
-        <div className="space-y-1">
-          {rundowns.map((r, idx) => (
-            <div key={r.id} className={cn('rounded border px-2 py-1.5', r.id === activeId ? 'border-primary/60 bg-surface-2' : 'border-border bg-surface')}>
-              <div className="flex items-center gap-1">
-                <button className="min-w-0 flex-1 text-left text-[13px] font-medium" onClick={() => setActiveId(r.id)}>
-                  {renamingId === r.id ? <Input value={renameVal} autoFocus onChange={(e) => setRenameVal(e.target.value)} onKeyDown={(e) => {
-                    if (e.key === 'Enter') { setRenamingId(null); void api.rundowns.update(r.id, { name: renameVal.trim() || r.name }).then((u) => setRundowns((prev) => prev.map((x) => x.id === u.id ? u : x))); }
-                    if (e.key === 'Escape') setRenamingId(null);
-                  }} /> : r.name}
-                </button>
-                <button className="text-ink-faint hover:text-ink" onClick={() => void moveRundown(r.id, -1)} disabled={idx === 0}><ArrowUp className="h-3.5 w-3.5" /></button>
-                <button className="text-ink-faint hover:text-ink" onClick={() => void moveRundown(r.id, 1)} disabled={idx === rundowns.length - 1}><ArrowDown className="h-3.5 w-3.5" /></button>
-                <button className="text-ink-faint hover:text-ink" onClick={() => { setRenamingId(r.id); setRenameVal(r.name); }}><Pencil className="h-3.5 w-3.5" /></button>
-                <button className="text-ink-faint hover:text-ink" onClick={() => void duplicateRundown(r.id).catch((e) => toast.error((e as Error).message))}><Copy className="h-3.5 w-3.5" /></button>
-                <button className="text-ink-faint hover:text-ink" onClick={() => exportRundown(r)}><FileDown className="h-3.5 w-3.5" /></button>
-                <button className="text-ink-faint hover:text-danger" disabled={rundowns.length <= 1} onClick={() => void removeRundown(r.id).catch((e) => toast.error((e as Error).message))}><Trash2 className="h-3.5 w-3.5" /></button>
-              </div>
-              <div className="mt-1 text-[11px] text-ink-faint">{r.slots.length} slots</div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => { void onRundownDragEnd(e); }}>
+          <SortableContext items={rundowns.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-1">
+              {rundowns.map((r) => (
+                <SortableRundownRow
+                  key={r.id}
+                  rundown={r}
+                  active={r.id === activeId}
+                  renaming={renamingId === r.id}
+                  renameVal={renameVal}
+                  canDelete={rundowns.length > 1}
+                  onSelect={() => setActiveId(r.id)}
+                  onRenameStart={() => { setRenamingId(r.id); setRenameVal(r.name); }}
+                  onRenameChange={setRenameVal}
+                  onRenameCommit={() => {
+                    setRenamingId(null);
+                    void api.rundowns.update(r.id, { name: renameVal.trim() || r.name })
+                      .then((u) => setRundowns((prev) => prev.map((x) => x.id === u.id ? u : x)));
+                  }}
+                  onRenameCancel={() => setRenamingId(null)}
+                  onDuplicate={() => void duplicateRundown(r.id).catch((e) => toast.error((e as Error).message))}
+                  onExport={() => exportRundown(r)}
+                  onRemove={() => void removeRundown(r.id).catch((e) => toast.error((e as Error).message))}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
       </aside>
 
       <div className="min-h-0 overflow-auto p-3">
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-border bg-surface px-3 py-2">
           <Button size="sm" variant="neutral" disabled={focusIdx === 0} onClick={() => { const i = Math.max(0, focusIdx - 1); setFocusIdx(i); void takeAt(i); }}>PREV</Button>
-          <Button size="sm" variant="primary" disabled={active.slots.length === 0} onClick={() => void takeAt(focusIdx, true)}>TAKE</Button>
+          <Button size="sm" variant="primary" disabled={active.slots.length === 0} onClick={() => void takeAt(focusIdx)}>TAKE</Button>
           <Button size="sm" variant="neutral" disabled={focusIdx >= active.slots.length - 1} onClick={() => { const i = Math.min(active.slots.length - 1, focusIdx + 1); setFocusIdx(i); void takeAt(i); }}>NEXT</Button>
           <Button size="sm" variant="ghost" onClick={() => {
             for (const slot of active.slots) if (activeLiveSet.has(slot.slotId)) clearSlot(slot.slotId);
@@ -392,65 +414,213 @@ export function RundownTab({
           </div>
         </div>
 
-        <div className="space-y-2">
-          {active.slots.map((slot, idx) => {
-            const focused = idx === focusIdx;
-            const live = activeLiveSet.has(slot.slotId);
-            const tpl = cache[slot.templateId];
-            return (
-              <div key={slot.slotId} id={`rd-slot-${slot.slotId}`} className={cn('rounded border px-3 py-2', focused ? 'border-primary/70 bg-surface-2' : 'border-border bg-surface')}>
-                <div className="flex items-center gap-2">
-                  <button className="text-ink-faint hover:text-ink" onClick={() => setExpanded((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(slot.slotId)) next.delete(slot.slotId); else next.add(slot.slotId);
-                    return next;
-                  })}>
-                    {expanded.has(slot.slotId) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  </button>
-                  <button className="min-w-0 flex-1 text-left" onClick={() => setFocusIdx(idx)}>
-                    <div className="truncate text-sm font-medium">{slot.name}</div>
-                    <div className="truncate text-[11px] text-ink-faint">{templates.find((t) => t.id === slot.templateId)?.name ?? slot.templateId}</div>
-                  </button>
-                  <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', live ? 'bg-live text-primary-ink' : focused ? 'bg-primary/20 text-primary' : 'bg-surface-2 text-ink-muted')}>
-                    {live ? 'ON AIR' : focused ? 'NEXT' : 'PENDING'}
-                  </span>
-                  <button className="text-ink-faint hover:text-ink" onClick={() => void moveSlot(slot.slotId, -1)} disabled={idx === 0}><ArrowUp className="h-3.5 w-3.5" /></button>
-                  <button className="text-ink-faint hover:text-ink" onClick={() => void moveSlot(slot.slotId, 1)} disabled={idx === active.slots.length - 1}><ArrowDown className="h-3.5 w-3.5" /></button>
-                  <button className="text-ink-faint hover:text-danger" onClick={() => patchActive((r) => ({ ...r, slots: r.slots.filter((s) => s.slotId !== slot.slotId) }))}><Trash2 className="h-3.5 w-3.5" /></button>
-                  <Button size="sm" variant={live ? 'neutral' : 'danger'} onClick={() => live ? clearSlot(slot.slotId) : void takeAt(idx, true)}>
-                    {live ? 'CLEAR' : 'TAKE'}
-                  </Button>
-                </div>
-                {expanded.has(slot.slotId) && (
-                  <div className="mt-2 space-y-2 border-t border-border pt-2">
-                    <Field label="Slot name">
-                      <Input value={slot.name} onChange={(e) => patchActive((r) => ({ ...r, slots: r.slots.map((s) => s.slotId === slot.slotId ? { ...s, name: e.target.value } : s) }))} />
-                    </Field>
-                    <Field label="Slot ID">
-                      <Input value={slot.slotId} readOnly />
-                    </Field>
-                    <Button size="sm" variant="ghost" onClick={() => {
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onSlotDragEnd}>
+          <SortableContext items={active.slots.map((s) => s.slotId)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-2">
+              {active.slots.map((slot, idx) => {
+                const focused = idx === focusIdx;
+                const live = activeLiveSet.has(slot.slotId);
+                const tpl = cache[slot.templateId];
+                return (
+                  <SortableSlotRow
+                    key={slot.slotId}
+                    slot={slot}
+                    focused={focused}
+                    live={live}
+                    expanded={expanded.has(slot.slotId)}
+                    templateName={templates.find((t) => t.id === slot.templateId)?.name ?? slot.templateId}
+                    tpl={tpl}
+                    onToggleExpand={() => setExpanded((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(slot.slotId)) next.delete(slot.slotId); else next.add(slot.slotId);
+                      return next;
+                    })}
+                    onFocus={() => setFocusIdx(idx)}
+                    onRemove={() => patchActive((r) => ({ ...r, slots: r.slots.filter((s) => s.slotId !== slot.slotId) }))}
+                    onTakeOrClear={() => live ? clearSlot(slot.slotId) : void takeAt(idx)}
+                    onRename={(name) => patchActive((r) => ({ ...r, slots: r.slots.map((s) => s.slotId === slot.slotId ? { ...s, name } : s) }))}
+                    onLoadVars={() => {
                       if (cache[slot.templateId]) return;
                       void ensureTemplate(slot.templateId).catch((e) => toast.error((e as Error).message));
-                    }}>
-                      {tpl ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-                      {tpl ? 'Template loaded' : 'Load variables'}
-                    </Button>
-                    {tpl && (
-                      <SlotVars
-                        varsDef={tpl.data.variables}
-                        values={buildPayload(slot, tpl.data.variables)}
-                        onChange={(varId, value) => updateSlotVar(slot.slotId, varId, value)}
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {active.slots.length === 0 && <div className="rounded border border-dashed border-border px-4 py-8 text-center text-[13px] text-ink-muted">No slots yet. Add a template slot to start rundown playout.</div>}
-        </div>
+                    }}
+                    onVarChange={(varId, value) => updateSlotVar(slot.slotId, varId, value)}
+                    buildPayload={buildPayload}
+                  />
+                );
+              })}
+              {active.slots.length === 0 && <div className="rounded border border-dashed border-border px-4 py-8 text-center text-[13px] text-ink-muted">No slots yet. Add a template slot to start rundown playout.</div>}
+            </div>
+          </SortableContext>
+        </DndContext>
       </div>
+    </div>
+  );
+}
+
+function SortableRundownRow({
+  rundown,
+  active,
+  renaming,
+  renameVal,
+  canDelete,
+  onSelect,
+  onRenameStart,
+  onRenameChange,
+  onRenameCommit,
+  onRenameCancel,
+  onDuplicate,
+  onExport,
+  onRemove,
+}: {
+  rundown: Rundown;
+  active: boolean;
+  renaming: boolean;
+  renameVal: string;
+  canDelete: boolean;
+  onSelect: () => void;
+  onRenameStart: () => void;
+  onRenameChange: (v: string) => void;
+  onRenameCommit: () => void;
+  onRenameCancel: () => void;
+  onDuplicate: () => void;
+  onExport: () => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: rundown.id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(
+        'group rounded border px-2 py-1.5',
+        active ? 'border-primary/60 bg-surface-2' : 'border-border bg-surface',
+        isDragging && 'opacity-60',
+      )}
+    >
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="grid h-5 w-4 shrink-0 cursor-grab place-items-center text-ink-faint hover:text-ink"
+          aria-label="Drag to reorder rundown"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-3.5 w-3.5" aria-hidden />
+        </button>
+        <button className="min-w-0 flex-1 text-left text-[13px] font-medium" onClick={onSelect}>
+          {renaming ? (
+            <Input
+              value={renameVal}
+              autoFocus
+              onChange={(e) => onRenameChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onRenameCommit();
+                if (e.key === 'Escape') onRenameCancel();
+              }}
+            />
+          ) : rundown.name}
+        </button>
+        <button className="text-ink-faint hover:text-ink" onClick={onRenameStart}><Pencil className="h-3.5 w-3.5" /></button>
+        <button className="text-ink-faint hover:text-ink" onClick={onDuplicate}><Copy className="h-3.5 w-3.5" /></button>
+        <button className="text-ink-faint hover:text-ink" onClick={onExport}><FileDown className="h-3.5 w-3.5" /></button>
+        <button className="text-ink-faint hover:text-danger" disabled={!canDelete} onClick={onRemove}><Trash2 className="h-3.5 w-3.5" /></button>
+      </div>
+      <div className="mt-1 pl-5 text-[11px] text-ink-faint">{rundown.slots.length} slots</div>
+    </div>
+  );
+}
+
+function SortableSlotRow({
+  slot,
+  focused,
+  live,
+  expanded,
+  templateName,
+  tpl,
+  onToggleExpand,
+  onFocus,
+  onRemove,
+  onTakeOrClear,
+  onRename,
+  onLoadVars,
+  onVarChange,
+  buildPayload,
+}: {
+  slot: RundownSlot;
+  focused: boolean;
+  live: boolean;
+  expanded: boolean;
+  templateName: string;
+  tpl: TemplateRecord | undefined;
+  onToggleExpand: () => void;
+  onFocus: () => void;
+  onRemove: () => void;
+  onTakeOrClear: () => void;
+  onRename: (name: string) => void;
+  onLoadVars: () => void;
+  onVarChange: (varId: string, value: string | number) => void;
+  buildPayload: (slot: RundownSlot, varsDef: Variable[]) => Record<string, string | number>;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: slot.slotId });
+  return (
+    <div
+      ref={setNodeRef}
+      id={`rd-slot-${slot.slotId}`}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(
+        'rounded border px-3 py-2',
+        focused ? 'border-primary/70 bg-surface-2' : 'border-border bg-surface',
+        isDragging && 'opacity-60',
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="grid h-5 w-4 shrink-0 cursor-grab place-items-center text-ink-faint hover:text-ink"
+          aria-label="Drag to reorder slot"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-3.5 w-3.5" aria-hidden />
+        </button>
+        <button className="text-ink-faint hover:text-ink" onClick={onToggleExpand}>
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
+        <button className="min-w-0 flex-1 text-left" onClick={onFocus}>
+          <div className="truncate text-sm font-medium">{slot.name}</div>
+          <div className="truncate text-[11px] text-ink-faint">{templateName}</div>
+        </button>
+        <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', live ? 'bg-live text-primary-ink' : focused ? 'bg-primary/20 text-primary' : 'bg-surface-2 text-ink-muted')}>
+          {live ? 'ON AIR' : focused ? 'NEXT' : 'PENDING'}
+        </span>
+        <button className="text-ink-faint hover:text-danger" onClick={onRemove}><Trash2 className="h-3.5 w-3.5" /></button>
+        <Button size="sm" variant={live ? 'neutral' : 'danger'} onClick={onTakeOrClear}>
+          {live ? 'CLEAR' : 'TAKE'}
+        </Button>
+      </div>
+      {expanded && (
+        <div className="mt-2 space-y-2 border-t border-border pt-2">
+          <Field label="Slot name">
+            <Input value={slot.name} onChange={(e) => onRename(e.target.value)} />
+          </Field>
+          <Field label="Slot ID">
+            <Input value={slot.slotId} readOnly />
+          </Field>
+          <Button size="sm" variant="ghost" onClick={onLoadVars}>
+            {tpl ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+            {tpl ? 'Template loaded' : 'Load variables'}
+          </Button>
+          {tpl && (
+            <SlotVars
+              varsDef={tpl.data.variables}
+              values={buildPayload(slot, tpl.data.variables)}
+              onChange={onVarChange}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

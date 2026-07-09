@@ -12,6 +12,7 @@ export function TemplatesPage() {
   const [items, setItems] = useState<TemplateSummary[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -56,8 +57,10 @@ export function TemplatesPage() {
     }
   }
 
-  async function remove(id: string, name: string) {
-    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  async function confirmRemove() {
+    if (!pendingDelete) return;
+    const { id } = pendingDelete;
+    setPendingDelete(null);
     try {
       await api.templates.remove(id);
       setItems((cur) => (cur ?? []).filter((t) => t.id !== id));
@@ -134,7 +137,7 @@ export function TemplatesPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => remove(t.id, t.name)}
+                    onClick={() => setPendingDelete({ id: t.id, name: t.name })}
                     aria-label={`Delete ${t.name}`}
                     title="Delete template"
                     className="grid h-7 w-7 place-items-center rounded text-ink-faint hover:bg-surface-2 hover:text-danger"
@@ -145,6 +148,25 @@ export function TemplatesPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {pendingDelete && (
+        <div className="fixed inset-0 z-modal grid place-items-center bg-bg/70 px-4 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-template-title"
+            className="w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-2xl"
+          >
+            <p id="delete-template-title" className="text-sm text-ink">
+              {`Delete "${pendingDelete.name}"? This cannot be undone.`}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="danger" onClick={() => { void confirmRemove(); }}>Delete</Button>
+              <Button variant="neutral" onClick={() => setPendingDelete(null)}>Cancel</Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

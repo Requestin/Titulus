@@ -427,6 +427,40 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             <Field label="Format">
               <Input value={layer.format} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'clock') l.format = e.target.value; })} />
             </Field>
+            {layer.mode === 'countup' && (
+              <Field label="Start time">
+                <Input
+                  type="datetime-local"
+                  step={1}
+                  value={epochToDatetimeLocal(layer.startTime)}
+                  onChange={(e) =>
+                    updateLayer(layer.id, (l) => {
+                      if (l.type !== 'clock') return;
+                      const ms = datetimeLocalToEpoch(e.target.value);
+                      if (ms === undefined) delete l.startTime;
+                      else l.startTime = ms;
+                    })
+                  }
+                />
+              </Field>
+            )}
+            {layer.mode === 'countdown' && (
+              <Field label="Target time">
+                <Input
+                  type="datetime-local"
+                  step={1}
+                  value={epochToDatetimeLocal(layer.targetTime)}
+                  onChange={(e) =>
+                    updateLayer(layer.id, (l) => {
+                      if (l.type !== 'clock') return;
+                      const ms = datetimeLocalToEpoch(e.target.value);
+                      if (ms === undefined) delete l.targetTime;
+                      else l.targetTime = ms;
+                    })
+                  }
+                />
+              </Field>
+            )}
           </Section>
           <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} />
         </>
@@ -509,4 +543,17 @@ function BindableField({
       </button>
     </div>
   );
+}
+
+function epochToDatetimeLocal(ms: number | undefined): string {
+  if (ms === undefined || !Number.isFinite(ms)) return '';
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function datetimeLocalToEpoch(value: string): number | undefined {
+  if (!value) return undefined;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : undefined;
 }
