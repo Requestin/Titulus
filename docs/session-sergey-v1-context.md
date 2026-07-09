@@ -30,7 +30,7 @@
 | `2eb7940` | 7 июл | `fix bugs at timeline` |
 | `71390b0` | 7 июл | `fix bugs at timeline(change runtime)` |
 | `d2e3562` | 7 июл | `docs(sergey-v1): fix commit hash in session context` |
-| `599d4c8` | 9 июл | `fix ui` |
+| `512cbd0` | 9 июл | `fix ui` |
 
 ---
 
