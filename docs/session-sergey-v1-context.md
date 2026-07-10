@@ -33,7 +33,7 @@
 | `512cbd0` | 9 июл | `fix ui` |
 | `2613074` | 9 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `ec8e872` | 9 июл | `fix scale bug` |
-| `0bdc95c` | 10 июл | `fix group at tree, lock for scale` |
+| `42a18bc` | 10 июл | `fix group at tree, lock for scale` |
 
 ---
 
