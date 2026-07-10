@@ -1,13 +1,80 @@
+// frontend/src/pages/TemplatesPage.tsx
+//
+// Templates hub: EDITOR (library + open editor) | PLAY (operator TAKE/UPDATE/CLEAR
+// for templates — formerly Control → Templates tab).
+
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Loader2, LayoutTemplate, Copy } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Plus, Trash2, Loader2, LayoutTemplate, Copy, Radio, X } from 'lucide-react';
 import { createDefaultTemplate } from '@runtime';
-import { api, type TemplateSummary } from '@/core/api';
+import {
+  api,
+  type Channel,
+  type TemplateSummary,
+  type TemplateRecord,
+} from '@/core/api';
 import { createId } from '@/core/id';
 import { Button } from '@/components/ui/Button';
+import { Select } from '@/components/ui/form';
 import { toast } from '@/core/toast';
+import { useControlWs } from '@/core/controlWs';
+import { cn } from '@/lib/cn';
+import { ProgramMonitor } from '@/control/ProgramMonitor';
+import { TemplatesTab } from '@/control/TemplatesTab';
+import { BrowserSourceUrl, WsBadge } from '@/control/controlShared';
+
+type TemplatesMode = 'editor' | 'play';
 
 export function TemplatesPage() {
+  const [mode, setMode] = useState<TemplatesMode>('editor');
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 justify-center border-b border-border px-5 py-3">
+        <ModeToggle mode={mode} onChange={setMode} />
+      </div>
+      <div className="min-h-0 flex-1">
+        {mode === 'editor' ? <EditorLibrary /> : <PlayTemplates />}
+      </div>
+    </div>
+  );
+}
+
+function ModeToggle({ mode, onChange }: { mode: TemplatesMode; onChange: (m: TemplatesMode) => void }) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Templates mode"
+      className="inline-flex rounded-md border border-border bg-surface p-0.5"
+    >
+      {([
+        { id: 'editor', label: 'EDITOR' },
+        { id: 'play', label: 'PLAY' },
+      ] as const).map((item) => {
+        const selected = mode === item.id;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(item.id)}
+            className={cn(
+              'min-w-[6.5rem] rounded-[5px] px-4 py-1.5 text-[12px] font-semibold tracking-wide transition-colors',
+              selected
+                ? 'bg-primary text-primary-ink shadow-sm'
+                : 'text-ink-muted hover:text-ink',
+            )}
+          >
+            {item.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function EditorLibrary() {
   const nav = useNavigate();
   const [items, setItems] = useState<TemplateSummary[] | null>(null);
   const [creating, setCreating] = useState(false);
@@ -71,7 +138,7 @@ export function TemplatesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    <div className="mx-auto max-w-5xl overflow-auto p-6">
       <div className="mb-5 flex items-end justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold">Templates</h2>
@@ -169,6 +236,121 @@ export function TemplatesPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PlayTemplates() {
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [channelId, setChannelId] = useState<string>('');
+  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [onAir, setOnAir] = useState<Record<string, string[]>>({});
+  const [loaded, setLoaded] = useState(false);
+
+  const status = useControlWs((s) => s.status);
+  const connect = useControlWs((s) => s.connect);
+  const send = useControlWs((s) => s.send);
+
+  useEffect(() => { connect(); }, [connect]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [ch, tpl, air] = await Promise.all([
+          api.channels.list(), api.templates.list(), api.onair.get(),
+        ]);
+        setChannels(ch);
+        setTemplates(tpl);
+        setOnAir(air);
+        if (ch.length) setChannelId((cur) => cur || ch[0].id);
+      } catch (e) {
+        toast.error(`Failed to load play data: ${(e as Error).message}`);
+      } finally {
+        setLoaded(true);
+      }
+    })();
+  }, []);
+
+  const live = onAir[channelId] ?? [];
+  const monitorChannelId = channelId || 'default';
+  const browserSourceUrl = channelId ? `${location.origin}/channel.html?channel=${channelId}` : '';
+
+  function take(rec: TemplateRecord, values: Record<string, string | number>) {
+    if (!channelId) { toast.error('Select a channel first'); return; }
+    const ok = send({ type: 'take', channelId, templateId: rec.id, template: rec.data, variables: values });
+    if (!ok) { toast.error('Control WebSocket not connected'); return; }
+    setOnAir((prev) => ({ ...prev, [channelId]: Array.from(new Set([...(prev[channelId] ?? []), rec.id])) }));
+  }
+  function update(templateId: string, values: Record<string, string | number>) {
+    if (!channelId) return;
+    send({ type: 'update', channelId, templateId, variables: values });
+  }
+  function clear(templateId: string) {
+    if (!channelId) return;
+    send({ type: 'clear', channelId, templateId });
+    setOnAir((prev) => ({ ...prev, [channelId]: (prev[channelId] ?? []).filter((x) => x !== templateId) }));
+  }
+  function clearAll() {
+    if (!channelId) return;
+    send({ type: 'clear', channelId });
+    setOnAir((prev) => ({ ...prev, [channelId]: [] }));
+  }
+
+  if (loaded && channels.length === 0) {
+    return (
+      <div className="grid h-full place-items-center p-6 text-center">
+        <div className="space-y-2">
+          <Radio className="mx-auto h-8 w-8 text-ink-faint" aria-hidden />
+          <p className="text-sm font-medium">No channels yet</p>
+          <p className="text-[13px] text-ink-muted">Create a channel to put graphics on air.</p>
+          <Link to="/settings" className="inline-block text-primary hover:underline">Go to Settings</Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-5">
+        <Select value={channelId} onChange={(e) => setChannelId(e.target.value)} className="w-48" disabled={!channels.length}>
+          {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </Select>
+        <WsBadge status={status} />
+        <div className="ml-auto flex items-center gap-2">
+          <BrowserSourceUrl url={browserSourceUrl} />
+          <Button variant="danger" size="sm" onClick={clearAll} disabled={live.length === 0}>
+            <Trash2 className="h-4 w-4" aria-hidden /> Clear all
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid min-h-0 flex-1 grid-cols-[1fr_380px]">
+        <div className="min-w-0 border-r border-border">
+          <TemplatesTab templates={templates} live={live} onTake={take} onUpdate={update} onClear={clear} />
+        </div>
+        <div className="flex min-h-0 flex-col gap-4 overflow-auto p-4">
+          {monitorChannelId && <ProgramMonitor channelId={monitorChannelId} />}
+          <div>
+            <h3 className="mb-2 text-[12px] font-semibold text-ink-muted">On air ({live.length})</h3>
+            {live.length === 0 ? (
+              <p className="text-[12px] text-ink-faint">Nothing on air.</p>
+            ) : (
+              <ul className="space-y-1">
+                {live.map((tid) => (
+                  <li key={tid} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
+                    <span className="min-w-0 flex-1 truncate text-[13px]">
+                      {templates.find((t) => t.id === tid)?.name ?? tid}
+                    </span>
+                    <button onClick={() => clear(tid)} className="text-ink-faint hover:text-danger" aria-label="Clear">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

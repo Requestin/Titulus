@@ -34,10 +34,67 @@
 | `2613074` | 9 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `ec8e872` | 9 июл | `fix scale bug` |
 | `42a18bc` | 10 июл | `fix group at tree, lock for scale` |
+| `c209386` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
+| `63630f8` | 10 июл | `move tab templates from control` |
 
 ---
 
-## 10 июля 2026 — Дерево слоёв: группы + Scale lock UI
+## 10 июля 2026 (продолжение) — Templates PLAY / Control только Rundowns
+
+Перенос операторского playout шаблонов из **Control** в раздел **Templates**; Control остаётся только для rundowns.
+
+### Templates — переключатель EDITOR | PLAY
+
+- По центру страницы `/templates` (над контентом) — сегментированный переключатель **EDITOR** | **PLAY** (`role="tablist"`).
+- По умолчанию выбран **EDITOR** — прежняя библиотека шаблонов (карточки, New template, duplicate, delete modal).
+- **PLAY** — бывшая вкладка Control → **Templates** (без Rundowns):
+  - шапка: выбор канала, статус WS (`WsBadge`), Browser Source URL + Copy, **Clear all**;
+  - слева: список шаблонов + панель переменных + TAKE / UPDATE / CLEAR;
+  - справа: Program Monitor + On air.
+- WS `/ws/control` подключается при входе в режим PLAY (`useControlWs`).
+
+### Control — только Rundowns
+
+- Вкладки **Templates | Rundowns** и полоска выбора вкладок **убраны**.
+- `/control` сразу открывает **RundownTab** (активный rundown, slots, transport PREV/TAKE/NEXT).
+- Шапка Control: канал (fallback), WS status, Browser Source URL — monitor привязан к каналу активного rundown.
+- **Clear all** убран из Control (остался в Templates → PLAY).
+
+### Рефакторинг модулей
+
+| Модуль | Назначение |
+|---|---|
+| `frontend/src/control/TemplatesTab.tsx` | Список шаблонов + prep panel + TAKE/UPDATE/CLEAR (вынесено из `ControlPage`) |
+| `frontend/src/control/controlShared.tsx` | `WsBadge`, `BrowserSourceUrl`, `copyTextToClipboard`, `normalizeRundown`, `displayOnAirName` |
+| `frontend/src/pages/TemplatesPage.tsx` | `ModeToggle` + `EditorLibrary` + `PlayTemplates` |
+| `frontend/src/pages/ControlPage.tsx` | Только rundowns + monitor/on-air |
+
+### Ключевые файлы (Templates PLAY)
+
+| Область | Файлы |
+|---|---|
+| Templates hub | `frontend/src/pages/TemplatesPage.tsx` |
+| Play templates UI | `frontend/src/control/TemplatesTab.tsx` |
+| Shared control chrome | `frontend/src/control/controlShared.tsx` |
+| Control rundowns | `frontend/src/pages/ControlPage.tsx`, `frontend/src/control/RundownTab.tsx` |
+
+### Чеклист (Templates PLAY / Control)
+
+**Templates → EDITOR:**
+- [ ] По умолчанию EDITOR; карточки, New template, duplicate, delete — как раньше
+
+**Templates → PLAY:**
+- [ ] Переключение на PLAY → канал, WS status, URL + Copy, Clear all
+- [ ] Выбор шаблона → переменные → TAKE/UPDATE/CLEAR
+- [ ] Program Monitor и On air справа
+- [ ] Rundowns **нет** на этой странице
+
+**Control:**
+- [ ] Нет вкладок Templates/Rundowns — сразу rundown workflow
+- [ ] Rundown transport, slots, monitor — как раньше на вкладке Rundowns
+- [ ] Шаблоны на эфир — через **Templates → PLAY**, не через Control
+
+---
 
 Пакет правок редактора: DnD в дереве слоёв (вложенные группы, drop-линии), связка Scale X/Y, шире поля Properties, рекурсивный bbox вложенных групп.
 
@@ -554,7 +611,8 @@ Stepper ↑↓, `extraActions` для rotation.
 | Timeline runtime | `runtime/src/timeline.ts`, `shared/template.schema.json` |
 | UI forms | `frontend/src/components/ui/form.tsx` |
 | Control / Rundowns | `frontend/src/control/RundownTab.tsx`, `frontend/src/pages/ControlPage.tsx` |
-| Templates list | `frontend/src/pages/TemplatesPage.tsx` |
+| Templates EDITOR + PLAY | `frontend/src/pages/TemplatesPage.tsx`, `frontend/src/control/TemplatesTab.tsx` |
+| Control shared UI | `frontend/src/control/controlShared.tsx` |
 | App shell | `frontend/src/components/AppShell.tsx` |
 | Variables | `frontend/src/editor/panels/VariablesPanel.tsx` |
 
@@ -575,6 +633,10 @@ git push -u origin sergey-v1
 ---
 
 ## Чеклист проверки
+
+**Templates / Control:**
+- [ ] `/templates` — EDITOR по умолчанию; PLAY = бывший Control Templates (TAKE/UPDATE/CLEAR)
+- [ ] `/control` — только Rundowns, без вкладок Templates
 
 **Editor:**
 - [ ] Ctrl/Cmd+drag копирует слой/группу в дереве
