@@ -35,7 +35,7 @@
 | `ec8e872` | 9 июл | `fix scale bug` |
 | `42a18bc` | 10 июл | `fix group at tree, lock for scale` |
 | `c209386` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
-| `63630f8` | 10 июл | `move tab templates from control` |
+| `d6d2c76` | 10 июл | `move tab templates from control` |
 
 ---
 
