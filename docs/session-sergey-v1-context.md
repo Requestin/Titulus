@@ -37,7 +37,7 @@
 | `c209386` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `d6d2c76` | 10 июл | `move tab templates from control` |
 | `2701e68` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
-| `a922d93` | 10 июл | `big change Control page, add dataelements, change db` |
+| `1532b58` | 10 июл | `big change Control page, add dataelements, change db` |
 
 ---
 
