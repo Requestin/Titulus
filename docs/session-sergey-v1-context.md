@@ -38,6 +38,8 @@
 | `d6d2c76` | 10 июл | `move tab templates from control` |
 | `2701e68` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `1532b58` | 10 июл | `big change Control page, add dataelements, change db` |
+| `dfe1dd9` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
+| _(pending)_ | 10 июл | `big change Control page, add dataelements, change db` (sidebar resize + DE delete UX) |
 
 ---
 
@@ -62,9 +64,25 @@
 |---|---|
 | Rundowns | Список канала: CRUD, reorder DnD, import/export |
 | Templates | Все templates A–Z, строки без trash/pencil; click → Variables; DnD → slots |
-| DataElements | Все DE; default sort `updated_at` desc; колонки Name \| Updated; click Name → sort by name; DnD → slots |
+| DataElements | Все DE; sort Name/Updated; trash на строке; multi-select; DnD → slots |
 
 Active rundown сохраняется при смене mode (нужен как DnD target).
+
+### Sidebar resize
+
+- Левая колонка (Rundowns / Templates / DataElements) **ресайзится** за правый край (`role="separator"`, `cursor-ew-resize`).
+- Диапазон ширины: **180–520px** (default 250).
+- Persist: `localStorage` `titulus.control.sidebarWidth`.
+- Layout: `flex` (sidebar + center `flex-1` + right `380px`), вместо фиксированного `grid-cols-[250px_1fr_380px]`.
+
+### DataElements — удаление и multi-select
+
+- Иконка **корзины** на каждой строке → `DELETE /api/data-elements/:id` (после confirm).
+- **Shift+click** — range-select по текущему порядку списка (якорь = последний обычный click).
+- **Delete / Backspace** (не в INPUT) при выделенных DE → тот же confirm dialog.
+- Confirm modal: Delete / Cancel; **Enter** подтверждает, **Esc** отменяет.
+- После удаления: список обновляется; Variables сбрасывается, если открытый DE удалён.
+- Trash не стартует DnD (`stopPropagation` на `pointerDown`/`click`); drag — с имени строки.
 
 ### Slots + DnD
 
@@ -98,7 +116,7 @@ Modal «Enter name for DataElement» → POST. Save на slot обновляет
 | Область | Файлы |
 |---|---|
 | Control page | `frontend/src/pages/ControlPage.tsx` |
-| Rundown UI | `frontend/src/control/RundownTab.tsx` |
+| Rundown UI | `frontend/src/control/RundownTab.tsx` (resize, DE multi-select/delete, DnD) |
 | Variables panel | `frontend/src/control/ControlVariablesPanel.tsx` |
 | API client | `frontend/src/core/api.ts` (`DataElement`, `dataElements.*`, `rundowns.list({channelId})`) |
 | DataElements DB | `backend/src/dataElementsDb.js`, `backend/src/routes/dataElements.js` |
@@ -115,8 +133,12 @@ Modal «Enter name for DataElement» → POST. Save на slot обновляет
 - [ ] NOT FOUND IN DB при удалённом template/DE; TAKE нельзя, CLEAR можно
 - [ ] Имя слота = актуальное имя template после rename
 - [ ] Файл `/var/lib/titulus/app.db-dataelements` появляется после первого API-вызова
+- [ ] Сайдбар тянется за правый край; ширина переживает reload
+- [ ] Корзина / Delete / Shift+click → confirm; Enter подтверждает удаление DE
 
 ---
+
+## 10 июля 2026 — Templates EDITOR | PLAY; Control = rundowns
 
 Перенос операторского playout шаблонов из **Control** в раздел **Templates**; Control остаётся только для rundowns.
 
@@ -717,6 +739,7 @@ git push -u origin sergey-v1
 - [ ] `/templates` — EDITOR по умолчанию; PLAY = бывший Control Templates (TAKE/UPDATE/CLEAR)
 - [ ] `/control` — channel-scoped rundowns; sidebar Rundowns/Templates/DataElements; Variables; no auto-create rundown
 - [ ] DataElements в `$TITULUS_DATA/app.db-dataelements`; cascade при delete template
+- [ ] Control sidebar resize (правый край); DE trash / Shift+click / Delete + confirm (Enter)
 
 **Editor:**
 - [ ] Ctrl/Cmd+drag копирует слой/группу в дереве

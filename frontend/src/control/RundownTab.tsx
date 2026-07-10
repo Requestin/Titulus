@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   Plus, FileUp, FileDown, Copy, Trash2, Pencil, GripVertical, X,
 } from 'lucide-react';
@@ -43,6 +43,10 @@ type SendControl = (cmd: {
 type SidebarMode = 'rundowns' | 'templates' | 'dataElements';
 
 const LAST_RUNDOWN_KEY = (channelId: string) => `titulus.control.lastRundown.${channelId}`;
+const SIDEBAR_WIDTH_KEY = 'titulus.control.sidebarWidth';
+const SIDEBAR_WIDTH_DEFAULT = 250;
+const SIDEBAR_WIDTH_MIN = 180;
+const SIDEBAR_WIDTH_MAX = 520;
 
 function dragIdTemplate(id: string) { return `tpl:${id}`; }
 function dragIdDataElement(id: string) { return `de:${id}`; }
@@ -83,6 +87,16 @@ export function RundownTab({
   const [deSort, setDeSort] = useState<'updated' | 'name'>('updated');
   const [varsSelection, setVarsSelection] = useState<VarsSelection>({ kind: 'none' });
   const [selectedSidebarId, setSelectedSidebarId] = useState<string | null>(null);
+  const [deSelectedIds, setDeSelectedIds] = useState<Set<string>>(() => new Set());
+  const [deAnchorId, setDeAnchorId] = useState<string | null>(null);
+  const [deDeleteIds, setDeDeleteIds] = useState<string[] | null>(null);
+  const [deDeleting, setDeDeleting] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    if (!Number.isFinite(raw)) return SIDEBAR_WIDTH_DEFAULT;
+    return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, raw));
+  });
+  const sidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveUpdateTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
   const importRef = useRef<HTMLInputElement>(null);
@@ -160,10 +174,38 @@ export function RundownTab({
   }, [active]);
 
   useEffect(() => {
+    setSelectedSidebarId(null);
+    setDeSelectedIds(new Set());
+    setDeAnchorId(null);
+    setDeDeleteIds(null);
+    if (sidebarMode !== 'rundowns') {
+      setVarsSelection({ kind: 'none' });
+    }
+  }, [sidebarMode]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!active || active.slots.length === 0) return;
       const tag = (e.target as HTMLElement | null)?.tagName || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (deDeleteIds) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          void confirmDeleteDataElements();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          if (!deDeleting) setDeDeleteIds(null);
+        }
+        return;
+      }
+
+      if (sidebarMode === 'dataElements' && (e.key === 'Delete' || e.key === 'Backspace') && deSelectedIds.size > 0) {
+        e.preventDefault();
+        setDeDeleteIds([...deSelectedIds]);
+        return;
+      }
+
+      if (!active || active.slots.length === 0) return;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setFocusIdx((i) => Math.min(i + 1, active.slots.length - 1));
@@ -182,7 +224,36 @@ export function RundownTab({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, focusIdx, activeLiveSet]);
+  }, [active, focusIdx, activeLiveSet, sidebarMode, deSelectedIds, deDeleteIds, deDeleting]);
+
+  const onSidebarResizeStart = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    sidebarResizeRef.current = { startX: e.clientX, startWidth: sidebarWidth };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onSidebarResizeMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = sidebarResizeRef.current;
+    if (!drag) return;
+    const next = Math.min(
+      SIDEBAR_WIDTH_MAX,
+      Math.max(SIDEBAR_WIDTH_MIN, drag.startWidth + (e.clientX - drag.startX)),
+    );
+    setSidebarWidth(next);
+  };
+
+  const onSidebarResizeEnd = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = sidebarResizeRef.current;
+    if (!drag) return;
+    const next = Math.min(
+      SIDEBAR_WIDTH_MAX,
+      Math.max(SIDEBAR_WIDTH_MIN, drag.startWidth + (e.clientX - drag.startX)),
+    );
+    setSidebarWidth(next);
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next));
+    sidebarResizeRef.current = null;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+  };
 
   const patchActive = useCallback((updater: (r: Rundown) => Rundown) => {
     if (!activeId) return;
@@ -278,6 +349,56 @@ export function RundownTab({
       variables,
       values: buildValuesFromVars(variables, de.vars),
     });
+  }
+
+  function onDataElementClick(de: DataElement, e: React.MouseEvent) {
+    if (e.shiftKey && deAnchorId) {
+      const ids = dataElements.map((d) => d.id);
+      const a = ids.indexOf(deAnchorId);
+      const b = ids.indexOf(de.id);
+      if (a >= 0 && b >= 0) {
+        const lo = Math.min(a, b);
+        const hi = Math.max(a, b);
+        setDeSelectedIds(new Set(ids.slice(lo, hi + 1)));
+        void selectDataElement(de);
+        return;
+      }
+    }
+    setDeSelectedIds(new Set([de.id]));
+    setDeAnchorId(de.id);
+    void selectDataElement(de);
+  }
+
+  function requestDeleteDataElements(ids: string[]) {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return;
+    setDeDeleteIds(unique);
+  }
+
+  async function confirmDeleteDataElements() {
+    if (!deDeleteIds?.length || deDeleting) return;
+    const ids = deDeleteIds;
+    setDeDeleting(true);
+    try {
+      await Promise.all(ids.map((id) => api.dataElements.remove(id)));
+      setDataElements((prev) => prev.filter((d) => !ids.includes(d.id)));
+      setDeSelectedIds((prev) => {
+        const next = new Set([...prev].filter((id) => !ids.includes(id)));
+        return next;
+      });
+      if (ids.includes(deAnchorId ?? '')) setDeAnchorId(null);
+      if (varsSelection.kind === 'dataElement' && ids.includes(varsSelection.dataElement.id)) {
+        setVarsSelection({ kind: 'none' });
+        setSelectedSidebarId(null);
+      }
+      setDeDeleteIds(null);
+      toast.success(ids.length === 1 ? 'Data element deleted' : `${ids.length} data elements deleted`);
+    } catch (err) {
+      toast.error(`Delete failed: ${(err as Error).message}`);
+      void reloadDataElements(deSort);
+    } finally {
+      setDeDeleting(false);
+    }
   }
 
   async function selectSlot(slot: RundownSlot) {
@@ -434,9 +555,12 @@ export function RundownTab({
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => { void onUnifiedDragEnd(e); }}>
-    <div className="grid h-full grid-cols-[250px_1fr_380px]">
+    <div className="flex h-full min-h-0">
       {/* Sidebar */}
-      <aside className="flex min-h-0 flex-col border-r border-border p-2">
+      <aside
+        className="relative flex min-h-0 shrink-0 flex-col border-r border-border p-2"
+        style={{ width: sidebarWidth }}
+      >
         <input
           ref={importRef}
           type="file"
@@ -534,7 +658,7 @@ export function RundownTab({
 
           {sidebarMode === 'dataElements' && (
             <>
-              <div className="mb-1 grid grid-cols-[1fr_72px] gap-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+              <div className="mb-1 grid grid-cols-[1fr_72px_28px] gap-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
                 <button
                   type="button"
                   className="text-left hover:text-ink"
@@ -549,14 +673,17 @@ export function RundownTab({
                 >
                   Updated
                 </button>
+                <span aria-hidden />
               </div>
               <div className="space-y-0.5">
                 {dataElements.map((de) => (
                   <DraggableDataElementRow
                     key={de.id}
                     dataElement={de}
-                    selected={selectedSidebarId === de.id && varsSelection.kind === 'dataElement'}
-                    onSelect={() => void selectDataElement(de)}
+                    selected={deSelectedIds.has(de.id)}
+                    active={selectedSidebarId === de.id && varsSelection.kind === 'dataElement'}
+                    onSelect={(e) => onDataElementClick(de, e)}
+                    onDelete={() => requestDeleteDataElements([de.id])}
                   />
                 ))}
                 {dataElements.length === 0 && (
@@ -566,10 +693,20 @@ export function RundownTab({
             </>
           )}
         </div>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-ew-resize touch-none hover:bg-primary/25 active:bg-primary/40"
+          onPointerDown={onSidebarResizeStart}
+          onPointerMove={onSidebarResizeMove}
+          onPointerUp={onSidebarResizeEnd}
+          onPointerCancel={onSidebarResizeEnd}
+        />
       </aside>
 
       {/* Center: transport + slots */}
-      <div className="min-h-0 overflow-auto border-r border-border p-3">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto border-r border-border p-3">
         {!active ? (
           <p className="p-6 text-center text-[13px] text-ink-muted">Select or create a rundown.</p>
         ) : (
@@ -626,7 +763,7 @@ export function RundownTab({
       </div>
 
       {/* Right: preview + on air + variables */}
-      <div className="flex min-h-0 flex-col gap-4 overflow-auto p-4">
+      <div className="flex w-[380px] shrink-0 min-h-0 flex-col gap-4 overflow-auto p-4">
         {channelId && <ProgramMonitor channelId={channelId} />}
         <div>
           <h3 className="mb-2 text-[12px] font-semibold text-ink-muted">On air ({monitorLive.length})</h3>
@@ -681,6 +818,40 @@ export function RundownTab({
         </div>
       </div>
     </div>
+
+    {deDeleteIds && (
+      <div className="fixed inset-0 z-modal grid place-items-center bg-bg/70 px-4 backdrop-blur-sm">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-dataelements-title"
+          className="w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-2xl"
+        >
+          <p id="delete-dataelements-title" className="text-sm text-ink">
+            {deDeleteIds.length === 1
+              ? `Delete "${dataElements.find((d) => d.id === deDeleteIds[0])?.name ?? 'data element'}"? This cannot be undone.`
+              : `Delete ${deDeleteIds.length} data elements? This cannot be undone.`}
+          </p>
+          <p className="mt-2 text-[12px] text-ink-faint">Press Enter to confirm.</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button
+              variant="danger"
+              disabled={deDeleting}
+              onClick={() => { void confirmDeleteDataElements(); }}
+            >
+              {deDeleting ? 'Deleting…' : 'Delete'}
+            </Button>
+            <Button
+              variant="neutral"
+              disabled={deDeleting}
+              onClick={() => setDeDeleteIds(null)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
     </DndContext>
   );
 }
@@ -724,33 +895,58 @@ function DraggableTemplateRow({
 }
 
 function DraggableDataElementRow({
-  dataElement, selected, onSelect,
+  dataElement, selected, active, onSelect, onDelete,
 }: {
   dataElement: DataElement;
   selected: boolean;
-  onSelect: () => void;
+  active: boolean;
+  onSelect: (e: React.MouseEvent) => void;
+  onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: dragIdDataElement(dataElement.id),
   });
   const updated = dataElement.updatedAt?.slice(0, 10) ?? '';
   return (
-    <button
+    <div
       ref={setNodeRef}
-      type="button"
       style={{ transform: CSS.Translate.toString(transform) }}
-      {...attributes}
-      {...listeners}
-      onClick={onSelect}
       className={cn(
-        'grid w-full cursor-grab grid-cols-[1fr_72px] items-center gap-1 rounded border px-2 py-1.5 text-left text-[13px]',
-        selected ? 'border-primary/60 bg-surface-2' : 'border-transparent hover:bg-surface-2',
+        'grid w-full grid-cols-[1fr_72px_28px] items-center gap-1 rounded border px-2 py-1.5 text-[13px]',
+        selected || active ? 'border-primary/60 bg-surface-2' : 'border-transparent hover:bg-surface-2',
         isDragging && 'opacity-60',
       )}
     >
-      <span className="min-w-0 truncate">{dataElement.name}</span>
-      <span className="truncate text-right text-[11px] tabular-nums text-ink-faint">{updated}</span>
-    </button>
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        onClick={onSelect}
+        className="min-w-0 cursor-grab truncate text-left"
+      >
+        {dataElement.name}
+      </button>
+      <button
+        type="button"
+        onClick={onSelect}
+        className="truncate text-right text-[11px] tabular-nums text-ink-faint"
+      >
+        {updated}
+      </button>
+      <button
+        type="button"
+        title="Delete data element"
+        aria-label={`Delete ${dataElement.name}`}
+        className="grid h-6 w-6 place-items-center text-ink-faint hover:text-danger"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+      >
+        <Trash2 className="h-3.5 w-3.5" aria-hidden />
+      </button>
+    </div>
   );
 }
 
