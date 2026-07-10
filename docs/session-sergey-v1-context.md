@@ -36,10 +36,87 @@
 | `42a18bc` | 10 июл | `fix group at tree, lock for scale` |
 | `c209386` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `d6d2c76` | 10 июл | `move tab templates from control` |
+| `2701e68` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
+| `a922d93` | 10 июл | `big change Control page, add dataelements, change db` |
 
 ---
 
-## 10 июля 2026 (продолжение) — Templates PLAY / Control только Rundowns
+## 10 июля 2026 (вечер) — Control: channel-scoped rundowns + DataElements
+
+Крупный рефакторинг Control: rundowns привязаны к каналу из шапки; сайдбар Rundowns/Templates/DataElements; DnD в слоты; отдельная SQLite для DataElements; панель Variables; NOT FOUND.
+
+### Channel → rundowns
+
+- Верхний Select канала — **источник правды**: `GET /api/rundowns?channelId=` загружает только rundowns этого канала.
+- Создание rundown всегда с `channel_id` = выбранный канал.
+- Убран Select канала из transport bar (PREV/TAKE/NEXT).
+- Убрана кнопка **Add slot** — слоты добавляются только DnD из Templates / DataElements.
+- **Last rundown per channel:** `localStorage` `titulus.control.lastRundown.<channelId>`.
+- **Fix:** убрано auto-create `Rundown 1` при открытии пустого канала (создавало дубликаты); create только по кнопке **+**. Очищены пустые rundowns в `/var/lib/titulus/app.db` (43 пустых удалены).
+
+### Sidebar mode dropdown
+
+Заголовок «Rundowns» → Select: **Rundowns** | **Templates** | **DataElements** (default Rundowns).
+
+| Mode | Поведение |
+|---|---|
+| Rundowns | Список канала: CRUD, reorder DnD, import/export |
+| Templates | Все templates A–Z, строки без trash/pencil; click → Variables; DnD → slots |
+| DataElements | Все DE; default sort `updated_at` desc; колонки Name \| Updated; click Name → sort by name; DnD → slots |
+
+Active rundown сохраняется при смене mode (нужен как DnD target).
+
+### Slots + DnD
+
+- Drop Template → `{ slotId, templateId, name, vars: defaults, dataElementId?: absent }`
+- Drop DataElement → `{ slotId, templateId, name: de.name, vars: clone(de.vars), dataElementId }`
+- Источник списка **не** удаляется.
+- Отображаемое имя: актуальное имя template из API (не устаревший `slot.name`).
+- Битая ссылка (нет template или нет DE при `dataElementId`) → красный **NOT FOUND IN DB**; TAKE disabled; CLEAR если on-air — можно.
+
+### Variables panel (справа под Preview / On air)
+
+| Selection | Кнопки |
+|---|---|
+| Template | **Save as DataElement** (danger), Cancel |
+| DataElement | Save as new, Save, Cancel |
+| Slot | Save as new (всегда), Save (disabled until dirty), Cancel |
+
+Modal «Enter name for DataElement» → POST. Save на slot обновляет `slot.vars` в rundown (+ live UPDATE если on-air). Save as new с slot **не** меняет слот.
+
+### DataElements DB (отдельный файл)
+
+- Путь: **`$TITULUS_DATA/app.db-dataelements`** (рядом с `app.db`, default `/var/lib/titulus/`).
+- Модуль: [`backend/src/dataElementsDb.js`](backend/src/dataElementsDb.js)
+- Таблица `data_elements`: `id`, `template_id`, `name`, `vars` (JSON), `created_at`, `updated_at`, `created_by`, `updated_by`
+- REST `/api/data-elements` (`?sort=updated|name`): list/get/create/update/delete; auth required; username из `req.auth`
+- Cascade: DELETE template → `removeByTemplateId`
+- Slot normalize в `db.js` сохраняет optional `dataElementId`
+
+### Ключевые файлы (Control + DataElements)
+
+| Область | Файлы |
+|---|---|
+| Control page | `frontend/src/pages/ControlPage.tsx` |
+| Rundown UI | `frontend/src/control/RundownTab.tsx` |
+| Variables panel | `frontend/src/control/ControlVariablesPanel.tsx` |
+| API client | `frontend/src/core/api.ts` (`DataElement`, `dataElements.*`, `rundowns.list({channelId})`) |
+| DataElements DB | `backend/src/dataElementsDb.js`, `backend/src/routes/dataElements.js` |
+| Wire-up | `backend/src/index.js` |
+| Rundowns filter / slots | `backend/src/db.js`, `backend/src/routes/rundowns.js` |
+| Template cascade | `backend/src/routes/templates.js` |
+
+### Чеклист (Control DataElements)
+
+- [ ] Смена канала → только его rundowns; create → привязан к каналу
+- [ ] Нет auto-create при открытии пустого канала; + создаёт вручную
+- [ ] Templates / DataElements DnD в slots; источник остаётся
+- [ ] Variables: Save as DataElement / Save / Save as new / Cancel
+- [ ] NOT FOUND IN DB при удалённом template/DE; TAKE нельзя, CLEAR можно
+- [ ] Имя слота = актуальное имя template после rename
+- [ ] Файл `/var/lib/titulus/app.db-dataelements` появляется после первого API-вызова
+
+---
 
 Перенос операторского playout шаблонов из **Control** в раздел **Templates**; Control остаётся только для rundowns.
 
@@ -611,6 +688,8 @@ Stepper ↑↓, `extraActions` для rotation.
 | Timeline runtime | `runtime/src/timeline.ts`, `shared/template.schema.json` |
 | UI forms | `frontend/src/components/ui/form.tsx` |
 | Control / Rundowns | `frontend/src/control/RundownTab.tsx`, `frontend/src/pages/ControlPage.tsx` |
+| Control Variables | `frontend/src/control/ControlVariablesPanel.tsx` |
+| DataElements | `backend/src/dataElementsDb.js`, `backend/src/routes/dataElements.js` |
 | Templates EDITOR + PLAY | `frontend/src/pages/TemplatesPage.tsx`, `frontend/src/control/TemplatesTab.tsx` |
 | Control shared UI | `frontend/src/control/controlShared.tsx` |
 | App shell | `frontend/src/components/AppShell.tsx` |
@@ -636,7 +715,8 @@ git push -u origin sergey-v1
 
 **Templates / Control:**
 - [ ] `/templates` — EDITOR по умолчанию; PLAY = бывший Control Templates (TAKE/UPDATE/CLEAR)
-- [ ] `/control` — только Rundowns, без вкладок Templates
+- [ ] `/control` — channel-scoped rundowns; sidebar Rundowns/Templates/DataElements; Variables; no auto-create rundown
+- [ ] DataElements в `$TITULUS_DATA/app.db-dataelements`; cascade при delete template
 
 **Editor:**
 - [ ] Ctrl/Cmd+drag копирует слой/группу в дереве

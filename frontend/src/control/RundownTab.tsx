@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Variable } from '@runtime';
 import {
-  Plus, FileUp, FileDown, Copy, Trash2, Pencil, Check, ChevronDown, ChevronRight, GripVertical,
+  Plus, FileUp, FileDown, Copy, Trash2, Pencil, GripVertical, X,
 } from 'lucide-react';
 import {
-  DndContext, PointerSensor, closestCenter, useSensor, useSensors,
+  DndContext, PointerSensor, closestCenter, useSensor, useSensors, useDroppable, useDraggable,
   type DragEndEvent,
 } from '@dnd-kit/core';
 import {
@@ -13,7 +12,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   api,
-  type Channel,
+  type DataElement,
   type OnAirSnapshot,
   type Rundown,
   type RundownSlot,
@@ -21,11 +20,17 @@ import {
   type TemplateSummary,
 } from '@/core/api';
 import { Button } from '@/components/ui/Button';
-import { Field, Input, NumberInput, ColorInput, Select } from '@/components/ui/form';
-import { MediaUploadButton } from '@/editor/MediaUploadButton';
+import { Input, Select } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { toast } from '@/core/toast';
 import { createId } from '@/core/id';
+import { ProgramMonitor } from '@/control/ProgramMonitor';
+import {
+  ControlVariablesPanel,
+  buildValuesFromVars,
+  defaultsFromVariables,
+  type VarsSelection,
+} from '@/control/ControlVariablesPanel';
 
 type SendControl = (cmd: {
   type: 'take' | 'update' | 'clear';
@@ -35,75 +40,104 @@ type SendControl = (cmd: {
   variables?: Record<string, string | number>;
 }) => boolean;
 
+type SidebarMode = 'rundowns' | 'templates' | 'dataElements';
+
+const LAST_RUNDOWN_KEY = (channelId: string) => `titulus.control.lastRundown.${channelId}`;
+
+function dragIdTemplate(id: string) { return `tpl:${id}`; }
+function dragIdDataElement(id: string) { return `de:${id}`; }
+function parseDragId(id: string): { kind: 'template' | 'dataElement' | 'slot' | 'rundown'; id: string } | null {
+  if (id.startsWith('tpl:')) return { kind: 'template', id: id.slice(4) };
+  if (id.startsWith('de:')) return { kind: 'dataElement', id: id.slice(3) };
+  if (id.startsWith('slot:')) return { kind: 'slot', id: id.slice(5) };
+  if (id.startsWith('rd:')) return { kind: 'rundown', id: id.slice(3) };
+  return null;
+}
+
 export function RundownTab({
-  channels,
+  channelId,
   templates,
   rundowns,
   setRundowns,
   dataLoaded,
   onAir,
   setOnAir,
-  fallbackChannelId,
   send,
-  onPreferredChannelChange,
 }: {
-  channels: Channel[];
+  channelId: string;
   templates: TemplateSummary[];
   rundowns: Rundown[];
   setRundowns: React.Dispatch<React.SetStateAction<Rundown[]>>;
   dataLoaded: boolean;
   onAir: OnAirSnapshot;
   setOnAir: React.Dispatch<React.SetStateAction<OnAirSnapshot>>;
-  fallbackChannelId: string;
   send: SendControl;
-  onPreferredChannelChange?: (channelId: string) => void;
 }) {
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>('rundowns');
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [bootstrapping, setBootstrapping] = useState(false);
-  const bootstrapAttempted = useRef(false);
   const [focusIdx, setFocusIdx] = useState(0);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
-  const [showAdd, setShowAdd] = useState(false);
   const [cache, setCache] = useState<Record<string, TemplateRecord>>({});
+  const [dataElements, setDataElements] = useState<DataElement[]>([]);
+  const [deSort, setDeSort] = useState<'updated' | 'name'>('updated');
+  const [varsSelection, setVarsSelection] = useState<VarsSelection>({ kind: 'none' });
+  const [selectedSidebarId, setSelectedSidebarId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveUpdateTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
   const importRef = useRef<HTMLInputElement>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   const active = useMemo(() => rundowns.find((r) => r.id === activeId) ?? null, [rundowns, activeId]);
-  const channelId = active?.channel_id || fallbackChannelId || 'default';
   const channelLiveSet = new Set(onAir[channelId] ?? []);
   const activeLiveSet = new Set((active?.slots ?? []).filter((s) => channelLiveSet.has(s.slotId)).map((s) => s.slotId));
+  const deById = useMemo(() => new Map(dataElements.map((d) => [d.id, d])), [dataElements]);
+  const templatesSorted = useMemo(
+    () => [...templates].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+    [templates],
+  );
+
+  const reloadDataElements = useCallback(async (sort: 'updated' | 'name' = deSort) => {
+    try {
+      setDataElements(await api.dataElements.list({ sort }));
+    } catch (e) {
+      toast.error(`Failed to load data elements: ${(e as Error).message}`);
+    }
+  }, [deSort]);
 
   useEffect(() => {
+    void reloadDataElements(deSort);
+  }, [reloadDataElements, deSort]);
+
+  // Restore last rundown when channel changes.
+  useEffect(() => {
+    if (!dataLoaded || !channelId) return;
+    const saved = localStorage.getItem(LAST_RUNDOWN_KEY(channelId));
+    if (saved && rundowns.some((r) => r.id === saved)) {
+      setActiveId(saved);
+    } else {
+      setActiveId(rundowns[0]?.id ?? null);
+    }
+    // Only re-pick when channel or loaded list identity for this channel changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId, dataLoaded, rundowns.map((r) => r.id).join(',')]);
+
+  useEffect(() => {
+    if (activeId && channelId) localStorage.setItem(LAST_RUNDOWN_KEY(channelId), activeId);
+  }, [activeId, channelId]);
+
+  // Keep activeId valid if list shrinks.
+  useEffect(() => {
+    if (activeId && rundowns.length && !rundowns.some((r) => r.id === activeId)) {
+      setActiveId(rundowns[0]?.id ?? null);
+    }
     if (!activeId && rundowns.length) setActiveId(rundowns[0].id);
-    if (activeId && !rundowns.some((r) => r.id === activeId)) setActiveId(rundowns[0]?.id ?? null);
   }, [rundowns, activeId]);
-
-  useEffect(() => {
-    if (!dataLoaded || rundowns.length > 0 || bootstrapAttempted.current) return;
-    bootstrapAttempted.current = true;
-    setBootstrapping(true);
-    void api.rundowns.create({ name: 'Rundown 1', slots: [] })
-      .then((rd) => {
-        setRundowns([rd]);
-        setActiveId(rd.id);
-      })
-      .catch((e) => {
-        bootstrapAttempted.current = false;
-        toast.error(`Failed to create default rundown: ${(e as Error).message}`);
-      })
-      .finally(() => setBootstrapping(false));
-  }, [dataLoaded, rundowns.length, setRundowns]);
 
   useEffect(() => {
     const max = Math.max(0, (active?.slots.length ?? 1) - 1);
     setFocusIdx((i) => Math.min(i, max));
   }, [active?.slots.length]);
-
-  useEffect(() => onPreferredChannelChange?.(channelId), [channelId, onPreferredChannelChange]);
 
   useEffect(() => () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -147,6 +181,7 @@ export function RundownTab({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, focusIdx, activeLiveSet]);
 
   const patchActive = useCallback((updater: (r: Rundown) => Rundown) => {
@@ -161,11 +196,21 @@ export function RundownTab({
     return rec;
   }, [cache]);
 
+  function slotMissing(slot: RundownSlot): boolean {
+    const tplMissing = !templates.some((t) => t.id === slot.templateId);
+    const deMissing = Boolean(slot.dataElementId) && !deById.has(slot.dataElementId!);
+    return tplMissing || deMissing;
+  }
+
+  function slotDisplayName(slot: RundownSlot): string {
+    return templates.find((t) => t.id === slot.templateId)?.name ?? slot.name;
+  }
+
   function patchOnAir(nextChannelId: string, updater: (cur: string[]) => string[]) {
     setOnAir((prev) => ({ ...prev, [nextChannelId]: updater(prev[nextChannelId] ?? []) }));
   }
 
-  function buildPayload(slot: RundownSlot, varsDef: Variable[]) {
+  function buildPayload(slot: RundownSlot, varsDef: { id: string; defaultValue: string | number }[]) {
     const v: Record<string, string | number> = {};
     for (const d of varsDef) v[d.id] = slot.vars[d.id] ?? d.defaultValue;
     return v;
@@ -175,8 +220,15 @@ export function RundownTab({
     if (!active) return;
     const slot = active.slots[index];
     if (!slot) return;
+    if (slotMissing(slot)) {
+      toast.error('NOT FOUND IN DB — cannot TAKE');
+      return;
+    }
     const tpl = await ensureTemplate(slot.templateId).catch(() => null);
-    if (!tpl) return;
+    if (!tpl) {
+      toast.error('NOT FOUND IN DB — cannot TAKE');
+      return;
+    }
     const ok = send({
       type: 'take',
       channelId,
@@ -200,23 +252,57 @@ export function RundownTab({
     if (!ok) toast.error('Control socket disconnected');
   }
 
-  function updateSlotVar(slotId: string, varId: string, value: string | number) {
-    if (!active) return;
-    const slot = active.slots.find((s) => s.slotId === slotId);
-    if (!slot) return;
-    const nextVars = { ...slot.vars, [varId]: value };
-    patchActive((r) => ({ ...r, slots: r.slots.map((s) => (s.slotId === slotId ? { ...s, vars: nextVars } : s)) }));
-    const timer = liveUpdateTimers.current[slotId];
-    if (timer) clearTimeout(timer);
-    liveUpdateTimers.current[slotId] = setTimeout(async () => {
-      const tpl = await ensureTemplate(slot.templateId).catch(() => null);
-      if (!tpl) return;
-      void updateLive(slotId, buildPayload({ ...slot, vars: nextVars }, tpl.data.variables));
-    }, 300);
+  async function selectTemplate(t: TemplateSummary) {
+    setSelectedSidebarId(t.id);
+    const rec = await ensureTemplate(t.id).catch(() => null);
+    if (!rec) {
+      toast.error('Failed to load template');
+      return;
+    }
+    setVarsSelection({
+      kind: 'template',
+      templateId: t.id,
+      templateName: t.name,
+      variables: rec.data.variables,
+      values: defaultsFromVariables(rec.data.variables),
+    });
+  }
+
+  async function selectDataElement(de: DataElement) {
+    setSelectedSidebarId(de.id);
+    const rec = await ensureTemplate(de.templateId).catch(() => null);
+    const variables = rec?.data.variables ?? [];
+    setVarsSelection({
+      kind: 'dataElement',
+      dataElement: de,
+      variables,
+      values: buildValuesFromVars(variables, de.vars),
+    });
+  }
+
+  async function selectSlot(slot: RundownSlot) {
+    setSelectedSidebarId(slot.slotId);
+    const missing = slotMissing(slot);
+    const rec = missing ? null : await ensureTemplate(slot.templateId).catch(() => null);
+    const variables = rec?.data.variables ?? [];
+    setVarsSelection({
+      kind: 'slot',
+      rundownId: active?.id ?? '',
+      slotId: slot.slotId,
+      templateId: slot.templateId,
+      dataElementId: slot.dataElementId,
+      variables,
+      values: buildValuesFromVars(variables, slot.vars),
+      missing,
+    });
   }
 
   async function createRundown() {
-    const rd = await api.rundowns.create({ name: `Rundown ${rundowns.length + 1}`, slots: [] });
+    const rd = await api.rundowns.create({
+      name: `Rundown ${rundowns.length + 1}`,
+      channel_id: channelId,
+      slots: [],
+    });
     setRundowns((prev) => [rd, ...prev]);
     setActiveId(rd.id);
   }
@@ -226,7 +312,7 @@ export function RundownTab({
     if (!src) return;
     const rd = await api.rundowns.create({
       name: `${src.name} (copy)`,
-      channel_id: src.channel_id,
+      channel_id: channelId,
       slots: src.slots.map((s) => ({ ...s, slotId: createId() })),
     });
     setRundowns((prev) => [rd, ...prev]);
@@ -234,50 +320,92 @@ export function RundownTab({
   }
 
   async function removeRundown(id: string) {
-    if (rundowns.length <= 1) return toast.error('At least one rundown required');
     await api.rundowns.remove(id);
     const next = rundowns.filter((r) => r.id !== id);
     setRundowns(next);
     if (activeId === id) setActiveId(next[0]?.id ?? null);
   }
 
-  async function onRundownDragEnd(event: DragEndEvent) {
+  async function onUnifiedDragEnd(event: DragEndEvent) {
     const { active: dragActive, over } = event;
-    if (!over || dragActive.id === over.id) return;
-    const from = rundowns.findIndex((r) => r.id === dragActive.id);
-    const to = rundowns.findIndex((r) => r.id === over.id);
-    if (from < 0 || to < 0) return;
-    const next = arrayMove(rundowns, from, to);
-    setRundowns(next);
-    try {
-      await api.rundowns.reorder(next.map((r) => r.id));
-    } catch (e) {
-      toast.error(`Reorder failed: ${(e as Error).message}`);
-    }
-  }
+    if (!over) return;
+    const activeParsed = parseDragId(String(dragActive.id));
+    const overParsed = parseDragId(String(over.id));
+    const overId = String(over.id);
 
-  function onSlotDragEnd(event: DragEndEvent) {
-    if (!active) return;
-    const { active: dragActive, over } = event;
-    if (!over || dragActive.id === over.id) return;
-    const from = active.slots.findIndex((s) => s.slotId === dragActive.id);
-    const to = active.slots.findIndex((s) => s.slotId === over.id);
-    if (from < 0 || to < 0) return;
-    const focusedSlotId = active.slots[focusIdx]?.slotId;
-    patchActive((r) => ({ ...r, slots: arrayMove(r.slots, from, to) }));
-    if (focusedSlotId) {
-      // Keep focus on the same slot after reorder (index may change).
-      const nextIdx = arrayMove(active.slots, from, to).findIndex((s) => s.slotId === focusedSlotId);
-      if (nextIdx >= 0) setFocusIdx(nextIdx);
+    // Rundown list reorder
+    if (activeParsed?.kind === 'rundown' && overParsed?.kind === 'rundown') {
+      if (dragActive.id === over.id) return;
+      const from = rundowns.findIndex((r) => r.id === activeParsed.id);
+      const to = rundowns.findIndex((r) => r.id === overParsed.id);
+      if (from < 0 || to < 0) return;
+      const next = arrayMove(rundowns, from, to);
+      setRundowns(next);
+      try {
+        await api.rundowns.reorder(next.map((r) => r.id), channelId);
+      } catch (e) {
+        toast.error(`Reorder failed: ${(e as Error).message}`);
+      }
+      return;
+    }
+
+    // Drop template / DE onto slots
+    if (activeParsed?.kind === 'template' || activeParsed?.kind === 'dataElement') {
+      if (overId !== 'slots-drop' && !overId.startsWith('slot:')) return;
+      if (!active) {
+        toast.error('Select a rundown first');
+        return;
+      }
+      if (activeParsed.kind === 'template') {
+        const t = templates.find((x) => x.id === activeParsed.id);
+        if (!t) return;
+        const rec = await ensureTemplate(t.id).catch(() => null);
+        const vars = rec ? defaultsFromVariables(rec.data.variables) : {};
+        const slot: RundownSlot = {
+          slotId: createId(),
+          templateId: t.id,
+          name: t.name,
+          vars,
+        };
+        patchActive((r) => ({ ...r, slots: [...r.slots, slot] }));
+      } else {
+        const de = deById.get(activeParsed.id);
+        if (!de) return;
+        const slot: RundownSlot = {
+          slotId: createId(),
+          templateId: de.templateId,
+          dataElementId: de.id,
+          name: de.name,
+          vars: { ...de.vars },
+        };
+        patchActive((r) => ({ ...r, slots: [...r.slots, slot] }));
+      }
+      return;
+    }
+
+    // Slot reorder
+    if (activeParsed?.kind === 'slot' && overId.startsWith('slot:') && active) {
+      const from = active.slots.findIndex((s) => s.slotId === activeParsed.id);
+      const to = active.slots.findIndex((s) => `slot:${s.slotId}` === overId);
+      if (from < 0 || to < 0 || from === to) return;
+      const focusedSlotId = active.slots[focusIdx]?.slotId;
+      patchActive((r) => ({ ...r, slots: arrayMove(r.slots, from, to) }));
+      if (focusedSlotId) {
+        const nextIdx = arrayMove(active.slots, from, to).findIndex((s) => s.slotId === focusedSlotId);
+        if (nextIdx >= 0) setFocusIdx(nextIdx);
+      }
     }
   }
 
   async function importRundown(file: File) {
     const text = await file.text();
     const parsed = JSON.parse(text) as { name?: unknown; slots?: unknown };
-    const slots = Array.isArray(parsed.slots) ? parsed.slots.map((raw, i) => normalizeImportedSlot(raw, i)).filter(Boolean) as RundownSlot[] : [];
+    const slots = Array.isArray(parsed.slots)
+      ? parsed.slots.map((raw, i) => normalizeImportedSlot(raw, i)).filter(Boolean) as RundownSlot[]
+      : [];
     const rd = await api.rundowns.create({
       name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : 'Imported rundown',
+      channel_id: channelId,
       slots: slots.map((s) => ({ ...s, slotId: createId() })),
     });
     setRundowns((prev) => [rd, ...prev]);
@@ -294,166 +422,335 @@ export function RundownTab({
     URL.revokeObjectURL(url);
   }
 
-  if (!dataLoaded || bootstrapping) {
-    return (
-      <div className="grid h-full place-items-center p-6 text-center">
-        <p className="text-[13px] text-ink-muted">
-          {!dataLoaded ? 'Loading control data…' : 'Creating default rundown…'}
-        </p>
-      </div>
-    );
-  }
+  const monitorLive = onAir[channelId] ?? [];
 
-  if (rundowns.length === 0) {
+  if (!dataLoaded) {
     return (
       <div className="grid h-full place-items-center p-6 text-center">
-        <div className="space-y-3">
-          <p className="text-sm font-medium">No rundowns yet</p>
-          <p className="text-[13px] text-ink-muted">Create your first rundown to start scenario playout.</p>
-          <Button variant="primary" onClick={() => void createRundown().catch((e) => toast.error((e as Error).message))}>
-            <Plus className="h-4 w-4" /> Create rundown
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!active) {
-    return (
-      <div className="grid h-full place-items-center p-6 text-center">
-        <p className="text-[13px] text-ink-muted">Preparing rundown…</p>
+        <p className="text-[13px] text-ink-muted">Loading control data…</p>
       </div>
     );
   }
 
   return (
-    <div className="grid h-full grid-cols-[250px_1fr]">
-      <aside className="border-r border-border p-2">
-        <input ref={importRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void importRundown(f).catch((err) => toast.error(`Import failed: ${(err as Error).message}`));
-          e.target.value = '';
-        }} />
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-[12px] font-semibold text-ink-muted">Rundowns</span>
-          <div className="flex items-center gap-1">
-            <button className="text-ink-faint hover:text-ink" onClick={() => importRef.current?.click()}><FileUp className="h-4 w-4" /></button>
-            <button className="text-ink-faint hover:text-ink" onClick={() => void createRundown().catch((e) => toast.error((e as Error).message))}><Plus className="h-4 w-4" /></button>
-          </div>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => { void onUnifiedDragEnd(e); }}>
+    <div className="grid h-full grid-cols-[250px_1fr_380px]">
+      {/* Sidebar */}
+      <aside className="flex min-h-0 flex-col border-r border-border p-2">
+        <input
+          ref={importRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void importRundown(f).catch((err) => toast.error(`Import failed: ${(err as Error).message}`));
+            e.target.value = '';
+          }}
+        />
+        <div className="mb-2 flex items-center gap-1">
+          <Select
+            value={sidebarMode}
+            onChange={(e) => setSidebarMode(e.target.value as SidebarMode)}
+            className="min-w-0 flex-1"
+          >
+            <option value="rundowns">Rundowns</option>
+            <option value="templates">Templates</option>
+            <option value="dataElements">DataElements</option>
+          </Select>
+          {sidebarMode === 'rundowns' && (
+            <div className="flex shrink-0 items-center gap-1">
+              <button type="button" className="text-ink-faint hover:text-ink" onClick={() => importRef.current?.click()} title="Import">
+                <FileUp className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                className="text-ink-faint hover:text-ink"
+                onClick={() => void createRundown().catch((e) => toast.error((e as Error).message))}
+                title="Create rundown"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(e) => { void onRundownDragEnd(e); }}>
-          <SortableContext items={rundowns.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-1">
-              {rundowns.map((r) => (
-                <SortableRundownRow
-                  key={r.id}
-                  rundown={r}
-                  active={r.id === activeId}
-                  renaming={renamingId === r.id}
-                  renameVal={renameVal}
-                  canDelete={rundowns.length > 1}
-                  onSelect={() => setActiveId(r.id)}
-                  onRenameStart={() => { setRenamingId(r.id); setRenameVal(r.name); }}
-                  onRenameChange={setRenameVal}
-                  onRenameCommit={() => {
-                    setRenamingId(null);
-                    void api.rundowns.update(r.id, { name: renameVal.trim() || r.name })
-                      .then((u) => setRundowns((prev) => prev.map((x) => x.id === u.id ? u : x)));
-                  }}
-                  onRenameCancel={() => setRenamingId(null)}
-                  onDuplicate={() => void duplicateRundown(r.id).catch((e) => toast.error((e as Error).message))}
-                  onExport={() => exportRundown(r)}
-                  onRemove={() => void removeRundown(r.id).catch((e) => toast.error((e as Error).message))}
+
+        <div className="min-h-0 flex-1 overflow-auto">
+          {sidebarMode === 'rundowns' && (
+            rundowns.length === 0 ? (
+              <div className="px-2 py-6 text-center text-[12px] text-ink-faint">
+                No rundowns for this channel.
+                <div className="mt-2">
+                  <Button size="sm" variant="primary" onClick={() => void createRundown().catch((e) => toast.error((e as Error).message))}>
+                    Create rundown
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <SortableContext items={rundowns.map((r) => `rd:${r.id}`)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-1">
+                  {rundowns.map((r) => (
+                    <SortableRundownRow
+                      key={r.id}
+                      rundown={r}
+                      active={r.id === activeId}
+                      renaming={renamingId === r.id}
+                      renameVal={renameVal}
+                      canDelete={rundowns.length > 0}
+                      onSelect={() => setActiveId(r.id)}
+                      onRenameStart={() => { setRenamingId(r.id); setRenameVal(r.name); }}
+                      onRenameChange={setRenameVal}
+                      onRenameCommit={() => {
+                        setRenamingId(null);
+                        void api.rundowns.update(r.id, { name: renameVal.trim() || r.name })
+                          .then((u) => setRundowns((prev) => prev.map((x) => (x.id === u.id ? u : x))));
+                      }}
+                      onRenameCancel={() => setRenamingId(null)}
+                      onDuplicate={() => void duplicateRundown(r.id).catch((e) => toast.error((e as Error).message))}
+                      onExport={() => exportRundown(r)}
+                      onRemove={() => void removeRundown(r.id).catch((e) => toast.error((e as Error).message))}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            )
+          )}
+
+          {sidebarMode === 'templates' && (
+            <div className="space-y-0.5">
+              {templatesSorted.map((t) => (
+                <DraggableTemplateRow
+                  key={t.id}
+                  template={t}
+                  selected={selectedSidebarId === t.id && varsSelection.kind === 'template'}
+                  onSelect={() => void selectTemplate(t)}
                 />
               ))}
+              {templatesSorted.length === 0 && (
+                <p className="px-2 py-6 text-center text-[12px] text-ink-faint">No templates.</p>
+              )}
             </div>
-          </SortableContext>
-        </DndContext>
+          )}
+
+          {sidebarMode === 'dataElements' && (
+            <>
+              <div className="mb-1 grid grid-cols-[1fr_72px] gap-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
+                <button
+                  type="button"
+                  className="text-left hover:text-ink"
+                  onClick={() => setDeSort('name')}
+                >
+                  Name
+                </button>
+                <button
+                  type="button"
+                  className="text-right hover:text-ink"
+                  onClick={() => setDeSort('updated')}
+                >
+                  Updated
+                </button>
+              </div>
+              <div className="space-y-0.5">
+                {dataElements.map((de) => (
+                  <DraggableDataElementRow
+                    key={de.id}
+                    dataElement={de}
+                    selected={selectedSidebarId === de.id && varsSelection.kind === 'dataElement'}
+                    onSelect={() => void selectDataElement(de)}
+                  />
+                ))}
+                {dataElements.length === 0 && (
+                  <p className="px-2 py-6 text-center text-[12px] text-ink-faint">No data elements.</p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </aside>
 
-      <div className="min-h-0 overflow-auto p-3">
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-border bg-surface px-3 py-2">
-          <Button size="sm" variant="neutral" disabled={focusIdx === 0} onClick={() => { const i = Math.max(0, focusIdx - 1); setFocusIdx(i); void takeAt(i); }}>PREV</Button>
-          <Button size="sm" variant="primary" disabled={active.slots.length === 0} onClick={() => void takeAt(focusIdx)}>TAKE</Button>
-          <Button size="sm" variant="neutral" disabled={focusIdx >= active.slots.length - 1} onClick={() => { const i = Math.min(active.slots.length - 1, focusIdx + 1); setFocusIdx(i); void takeAt(i); }}>NEXT</Button>
-          <Button size="sm" variant="ghost" onClick={() => {
-            for (const slot of active.slots) if (activeLiveSet.has(slot.slotId)) clearSlot(slot.slotId);
-          }}>CLEAR LIVE</Button>
-          <span className="tnum rounded border border-border px-2 py-1 text-[12px] text-ink-muted">
-            {active.slots.length === 0 ? '0 / 0' : `${focusIdx + 1} / ${active.slots.length}`}
-          </span>
-          <div className="min-w-[180px]">
-            <Select value={active.channel_id ?? ''} onChange={(e) => patchActive((r) => ({ ...r, channel_id: e.target.value || null }))}>
-              <option value="">Default channel ({fallbackChannelId || 'default'})</option>
-              {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </Select>
-          </div>
-        </div>
+      {/* Center: transport + slots */}
+      <div className="min-h-0 overflow-auto border-r border-border p-3">
+        {!active ? (
+          <p className="p-6 text-center text-[13px] text-ink-muted">Select or create a rundown.</p>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-border bg-surface px-3 py-2">
+              <Button size="sm" variant="neutral" disabled={focusIdx === 0} onClick={() => { const i = Math.max(0, focusIdx - 1); setFocusIdx(i); void takeAt(i); }}>PREV</Button>
+              <Button size="sm" variant="primary" disabled={active.slots.length === 0 || (active.slots[focusIdx] ? slotMissing(active.slots[focusIdx]) : true)} onClick={() => void takeAt(focusIdx)}>TAKE</Button>
+              <Button size="sm" variant="neutral" disabled={focusIdx >= active.slots.length - 1} onClick={() => { const i = Math.min(active.slots.length - 1, focusIdx + 1); setFocusIdx(i); void takeAt(i); }}>NEXT</Button>
+              <Button size="sm" variant="ghost" onClick={() => {
+                for (const slot of active.slots) if (activeLiveSet.has(slot.slotId)) clearSlot(slot.slotId);
+              }}>CLEAR LIVE</Button>
+              <span className="tnum rounded border border-border px-2 py-1 text-[12px] text-ink-muted">
+                {active.slots.length === 0 ? '0 / 0' : `${focusIdx + 1} / ${active.slots.length}`}
+              </span>
+            </div>
 
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">{active.name}</h3>
-          <div className="relative">
-            <Button size="sm" variant="neutral" onClick={() => setShowAdd((v) => !v)}><Plus className="h-4 w-4" /> Add slot</Button>
-            {showAdd && (
-              <div className="absolute right-0 z-20 mt-1 max-h-64 w-72 overflow-auto rounded border border-border bg-surface p-1 shadow-lg">
-                {templates.map((t) => (
-                  <button
-                    key={t.id}
-                    className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[12px] hover:bg-surface-2"
-                    onClick={() => {
-                      patchActive((r) => ({ ...r, slots: [...r.slots, { slotId: createId(), templateId: t.id, name: t.name, vars: {} }] }));
-                      setShowAdd(false);
-                    }}
-                  >
-                    <span className="truncate">{t.name}</span>
-                    <span className="text-[11px] text-ink-faint">{t.id.slice(0, 8)}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+            <h3 className="mb-2 text-sm font-semibold">{active.name}</h3>
 
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onSlotDragEnd}>
-          <SortableContext items={active.slots.map((s) => s.slotId)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-2">
-              {active.slots.map((slot, idx) => {
-                const focused = idx === focusIdx;
-                const live = activeLiveSet.has(slot.slotId);
-                const tpl = cache[slot.templateId];
+            <SlotsDropZone>
+              <SortableContext items={active.slots.map((s) => `slot:${s.slotId}`)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-2">
+                  {active.slots.map((slot, idx) => {
+                    const focused = idx === focusIdx;
+                    const live = activeLiveSet.has(slot.slotId);
+                    const missing = slotMissing(slot);
+                    return (
+                      <SortableSlotRow
+                        key={slot.slotId}
+                        slot={slot}
+                        displayName={slotDisplayName(slot)}
+                        focused={focused}
+                        live={live}
+                        missing={missing}
+                        selected={varsSelection.kind === 'slot' && varsSelection.slotId === slot.slotId}
+                        onFocus={() => { setFocusIdx(idx); void selectSlot(slot); }}
+                        onRemove={() => patchActive((r) => ({ ...r, slots: r.slots.filter((s) => s.slotId !== slot.slotId) }))}
+                        onTakeOrClear={() => {
+                          if (live) clearSlot(slot.slotId);
+                          else if (!missing) void takeAt(idx);
+                        }}
+                      />
+                    );
+                  })}
+                  {active.slots.length === 0 && (
+                    <div className="rounded border border-dashed border-border px-4 py-8 text-center text-[13px] text-ink-muted">
+                      Drop a template or data element here.
+                    </div>
+                  )}
+                </div>
+              </SortableContext>
+            </SlotsDropZone>
+          </>
+        )}
+      </div>
+
+      {/* Right: preview + on air + variables */}
+      <div className="flex min-h-0 flex-col gap-4 overflow-auto p-4">
+        {channelId && <ProgramMonitor channelId={channelId} />}
+        <div>
+          <h3 className="mb-2 text-[12px] font-semibold text-ink-muted">On air ({monitorLive.length})</h3>
+          {monitorLive.length === 0 ? (
+            <p className="text-[12px] text-ink-faint">Nothing on air.</p>
+          ) : (
+            <ul className="space-y-1">
+              {monitorLive.map((tid) => {
+                const slot = active?.slots.find((s) => s.slotId === tid);
+                const label = slot
+                  ? (slotMissing(slot) ? 'NOT FOUND IN DB' : slotDisplayName(slot))
+                  : (templates.find((t) => t.id === tid)?.name ?? tid);
                 return (
-                  <SortableSlotRow
-                    key={slot.slotId}
-                    slot={slot}
-                    focused={focused}
-                    live={live}
-                    expanded={expanded.has(slot.slotId)}
-                    templateName={templates.find((t) => t.id === slot.templateId)?.name ?? slot.templateId}
-                    tpl={tpl}
-                    onToggleExpand={() => setExpanded((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(slot.slotId)) next.delete(slot.slotId); else next.add(slot.slotId);
-                      return next;
-                    })}
-                    onFocus={() => setFocusIdx(idx)}
-                    onRemove={() => patchActive((r) => ({ ...r, slots: r.slots.filter((s) => s.slotId !== slot.slotId) }))}
-                    onTakeOrClear={() => live ? clearSlot(slot.slotId) : void takeAt(idx)}
-                    onRename={(name) => patchActive((r) => ({ ...r, slots: r.slots.map((s) => s.slotId === slot.slotId ? { ...s, name } : s) }))}
-                    onLoadVars={() => {
-                      if (cache[slot.templateId]) return;
-                      void ensureTemplate(slot.templateId).catch((e) => toast.error((e as Error).message));
-                    }}
-                    onVarChange={(varId, value) => updateSlotVar(slot.slotId, varId, value)}
-                    buildPayload={buildPayload}
-                  />
+                  <li key={tid} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
+                    <span className={cn('min-w-0 flex-1 truncate text-[13px]', slot && slotMissing(slot) && 'font-semibold text-live')}>{label}</span>
+                    <button type="button" onClick={() => clearSlot(tid)} className="text-ink-faint hover:text-danger" aria-label="Clear">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </li>
                 );
               })}
-              {active.slots.length === 0 && <div className="rounded border border-dashed border-border px-4 py-8 text-center text-[13px] text-ink-muted">No slots yet. Add a template slot to start rundown playout.</div>}
-            </div>
-          </SortableContext>
-        </DndContext>
+            </ul>
+          )}
+        </div>
+        <div className="flex min-h-[200px] flex-1 flex-col border-t border-border pt-3">
+          <ControlVariablesPanel
+            selection={varsSelection}
+            onChangeValues={(values) => {
+              setVarsSelection((prev) => (prev.kind === 'none' ? prev : { ...prev, values }));
+            }}
+            onClearSelection={() => {
+              setVarsSelection({ kind: 'none' });
+              setSelectedSidebarId(null);
+            }}
+            onSlotSaved={(rundownId, slotId, values) => {
+              setRundowns((prev) => prev.map((r) => {
+                if (r.id !== rundownId) return r;
+                return {
+                  ...r,
+                  slots: r.slots.map((s) => (s.slotId === slotId ? { ...s, vars: values } : s)),
+                };
+              }));
+              const slot = active?.slots.find((s) => s.slotId === slotId);
+              if (slot && activeLiveSet.has(slotId)) {
+                void ensureTemplate(slot.templateId).then((tpl) => {
+                  void updateLive(slotId, buildPayload({ ...slot, vars: values }, tpl.data.variables));
+                }).catch(() => undefined);
+              }
+            }}
+            onDataElementsChanged={() => void reloadDataElements(deSort)}
+          />
+        </div>
       </div>
     </div>
+    </DndContext>
+  );
+}
+
+function SlotsDropZone({ children }: { children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'slots-drop' });
+  return (
+    <div ref={setNodeRef} className={cn('min-h-[120px] rounded-md', isOver && 'ring-1 ring-primary/50')}>
+      {children}
+    </div>
+  );
+}
+
+function DraggableTemplateRow({
+  template, selected, onSelect,
+}: {
+  template: TemplateSummary;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: dragIdTemplate(template.id),
+  });
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      style={{ transform: CSS.Translate.toString(transform) }}
+      {...attributes}
+      {...listeners}
+      onClick={onSelect}
+      className={cn(
+        'flex w-full cursor-grab items-center rounded border px-2 py-1.5 text-left text-[13px]',
+        selected ? 'border-primary/60 bg-surface-2' : 'border-transparent hover:bg-surface-2',
+        isDragging && 'opacity-60',
+      )}
+    >
+      <span className="min-w-0 flex-1 truncate">{template.name}</span>
+    </button>
+  );
+}
+
+function DraggableDataElementRow({
+  dataElement, selected, onSelect,
+}: {
+  dataElement: DataElement;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: dragIdDataElement(dataElement.id),
+  });
+  const updated = dataElement.updatedAt?.slice(0, 10) ?? '';
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      style={{ transform: CSS.Translate.toString(transform) }}
+      {...attributes}
+      {...listeners}
+      onClick={onSelect}
+      className={cn(
+        'grid w-full cursor-grab grid-cols-[1fr_72px] items-center gap-1 rounded border px-2 py-1.5 text-left text-[13px]',
+        selected ? 'border-primary/60 bg-surface-2' : 'border-transparent hover:bg-surface-2',
+        isDragging && 'opacity-60',
+      )}
+    >
+      <span className="min-w-0 truncate">{dataElement.name}</span>
+      <span className="truncate text-right text-[11px] tabular-nums text-ink-faint">{updated}</span>
+    </button>
   );
 }
 
@@ -486,7 +783,7 @@ function SortableRundownRow({
   onExport: () => void;
   onRemove: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: rundown.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `rd:${rundown.id}` });
   return (
     <div
       ref={setNodeRef}
@@ -508,7 +805,7 @@ function SortableRundownRow({
         >
           <GripVertical className="h-3.5 w-3.5" aria-hidden />
         </button>
-        <button className="min-w-0 flex-1 text-left text-[13px] font-medium" onClick={onSelect}>
+        <button type="button" className="min-w-0 flex-1 text-left text-[13px] font-medium" onClick={onSelect}>
           {renaming ? (
             <Input
               value={renameVal}
@@ -521,10 +818,10 @@ function SortableRundownRow({
             />
           ) : rundown.name}
         </button>
-        <button className="text-ink-faint hover:text-ink" onClick={onRenameStart}><Pencil className="h-3.5 w-3.5" /></button>
-        <button className="text-ink-faint hover:text-ink" onClick={onDuplicate}><Copy className="h-3.5 w-3.5" /></button>
-        <button className="text-ink-faint hover:text-ink" onClick={onExport}><FileDown className="h-3.5 w-3.5" /></button>
-        <button className="text-ink-faint hover:text-danger" disabled={!canDelete} onClick={onRemove}><Trash2 className="h-3.5 w-3.5" /></button>
+        <button type="button" className="text-ink-faint hover:text-ink" onClick={onRenameStart}><Pencil className="h-3.5 w-3.5" /></button>
+        <button type="button" className="text-ink-faint hover:text-ink" onClick={onDuplicate}><Copy className="h-3.5 w-3.5" /></button>
+        <button type="button" className="text-ink-faint hover:text-ink" onClick={onExport}><FileDown className="h-3.5 w-3.5" /></button>
+        <button type="button" className="text-ink-faint hover:text-danger" disabled={!canDelete} onClick={onRemove}><Trash2 className="h-3.5 w-3.5" /></button>
       </div>
       <div className="mt-1 pl-5 text-[11px] text-ink-faint">{rundown.slots.length} slots</div>
     </div>
@@ -533,44 +830,33 @@ function SortableRundownRow({
 
 function SortableSlotRow({
   slot,
+  displayName,
   focused,
   live,
-  expanded,
-  templateName,
-  tpl,
-  onToggleExpand,
+  missing,
+  selected,
   onFocus,
   onRemove,
   onTakeOrClear,
-  onRename,
-  onLoadVars,
-  onVarChange,
-  buildPayload,
 }: {
   slot: RundownSlot;
+  displayName: string;
   focused: boolean;
   live: boolean;
-  expanded: boolean;
-  templateName: string;
-  tpl: TemplateRecord | undefined;
-  onToggleExpand: () => void;
+  missing: boolean;
+  selected: boolean;
   onFocus: () => void;
   onRemove: () => void;
   onTakeOrClear: () => void;
-  onRename: (name: string) => void;
-  onLoadVars: () => void;
-  onVarChange: (varId: string, value: string | number) => void;
-  buildPayload: (slot: RundownSlot, varsDef: Variable[]) => Record<string, string | number>;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: slot.slotId });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `slot:${slot.slotId}` });
   return (
     <div
       ref={setNodeRef}
-      id={`rd-slot-${slot.slotId}`}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
         'rounded border px-3 py-2',
-        focused ? 'border-primary/70 bg-surface-2' : 'border-border bg-surface',
+        selected || focused ? 'border-primary/70 bg-surface-2' : 'border-border bg-surface',
         isDragging && 'opacity-60',
       )}
     >
@@ -585,78 +871,22 @@ function SortableSlotRow({
         >
           <GripVertical className="h-3.5 w-3.5" aria-hidden />
         </button>
-        <button className="text-ink-faint hover:text-ink" onClick={onToggleExpand}>
-          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </button>
-        <button className="min-w-0 flex-1 text-left" onClick={onFocus}>
-          <div className="truncate text-sm font-medium">{slot.name}</div>
-          <div className="truncate text-[11px] text-ink-faint">{templateName}</div>
+        <button type="button" className="min-w-0 flex-1 text-left" onClick={onFocus}>
+          <div className={cn('truncate text-sm font-medium', missing && 'text-live')}>
+            {missing ? 'NOT FOUND IN DB' : displayName}
+          </div>
+          {!missing && slot.name !== displayName && (
+            <div className="truncate text-[11px] text-ink-faint">{slot.name}</div>
+          )}
         </button>
         <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', live ? 'bg-live text-primary-ink' : focused ? 'bg-primary/20 text-primary' : 'bg-surface-2 text-ink-muted')}>
           {live ? 'ON AIR' : focused ? 'NEXT' : 'PENDING'}
         </span>
-        <button className="text-ink-faint hover:text-danger" onClick={onRemove}><Trash2 className="h-3.5 w-3.5" /></button>
-        <Button size="sm" variant={live ? 'neutral' : 'danger'} onClick={onTakeOrClear}>
+        <button type="button" className="text-ink-faint hover:text-danger" onClick={onRemove}><Trash2 className="h-3.5 w-3.5" /></button>
+        <Button size="sm" variant={live ? 'neutral' : 'danger'} disabled={!live && missing} onClick={onTakeOrClear}>
           {live ? 'CLEAR' : 'TAKE'}
         </Button>
       </div>
-      {expanded && (
-        <div className="mt-2 space-y-2 border-t border-border pt-2">
-          <Field label="Slot name">
-            <Input value={slot.name} onChange={(e) => onRename(e.target.value)} />
-          </Field>
-          <Field label="Slot ID">
-            <Input value={slot.slotId} readOnly />
-          </Field>
-          <Button size="sm" variant="ghost" onClick={onLoadVars}>
-            {tpl ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-            {tpl ? 'Template loaded' : 'Load variables'}
-          </Button>
-          {tpl && (
-            <SlotVars
-              varsDef={tpl.data.variables}
-              values={buildPayload(slot, tpl.data.variables)}
-              onChange={onVarChange}
-            />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SlotVars({
-  varsDef,
-  values,
-  onChange,
-}: {
-  varsDef: Variable[];
-  values: Record<string, string | number>;
-  onChange: (id: string, value: string | number) => void;
-}) {
-  if (varsDef.length === 0) return <p className="text-[12px] text-ink-faint">Template has no variables.</p>;
-  return (
-    <div className="space-y-2">
-      {varsDef.map((v) => (
-        <Field key={v.id} label={v.label || v.name}>
-          {v.type === 'number' ? (
-            <NumberInput value={Number(values[v.id] ?? 0)} onChange={(n) => onChange(v.id, n)} />
-          ) : v.type === 'color' ? (
-            <ColorInput value={String(values[v.id] ?? '#ffffff')} onChange={(c) => onChange(v.id, c)} />
-          ) : v.type === 'image' || v.type === 'video' ? (
-            <div className="space-y-1">
-              <Input value={String(values[v.id] ?? '')} onChange={(e) => onChange(v.id, e.target.value)} />
-              <MediaUploadButton
-                accept={v.type === 'video' ? 'video/*' : 'image/*'}
-                onUploaded={(url) => onChange(v.id, url)}
-                label={v.type === 'video' ? 'Upload video' : 'Upload image'}
-              />
-            </div>
-          ) : (
-            <Input value={String(values[v.id] ?? '')} onChange={(e) => onChange(v.id, e.target.value)} />
-          )}
-        </Field>
-      ))}
     </div>
   );
 }
@@ -674,10 +904,14 @@ function normalizeImportedSlot(raw: unknown, idx: number): RundownSlot | null {
   for (const [k, v] of Object.entries(varsIn)) {
     if (typeof v === 'string' || typeof v === 'number') vars[k] = v;
   }
+  const dataElementId = typeof slot.dataElementId === 'string' && slot.dataElementId.trim()
+    ? slot.dataElementId.trim()
+    : undefined;
   return {
     slotId: typeof slot.slotId === 'string' && slot.slotId.trim() ? slot.slotId.trim() : createId(),
     templateId,
     name,
     vars,
+    ...(dataElementId ? { dataElementId } : {}),
   };
 }

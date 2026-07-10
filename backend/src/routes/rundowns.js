@@ -34,6 +34,13 @@ function validateSlots(slots) {
     if (slot.slotId !== undefined && (typeof slot.slotId !== 'string' || !slot.slotId.trim())) {
       return `slots[${i}].slotId must be a non-empty string`;
     }
+    if (
+      slot.dataElementId !== undefined
+      && slot.dataElementId !== null
+      && (typeof slot.dataElementId !== 'string' || !slot.dataElementId.trim())
+    ) {
+      return `slots[${i}].dataElementId must be a non-empty string or null`;
+    }
   }
   return null;
 }
@@ -43,7 +50,12 @@ export function rundownsRouter(db) {
   const router = Router();
 
   router.get('/', (req, res) => {
-    res.json(dao.all());
+    const channelId = typeof req.query.channelId === 'string' && req.query.channelId.trim()
+      ? req.query.channelId.trim()
+      : (typeof req.query.channel_id === 'string' && req.query.channel_id.trim()
+        ? req.query.channel_id.trim()
+        : undefined);
+    res.json(dao.all(channelId ? { channelId } : {}));
   });
 
   // Reorder must be matched before "/:id" routes.
@@ -55,15 +67,20 @@ export function rundownsRouter(db) {
     if (new Set(ids).size !== ids.length) {
       return res.status(400).json(errorBody('IDS_DUPLICATE', 'ids array must not contain duplicates'));
     }
-    const existing = dao.all().map((r) => r.id);
+    const channelId = typeof req.body?.channelId === 'string' && req.body.channelId.trim()
+      ? req.body.channelId.trim()
+      : (typeof req.body?.channel_id === 'string' && req.body.channel_id.trim()
+        ? req.body.channel_id.trim()
+        : undefined);
+    const existing = dao.all(channelId ? { channelId } : {}).map((r) => r.id);
     if (existing.length !== ids.length) {
-      return res.status(400).json(errorBody('IDS_INCOMPLETE', 'ids must contain the full rundown list'));
+      return res.status(400).json(errorBody('IDS_INCOMPLETE', 'ids must contain the full rundown list for the scope'));
     }
     const existingSet = new Set(existing);
     if (ids.some((id) => !existingSet.has(id))) {
       return res.status(400).json(errorBody('IDS_UNKNOWN', 'ids contain unknown rundown id'));
     }
-    res.json(dao.reorder(ids));
+    res.json(dao.reorder(ids, channelId ? { channelId } : {}));
   });
 
   router.post('/', (req, res) => {

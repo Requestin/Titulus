@@ -36,10 +36,23 @@ export interface RundownSlot {
   templateId: string;
   name: string;
   vars: Record<string, string | number>;
+  /** Optional link to a DataElement this slot was created from. */
+  dataElementId?: string | null;
   // legacy aliases for older persisted data (normalized on backend read).
   id?: string;
   label?: string;
   variables?: Record<string, string | number>;
+}
+
+export interface DataElement {
+  id: string;
+  templateId: string;
+  name: string;
+  vars: Record<string, string | number>;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
 }
 
 export interface Rundown {
@@ -260,7 +273,12 @@ export const api = {
     remove: (id: string) => req<{ ok: true }>(`/api/channels/${id}`, { method: 'DELETE' }),
   },
   rundowns: {
-    list: () => req<Rundown[]>('/api/rundowns'),
+    list: (params?: { channelId?: string }) => {
+      const query = new URLSearchParams();
+      if (params?.channelId) query.set('channelId', params.channelId);
+      const suffix = query.toString();
+      return req<Rundown[]>(`/api/rundowns${suffix ? `?${suffix}` : ''}`);
+    },
     get: (id: string) => req<Rundown>(`/api/rundowns/${id}`),
     create: (body: { name?: string; channel_id?: string | null; channelId?: string | null; slots?: RundownSlot[] }) =>
       req<Rundown>('/api/rundowns', { method: 'POST', body: JSON.stringify(body) }),
@@ -270,8 +288,25 @@ export const api = {
     ) =>
       req<Rundown>(`/api/rundowns/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
     remove: (id: string) => req<{ ok: true }>(`/api/rundowns/${id}`, { method: 'DELETE' }),
-    reorder: (ids: string[]) =>
-      req<Rundown[]>('/api/rundowns/reorder', { method: 'POST', body: JSON.stringify({ ids }) }),
+    reorder: (ids: string[], channelId?: string) =>
+      req<Rundown[]>('/api/rundowns/reorder', {
+        method: 'POST',
+        body: JSON.stringify({ ids, ...(channelId ? { channelId } : {}) }),
+      }),
+  },
+  dataElements: {
+    list: (params?: { sort?: 'updated' | 'name' }) => {
+      const query = new URLSearchParams();
+      if (params?.sort) query.set('sort', params.sort);
+      const suffix = query.toString();
+      return req<DataElement[]>(`/api/data-elements${suffix ? `?${suffix}` : ''}`);
+    },
+    get: (id: string) => req<DataElement>(`/api/data-elements/${id}`),
+    create: (body: { templateId: string; name: string; vars?: Record<string, string | number> }) =>
+      req<DataElement>('/api/data-elements', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, patch: { name?: string; vars?: Record<string, string | number> }) =>
+      req<DataElement>(`/api/data-elements/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    remove: (id: string) => req<{ ok: true }>(`/api/data-elements/${id}`, { method: 'DELETE' }),
   },
   settings: {
     get: () => req<Record<string, string>>('/api/settings'),

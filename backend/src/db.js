@@ -371,16 +371,21 @@ function normalizeRundownSlots(input) {
       ? raw.name.trim()
       : (typeof raw.label === 'string' ? raw.label.trim() : '');
     const vars = normalizeSlotVars(raw.vars ?? raw.variables ?? {});
+    const dataElementId = typeof raw.dataElementId === 'string' && raw.dataElementId.trim()
+      ? raw.dataElementId.trim()
+      : null;
     const slot = {
       slotId,
       templateId,
       name: name || `Slot ${i + 1}`,
       vars,
+      ...(dataElementId ? { dataElementId } : {}),
     };
     normalized.push(slot);
 
     if (!slotIdCandidate) changed = true;
     if ('id' in raw || 'label' in raw || 'variables' in raw) changed = true;
+    if (dataElementId && raw.dataElementId !== dataElementId) changed = true;
   }
 
   const stable = JSON.stringify(input) === JSON.stringify(normalized);
@@ -396,8 +401,12 @@ function parseSlots(rawJson) {
 }
 
 export const rundownsDao = (db) => ({
-  all() {
-    const rows = db.prepare('SELECT * FROM rundowns ORDER BY sort_order ASC, created_at ASC').all();
+  all({ channelId } = {}) {
+    const rows = channelId
+      ? db.prepare(
+        'SELECT * FROM rundowns WHERE channel_id = ? ORDER BY sort_order ASC, created_at ASC',
+      ).all(channelId)
+      : db.prepare('SELECT * FROM rundowns ORDER BY sort_order ASC, created_at ASC').all();
     return rows.map((row) => {
       const parsed = parseSlots(row.slots);
       const { slots, changed } = normalizeRundownSlots(parsed);
@@ -459,15 +468,18 @@ export const rundownsDao = (db) => ({
   remove(id) {
     return db.prepare('DELETE FROM rundowns WHERE id = ?').run(id).changes > 0;
   },
-  /** Reorder by an ordered list of ids (sets sort_order = index). */
-  reorder(ids) {
+  /**
+   * Reorder by an ordered list of ids (sets sort_order = index).
+   * When channelId is set, only that channel's rundowns are returned after reorder.
+   */
+  reorder(ids, { channelId } = {}) {
     const tx = db.transaction((list) => {
       for (let i = 0; i < list.length; i++) {
         db.prepare('UPDATE rundowns SET sort_order = ? WHERE id = ?').run(i, list[i]);
       }
     });
     tx(ids);
-    return this.all();
+    return this.all({ channelId });
   },
 });
 

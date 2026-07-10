@@ -13,9 +13,11 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { validateTemplate, schema, templateValidationErrorPayload } from '../templateValidation.js';
+import { dataElementsDao } from '../dataElementsDb.js';
 
-export function templatesRouter(db) {
+export function templatesRouter(db, dataElementsDb = null) {
   const dao = templatesRouterDao(db);
+  const deDao = dataElementsDb ? dataElementsDao(dataElementsDb) : null;
   const router = Router();
 
   router.get('/', (req, res) => {
@@ -86,6 +88,7 @@ export function templatesRouter(db) {
   router.delete('/:id', (req, res) => {
     const ok = dao.remove(req.params.id);
     if (!ok) return res.status(404).json({ error: 'not found' });
+    if (deDao) deDao.removeByTemplateId(req.params.id);
     res.json({ ok: true });
   });
 

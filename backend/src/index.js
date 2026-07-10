@@ -14,6 +14,7 @@ import { dirname, resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
 
 import { openDb, settingsDao } from './db.js';
+import { openDataElementsDb } from './dataElementsDb.js';
 import { createAuth } from './auth.js';
 import { createAudit } from './audit.js';
 import { OnAirManager } from './onair.js';
@@ -25,6 +26,7 @@ import { billingRouter } from './routes/billing.js';
 import { templatesRouter } from './routes/templates.js';
 import { channelsRouter } from './routes/channels.js';
 import { rundownsRouter } from './routes/rundowns.js';
+import { dataElementsRouter } from './routes/dataElements.js';
 import { uploadsRouter } from './routes/uploads.js';
 import { mediaRouter } from './routes/media.js';
 import { licenseRouter } from './routes/license.js';
@@ -80,9 +82,11 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '50mb' }));
 
 const db = openDb(resolve(DATA_DIR, 'app.db'));
+const dataElementsDb = openDataElementsDb(resolve(DATA_DIR, 'app.db-dataelements'));
 mkdirSync(UPLOADS_DIR, { recursive: true });
 
 app.locals.db = db;
+app.locals.dataElementsDb = dataElementsDb;
 const auth = createAuth(db);
 app.locals.auth = auth;
 const audit = createAudit(db);
@@ -101,9 +105,10 @@ app.use('/api', audit.appendAudit);
 app.use('/api/auth', authRouter(auth));
 app.use('/api/billing', billingRouter(db, auth));
 app.use('/api/audit', auth.requireAuth, auth.requireRole('admin'), auditRouter(audit));
-app.use('/api/templates', auth.requireAuth, templatesRouter(db));
+app.use('/api/templates', auth.requireAuth, templatesRouter(db, dataElementsDb));
 app.use('/api/channels', auth.requireAuth, auth.requireRole('admin'), channelsRouter(db));
 app.use('/api/rundowns', auth.requireAuth, rundownsRouter(db));
+app.use('/api/data-elements', auth.requireAuth, dataElementsRouter(dataElementsDb));
 app.use('/api/uploads', auth.requireAuth, uploadsCors, uploadsRouter(media, UPLOADS_DIR));
 app.use('/api/media', auth.requireAuth, mediaRouter(mediaLibrary, UPLOADS_DIR));
 app.use('/api/license', auth.requireAuth, auth.requireRole('admin'), licenseRouter(db));
