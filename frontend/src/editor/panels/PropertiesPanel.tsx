@@ -4,7 +4,7 @@
 // style, and variable bindings on string fields (content / fill / src).
 
 import { useState } from 'react';
-import { Braces, Lock, Unlock } from 'lucide-react';
+import { Braces, Link2, Unlink } from 'lucide-react';
 import type { Layer, Template, Variable, VariableBinding, BlendMode } from '@runtime';
 import { useEditor } from '../store';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
@@ -18,7 +18,7 @@ import {
   computeGroupBbox,
 } from '../groupBounds';
 import { MediaSourcePicker } from '../media/MediaSourcePicker';
-import { Field, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
+import { PropertyField, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
 import type { NumberInputExtraAction } from '@/components/ui/form';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
@@ -51,9 +51,9 @@ export function PropertiesPanel() {
     return (
       <div className="overflow-auto">
         <Section title="Group">
-          <Field label="Name">
+          <PropertyField label="Name">
             <Input value={g.name} onChange={(e) => patch((t) => { const x = t.groups.find((q) => q.id === g.id); if (x) x.name = e.target.value; })} />
-          </Field>
+          </PropertyField>
         </Section>
         <SizeSection
           id={g.id}
@@ -79,12 +79,12 @@ export function PropertiesPanel() {
   return (
     <div className="overflow-auto">
       <Section title="Layer">
-        <Field label="Name">
+        <PropertyField label="Name">
           <Input value={layer.name} onChange={(e) => updateLayer(layer.id, (l) => { l.name = e.target.value; })} />
-        </Field>
+        </PropertyField>
         {layer.type !== 'mask' && (
           <>
-            <Field label="Opacity">
+            <PropertyField label="Opacity">
               <NumberInput
                 value={effectiveOpacity(template, layer.opacity, { kind: 'layer', id: layer.id }, playheads)}
                 min={0}
@@ -93,15 +93,15 @@ export function PropertiesPanel() {
                 resetValue={1}
                 onChange={(v) => setLayerOpacity(layer.id, v)}
               />
-            </Field>
-            <Field label="Blend">
+            </PropertyField>
+            <PropertyField label="Blend">
               <Select value={layer.blendMode} onChange={(e) => updateLayer(layer.id, (l) => { l.blendMode = e.target.value as BlendMode; })}>
                 {BLEND_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
               </Select>
-            </Field>
+            </PropertyField>
           </>
         )}
-        <Field label="Group">
+        <PropertyField label="Group">
           <Select
             value={layer.groupId ?? ''}
             onChange={(e) => setLayerGroup(layer.id, e.target.value || null)}
@@ -109,7 +109,7 @@ export function PropertiesPanel() {
             <option value="">(none)</option>
             {template.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </Select>
-        </Field>
+        </PropertyField>
       </Section>
 
       <SizeSection
@@ -187,22 +187,34 @@ function SizeSection({
           <LabeledNum label="Height" value={t.height} resetValue={80} onChange={(v) => set({ height: v })} />
         </>
       )}
-      <LabeledNum label="Scale X" value={t.scaleX} resetValue={1} step={0.05} onChange={setScaleX} />
-      <div className="flex justify-center py-0.5">
+      <div className="grid grid-cols-[68px_minmax(0,1fr)] grid-rows-[2rem_3px_2rem] gap-x-2">
+        <label className="row-start-1 flex items-center truncate text-[12px] leading-none text-ink-muted">
+          Scale X
+        </label>
+        <div className="row-start-1 min-w-0 -ml-5 w-[calc(100%+20px)]">
+          <NumberInput value={t.scaleX} step={0.05} resetValue={1} onChange={setScaleX} />
+        </div>
         <button
           type="button"
-          title={scaleLocked ? 'Unlock scale X/Y' : 'Lock scale X/Y'}
+          title={scaleLocked ? 'Unlink scale X/Y' : 'Link scale X/Y'}
           aria-pressed={scaleLocked}
           onClick={() => setScaleLocked((v) => !v)}
           className={cn(
-            'grid h-7 w-7 place-items-center rounded-md border border-border',
-            scaleLocked ? 'border-primary/50 bg-primary/15 text-primary' : 'text-ink-faint hover:text-ink',
+            'row-start-2 flex items-center justify-start self-center overflow-visible',
+            scaleLocked ? 'text-primary' : 'text-ink-faint hover:text-ink',
           )}
         >
-          {scaleLocked ? <Lock className="h-3.5 w-3.5" aria-hidden /> : <Unlock className="h-3.5 w-3.5" aria-hidden />}
+          {scaleLocked
+            ? <Link2 className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />
+            : <Unlink className="h-3.5 w-3.5" strokeWidth={2.25} aria-hidden />}
         </button>
+        <label className="row-start-3 flex items-center truncate text-[12px] leading-none text-ink-muted">
+          Scale Y
+        </label>
+        <div className="row-start-3 min-w-0 -ml-5 w-[calc(100%+20px)]">
+          <NumberInput value={t.scaleY} step={0.05} resetValue={1} onChange={setScaleY} />
+        </div>
       </div>
-      <LabeledNum label="Scale Y" value={t.scaleY} resetValue={1} step={0.05} onChange={setScaleY} />
     </Section>
   );
 }
@@ -333,7 +345,7 @@ function AxisCenterRow<P extends string>({
   onPreset: (p: P) => void;
 }) {
   return (
-    <Field label={label}>
+    <PropertyField label={label}>
       <div className="flex min-w-0 items-center gap-1">
         <NumberInput
           value={value}
@@ -356,7 +368,7 @@ function AxisCenterRow<P extends string>({
           ))}
         </div>
       </div>
-    </Field>
+    </PropertyField>
   );
 }
 
@@ -376,9 +388,9 @@ function LabeledNum({
   extraActions?: NumberInputExtraAction[];
 }) {
   return (
-    <Field label={label}>
+    <PropertyField label={label}>
       <NumberInput value={value} step={step} resetValue={resetValue} extraActions={extraActions} onChange={onChange} />
-    </Field>
+    </PropertyField>
   );
 }
 
@@ -403,43 +415,43 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
     case 'rect':
       return (
         <Section title="Rectangle">
-          <Field label="Fill">
+          <PropertyField label="Fill">
             <BindableField
               kind="color"
               value={layer.fill}
               variables={variables}
               onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.fill = v; })}
             />
-          </Field>
-          <Field label="Radius">
+          </PropertyField>
+          <PropertyField label="Radius">
             <NumberInput value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.cornerRadius = v; })} />
-          </Field>
-          <Field label="Border">
+          </PropertyField>
+          <PropertyField label="Border">
             <NumberInput value={layer.borderWidth} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.borderWidth = v; })} />
-          </Field>
-          <Field label="Border color">
+          </PropertyField>
+          <PropertyField label="Border color">
             <ColorInput value={layer.borderColor} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.borderColor = v; })} />
-          </Field>
+          </PropertyField>
         </Section>
       );
     case 'mask':
       return (
         <Section title="Mask">
-          <Field label="Mode">
+          <PropertyField label="Mode">
             <Select value={layer.maskMode} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.maskMode = e.target.value as 'normal' | 'inverted'; })}>
               <option value="normal">normal</option>
               <option value="inverted">inverted</option>
             </Select>
-          </Field>
-          <Field label="Shape">
+          </PropertyField>
+          <PropertyField label="Shape">
             <Select value={layer.shape} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.shape = e.target.value as 'rect' | 'ellipse'; })}>
               <option value="rect">rect</option>
               <option value="ellipse">ellipse</option>
             </Select>
-          </Field>
-          <Field label="Radius">
+          </PropertyField>
+          <PropertyField label="Radius">
             <NumberInput value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.cornerRadius = v; })} />
-          </Field>
+          </PropertyField>
         </Section>
       );
     case 'image':
@@ -451,17 +463,17 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             src={typeof layer.src === 'string' ? layer.src : ''}
             onSelect={(url) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.src = url; })}
           />
-          <Field label="Fit">
+          <PropertyField label="Fit">
             <Select value={layer.fit} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.fit = e.target.value as 'stretch' | 'contain' | 'cover'; })}>
               <option value="cover">cover</option>
               <option value="contain">contain</option>
               <option value="stretch">stretch</option>
             </Select>
-          </Field>
+          </PropertyField>
           {layer.type === 'image' && (
-            <Field label="Radius">
+            <PropertyField label="Radius">
               <NumberInput value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'image') l.cornerRadius = v; })} />
-            </Field>
+            </PropertyField>
           )}
           {layer.type === 'video' && (
             <Checkbox label="Loop" checked={layer.loop} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'video') l.loop = v; })} />
@@ -472,18 +484,18 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
       return (
         <>
           <Section title="Clock">
-            <Field label="Mode">
+            <PropertyField label="Mode">
               <Select value={layer.mode} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'clock') l.mode = e.target.value as 'clock' | 'countup' | 'countdown'; })}>
                 <option value="clock">clock</option>
                 <option value="countup">countup</option>
                 <option value="countdown">countdown</option>
               </Select>
-            </Field>
-            <Field label="Format">
+            </PropertyField>
+            <PropertyField label="Format">
               <Input value={layer.format} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'clock') l.format = e.target.value; })} />
-            </Field>
+            </PropertyField>
             {layer.mode === 'countup' && (
-              <Field label="Start time">
+              <PropertyField label="Start time">
                 <Input
                   type="datetime-local"
                   step={1}
@@ -497,10 +509,10 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
                     })
                   }
                 />
-              </Field>
+              </PropertyField>
             )}
             {layer.mode === 'countdown' && (
-              <Field label="Target time">
+              <PropertyField label="Target time">
                 <Input
                   type="datetime-local"
                   step={1}
@@ -514,7 +526,7 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
                     })
                   }
                 />
-              </Field>
+              </PropertyField>
             )}
           </Section>
           <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} />
@@ -529,25 +541,25 @@ function TextStyleSection({ layer, variables, updateLayer }: { layer: Extract<La
     updateLayer(layer.id, (l) => { if ('style' in l) mutator(l.style); });
   return (
     <Section title="Text style">
-      <Field label="Font">
+      <PropertyField label="Font">
         <Input value={s.fontFamily} onChange={(e) => setStyle((st) => { st.fontFamily = e.target.value; })} />
-      </Field>
+      </PropertyField>
       <LabeledNum label="Size" value={s.fontSize} resetValue={48} onChange={(v) => setStyle((st) => { st.fontSize = v; })} />
-      <Field label="Weight">
+      <PropertyField label="Weight">
         <Select value={s.fontWeight} onChange={(e) => setStyle((st) => { st.fontWeight = e.target.value; })}>
           {['300', '400', '500', '600', '700', '800', '900'].map((w) => <option key={w} value={w}>{w}</option>)}
         </Select>
-      </Field>
-      <Field label="Color">
+      </PropertyField>
+      <PropertyField label="Color">
         <BindableField kind="color" value={s.fill} variables={variables} onChange={(v) => setStyle((st) => { st.fill = v; })} />
-      </Field>
-      <Field label="Align">
+      </PropertyField>
+      <PropertyField label="Align">
         <Select value={s.align} onChange={(e) => setStyle((st) => { st.align = e.target.value as 'left' | 'center' | 'right'; })}>
           <option value="left">left</option>
           <option value="center">center</option>
           <option value="right">right</option>
         </Select>
-      </Field>
+      </PropertyField>
       <LabeledNum label="Line height" value={s.lineHeight} resetValue={1.1} step={0.05} onChange={(v) => setStyle((st) => { st.lineHeight = v; })} />
       <LabeledNum label="Spacing" value={s.letterSpacing} resetValue={0} onChange={(v) => setStyle((st) => { st.letterSpacing = v; })} />
       <Checkbox label="Drop shadow" checked={s.dropShadow} onChange={(v) => setStyle((st) => { st.dropShadow = v; })} />

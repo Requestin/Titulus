@@ -7,8 +7,8 @@
 
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import {
-  DndContext, PointerSensor, useSensor, useSensors, closestCenter,
-  type DragEndEvent, type DragMoveEvent, type DragOverEvent,
+  DndContext, PointerSensor, useSensor, useSensors, closestCenter, pointerWithin, useDroppable,
+  type CollisionDetection, type DragEndEvent, type DragMoveEvent, type DragOverEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext, useSortable, verticalListSortingStrategy,
@@ -31,10 +31,23 @@ const LAYER_ICON: Record<LayerType, ComponentType<{ className?: string }>> = {
 };
 
 type EntryKey = `${RootStackEntry['kind']}:${string}`;
+type ContainerId = string | null;
 type DragIntent =
   | { type: 'inside'; groupId: string }
   | { type: 'before' | 'after'; key: EntryKey }
+  | { type: 'container-before' | 'container-after'; containerId: ContainerId }
   | null;
+
+function containerDropId(containerId: ContainerId, edge: 'start' | 'end'): string {
+  return `container:${containerId ?? 'root'}:${edge}`;
+}
+
+function parseContainerDropId(id: string): { containerId: ContainerId; edge: 'start' | 'end' } | null {
+  const match = /^container:(.+):(start|end)$/.exec(id);
+  if (!match) return null;
+  const containerId = match[1] === 'root' ? null : match[1];
+  return { containerId, edge: match[2] as 'start' | 'end' };
+}
 
 function entryKey(entry: RootStackEntry): EntryKey {
   return `${entry.kind}:${entry.id}`;
@@ -144,6 +157,33 @@ function moveEntriesToGroup(t: Template, keys: Set<EntryKey>, targetContainerId:
   if (targetContainerId) {
     reparentEntriesIntoGroup(t, targetContainerId, moving);
   }
+  for (const gid of prevGroups) {
+    if (gid !== targetContainerId) {
+      const g = t.groups.find((x) => x.id === gid);
+      if (g) {
+        g.transform.width = 0;
+        g.transform.height = 0;
+      }
+    }
+  }
+}
+
+function moveEntriesToContainerEdge(
+  t: Template,
+  keys: Set<EntryKey>,
+  targetContainerId: ContainerId,
+  edge: 'start' | 'end',
+): void {
+  const moving = collectDisplayEntries(t).filter((e) => keys.has(entryKey(e)));
+  if (moving.length === 0 || wouldCreateCycle(t, moving, targetContainerId)) return;
+  const prevGroups = affectedGroupContainers(t, keys);
+  removeMovingEntries(t, keys);
+  updateParents(t, moving, targetContainerId);
+  const currentDisplay = [...containerEntries(t, targetContainerId)].reverse();
+  if (edge === 'start') currentDisplay.unshift(...moving);
+  else currentDisplay.push(...moving);
+  setContainerEntries(t, targetContainerId, currentDisplay.reverse());
+  if (targetContainerId) reparentEntriesIntoGroup(t, targetContainerId, moving);
   for (const gid of prevGroups) {
     if (gid !== targetContainerId) {
       const g = t.groups.find((x) => x.id === gid);
@@ -291,16 +331,36 @@ function activeCenter(event: DragMoveEvent | DragOverEvent | DragEndEvent): { x:
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
+const layerTreeCollision: CollisionDetection = (args) => {
+  const pointerHits = pointerWithin(args);
+  const containerHits = pointerHits.filter((c) => String(c.id).startsWith('container:'));
+  if (containerHits.length > 0) return containerHits;
+  return closestCenter(args);
+};
+
 function computeDragIntent(event: DragMoveEvent | DragOverEvent | DragEndEvent): DragIntent {
   if (!event.over) return null;
-  const overEntry = parseEntryKey(String(event.over.id));
+  const overId = String(event.over.id);
+
+  const containerDrop = parseContainerDropId(overId);
+  if (containerDrop) {
+    return containerDrop.edge === 'start'
+      ? { type: 'container-before', containerId: containerDrop.containerId }
+      : { type: 'container-after', containerId: containerDrop.containerId };
+  }
+
+  const overEntry = parseEntryKey(overId);
   if (!overEntry) return null;
   const center = activeCenter(event);
   const rect = event.over.rect;
   if (!center || !rect) return { type: 'after', key: entryKey(overEntry) };
 
-  if (overEntry.kind === 'group' && center.x >= rect.left + rect.width * 0.55) {
-    return { type: 'inside', groupId: overEntry.id };
+  if (overEntry.kind === 'group') {
+    const localX = center.x - rect.left;
+    const insideBand = rect.width * 0.38;
+    if (localX >= insideBand) {
+      return { type: 'inside', groupId: overEntry.id };
+    }
   }
 
   return {
@@ -394,7 +454,11 @@ export function LayersPanel() {
       }
       if (intent.type === 'inside') {
         if (!keys.has(`group:${intent.groupId}`)) moveEntriesToGroup(t, keys, intent.groupId);
-      } else {
+      } else if (intent.type === 'container-before') {
+        moveEntriesToContainerEdge(t, keys, intent.containerId, 'start');
+      } else if (intent.type === 'container-after') {
+        moveEntriesToContainerEdge(t, keys, intent.containerId, 'end');
+      } else if (intent.type === 'before' || intent.type === 'after') {
         moveEntriesNear(t, keys, intent.key, intent.type);
       }
     });
@@ -412,7 +476,7 @@ export function LayersPanel() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={layerTreeCollision}
       onDragMove={updateDragIntent}
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
@@ -473,6 +537,7 @@ export function LayersPanel() {
       <div className="min-h-0 flex-1 overflow-auto py-1">
         <Container
           entries={template.rootStack}
+          containerId={null}
           depth={0}
           selectMode={selectMode}
           selectedKeys={selectedKeys}
@@ -493,6 +558,7 @@ export function LayersPanel() {
 
 function Container({
   entries,
+  containerId,
   depth,
   selectMode,
   selectedKeys,
@@ -501,6 +567,7 @@ function Container({
   copyHint,
 }: {
   entries: RootStackEntry[];
+  containerId: ContainerId;
   depth: number;
   selectMode: boolean;
   selectedKeys: Set<EntryKey>;
@@ -511,9 +578,18 @@ function Container({
   // Reversed so frontmost (last in stack) shows on top.
   const display = [...entries].reverse();
   const ids = display.map((e) => entryKey(e));
+  const startActive = dragIntent?.type === 'container-before' && dragIntent.containerId === containerId;
+  const endActive = dragIntent?.type === 'container-after' && dragIntent.containerId === containerId;
 
   return (
     <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+      <ContainerDropPad
+        id={containerDropId(containerId, 'start')}
+        depth={depth}
+        active={startActive}
+        copy={copyHint}
+        position="before"
+      />
       {display.map((entry) => (
         <Row
           key={`${entry.kind}:${entry.id}`}
@@ -526,7 +602,35 @@ function Container({
           copyHint={copyHint}
         />
       ))}
+      <ContainerDropPad
+        id={containerDropId(containerId, 'end')}
+        depth={depth}
+        active={endActive}
+        copy={copyHint}
+        position="after"
+      />
     </SortableContext>
+  );
+}
+
+function ContainerDropPad({
+  id,
+  depth,
+  active,
+  copy,
+  position,
+}: {
+  id: string;
+  depth: number;
+  active: boolean;
+  copy: boolean;
+  position: 'before' | 'after';
+}) {
+  const { setNodeRef } = useDroppable({ id });
+  return (
+    <div ref={setNodeRef} className="relative -my-0.5 h-3 shrink-0">
+      {active && <DropLine position={position} depth={depth} copy={copy} />}
+    </div>
   );
 }
 
@@ -690,11 +794,11 @@ function Row({
           {obj.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
         </button>
       </div>
-      {lineAfter && <DropLine position="after" depth={depth} copy={copyHint} />}
 
       {!isLayer && expanded && (
         <Container
           entries={children}
+          containerId={entry.id}
           depth={depth + 1}
           selectMode={selectMode}
           selectedKeys={selectedKeys}
@@ -703,6 +807,7 @@ function Row({
           copyHint={copyHint}
         />
       )}
+      {lineAfter && <DropLine position="after" depth={depth} copy={copyHint} />}
     </div>
   );
 }
@@ -715,7 +820,7 @@ function DropLine({ position, depth, copy }: { position: 'before' | 'after'; dep
         copy
           ? 'bg-success shadow-[0_0_0_1px_oklch(var(--success)/0.18)]'
           : 'bg-primary shadow-[0_0_0_1px_oklch(var(--primary)/0.18)]',
-        position === 'before' ? 'top-0' : 'top-8',
+        position === 'before' ? 'top-0' : 'bottom-0',
       )}
       style={{ marginLeft: 8 + depth * 14 }}
       aria-hidden

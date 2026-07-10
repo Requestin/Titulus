@@ -1,7 +1,7 @@
 # Ветка `sergey-v1` — контекст и changelog
 
 > Сводка работы Sergey + агент Cursor на ветке `sergey-v1`.  
-> Обновлено: **9 июля 2026**.
+> Обновлено: **10 июля 2026**.
 
 ---
 
@@ -31,6 +31,104 @@
 | `71390b0` | 7 июл | `fix bugs at timeline(change runtime)` |
 | `d2e3562` | 7 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `512cbd0` | 9 июл | `fix ui` |
+| `2613074` | 9 июл | `docs(sergey-v1): fix commit hash in session context` |
+| `ec8e872` | 9 июл | `fix scale bug` |
+| `0bdc95c` | 10 июл | `fix group at tree, lock for scale` |
+
+---
+
+## 10 июля 2026 — Дерево слоёв: группы + Scale lock UI
+
+Пакет правок редактора: DnD в дереве слоёв (вложенные группы, drop-линии), связка Scale X/Y, шире поля Properties, рекурсивный bbox вложенных групп.
+
+### Layers tree — неограниченная вложенность групп
+
+- Группу можно вкладывать в группу **без ограничения глубины** (DnD вправо на строку группы ≈62% ширины → `inside`).
+- `parentId` / `groupStacks` обновляются при переносе; защита от циклов (`wouldCreateCycle`).
+- **Runtime:** `computeGroupUnion` в `runtime/src/groupBounds.ts` — рекурсивный учёт bbox вложенных групп (раньше дочерняя группа с `width/height=0` не попадала в union родителя).
+
+### Layers tree — drop-линии above/below групп (развёрнутые)
+
+**Симптомы (до fix):**
+- Нельзя вытащить объект **выше** первой группы в root, если группа развёрнута — не появлялась полоса drop.
+- Нельзя положить объект **ниже** последней группы в root при развёрнутой группе (работало только при collapse).
+
+**Fix (`LayersPanel.tsx`):**
+- `ContainerDropPad` + `useDroppable` в начале/конце каждого контейнера (`container:root:start|end`, `container:<groupId>:start|end`).
+- `moveEntriesToContainerEdge()` — вставка в начало/конец стека контейнера.
+- Коллизии: `pointerWithin` с приоритетом container-падов, иначе `closestCenter`.
+- Линия `after` перенесена **под** развёрнутых детей (не между заголовком группы и children).
+- `DropLine` after: `bottom-0` вместо `top-8`.
+- Зона «внутрь группы»: порог `inside` с 55% → 38% ширины строки (проще попасть в nest, левее — before/after).
+
+### Properties — Scale X/Y lock (chain icon)
+
+- Иконка **Link2 / Unlink** (цепочка) между подписями Scale X и Scale Y, слева на линии текста.
+- По умолчанию **locked** — изменение одной оси синхронизирует вторую.
+- Сетка `grid-rows-[2rem_3px_2rem]`, `gap-x-2` — выравнивание подписей и полей как у Height; зазор между строками Scale минимальный.
+
+### Properties — шире поля значений (+20px влево)
+
+- Новый компонент `PropertyField` в `form.tsx`: `grid-cols-[68px_minmax(0,1fr)]`, wrapper `-ml-5 w-[calc(100%+20px)]`.
+- Все редактируемые поля в Properties переведены с `Field` на `PropertyField`.
+
+### Ключевые файлы (10 июля)
+
+| Область | Файлы |
+|---|---|
+| Layers DnD | `frontend/src/editor/panels/LayersPanel.tsx` |
+| Scale lock + PropertyField | `frontend/src/editor/panels/PropertiesPanel.tsx`, `frontend/src/components/ui/form.tsx` |
+| Nested group bbox | `runtime/src/groupBounds.ts` |
+
+### Чеклист (10 июля)
+
+**Layers tree:**
+- [ ] Группа в группу на любой глубине — DnD вправо на строку группы
+- [ ] Вытащить слой **над** первой развёрнутой группой в root — синяя drop-линия вверху
+- [ ] Положить слой **под** последнюю развёрнутую группу в root — линия внизу списка
+- [ ] Ctrl/Cmd+drag copy по-прежнему работает
+
+**Properties:**
+- [ ] Link2 между Scale X/Y; locked по умолчанию
+- [ ] Поля Scale той же ширины, что Height/Width
+- [ ] Остальные поля Properties на ~20px шире (влево)
+
+**Runtime (после `npm run build`):**
+- [ ] Вложенная группа участвует в bbox родителя (selection/crosshair)
+
+---
+
+## 9 июля 2026 (вечер) — Scale на SDI + Size presets
+
+Коммит `ec8e872` — scale работал в редакторе, но не на SDI/engine.
+
+### Bugfix: Scale не применялся на SDI
+
+**Причина:** `transformHas3D()` считал default `perspective: 1000` за 3D → `preserve-3d` на каждом слое → CSS `scale()` ломался в CEF CPU raster (в браузере/GPU выглядело нормально).
+
+**Fix:**
+- `runtime/src/transform.ts` — 3D только при `rotationX/Y ≠ 0`.
+- `runtime/src/domRenderer.ts` — perspective на группах только при реальном tilt/subtree 3D.
+- `runtime/src/maskGeometry.ts` — `maskNeedsProjection` учитывает non-1 scale.
+
+### Properties — Size presets + первый Scale lock
+
+- Кнопки **Screen / Height / Width** (canvas 1920×1080) в секции Size для слоёв.
+- Первая версия **Scale X/Y lock** (Lock icon, до редизайна Link2 10 июля).
+
+### Ключевые файлы (scale bug)
+
+| Область | Файлы |
+|---|---|
+| 3D/scale runtime | `runtime/src/transform.ts`, `domRenderer.ts`, `maskGeometry.ts` |
+| Size UI | `frontend/src/editor/panels/PropertiesPanel.tsx` |
+| Docs | `docs/phase9-25d-masks.md` |
+
+### Чеклист (scale bug)
+
+- [ ] Scale X/Y в редакторе = на channel.html / engine (SDI path)
+- [ ] Screen → width+height = canvas; Height/Width — по одной оси
+- [ ] После `cd runtime && npm run build` — `bg-runtime.js` обновлён
 
 ---
 
@@ -444,8 +542,10 @@ Stepper ↑↓, `extraActions` для rotation.
 | Data path | `backend/src/index.js`, `dev-start.sh`, `start.sh` |
 | Axis center / groups | `frontend/src/editor/groupBounds.ts`, `pivot.ts` |
 | Group bbox (runtime) | `runtime/src/groupBounds.ts`, `domRenderer.ts` |
-| Layers tree | `frontend/src/editor/panels/LayersPanel.tsx` |
-| Properties | `frontend/src/editor/panels/PropertiesPanel.tsx` |
+| Layers tree / DnD | `frontend/src/editor/panels/LayersPanel.tsx` |
+| Properties / Scale | `frontend/src/editor/panels/PropertiesPanel.tsx` |
+| UI forms | `frontend/src/components/ui/form.tsx` (`PropertyField`) |
+| Group bbox (runtime) | `runtime/src/groupBounds.ts`, `domRenderer.ts`, `transform.ts` |
 | Media library | `frontend/src/editor/media/*`, `backend/src/mediaLibrary.js` |
 | Canvas | `frontend/src/editor/CanvasArea.tsx` |
 | Store | `frontend/src/editor/store.ts` |
@@ -478,6 +578,9 @@ git push -u origin sergey-v1
 
 **Editor:**
 - [ ] Ctrl/Cmd+drag копирует слой/группу в дереве
+- [ ] Группа в группу; drop выше первой / ниже последней развёрнутой группы
+- [ ] Scale lock (Link2); поля Properties шире на 20px
+- [ ] Scale на engine/SDI совпадает с редактором (`ec8e872`)
 - [ ] Delete на строке дерева удаляет элемент
 - [ ] Axis center группы — crosshair двигается, дети на месте
 - [ ] Rotation группы — вокруг выбранного axis center

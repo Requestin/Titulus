@@ -34,13 +34,39 @@ export function computeGroupUnion(
   let maxB = -Infinity;
 
   for (const e of entries) {
+    if (e.kind === 'layer') {
+      const tr = entryTransform(t, e.kind, e.id);
+      if (!tr) continue;
+      const at = applyTransform(tr, undefined);
+      minL = Math.min(minL, at.left);
+      minT = Math.min(minT, at.top);
+      maxR = Math.max(maxR, at.left + at.width);
+      maxB = Math.max(maxB, at.top + at.height);
+      continue;
+    }
     const tr = entryTransform(t, e.kind, e.id);
     if (!tr) continue;
-    const at = applyTransform(tr, undefined);
-    minL = Math.min(minL, at.left);
-    minT = Math.min(minT, at.top);
-    maxR = Math.max(maxR, at.left + at.width);
-    maxB = Math.max(maxB, at.top + at.height);
+    const nestedBbox = computeGroupBbox(t, e.id);
+    if (!nestedBbox) {
+      minL = Math.min(minL, tr.x);
+      minT = Math.min(minT, tr.y);
+      maxR = Math.max(maxR, tr.x);
+      maxB = Math.max(maxB, tr.y);
+      continue;
+    }
+    const corners = [
+      { x: nestedBbox.minL, y: nestedBbox.minT },
+      { x: nestedBbox.minL + nestedBbox.width, y: nestedBbox.minT },
+      { x: nestedBbox.minL + nestedBbox.width, y: nestedBbox.minT + nestedBbox.height },
+      { x: nestedBbox.minL, y: nestedBbox.minT + nestedBbox.height },
+    ];
+    for (const c of corners) {
+      const mapped = mapPointThroughGroupTransform(tr, nestedBbox, c.x, c.y);
+      minL = Math.min(minL, mapped.x);
+      minT = Math.min(minT, mapped.y);
+      maxR = Math.max(maxR, mapped.x);
+      maxB = Math.max(maxB, mapped.y);
+    }
   }
 
   if (!Number.isFinite(minL)) return null;

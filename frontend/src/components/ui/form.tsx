@@ -232,6 +232,18 @@ export function Checkbox({
   );
 }
 
+/** A labeled control row for property panels (wider inputs, expand 20px left). */
+export function PropertyField({ label, children, htmlFor }: { label: string; children: ReactNode; htmlFor?: string }) {
+  return (
+    <div className="grid grid-cols-[68px_minmax(0,1fr)] items-center gap-2">
+      <label htmlFor={htmlFor} className="truncate text-[12px] text-ink-muted">
+        {label}
+      </label>
+      <div className="min-w-0 -ml-5 w-[calc(100%+20px)]">{children}</div>
+    </div>
+  );
+}
+
 /** A labeled control row for property panels. */
 export function Field({ label, children, htmlFor }: { label: string; children: ReactNode; htmlFor?: string }) {
   return (
