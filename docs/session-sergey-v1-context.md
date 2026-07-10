@@ -39,7 +39,7 @@
 | `2701e68` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `1532b58` | 10 июл | `big change Control page, add dataelements, change db` |
 | `dfe1dd9` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
-| _(pending)_ | 10 июл | `big change Control page, add dataelements, change db` (sidebar resize + DE delete UX) |
+| `468376c` | 10 июл | `big change Control page, add dataelements, change db` (sidebar resize + DE delete UX) |
 
 ---
 
