@@ -1,6 +1,6 @@
 ---
 description: "Архитектура Titulus, non-negotiables, pipeline, конвенции разработки. Полный справочник — docs/ARCHITECTURE.md"
-alwaysApply: true
+alwaysApply: false
 ---
 # Архитектура и правила разработки Titulus
 
