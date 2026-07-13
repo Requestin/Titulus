@@ -4,7 +4,7 @@
 Paint/Raster) на сложном шаблоне `test1`, создав headroom для будущего
 Phase 18 (истинный 50p). Полный ход работы — в
 [docs/PHASE_15_PERFORMANCE_PLAN.md](../PHASE_15_PERFORMANCE_PLAN.md) и
-живом логе [engine/research/results/p15-progress.md](../../engine/research/results/p15-progress.md).
+живом логе [engine/research/results/p15/p15-progress.md](../../engine/research/results/p15/p15-progress.md).
 
 ## Итоговый результат
 
@@ -123,4 +123,4 @@ Phase 18 (истинный 50p) может быть не столько архи
   [bench/bench-25d.html](../../bench/bench-25d.html) — исправление
   устаревшего API/opacity-nudge (методологический баг, не связанный с
   оптимизацией напрямую, но необходимый для валидных замеров).
-- `engine/research/results/p15-*.{md,json,csv}` — все промежуточные данные.
+- `engine/research/results/p15/p15-*.{md,json,csv}` — все промежуточные данные.

@@ -6,11 +6,11 @@
 подготовив headroom для будущего Phase 18 (50p-as-50i).
 
 Живой лог прогресса и подробные находки по каждому подэтапу — в
-[engine/research/results/p15-progress.md](../../engine/research/results/p15-progress.md).
+[engine/research/results/p15/p15-progress.md](../../engine/research/results/p15/p15-progress.md).
 Cost matrix по bench-стендам — в
-[p15-cost-matrix.md](../../engine/research/results/p15-cost-matrix.md).
+[p15-cost-matrix.md](../../engine/research/results/p15/p15-cost-matrix.md).
 Полный инвентарь setStyle — в
-[p15-inventory.md](../../engine/research/results/p15-inventory.md).
+[p15-inventory.md](../../engine/research/results/p15/p15-inventory.md).
 
 ---
 
@@ -177,9 +177,9 @@ DeckLink device-index=1/2/3, 15 минут, **без** headless-твинов.
 | [backend/p15-cdp-console.mjs](../../backend/p15-cdp-console.mjs) | +инструмент | CDP-инспектор для отладки bench |
 | [.impeccable ignoreFiles](../../.impeccable/) | config | bench-alpha.html как internal fixture |
 
-Результаты замеров сохранены в [engine/research/results/](../../engine/research/results/):
+Результаты замеров сохранены в [engine/research/results/p15/](../../engine/research/results/p15/):
 - `p15-baseline-test.{json,csv}`, `p15-baseline-test1.{json,csv}` — P0.
-- `p1-bench/*.json` + `p15-cost-matrix.md` — P1.
+- `../p1-bench/*.json` + `p15-cost-matrix.md` — P1.
 - `p15-inventory.md` — P2.
 - `p15-after-p3b-test1.json` — точечный замер P3-B на `test1` (15с).
 - `p15-soak-ch1.{json,csv}` — 15-минутный трейс канала 1 (P5).
