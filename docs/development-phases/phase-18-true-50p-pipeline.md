@@ -1,8 +1,7 @@
 # Phase 18 — True 50p Progressive Pipeline
 
 **Дата:** 2026-07-09  
-**Ветка:** `feature/phase-18-true-50p`  
-**Decision Gate:** [phase-18-decision.md](phase-18-decision.md)  
+**Ветка:** `feature/phase-18-true-50p` (merged PR #61)  
 **Артефакты замеров:** `engine/research/results/p18/`
 
 ## Цель
@@ -23,16 +22,14 @@
 
 ## P0 — Измерения
 
-### P0.1 Raster budget
+Входы Decision Gate: P0.1 [`p01-raster-budget.md`](../../engine/research/results/p18/p01-raster-budget.md), P0.2 [`p02-inflight-probe.md`](../../engine/research/results/p18/p02-inflight-probe.md), P0.3 [`p03-ipc-breakdown.md`](../../engine/research/results/p18/p03-ipc-breakdown.md).
 
-См. `engine/research/results/p18/p01-raster-budget.md`.
+### P0.1 Raster budget
 
 - Headless `test1` ~27 fps; RasterTask CPU-sum ~13.5 мс/frame; Phase-15 rasterMs p95 ~191 мс (sum).
 - Вердикт: **не ≤10 мс** → классический Approach B отвергнут.
 
 ### P0.2 CEF in-flight BeginFrame
-
-См. `engine/research/results/p18/p02-inflight-probe.md`.
 
 - Env `BG_P18_PIPELINE_PROBE=1`: два `SendExternalBeginFrame` без wait.
 - `pctTicksDeltaGe2 = 0%` на 3×60 с → CEF **коалесцирует** dual BF.
@@ -40,15 +37,53 @@
 
 ### P0.3 IPC vs raster
 
-См. `engine/research/results/p18/p03-ipc-breakdown.md`.
-
 - Mojo Σ dur ≪ RasterTask (~23×). Bottleneck не Mojo IPC.
+
+### Сводка фактов P0
+
+| Вопрос | Результат | Вывод |
+|---|---|---|
+| P0.2 dual BeginFrame in-flight | `pctTicksDeltaGe2 = 0%` на 3×60 с; max depth=2, уникальных OnPaint за тик ≤1 | CEF OSR **коалесцирует** dual BeginFrame → **A отвергнут** |
+| P0.1 raster budget test1 | headless ~27 fps; RasterTask CPU-sum ~13.5 мс/frame; rasterMs p95 ~191 мс (sum) | **не ≤10 мс** → классический B **не обоснован** |
+| P0.3 IPC vs raster | Mojo Σ dur ≪ RasterTask (~23×) | bottleneck не Mojo round-trip; raster/composite + pump pacing |
 
 ## P1 — Decision Gate
 
-**Fallback — eager sequential field packing** (не A, не классический B).
+### Правило выбора (из плана)
 
-Документ: [phase-18-decision.md](phase-18-decision.md).
+| Данные P0 | Решение |
+|---|---|
+| P0.2: CEF in-flight работает (`paint_seq` delta ≥2) | **Подход A** — конвейеризация pump |
+| P0.2: in-flight не работает, P0.1: raster p95 ≤10 мс | **Подход B** — sequential 2-raster в одном поле (20 мс) |
+| P0.2: in-flight не работает, raster p95 ~20 мс | **Fallback** — incremental pairing + документация блокера |
+
+### Решение: **Fallback — eager sequential field packing**
+
+Не Approach A (in-flight dual BF). Не классический Approach B (два полных raster в одном 20 мс поле).
+
+**План P2 (зафиксирован на gate):**
+
+1. **DeckLink pump (`main.cpp`, только `decklink_driven`):** убрать принудительный sleep до `tick_deadline` между sub-tick’ами одной пары `WaitForTick`. После доставки paint тика N сразу стартовать BeginFrame тика N+1. Бюджет пары полей = ~40 мс output frame (1080i50). Это **не** dual in-flight: второй BF только после `paint_seq` change (или timeout) первого.
+2. **`kMaxQueuedFrames`:** 2 → 3, чтобы не терять intermediate bitmap.
+3. **Телеметрия:** рост `d_pairs`, падение `d_singles` vs Phase 17; `d_late=0`, `d_dropped=0` обязательны.
+4. **Документация блокера:** CEF OSR не пипелайнит два BeginFrame; probe `BG_P18_PIPELINE_PROBE` оставить для будущих CEF.
+5. **Не делаем:** runtime `applySubFrame` / fractional seek; self-timer / null / pipe / preview / stream path не трогаем (кроме probe за env).
+
+### Критерии успеха P3 (зафиксированы на gate)
+
+| Метрика | Цель |
+|---|---|
+| `d_late`, `d_dropped` | 0 на всех каналах весь soak |
+| `in_fps` | ≥ 24.5 (как Phase 17 P4) |
+| `d_pairs` | заметный рост vs Phase 17 |
+| Визуально (P3.3) | плавнее движение на SDI на `test1` |
+
+Если после P2 `d_pairs` остаётся ~0 при `d_late=0` — Fallback не раскрыл headroom; фаза документирует потолок без ложного claim true 50p.
+
+### Что отвергнуто и почему
+
+- **A (pipeline pump):** P0.2 — 0% тиков с ≥2 уникальными OnPaint.
+- **B (2 raster / 20 мс поле):** P0.1 — нет доказанного ≤10 мс wall-clock p95 на test1; end-to-end ~27 fps headless.
 
 ## P2 — Реализация
 
@@ -106,8 +141,7 @@ Phase 17 был прав: DeckLink path latency-bound на уровне **сто
 | `engine/src/main.cpp` | Fallback eager packing + P0.2 probe (env) |
 | `engine/src/consumers/decklink_consumer.cpp` | `kMaxQueuedFrames=3` |
 | `engine/src/frame_log.*` | колонки `inflight_depth`, `paint_seq_delta` (P0.2) |
-| `docs/development-phases/phase-18-decision.md` | Decision Gate |
-| `docs/development-phases/phase-18-true-50p-pipeline.md` | этот отчёт |
+| `docs/development-phases/phase-18-true-50p-pipeline.md` | этот отчёт (включая Decision Gate) |
 | `engine/research/results/p18/*` | P0–P3 отчёты и JSON |
 
 ## Rollback

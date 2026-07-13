@@ -307,7 +307,7 @@ int main(int argc, char** argv) {
                     }
                 }
 
-                // Phase 18 Fallback (see docs/development-phases/phase-18-decision.md):
+                // Phase 18 Fallback (see docs/development-phases/phase-18-true-50p-pipeline.md):
                 // do NOT burn the remaining field budget after an early paint
                 // before starting the next sub-tick's BeginFrame. P0.2 showed
                 // CEF coalesces dual in-flight BeginFrames, so we still send

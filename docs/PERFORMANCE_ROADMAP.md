@@ -102,7 +102,7 @@ pump-режимов) ответ получен с числами.
 
 ## Phase 18 — Реальный 50p progressive pipeline — DONE (потолок задокументирован)
 
-**Статус:** DONE (2026-07-09). Отчёт: [phase-18-true-50p-pipeline.md](development-phases/phase-18-true-50p-pipeline.md). Decision Gate: [phase-18-decision.md](development-phases/phase-18-decision.md).
+**Статус:** DONE (2026-07-09). Отчёт (включая Decision Gate): [phase-18-true-50p-pipeline.md](development-phases/phase-18-true-50p-pipeline.md).
 
 **Цель была:** `in_fps=50` на `test1` при 3 каналах (true 50p-as-50i).
 
