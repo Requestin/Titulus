@@ -289,6 +289,6 @@ SDI-мониторы на device_index=1, 2 и 3.
 
 ## P5 — Итог и финальный отчёт
 
-Создан [docs/other/PHASE_15_RESULTS.md](../../../docs/other/PHASE_15_RESULTS.md)
+Создан [docs archieve/other/PHASE_15_RESULTS.md](../../../docs archieve/other/PHASE_15_RESULTS.md)
 со всеми числами, изменениями в коде и рекомендациями для следующих фаз.
 Phase 15 завершена.

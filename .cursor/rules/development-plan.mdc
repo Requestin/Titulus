@@ -24,7 +24,7 @@ alwaysApply: true
 | 11 | CasparCG-parity perf | DONE (PR #56) | phase-11-casparcg-parity.md |
 | 12 | Blink pipeline research | DONE | phase-12-blink-pipeline.md |
 | 13 | Documentation rework | DONE | phase-13-documentation.md |
-| 14 | Microfreeze investigation | SKIPPED (намеренно) | docs/other/PHASE_14_MICROFREEZE_PLAN.md |
+| 14 | Microfreeze investigation | SKIPPED (намеренно) | docs archieve/other/PHASE_14_MICROFREEZE_PLAN.md |
 | 15 | Transform optimization | DONE (PR #58) | phase-15-transform-optimization.md |
 | 16 | Performance matrix + layer promotion | DONE | phase-16-performance-matrix.md |
 | 17 | Raster pool vs latency | DONE (PR #60) | phase-17-raster-latency.md |
