@@ -29,6 +29,7 @@ alwaysApply: true
 | 16 | Performance matrix + layer promotion | DONE | phase-16-performance-matrix.md |
 | 17 | Raster pool vs latency | DONE (PR #60) | phase-17-raster-latency.md |
 | 18 | True 50p progressive pipeline | DONE (потолок задокументирован) | phase-18-true-50p-pipeline.md |
+| 19 | Style Guide + cost model | в процессе; baseline+G0 DONE | phase-19-cost-model.md |
 
 ## Последний milestone в main
 

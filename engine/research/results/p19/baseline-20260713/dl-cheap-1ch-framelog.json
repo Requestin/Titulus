@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/baseline-20260713/dl-cheap-1ch-frame-log.csv",
+  "totalRows": 3751,
+  "deliveredFrames": 3745,
+  "timedOutTicks": 5,
+  "intervalUs": {
+    "p50": 9397,
+    "p95": 34561,
+    "max": 53690,
+    "mean": 19992.72
+  },
+  "pumpActiveUs": {
+    "p50": 894,
+    "p95": 1006,
+    "max": 32581,
+    "mean": 927.63
+  },
+  "paintLatencyUs": {
+    "p50": 5776,
+    "p95": 5950,
+    "max": 32581,
+    "mean": 5821.41
+  },
+  "pumpActiveRatio": 0.0458,
+  "effectiveFps": 50.02,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 0,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 0,
+  "maxInflight": 0,
+  "pctTicksDeltaGe2": 0
+}

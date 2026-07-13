@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/baseline-20260713/dl-complex-3ch-c-frame-log.csv",
+  "totalRows": 4496,
+  "deliveredFrames": 2327,
+  "timedOutTicks": 2168,
+  "intervalUs": {
+    "p50": 39935,
+    "p95": 42820,
+    "max": 61812,
+    "mean": 38592.47
+  },
+  "pumpActiveUs": {
+    "p50": 933,
+    "p95": 1880,
+    "max": 47452,
+    "mean": 872.77
+  },
+  "paintLatencyUs": {
+    "p50": 20077,
+    "p95": 20657,
+    "max": 47453,
+    "mean": 12930.18
+  },
+  "pumpActiveRatio": 0.0362,
+  "effectiveFps": 25.91,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 0,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 0,
+  "maxInflight": 0,
+  "pctTicksDeltaGe2": 0
+}
