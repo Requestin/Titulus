@@ -183,3 +183,24 @@ engine/third_party/cef_*.tar.bz2
 data/preview/
 
 engine/build-p18/
+
+# Phase probe raw dumps under engine/research/results/
+# Keep: *.md reports + intentionally committed compact aggregates (*.json).
+# Ignore: per-tick CSV, thread samples, human dumps, engine logs, Chrome Trace blobs.
+engine/research/results/**/*-frame-log.csv
+engine/research/results/**/*-threads.csv
+engine/research/results/**/*-threads.log
+engine/research/results/**/*-framelog.txt
+engine/research/results/**/*-inflight.txt
+engine/research/results/**/*-trace.json
+engine/research/results/**/*-trace-frame-log.csv
+engine/research/results/**/*-trace-report.csv
+engine/research/results/**/*-trace-parse.txt
+engine/research/results/**/*-trace-parsed.csv
+engine/research/results/**/*-trace-parsed.txt
+engine/research/results/**/*-trace.engine.log
+engine/research/results/**/*.log
+# Per-run framelog JSON dumps (aggregated ones already tracked stay tracked)
+engine/research/results/p18/p01-*-framelog.json
+engine/research/results/p18/p02-inflight-r*-framelog.json
+engine/research/results/p18/p2-null-*-framelog.json
