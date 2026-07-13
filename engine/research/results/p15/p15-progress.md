@@ -43,7 +43,7 @@ bg-runtime.js` — общий build-артефакт (gitignored), физиче�
 **Код:**
 - [engine/src/engine_app.cpp](../../src/engine_app.cpp) — `BG_TRACE_CATEGORIES` /
   `BG_TRACE_SECONDS` env-override.
-- [engine/research/parse-chrome-trace.mjs](../parse-chrome-trace.mjs) — per-frame
+- [engine/research/lib/parse-chrome-trace.mjs](../../lib/parse-chrome-trace.mjs) — per-frame
   нарезка, p50/p95/max distribution, sub-category breakdown, CSV. O(frames+events)
   вместо O(frames×events) — 13с → 1.1с на 15с-трейс.
 
