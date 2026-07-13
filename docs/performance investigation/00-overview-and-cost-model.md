@@ -170,6 +170,13 @@ ideal_in_fps          ≈ 50     // unique paints into consumer queue
 | Complex | `tests/templates/test1.json` | сегодня ~25 unique fps; root cost в Blink/Skia |
 | Bench scenes | `bench/bench-*.html` | изоляция cost факторов (mask, blur, 2.5D, …) |
 
+**CONSTRAINT (product):** canonical шаблоны производительности хранятся в
+`tests/templates/`. Целевые показатели программы (3× DeckLink 1080i50,
+≥50 unique fps) обязаны достигаться на **`tests/templates/test1.json`** —
+именно этот файл является acceptance target для gates G1/G2/G3 (§13).
+Везде в этой серии `test` = `tests/templates/test.json`,
+`test1` = `tests/templates/test1.json`, если явно не указано иное.
+
 Acceptance program **обязан** проходить на **complex** class, не только на cheap.
 Cheap — sanity / regression canary, не proof of goal.
 

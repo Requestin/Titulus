@@ -4,7 +4,8 @@
 > **Дата:** 2026-07-13  
 > **Контекст:** после Phase 18 (`test1` потолок ~25 unique fps, content/raster-bound)  
 > **Связанные:** `docs/ARCHITECTURE.md`, `docs/CASPARRCG_PORTING.md`, Phase 11/16/17/18  
-> **Compliance:** reimplement by reference; **не** копировать код CasparCG (GPLv3+)
+> **Compliance:** reimplement by reference; **не** копировать код CasparCG (GPLv3+)  
+> **Templates:** `test` = `tests/templates/test.json` (простой), `test1` = `tests/templates/test1.json` (сложный, **acceptance target** программы)
 
 ---
 

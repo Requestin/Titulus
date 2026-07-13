@@ -6,6 +6,7 @@
 **Целевое железо (baseline):** AMD Ryzen 5 3600 (6C/12T), DDR4 dual-channel, DeckLink Quad 2 + genlock
 **Связанные фазы:** Phase 15–18 (merged), Phase 19 (Style Guide + cost model — в процессе)
 **Constraints:** CPU-only CEF OSR, HTML5/DOM runtime, DeckLink scheduled playback + genlock, CasparCG = reimplement-by-reference only, git-workflow merge commits
+**Тестовые шаблоны (canonical):** `test` = `tests/templates/test.json` (простой canary), `test1` = `tests/templates/test1.json` (сложный) — **все acceptance-критерии A1–A12 и gates считаются достигнутыми только на `tests/templates/test1.json`**
 
 > Этот документ — **единственный master execution roadmap**, связывающий сестринские docs `00`–`06` в упорядоченный план с numeric gates, bench extensions, soak tests и Definition of Done. Реализация без прохождения gate предыдущего этапа — запрещена (кроме явно параллельных workstream).
 
