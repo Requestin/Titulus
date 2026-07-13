@@ -218,11 +218,21 @@ PASS iff for each of 3 DeckLink channels during soak ≥ T minutes:
 
 ### 3.1 Headline numbers
 
+**MEASURED 2026-07-13** (baseline re-verify, sha `0deff0c`, отчёт:
+`reports/p19-00-baseline.md`):
+
 | Scenario | Unique paints | DeckLink pairs | Comment |
 |---|---|---|---|
-| Complex (`test1`) 1–3ch | **25–30 fps** | mostly `d_singles` | ceiling подтверждён неоднократно |
-| Cheap (`test`) | **≈50 fps** | `d_pairs≈125` / 5s | true 50p works when paint cheap |
-| Phase 18 dual BeginFrame probe | paint_seq_delta≈1 | n/a | pipeline не появляется |
+| Complex (`test1`) **1ch** DeckLink | **41.7 in_fps** | pairs 82.5 / singles 43 per 5s | лучше исторических ~25; MIXED |
+| Complex (`test1`) **3ch** DeckLink | **25.2–26.2 in_fps** | pairs 1–6 / singles ~120 per 5s | ceiling ~25 воспроизводится на 3ch |
+| Complex (`test1`) null 1ch | **38.0–39.7 fps** | n/a | headless paint throughput |
+| Cheap (`test`) DeckLink 1ch | **50.0 in_fps** | `d_pairs≈125.5` / 5s, singles 0 | true 50p works when paint cheap |
+| Phase 18 dual BeginFrame probe | paint_seq_delta≈1 | n/a | pipeline не появляется (re-confirm: max delta 1) |
+
+Важное отличие от исторических данных: потолок «~25» на актуальном дереве
+наблюдается **только при 3 одновременных каналах**; 1ch complex вырос до ~42
+(вероятно Class A из Phase 16 + 4 logical cores). Multi-channel contention
+(copy ×1.65, weave ×1.33 на 3ch) — больший вклад, чем предполагалось.
 
 Интерпретация: **output path (DeckLink/weave/pacing) способен** нести 50 unique/s,
 когда CEF успевает их произвести. Узкое место — **стоимость уникального paint** на
@@ -1389,6 +1399,21 @@ ROLLBACK:
 OWNER:
 ```
 
+Записи:
+
+```text
+DATE: 2026-07-13
+DECISION: G0 PASS; next workstream = doc 01 (raster cost reduction),
+  затем 03 (память, C1-инструментация) и 04 (pinning/CCX) параллельно.
+  Required speedup raster: ≥1.36x (dual-pack), цель ≥1.82x (p95 ≤ 12ms).
+EVIDENCE RUNS: engine/research/results/p19/baseline-20260713/
+  (null cheap/complex N=3; DL cheap 1ch, complex 1ch, complex 3ch; trace 15s)
+ALTERNATIVES REJECTED: pump-трюки (re-confirm paint_seq_delta max=1);
+  weave micro-opt как first step (weave 0.8-1.2ms avg — не блокер).
+ROLLBACK: n/a (measurement-only milestone)
+OWNER: agent / user review
+```
+
 ---
 
 ## 15. Appendix A — Key file paths
@@ -1918,6 +1943,7 @@ Apply to typ/high columns when forecasting G2.
 | Date | Change |
 |---|---|
 | 2026-07-13 | Initial comprehensive overview & cost model |
+| 2026-07-13 | Baseline re-verify (P19): §3.1 → MEASURED; G0 PASS; калибровка §8/App P числами из `reports/p19-00-baseline.md`; вердикт §4.5 = PRIMARY H1 (raster cost), secondary H2 видим на 3ch |
 
 При существенном изменении root cause / gates — bump запись сюда и notify sister docs.
 

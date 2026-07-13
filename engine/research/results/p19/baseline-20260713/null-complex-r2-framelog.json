@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/baseline-20260713/null-complex-r2-frame-log.csv",
+  "totalRows": 3749,
+  "deliveredFrames": 2974,
+  "timedOutTicks": 774,
+  "intervalUs": {
+    "p50": 20071,
+    "p95": 40037,
+    "max": 55222,
+    "mean": 25156.68
+  },
+  "pumpActiveUs": {
+    "p50": 930,
+    "p95": 1099,
+    "max": 31395,
+    "mean": 819.92
+  },
+  "paintLatencyUs": {
+    "p50": 23,
+    "p95": 38,
+    "max": 25530,
+    "mean": 35.63
+  },
+  "pumpActiveRatio": 0.0316,
+  "effectiveFps": 39.75,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 1,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 10,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

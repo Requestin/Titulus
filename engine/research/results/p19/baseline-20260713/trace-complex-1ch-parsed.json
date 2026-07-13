@@ -1,0 +1,623 @@
+{
+  "source": "/tmp/p19-g0-trace/cache/blink-trace.json",
+  "durationSec": 15,
+  "eventCount": 762849,
+  "beginFrames": 1800,
+  "drawFrames": 0,
+  "frameCount": 1800,
+  "frameMarkerUsedForSlicing": "SendBeginMainFrame",
+  "perFrameSliceCount": 1800,
+  "perFrame": {
+    "layout": 10.01,
+    "paint": 4.66,
+    "raster": 68.51,
+    "style": 4.31,
+    "jsEvents": 0
+  },
+  "perFrameDistribution": {
+    "layoutEvents": {
+      "p50": 0,
+      "p95": 30,
+      "max": 37
+    },
+    "paintEvents": {
+      "p50": 0,
+      "p95": 14,
+      "max": 18
+    },
+    "rasterEvents": {
+      "p50": 0,
+      "p95": 206,
+      "max": 350
+    },
+    "rasterMs": {
+      "p50": 0,
+      "p95": 146.115,
+      "max": 232.821
+    }
+  },
+  "heavyFrames": [
+    {
+      "frameIdx": 8,
+      "tsStart": 18487327796,
+      "raster": 350,
+      "rasterMs": 226.002
+    },
+    {
+      "frameIdx": 86,
+      "tsStart": 18488068732,
+      "raster": 229,
+      "rasterMs": 119.651
+    },
+    {
+      "frameIdx": 128,
+      "tsStart": 18488350318,
+      "raster": 286,
+      "rasterMs": 159.494
+    },
+    {
+      "frameIdx": 152,
+      "tsStart": 18488528746,
+      "raster": 222,
+      "rasterMs": 120.804
+    },
+    {
+      "frameIdx": 161,
+      "tsStart": 18488588739,
+      "raster": 214,
+      "rasterMs": 116.23
+    },
+    {
+      "frameIdx": 287,
+      "tsStart": 18489448771,
+      "raster": 211,
+      "rasterMs": 114.187
+    },
+    {
+      "frameIdx": 299,
+      "tsStart": 18489528734,
+      "raster": 250,
+      "rasterMs": 124.928
+    },
+    {
+      "frameIdx": 314,
+      "tsStart": 18489648712,
+      "raster": 230,
+      "rasterMs": 121.653
+    },
+    {
+      "frameIdx": 329,
+      "tsStart": 18489748954,
+      "raster": 217,
+      "rasterMs": 144.694
+    },
+    {
+      "frameIdx": 332,
+      "tsStart": 18489768762,
+      "raster": 222,
+      "rasterMs": 143.646
+    },
+    {
+      "frameIdx": 488,
+      "tsStart": 18491288727,
+      "raster": 207,
+      "rasterMs": 165.246
+    },
+    {
+      "frameIdx": 551,
+      "tsStart": 18491809081,
+      "raster": 234,
+      "rasterMs": 128.124
+    },
+    {
+      "frameIdx": 587,
+      "tsStart": 18492128742,
+      "raster": 214,
+      "rasterMs": 132.981
+    },
+    {
+      "frameIdx": 599,
+      "tsStart": 18492228773,
+      "raster": 234,
+      "rasterMs": 135.025
+    },
+    {
+      "frameIdx": 623,
+      "tsStart": 18492408808,
+      "raster": 214,
+      "rasterMs": 116.582
+    },
+    {
+      "frameIdx": 683,
+      "tsStart": 18492808918,
+      "raster": 210,
+      "rasterMs": 141.789
+    },
+    {
+      "frameIdx": 686,
+      "tsStart": 18492828744,
+      "raster": 222,
+      "rasterMs": 116.988
+    },
+    {
+      "frameIdx": 716,
+      "tsStart": 18493050643,
+      "raster": 210,
+      "rasterMs": 165.169
+    },
+    {
+      "frameIdx": 731,
+      "tsStart": 18493188978,
+      "raster": 234,
+      "rasterMs": 148.015
+    },
+    {
+      "frameIdx": 737,
+      "tsStart": 18493228771,
+      "raster": 230,
+      "rasterMs": 126.824
+    },
+    {
+      "frameIdx": 755,
+      "tsStart": 18493348853,
+      "raster": 230,
+      "rasterMs": 119.685
+    },
+    {
+      "frameIdx": 785,
+      "tsStart": 18493548790,
+      "raster": 230,
+      "rasterMs": 171.351
+    },
+    {
+      "frameIdx": 800,
+      "tsStart": 18493668740,
+      "raster": 251,
+      "rasterMs": 150.656
+    },
+    {
+      "frameIdx": 818,
+      "tsStart": 18493788758,
+      "raster": 222,
+      "rasterMs": 150.767
+    },
+    {
+      "frameIdx": 881,
+      "tsStart": 18494268798,
+      "raster": 218,
+      "rasterMs": 149.149
+    },
+    {
+      "frameIdx": 914,
+      "tsStart": 18494588836,
+      "raster": 209,
+      "rasterMs": 130.129
+    },
+    {
+      "frameIdx": 926,
+      "tsStart": 18494708843,
+      "raster": 234,
+      "rasterMs": 132.901
+    },
+    {
+      "frameIdx": 944,
+      "tsStart": 18494908836,
+      "raster": 230,
+      "rasterMs": 123.193
+    },
+    {
+      "frameIdx": 962,
+      "tsStart": 18495128717,
+      "raster": 250,
+      "rasterMs": 132.025
+    },
+    {
+      "frameIdx": 1037,
+      "tsStart": 18496031668,
+      "raster": 250,
+      "rasterMs": 137.128
+    },
+    {
+      "frameIdx": 1109,
+      "tsStart": 18496588713,
+      "raster": 230,
+      "rasterMs": 120.395
+    },
+    {
+      "frameIdx": 1130,
+      "tsStart": 18496728768,
+      "raster": 207,
+      "rasterMs": 114.131
+    },
+    {
+      "frameIdx": 1151,
+      "tsStart": 18496888781,
+      "raster": 214,
+      "rasterMs": 130.047
+    },
+    {
+      "frameIdx": 1169,
+      "tsStart": 18497028845,
+      "raster": 250,
+      "rasterMs": 150.914
+    },
+    {
+      "frameIdx": 1178,
+      "tsStart": 18497088951,
+      "raster": 289,
+      "rasterMs": 189.341
+    },
+    {
+      "frameIdx": 1193,
+      "tsStart": 18497231631,
+      "raster": 250,
+      "rasterMs": 152.924
+    },
+    {
+      "frameIdx": 1208,
+      "tsStart": 18497348773,
+      "raster": 234,
+      "rasterMs": 122.64
+    },
+    {
+      "frameIdx": 1292,
+      "tsStart": 18497928773,
+      "raster": 254,
+      "rasterMs": 157.275
+    },
+    {
+      "frameIdx": 1337,
+      "tsStart": 18498369465,
+      "raster": 274,
+      "rasterMs": 232.821
+    },
+    {
+      "frameIdx": 1352,
+      "tsStart": 18498509133,
+      "raster": 226,
+      "rasterMs": 120.747
+    },
+    {
+      "frameIdx": 1382,
+      "tsStart": 18498889510,
+      "raster": 230,
+      "rasterMs": 157.296
+    },
+    {
+      "frameIdx": 1391,
+      "tsStart": 18498968752,
+      "raster": 262,
+      "rasterMs": 165.829
+    },
+    {
+      "frameIdx": 1403,
+      "tsStart": 18499088891,
+      "raster": 210,
+      "rasterMs": 127.486
+    },
+    {
+      "frameIdx": 1421,
+      "tsStart": 18499308845,
+      "raster": 250,
+      "rasterMs": 156.624
+    },
+    {
+      "frameIdx": 1427,
+      "tsStart": 18499368751,
+      "raster": 250,
+      "rasterMs": 124.634
+    },
+    {
+      "frameIdx": 1436,
+      "tsStart": 18499448914,
+      "raster": 218,
+      "rasterMs": 166.86
+    },
+    {
+      "frameIdx": 1463,
+      "tsStart": 18499688852,
+      "raster": 238,
+      "rasterMs": 124.108
+    },
+    {
+      "frameIdx": 1472,
+      "tsStart": 18499768875,
+      "raster": 230,
+      "rasterMs": 129.309
+    },
+    {
+      "frameIdx": 1487,
+      "tsStart": 18499888745,
+      "raster": 250,
+      "rasterMs": 152.65
+    },
+    {
+      "frameIdx": 1511,
+      "tsStart": 18500068730,
+      "raster": 217,
+      "rasterMs": 119.343
+    },
+    {
+      "frameIdx": 1529,
+      "tsStart": 18500188908,
+      "raster": 222,
+      "rasterMs": 119.785
+    },
+    {
+      "frameIdx": 1538,
+      "tsStart": 18500248804,
+      "raster": 222,
+      "rasterMs": 143.888
+    },
+    {
+      "frameIdx": 1541,
+      "tsStart": 18500268832,
+      "raster": 234,
+      "rasterMs": 150.664
+    },
+    {
+      "frameIdx": 1589,
+      "tsStart": 18500608739,
+      "raster": 242,
+      "rasterMs": 151.643
+    },
+    {
+      "frameIdx": 1592,
+      "tsStart": 18500628749,
+      "raster": 212,
+      "rasterMs": 117.18
+    },
+    {
+      "frameIdx": 1613,
+      "tsStart": 18500768973,
+      "raster": 250,
+      "rasterMs": 151.183
+    },
+    {
+      "frameIdx": 1655,
+      "tsStart": 18501108762,
+      "raster": 230,
+      "rasterMs": 118.469
+    },
+    {
+      "frameIdx": 1664,
+      "tsStart": 18501168725,
+      "raster": 214,
+      "rasterMs": 143.816
+    },
+    {
+      "frameIdx": 1670,
+      "tsStart": 18501208739,
+      "raster": 213,
+      "rasterMs": 165.577
+    },
+    {
+      "frameIdx": 1685,
+      "tsStart": 18501329142,
+      "raster": 218,
+      "rasterMs": 129.553
+    },
+    {
+      "frameIdx": 1700,
+      "tsStart": 18501429125,
+      "raster": 214,
+      "rasterMs": 114.158
+    },
+    {
+      "frameIdx": 1745,
+      "tsStart": 18501748723,
+      "raster": 212,
+      "rasterMs": 116.197
+    }
+  ],
+  "subCategoryBreakdown": [
+    {
+      "name": "raster.task",
+      "count": 24544,
+      "durMs": 17472.61
+    },
+    {
+      "name": "raster.drawFrame",
+      "count": 599,
+      "durMs": 10168.97
+    },
+    {
+      "name": "layout.updateLayout",
+      "count": 1200,
+      "durMs": 874.01
+    },
+    {
+      "name": "style.recalc",
+      "count": 1200,
+      "durMs": 819.73
+    },
+    {
+      "name": "layout.performLayout",
+      "count": 1796,
+      "durMs": 63.4
+    },
+    {
+      "name": "invalidation",
+      "count": 2997,
+      "durMs": 1.5
+    }
+  ],
+  "totals": {
+    "layout": 18015,
+    "paint": 8393,
+    "raster": 123322,
+    "style": 7758,
+    "js": 0,
+    "other": 170541
+  },
+  "durMs": {
+    "layout": 2867.45,
+    "paint": 770.24,
+    "raster": 79207.61,
+    "style": 2495.09,
+    "js": 0
+  },
+  "topEventNames": [
+    {
+      "name": "cc::TaskGraphWorkQueue::ScheduleTasks",
+      "count": 59874
+    },
+    {
+      "name": "LayerTreeHostImpl::NotifyTileStateChanged",
+      "count": 48995
+    },
+    {
+      "name": "RunTask",
+      "count": 45527
+    },
+    {
+      "name": "ThreadControllerImpl::RunTask",
+      "count": 45527
+    },
+    {
+      "name": "auto cc::(anonymous namespace)::InsertNodeForTask(TaskGraph *, TileTask *, uint16_t, uint16_t, size_t, bool)::(anonymous class)::operator()()::(anonymous class)::operator()(uint32_t) const",
+      "count": 28189
+    },
+    {
+      "name": "TaskGraphRunner::RunTask",
+      "count": 28134
+    },
+    {
+      "name": "RasterSource::PerformSolidColorAnalysis",
+      "count": 24547
+    },
+    {
+      "name": "RasterizerTaskImpl::RunOnWorkerThread",
+      "count": 24544
+    },
+    {
+      "name": "RasterTask",
+      "count": 24544
+    },
+    {
+      "name": "ZeroCopyRasterBuffer::Playback",
+      "count": 24544
+    },
+    {
+      "name": "DisplayItemList::Raster",
+      "count": 24544
+    },
+    {
+      "name": "BlinkScheduler_PerformMicrotaskCheckpoint",
+      "count": 22350
+    },
+    {
+      "name": "SequenceManager::DoIdleWork",
+      "count": 20458
+    },
+    {
+      "name": "Graphics.Pipeline",
+      "count": 18637
+    },
+    {
+      "name": "SimpleWatcher::OnHandleReady",
+      "count": 17565
+    },
+    {
+      "name": "Document::SetReadyState",
+      "count": 14531
+    },
+    {
+      "name": "Receive mojo message",
+      "count": 10013
+    },
+    {
+      "name": "EpollEvent",
+      "count": 9104
+    },
+    {
+      "name": "Closed mojo endpoint",
+      "count": 7064
+    },
+    {
+      "name": "AsyncTask Scheduled",
+      "count": 6007
+    },
+    {
+      "name": "LocalFrameView::ScheduleAnimation",
+      "count": 5386
+    },
+    {
+      "name": "Document::CancelParsing",
+      "count": 5061
+    },
+    {
+      "name": "RenderSurfaceReasonCount",
+      "count": 4788
+    },
+    {
+      "name": "SequenceManagerImpl::UnregisterTaskQueue",
+      "count": 4352
+    },
+    {
+      "name": "UpdateLayer",
+      "count": 4190
+    },
+    {
+      "name": "ThreadPool_RunTask",
+      "count": 4008
+    },
+    {
+      "name": "ScheduledTasksState",
+      "count": 3641
+    },
+    {
+      "name": "TileTaskManagerImpl::CheckForCompletedTasks",
+      "count": 3607
+    },
+    {
+      "name": "Document::Initialize",
+      "count": 3588
+    },
+    {
+      "name": "Document::OpenForNavigation",
+      "count": 3588
+    },
+    {
+      "name": "Document::FinishedParsing",
+      "count": 3588
+    },
+    {
+      "name": "TileManager::CheckPendingGpuWorkAndIssueSignals",
+      "count": 3009
+    },
+    {
+      "name": "LocalFrameView::UpdateStyleAndLayout",
+      "count": 2998
+    },
+    {
+      "name": "Document::Document",
+      "count": 2986
+    },
+    {
+      "name": "ScheduledTasks",
+      "count": 2427
+    },
+    {
+      "name": "TaskSetFinishedTaskImpl::RunOnWorkerThread",
+      "count": 2427
+    },
+    {
+      "name": "TileManager::CheckForCompletedTasksAndIssueSignals",
+      "count": 2409
+    },
+    {
+      "name": "PipelineReporter",
+      "count": 2398
+    },
+    {
+      "name": "BeginImplFrameToSendBeginMainFrame",
+      "count": 2398
+    },
+    {
+      "name": "InvalidateLayout",
+      "count": 2395
+    }
+  ],
+  "topJsSymbols": []
+}

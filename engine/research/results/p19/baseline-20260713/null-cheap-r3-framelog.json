@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/baseline-20260713/null-cheap-r3-frame-log.csv",
+  "totalRows": 3749,
+  "deliveredFrames": 3743,
+  "timedOutTicks": 5,
+  "intervalUs": {
+    "p50": 19998,
+    "p95": 20108,
+    "max": 25898,
+    "mean": 19998.42
+  },
+  "pumpActiveUs": {
+    "p50": 874,
+    "p95": 1015,
+    "max": 28982,
+    "mean": 910.77
+  },
+  "paintLatencyUs": {
+    "p50": 30,
+    "p95": 37,
+    "max": 23058,
+    "mean": 36.99
+  },
+  "pumpActiveRatio": 0.045,
+  "effectiveFps": 50,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 0,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 0,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

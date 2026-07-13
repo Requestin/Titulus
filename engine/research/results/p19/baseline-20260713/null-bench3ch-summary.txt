@@ -1,0 +1,5 @@
+bench/run-bench.sh 3 60 5 (bench.html graphics=5, null consumer)
+ch0 fps=50.00 p99=22607us late=0 drops=0.000%
+ch1 fps=49.07 p99=39730us late=56 drops=1.907%
+ch2 fps=49.97 p99=22603us late=2 drops=0.067%
+avg_fps=49.68 cpu_used=99.5%
