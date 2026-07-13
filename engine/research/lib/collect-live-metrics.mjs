@@ -3,7 +3,7 @@
  * Live CDP metrics: DOM node count + RenderStats sweep (static vs animated).
  *
  * Usage:
- *   node engine/research/collect-live-metrics.mjs \
+ *   node engine/research/lib/collect-live-metrics.mjs \
  *     --port=9222 \
  *     --template=/tmp/template.json \
  *     --out=/tmp/live-metrics.json

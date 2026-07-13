@@ -171,7 +171,7 @@ Manual single scene:
 bg_engine --consumer=null --blink-research=1 --duration=20 --fps=50 \\
   --url="file:///.../bench/bench-wipe-inset.html" \\
   --cache-dir=/tmp/bench-one
-node engine/research/parse-paint-invalidation.mjs --in=/tmp/bench-one/blink-trace.json
+node engine/research/lib/parse-paint-invalidation.mjs --in=/tmp/bench-one/blink-trace.json
 \`\`\`
 
 ---

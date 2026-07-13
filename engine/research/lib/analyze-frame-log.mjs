@@ -10,7 +10,7 @@
  *   wall_clock_us,interval_us,paint_seq,pump_active_us,paint_latency_us,waited_deadline
  *
  * Usage:
- *   node engine/research/analyze-frame-log.mjs --in=/tmp/frame-log.csv \
+ *   node engine/research/lib/analyze-frame-log.mjs --in=/tmp/frame-log.csv \
  *     [--out=/tmp/report.json]
  */
 import { readFileSync, writeFileSync } from 'node:fs';

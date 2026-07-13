@@ -5,7 +5,7 @@
  *   - CDP Profiler sample (JS flamegraph proxy — Tracing CDP is inactive in CEF)
  *
  * Usage:
- *   node engine/research/collect-cdp-trace.mjs \
+ *   node engine/research/lib/collect-cdp-trace.mjs \
  *     --port=9222 --duration=15 \
  *     --cache-dir=/tmp/titulus-engines/cache-... \
  *     --out=/tmp/trace.json

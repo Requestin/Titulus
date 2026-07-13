@@ -211,7 +211,7 @@ if (const char* p = std::getenv("BG_ENGINE_LATE_LOG")) {
 
 (Не добавляем отдельный CLI-флаг в config.h — это diagnostics-only, env-переменной достаточно.)
 
-## E0.3 — Скрипт анализа `engine/research/analyze-frame-log.mjs` (новый)
+## E0.3 — Скрипт анализа `engine/research/lib/analyze-frame-log.mjs` (новый)
 
 Вход: CSV из E0.1. Выход: текстовый отчёт с (1) списком выбросов `interval_us > 2.5 × expected` (expected = 20000мкс для 50fps), (2) гистограммой интервалов между последовательными выбросами, (3) автокорреляцией `interval_us` для поиска скрытой периодичности, (4) опциональное сопоставление с отметками оператора (`operator_marks.csv` из E1).
 
@@ -219,8 +219,8 @@ if (const char* p = std::getenv("BG_ENGINE_LATE_LOG")) {
 
 ```javascript
 #!/usr/bin/env node
-// engine/research/analyze-frame-log.mjs
-// Usage: node engine/research/analyze-frame-log.mjs --log=frame-Ch1.csv \
+// engine/research/lib/analyze-frame-log.mjs
+// Usage: node engine/research/lib/analyze-frame-log.mjs --log=frame-Ch1.csv \
 //          [--marks=operator_marks.csv] [--expected-us=20000] [--threshold-mult=2.5]
 import { readFileSync } from 'node:fs';
 
@@ -347,7 +347,7 @@ FRAME_LOG=/tmp/titulus-engines/frame-e1.csv \
 ## Анализ
 
 ```bash
-node engine/research/analyze-frame-log.mjs \
+node engine/research/lib/analyze-frame-log.mjs \
   --log=/tmp/titulus-engines/frame-e1.csv \
   --marks=/tmp/titulus-engines/operator_marks.csv \
   --expected-us=20000 \

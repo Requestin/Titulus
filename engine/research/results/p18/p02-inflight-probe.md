@@ -4,7 +4,7 @@
 **Binary:** `engine/build-p18/Release/bg_engine` (BG_P18_PIPELINE_PROBE)  
 **Setup:** consumer=null, 1920×1080@50, duration=60s, cores=0,6,1,7, `BG_NUM_RASTER_THREADS=3`  
 **Backend:** http://127.0.0.1:3003, channel=`28c4b4f1-1b40-42d7-92bb-3cf15520861a` (test1)  
-**Scripts:** `run-p17-probe.sh` (control), `run-p18-inflight-probe.sh` + `analyze-p18-inflight.mjs` (probe)
+**Scripts:** `engine/research/p17/run-p17-probe.sh` (control), `engine/research/p18/run-p18-inflight-probe.sh` + `engine/research/p18/analyze-p18-inflight.mjs` (probe)
 
 ## Decision rule
 

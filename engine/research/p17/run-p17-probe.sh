@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# engine/research/run-p17-probe.sh — run a single bg_engine channel with
+# engine/research/p17/run-p17-probe.sh — run a single bg_engine channel with
 # --frame-log + per-thread CPU sampling, for Phase 17 P1/P2/P4 measurements.
 #
 # Handles two footguns discovered during P1:
@@ -13,7 +13,7 @@
 #      samples the one that's actually burning CPU.
 #
 # Usage:
-#   run-p17-probe.sh --consumer=null|decklink --duration=SEC --out-dir=DIR \
+#   engine/research/p17/run-p17-probe.sh --consumer=null|decklink --duration=SEC --out-dir=DIR \
 #     --channel=CHANNEL_ID [--device-index=N] [--cores=0,6,1,7] \
 #     [--backend=http://127.0.0.1:3003] [--bin=engine/build-p17/Release/bg_engine] \
 #     [--num-raster-threads=N] [--label=name]
@@ -22,7 +22,7 @@
 #   <label>-threads.csv, <label>-threads.log, <label>-framelog.json
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 CONSUMER="null"
 DURATION=60
@@ -47,7 +47,7 @@ for arg in "$@"; do
     --bin=*) BIN="${arg#*=}" ;;
     --num-raster-threads=*) NUM_RASTER_THREADS="${arg#*=}" ;;
     --label=*) LABEL="${arg#*=}" ;;
-    *) echo "run-p17-probe.sh: unknown arg $arg" >&2; exit 1 ;;
+    *) echo "engine/research/p17/run-p17-probe.sh: unknown arg $arg" >&2; exit 1 ;;
   esac
 done
 
@@ -109,7 +109,7 @@ fi
 
 if [[ -n "$ACTIVE" ]]; then
   echo "[p17-probe] sampling active renderer pid=${ACTIVE} for $(( DURATION - 8 > 5 ? DURATION - 8 : 5 ))s"
-  nohup "${ROOT}/engine/research/sample-threads.sh" "$ACTIVE" \
+  nohup "${ROOT}/engine/research/lib/sample-threads.sh" "$ACTIVE" \
     "$(( DURATION - 8 > 5 ? DURATION - 8 : 5 ))" "$THREADS_CSV" \
     > "$THREADS_LOG" 2>&1 < /dev/null &
   disown $! 2>/dev/null || true
@@ -126,7 +126,7 @@ echo "[p17-probe] engine exited, waiting for sampler to flush"
 sleep 3
 
 if [[ -f "$FRAME_LOG" ]]; then
-  node "${ROOT}/engine/research/analyze-frame-log.mjs" --in="$FRAME_LOG" \
+  node "${ROOT}/engine/research/lib/analyze-frame-log.mjs" --in="$FRAME_LOG" \
     --out="${OUT_DIR}/${LABEL}-framelog.json" > "${OUT_DIR}/${LABEL}-framelog.txt" 2>&1 || true
   echo "[p17-probe] frame-log analysis -> ${LABEL}-framelog.txt"
 fi

@@ -81,7 +81,7 @@ Phase 15: Class A реализован и validated.
 
 **Реализовано:**
 - `--frame-log` (`pump_active_us`/`paint_latency_us`/`waited_deadline`) +
-  `engine/research/analyze-frame-log.mjs`.
+  `engine/research/lib/analyze-frame-log.mjs`.
 - `BG_NUM_RASTER_THREADS` env-hook в `engine_app.cpp`; закреплён как default
   `(закреплённые логические ядра канала − 1)` в
   [engine/run-channel.sh](../engine/run-channel.sh).

@@ -11,7 +11,7 @@
  * cost matrix (Phase 15 P1) without a distribution (p50/p95/max).
  *
  * Usage:
- *   node engine/research/parse-chrome-trace.mjs --in=/tmp/trace.json \
+ *   node engine/research/lib/parse-chrome-trace.mjs --in=/tmp/trace.json \
  *     [--out=/tmp/report.json] [--out-csv=/tmp/report.csv] \
  *     [--heavy-frames-threshold=2]
  */

@@ -134,8 +134,8 @@ Manual trace only:
 
 \`\`\`bash
 # Ch2 with debug port (see run-channel.sh --remote-debugging-port)
-node engine/research/collect-cdp-trace.mjs --port=9222 --duration=15 --out=/tmp/trace.json
-node engine/research/parse-chrome-trace.mjs --in=/tmp/trace.json
+node engine/research/lib/collect-cdp-trace.mjs --port=9222 --duration=15 --out=/tmp/trace.json
+node engine/research/lib/parse-chrome-trace.mjs --in=/tmp/trace.json
 \`\`\`
 `;
 

@@ -3,8 +3,8 @@
  * DOM breakdown: total nodes, img count, layer types from CDP or template JSON.
  *
  * Usage:
- *   node engine/research/measure-dom-breakdown.mjs --port=9222
- *   node engine/research/measure-dom-breakdown.mjs --template=/path/template.json
+ *   node engine/research/lib/measure-dom-breakdown.mjs --port=9222
+ *   node engine/research/lib/measure-dom-breakdown.mjs --template=/path/template.json
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { CdpSession, listTargets, pickRendererTarget } from './cdp-client.mjs';

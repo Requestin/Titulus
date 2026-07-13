@@ -3,7 +3,7 @@
 **Дата:** 2026-07-09  
 **Окружение:** backend `http://127.0.0.1:3003`, `TITULUS_DATA=/tmp/titulus-p18-data`, channel `28c4b4f1-1b40-42d7-92bb-3cf15520861a`  
 **Binary:** `engine/build-p18/Release/bg_engine`  
-**Probe:** `run-p17-probe.sh --consumer=null --duration=60 --cores=0,6,1,7 --num-raster-threads=3`  
+**Probe:** `engine/research/p17/run-p17-probe.sh --consumer=null --duration=60 --cores=0,6,1,7 --num-raster-threads=3`  
 **Артефакты:** `engine/research/results/p18/p01-*`
 
 Продакшн DeckLink на `:3002` / device 1–3 не трогались.

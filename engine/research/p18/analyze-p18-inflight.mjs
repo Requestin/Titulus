@@ -4,7 +4,7 @@
  * produced under BG_P18_PIPELINE_PROBE=1.
  *
  * Usage:
- *   node engine/research/analyze-p18-inflight.mjs --in=frame-log.csv [--out=report.json]
+ *   node engine/research/p18/analyze-p18-inflight.mjs --in=frame-log.csv [--out=report.json]
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -24,7 +24,7 @@ if (!inPath) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const analyzer = join(here, 'analyze-frame-log.mjs');
+const analyzer = join(here, '../lib/analyze-frame-log.mjs');
 const tmpJson = outPath || `/tmp/p18-inflight-${Date.now()}.json`;
 const r = spawnSync(process.execPath, [analyzer, `--in=${inPath}`, `--out=${tmpJson}`], {
   encoding: 'utf8',

@@ -34,8 +34,8 @@ Phase 15 завершилась с `in_fps≈25` на 3 каналах (`test1`)
 - `bench/bench-static-beacon.html` (шумовой floor)
 - `bench/bench-wipe-inset.html` и `bench/bench-wipe-polygon.html` (из Phase 15)
 
-Запуск: `engine/research/run-p16-bench.sh <bench> 20`, `--consumer=null`,
-`BG_TRACE_SECONDS=20`, анализ через `engine/research/parse-chrome-trace.mjs`.
+Запуск: `engine/research/p16/run-p16-bench.sh <bench> 20`, `--consumer=null`,
+`BG_TRACE_SECONDS=20`, анализ через `engine/research/lib/parse-chrome-trace.mjs`.
 
 Результаты (основные метрики):
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// engine/research/aggregate-p16.mjs — collect P16 bench results into a single
+// engine/research/p16/aggregate-p16.mjs — collect P16 bench results into a single
 // markdown table for the phase-16-performance-matrix.md report.
 //
 // Reads every bench-*.json in engine/research/results/p16/ and emits a table:

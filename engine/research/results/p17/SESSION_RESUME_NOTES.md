@@ -21,9 +21,9 @@ self-matching `pgrep -f` и диагностику сетевого сбоя п�
   - Запись `pump_active_us`/`paint_latency_us`/`waited_deadline` в [engine/src/main.cpp](../../src/main.cpp) (обе pump-ветки: decklink-driven и self-timer)
   - Новый класс [engine/src/frame_log.h](../../src/frame_log.h)/[.cpp](../../src/frame_log.cpp) — буферизованный CSV writer
   - `BG_NUM_RASTER_THREADS` env-override в [engine/src/engine_app.cpp](../../src/engine_app.cpp) → `--num-raster-threads` для renderer
-  - `engine/research/analyze-frame-log.mjs` — парсер CSV, считает percentiles + pumpActiveRatio
-  - `engine/research/sample-threads.sh` — per-thread CPU сэмплинг (ps -T)
-  - `engine/research/run-p17-probe.sh` — оркестрирующий скрипт (запуск + активный renderer PID + сэмплинг + анализ), решает 2 найденные проблемы:
+  - `engine/research/lib/analyze-frame-log.mjs` — парсер CSV, считает percentiles + pumpActiveRatio
+  - `engine/research/lib/sample-threads.sh` — per-thread CPU сэмплинг (ps -T)
+  - `engine/research/p17/run-p17-probe.sh` — оркестрирующий скрипт (запуск + активный renderer PID + сэмплинг + анализ), решает 2 найденные проблемы:
     1. `pgrep -f` самосовпадает с текстом собственной команды-обёртки shell — используем `ps -eo pid,comm,cmd | awk '$2=="bg_engine"'` вместо pgrep -f.
     2. CEF держит 2 renderer-процесса (один почти простаивает — spare/warm), активный определяется по дельте `utime+stime` из `/proc/PID/stat` за ~3с.
   - Сборка `engine/build-p17/` (изолирована от прод `engine/build/`), `BG_ENABLE_DECKLINK=ON`, DeckLink SDK путь передан явно через `-DDECKLINK_SDK_INCLUDE=...`.
@@ -103,7 +103,7 @@ strace: `getsockopt(SO_ERROR) = 0`), но HTTP-запрос **никогда н�
    перед DeckLink-замерами: `pgrep -af "run-engines.sh|run-channel.sh"`, убить супервизоры,
    затем убить оставшиеся `engine/build/Release/bg_engine` процессы (НЕ pkill -f с текстом,
    который может самосовпасть — использовать точные PID).
-5. Продолжить с **P2** (A/B `num-raster-threads`, план: `/home/requestin/.cursor/plans/phase_17_—_raster_pool_vs_латентность_0e63c8c0.plan.md`), используя `engine/research/run-p17-probe.sh` — 3 control + 3 N=4 headless прогона по 60с, `--cores=0,6,1,7`.
+5. Продолжить с **P2** (A/B `num-raster-threads`, план: `/home/requestin/.cursor/plans/phase_17_—_raster_pool_vs_латентность_0e63c8c0.plan.md`), используя `engine/research/p17/run-p17-probe.sh` — 3 control + 3 N=4 headless прогона по 60с, `--cores=0,6,1,7`.
 6. После P2 — P3 (вердикт), P4 (3-канальный DeckLink soak 15 мин), P5 (отчёт + docs + git PR).
 
 ## Важно: не восстановлена продакшн-конфигурация каналов

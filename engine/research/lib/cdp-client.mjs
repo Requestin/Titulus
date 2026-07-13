@@ -6,7 +6,7 @@
 import { createRequire } from 'node:module';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-const require = createRequire(new URL('../../backend/package.json', import.meta.url));
+const require = createRequire(new URL('../../../backend/package.json', import.meta.url));
 const WebSocket = require('ws');
 
 export class CdpSession {

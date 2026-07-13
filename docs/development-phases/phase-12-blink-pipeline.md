@@ -41,9 +41,9 @@
 ### Instrumentation
 
 - `trace-startup` + categories blink/cc/invalidationTracking
-- `engine/research/parse-chrome-trace.mjs`
-- `engine/research/parse-paint-invalidation.mjs`
-- `engine/research/parse-trace-internals.mjs`
+- `engine/research/lib/parse-chrome-trace.mjs`
+- `engine/research/lib/parse-paint-invalidation.mjs`
+- `engine/research/lib/parse-trace-internals.mjs`
 - Orchestrators: `run-blink-research.sh`, `run-blink-internals-research.sh`
 
 ### Bench scenes

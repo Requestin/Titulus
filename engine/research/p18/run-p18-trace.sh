@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# engine/research/run-p18-trace.sh — capture a Chrome startup trace for Phase 18 P0.3.
+# engine/research/p18/run-p18-trace.sh — capture a Chrome startup trace for Phase 18 P0.3.
 #
 # Uses BG_TRACE_SECONDS + BG_TRACE_CATEGORIES (engine_app.cpp) so the browser
 # process writes a JSON trace into the cache dir. Then copies it to --out and
 # optionally runs parse-chrome-trace.mjs.
 #
 # Usage:
-#   ./engine/research/run-p18-trace.sh --channel=CH --out=engine/research/results/p18/p03-trace.json \
+#   ./engine/research/p18/run-p18-trace.sh --channel=CH --out=engine/research/results/p18/p03-trace.json \
 #     [--duration=20] [--cores=0,6,1,7] [--backend=http://127.0.0.1:3003] \
 #     [--bin=engine/build-p18/Release/bg_engine] [--categories=cc,ipc,benchmark,toplevel,sequence_manager] \
 #     [--num-raster-threads=3] [--parse]
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 CHANNEL=""
 OUT=""
@@ -75,7 +75,7 @@ else
 fi
 
 if [[ "$DO_PARSE" -eq 1 ]]; then
-  node "${ROOT}/engine/research/parse-chrome-trace.mjs" \
+  node "${ROOT}/engine/research/lib/parse-chrome-trace.mjs" \
     --in="$OUT" --out="${OUT%.json}-parsed.json" \
     --out-csv="${OUT%.json}-parsed.csv" | tee "${OUT%.json}-parsed.txt"
 fi

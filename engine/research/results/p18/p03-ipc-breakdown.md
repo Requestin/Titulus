@@ -11,11 +11,11 @@
 | Файл | Назначение |
 |---|---|
 | `p03-ipc-trace.json` | Chrome Trace (~97 MB, 509 356 events) — копия `blink-trace.json` из cache |
-| `p03-ipc-trace-parsed.{json,csv,txt}` | `parse-chrome-trace.mjs` |
+| `p03-ipc-trace-parsed.{json,csv,txt}` | `engine/research/lib/parse-chrome-trace.mjs` |
 | `p03-ipc-analysis-raw.json` | Targeted Mojo/raster/pipeline breakdown |
 | `p03-ipc-trace.engine.log` | Engine SUMMARY |
 
-**Замечание по скрипту:** `run-p18-trace.sh` сначала нашёл `extensions_crx_cache/metadata.json` (13 B) вместо trace. Реальный файл — `blink-trace.json` в cache dir. Нужно предпочитать `blink-trace.json` / `trace-startup*.json` по размеру/имени.
+**Замечание по скрипту:** `engine/research/p18/run-p18-trace.sh` сначала нашёл `extensions_crx_cache/metadata.json` (13 B) вместо trace. Реальный файл — `blink-trace.json` в cache dir. Нужно предпочитать `blink-trace.json` / `trace-startup*.json` по размеру/имени.
 
 ## Что удалось измерить
 

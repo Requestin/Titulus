@@ -108,7 +108,7 @@ restore_ch2_normal() {
 
 dom_count_via_cdp() {
   local port="$1" label="$2"
-  node "${ROOT}/engine/research/collect-dom-count.mjs" \
+  node "${ROOT}/engine/research/lib/collect-dom-count.mjs" \
     --port="$port" --label="$label" >> "${OUT_DIR}/dom-counts.jsonl" 2>&1 || true
 }
 
@@ -133,17 +133,17 @@ main() {
   CACHE_CH2="${CACHE_ROOT}/cache-${CH2_ID}"
 
   log "Collecting ${TRACE_SEC}s trace + JS profile…"
-  node "${ROOT}/engine/research/collect-cdp-trace.mjs" \
+  node "${ROOT}/engine/research/lib/collect-cdp-trace.mjs" \
     --port="$CDP_PORT" --duration="$TRACE_SEC" \
     --cache-dir="$CACHE_CH2" \
     --out="$TRACE_FILE"
 
   log "Parsing trace (Layout/Paint/Raster + JS)…"
-  node "${ROOT}/engine/research/parse-chrome-trace.mjs" \
+  node "${ROOT}/engine/research/lib/parse-chrome-trace.mjs" \
     --in="$TRACE_FILE" --out="$REPORT_FILE" | tee "${OUT_DIR}/trace-report.txt"
 
   log "Collecting live DOM + HUD stats sweep…"
-  node "${ROOT}/engine/research/collect-live-metrics.mjs" \
+  node "${ROOT}/engine/research/lib/collect-live-metrics.mjs" \
     --port="$CDP_PORT" \
     --template="${OUT_DIR}/template-${TPL_ID}.json" \
     --out="$METRICS_FILE"
@@ -169,7 +169,7 @@ main() {
     probe_pid=$!
     sleep 5
     if curl -sf "http://127.0.0.1:${local_port}/json/version" >/dev/null 2>&1; then
-      node "${ROOT}/engine/research/collect-dom-count.mjs" \
+      node "${ROOT}/engine/research/lib/collect-dom-count.mjs" \
         --port="$local_port" --label="$CH_ID" >> "${OUT_DIR}/dom-counts.jsonl"
     fi
     kill "$probe_pid" 2>/dev/null || true
@@ -180,7 +180,7 @@ main() {
   restore_ch2_normal
 
   log "Generating docs/development-phases/phase-12-blink-pipeline.md"
-  node "${ROOT}/engine/research/write-results-doc.mjs" \
+  node "${ROOT}/engine/research/lib/write-results-doc.mjs" \
     --out-dir="$OUT_DIR" \
     --template-id="$TPL_ID" \
     --doc="${ROOT}/docs/development-phases/phase-12-blink-pipeline.md"

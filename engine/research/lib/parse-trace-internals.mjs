@@ -3,7 +3,7 @@
  * Internal metrics from Chrome trace: image decode, display list updates, raster.
  *
  * Usage:
- *   node engine/research/parse-trace-internals.mjs --in=trace.json --label=scene [--out=report.json]
+ *   node engine/research/lib/parse-trace-internals.mjs --in=trace.json --label=scene [--out=report.json]
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 

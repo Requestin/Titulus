@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# engine/research/sample-threads.sh — per-thread CPU sampling of a running
+# engine/research/lib/sample-threads.sh — per-thread CPU sampling of a running
 # bg_engine (or its CEF renderer subprocess) for Phase 17 performance
 # research: which threads (main, CompositorTileWorker, Compositor, etc.)
 # are actually consuming CPU, to see whether the raster thread pool is

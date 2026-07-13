@@ -3,7 +3,7 @@
  * Parse Chrome trace for paint/layout invalidation events and reasons.
  *
  * Usage:
- *   node engine/research/parse-paint-invalidation.mjs --in=trace.json [--out=report.json]
+ *   node engine/research/lib/parse-paint-invalidation.mjs --in=trace.json [--out=report.json]
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 

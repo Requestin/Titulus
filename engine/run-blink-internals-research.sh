@@ -51,11 +51,11 @@ run_scene() {
   summary=$(grep '^SUMMARY' "$logf" | tail -1 || echo 'SUMMARY missing')
 
   if [[ -f "$trace" ]]; then
-    node "${ROOT}/engine/research/parse-trace-internals.mjs" \
+    node "${ROOT}/engine/research/lib/parse-trace-internals.mjs" \
       --in="$trace" --label="$label" \
       --out="${OUT}/${label}-trace-metrics.json" \
       | tee -a "${OUT}/${label}-trace.txt"
-    node "${ROOT}/engine/research/parse-paint-invalidation.mjs" \
+    node "${ROOT}/engine/research/lib/parse-paint-invalidation.mjs" \
       --in="$trace" --out="${OUT}/${label}-invalidation.json" \
       | tee -a "${OUT}/${label}-invalidation.txt"
   else
@@ -93,11 +93,11 @@ if [[ ! -f "$TPL" ]]; then
   TPL="/tmp/titulus-blink-research/template-d65d2a26-177c-47e2-ba1d-1ee285bdfaa5.json"
 fi
 if [[ -f "$TPL" ]]; then
-  node "${ROOT}/engine/research/measure-dom-breakdown.mjs" \
+  node "${ROOT}/engine/research/lib/measure-dom-breakdown.mjs" \
     --template="$TPL" --out="${OUT}/dom-breakdown-prod.json"
 fi
 
-node "${ROOT}/engine/research/write-internals-doc.mjs" \
+node "${ROOT}/engine/research/lib/write-internals-doc.mjs" \
   --out-dir="$OUT" --doc="${ROOT}/docs/development-phases/phase-12-blink-pipeline.md"
 
 log "Done. Report: ${ROOT}/docs/development-phases/phase-12-blink-pipeline.md"

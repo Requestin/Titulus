@@ -37,7 +37,7 @@ soak на реальном железе:**
 
 1. **P0 — Телеметрия.** `BG_TRACE_CATEGORIES`/`BG_TRACE_SECONDS` env-override
    в [engine/src/engine_app.cpp](../../engine/src/engine_app.cpp);
-   [engine/research/parse-chrome-trace.mjs](../../engine/research/parse-chrome-trace.mjs)
+   [engine/research/lib/parse-chrome-trace.mjs](../../engine/research/lib/parse-chrome-trace.mjs)
    расширен до per-frame p50/p95/max distribution + sub-category breakdown.
 2. **P1 — Cost matrix.** Полный аудит всех bench-стендов выявил и исправил
    методологический баг (устаревший API `r.play()`, устаревший opacity-nudge
@@ -113,7 +113,7 @@ Phase 18 (истинный 50p) может быть не столько архи
 ## Файлы изменены
 
 - [engine/src/engine_app.cpp](../../engine/src/engine_app.cpp) — trace env-overrides.
-- [engine/research/parse-chrome-trace.mjs](../../engine/research/parse-chrome-trace.mjs) — per-frame distribution.
+- [engine/research/lib/parse-chrome-trace.mjs](../../engine/research/lib/parse-chrome-trace.mjs) — per-frame distribution.
 - [runtime/src/domRenderer.ts](../../runtime/src/domRenderer.ts) — P3-B mask memoization.
 - [bench/bench-image-left.html](../../bench/bench-image-left.html),
   [bench/bench-wipe-inset.html](../../bench/bench-wipe-inset.html),

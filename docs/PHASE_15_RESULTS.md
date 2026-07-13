@@ -74,7 +74,7 @@ Phase 16 (cost matrix с layer promotion) и Phase 17 (raster pool).
 - [engine/src/engine_app.cpp](../../engine/src/engine_app.cpp): env-vars
   `BG_TRACE_CATEGORIES`/`BG_TRACE_SECONDS` — трейс теперь включается без
   открытия DevTools-порта, с произвольной длительностью.
-- [engine/research/parse-chrome-trace.mjs](../../engine/research/parse-chrome-trace.mjs):
+- [engine/research/lib/parse-chrome-trace.mjs](../../engine/research/lib/parse-chrome-trace.mjs):
   добавлены per-frame нарезка, p50/p95/max distribution, sub-category
   breakdown (`layout.performLayout` vs `layout.updateLayout`, `raster.task`
   vs `raster.drawFrame`, etc.), CSV-вывод. Оптимизировано с O(frames × events)
@@ -165,7 +165,7 @@ DeckLink device-index=1/2/3, 15 минут, **без** headless-твинов.
 | Файл | Тип изменения | Назначение |
 |---|---|---|
 | [engine/src/engine_app.cpp](../../engine/src/engine_app.cpp) | +env-vars | `BG_TRACE_CATEGORIES`/`BG_TRACE_SECONDS` |
-| [engine/research/parse-chrome-trace.mjs](../../engine/research/parse-chrome-trace.mjs) | расширение | per-frame, p50/p95/max, sub-category, CSV |
+| [engine/research/lib/parse-chrome-trace.mjs](../../engine/research/lib/parse-chrome-trace.mjs) | расширение | per-frame, p50/p95/max, sub-category, CSV |
 | [runtime/src/domRenderer.ts](../../runtime/src/domRenderer.ts) | правка P3-B | мемоизация projected-mask геометрии |
 | [bench/bench-image-left.html](../../bench/bench-image-left.html) | fix | playTimeline() + beacon |
 | [bench/bench-wipe-inset.html](../../bench/bench-wipe-inset.html) | fix | playTimeline() + beacon |

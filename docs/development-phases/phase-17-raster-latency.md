@@ -29,11 +29,11 @@ headless показывал ~44.9 fps, но 3-канальный DeckLink soak �
 - [engine/src/engine_app.cpp](../../engine/src/engine_app.cpp) —
   `BG_NUM_RASTER_THREADS` env-override → `--num-raster-threads` для
   renderer-процесса (по умолчанию не задан, Chromium выбирает сам).
-- `engine/research/analyze-frame-log.mjs` — percentiles + `pumpActiveRatio`
+- `engine/research/lib/analyze-frame-log.mjs` — percentiles + `pumpActiveRatio`
   (дискриминатор throughput/latency) из CSV.
-- `engine/research/sample-threads.sh` — per-thread CPU (`ps -T`) с
+- `engine/research/lib/sample-threads.sh` — per-thread CPU (`ps -T`) с
   агрегацией по имени потока.
-- `engine/research/run-p17-probe.sh` — оркестратор замеров (запуск + поиск
+- `engine/research/p17/run-p17-probe.sh` — оркестратор замеров (запуск + поиск
   активного renderer-процесса + сэмплинг + анализ), закрывает две находки:
   1. `pgrep -f` самосовпадает с текстом собственной shell-обёртки —
      заменено на `ps -eo pid,comm,cmd | awk '$2=="bg_engine"'`.
