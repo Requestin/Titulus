@@ -2,9 +2,9 @@
 
 **Дата:** 5 июля 2026 (обновлено 7 июля 2026). **Цель:** стабильные 50 fps на канал (1080i50, 3 канала DeckLink Quad 2) без микрофризов, с плавной отработкой анимаций. **Статус кода на момент написания:** `main` = Phase 0–13 (PR #1–#57), последний merge — Phase 13 (документация + Phase 12 Blink-research). Между PR #56 (02.07, последний код-PR) и обоими стресс-тестами (04.07, 05.07) в движок изменений не вносилось — оба теста прогоняют код Phase 11.
 
-**Обновление 7 июля 2026:** добавлены два подчинённых документа, в которые вынесена детальная работа — [docs/PHASE_14_MICROFREEZE_PLAN.md](PHASE_14_MICROFREEZE_PLAN.md) (микрофризы) и [docs/PHASE_15_PERFORMANCE_PLAN.md](PHASE_15_PERFORMANCE_PLAN.md) (оптимизация throughput). Сводный обзор всех фаз 15-20 — в [docs/PERFORMANCE_ROADMAP.md](PERFORMANCE_ROADMAP.md). Также см. §1.1.1 (новая находка: потолок `in_fps` = 25, не 50) и §1.1.2 (главное: проблема в `left/top` в `transform.ts`/`domRenderer.ts`, подтверждено кодом).
+**Обновление 7 июля 2026:** добавлены два подчинённых документа, в которые вынесена детальная работа — [docs/other/PHASE_14_MICROFREEZE_PLAN.md](PHASE_14_MICROFREEZE_PLAN.md) (микрофризы) и [docs/other/PHASE_15_PERFORMANCE_PLAN.md](PHASE_15_PERFORMANCE_PLAN.md) (оптимизация throughput). Сводный обзор всех фаз 15-20 — в [docs/other/PERFORMANCE_ROADMAP.md](PERFORMANCE_ROADMAP.md). Также см. §1.1.1 (новая находка: потолок `in_fps` = 25, не 50) и §1.1.2 (главное: проблема в `left/top` в `transform.ts`/`domRenderer.ts`, подтверждено кодом).
 
-Документ построен на: анализе кода (`engine/`, `runtime/`, `backend/public/channel.html`), git/PR-истории, логах двух стресс-тестов (`logs stress test/04.07.26`, `05.07.26`), живых измерениях на текущем стенде (снято 05.07 в ходе работы над этим документом), диалоге пользователя с внешним программистом (`docs/development-proposals.md`) и серии уточнений от пользователя и его друга, тестировавшего проект на отдельном сервере.
+Документ построен на: анализе кода (`engine/`, `runtime/`, `backend/public/channel.html`), git/PR-истории, логах двух стресс-тестов (`logs stress test/04.07.26`, `05.07.26`), живых измерениях на текущем стенде (снято 05.07 в ходе работы над этим документом), диалоге пользователя с внешним программистом (`docs/other/development-proposals.md`) и серии уточнений от пользователя и его друга, тестировавшего проект на отдельном сервере.
 
 Проблема распадается на два независимых вопроса:
 
@@ -46,17 +46,17 @@ in_fps=24.6 out_fps=25.0 queue=0 d_pairs=0-9 d_singles=110-120 d_starved=1-10 ..
 
 `out_fps=25.0` означает, что **DeckLink работает в режиме «25 прогрессивных кадров, отправляемых как 50i»**: пара полей формируется из одного bitmap, оба поля пары содержат одинаковое изображение. Это даёт корректный 50i сигнал, но **визуальное временное разрешение — 25p**, не 50p: движение не сдвигается между двумя полями одной пары.
 
-Это зашито в архитектуру движка (`decklink_consumer.cpp`): пара полей строится из одного приходящего от CEF кадра; движок запрашивает у CEF новый кадр только когда `paint_seq` изменился, иначе пара берётся из старого. Поэтому **целевой потолок `in_fps` = 25, а не 50** на сложном контенте. Phase 18 ([PERFORMANCE_ROADMAP.md](PERFORMANCE_ROADMAP.md), [phase-18-true-50p-pipeline.md](development-phases/phase-18-true-50p-pipeline.md)) показал: на empty/cheap контенте потолок уже **50** (`d_pairs≈125`); на `test1` pump-переработка (Fallback eager packing) **не** поднимает потолок — CEF OSR коалесцирует dual BeginFrame, а один raster `test1` съедает ~field budget. Потолок 25 на `test1` остаётся **content/raster-bound**, не «архитектурный запрет weave».
+Это зашито в архитектуру движка (`decklink_consumer.cpp`): пара полей строится из одного приходящего от CEF кадра; движок запрашивает у CEF новый кадр только когда `paint_seq` изменился, иначе пара берётся из старого. Поэтому **целевой потолок `in_fps` = 25, а не 50** на сложном контенте. Phase 18 ([PERFORMANCE_ROADMAP.md](PERFORMANCE_ROADMAP.md), [phase-18-true-50p-pipeline.md](../development-phases/phase-18-true-50p-pipeline.md)) показал: на empty/cheap контенте потолок уже **50** (`d_pairs≈125`); на `test1` pump-переработка (Fallback eager packing) **не** поднимает потолок — CEF OSR коалесцирует dual BeginFrame, а один raster `test1` съедает ~field budget. Потолок 25 на `test1` остаётся **content/raster-bound**, не «архитектурный запрет weave».
 
 **Переформулированная цель Вопроса A (Phase 15):** поднять `in_fps` на `test1` с текущих ~24 до стабильных 25 при 3 каналах — это означает, что движок перестаёт «не успевать» и регулярно даёт свежие пары полей (`d_pairs > 0` стабильно, `d_starved` падает). Кажется скромным как цифра, но именно это даёт визуально плавную картинку. Реальные 50 — отдельная цель Phase 18.
 
 ### 1.1.2 Главная находка 7 июля 2026: проблема в `left/top` (подтверждено кодом)
 
-[runtime/src/transform.ts:56-65](../runtime/src/transform.ts) возвращает позицию слоя как `left`/`top` + отдельное поле `transform` только для rotation/scale/perspective. [runtime/src/domRenderer.ts:601-602, 750-751](../runtime/src/domRenderer.ts) пишет `el.style.left = "${at.left}px"; el.style.top = "${at.top}px"` на каждый кадр для каждого слоя и каждой маски. В test1 анимируются именно `x`, `y` (→ `left`, `top`), `rotation`, `width`. То есть **каждый кадр триггерит Layout** внутри Blink, что форсирует Paint + Raster повреждённой области — ~10× дороже raster, чем если бы те же координаты писались через `transform: translate3d(...)`.
+[runtime/src/transform.ts:56-65](../../runtime/src/transform.ts) возвращает позицию слоя как `left`/`top` + отдельное поле `transform` только для rotation/scale/perspective. [runtime/src/domRenderer.ts:601-602, 750-751](../../runtime/src/domRenderer.ts) пишет `el.style.left = "${at.left}px"; el.style.top = "${at.top}px"` на каждый кадр для каждого слоя и каждой маски. В test1 анимируются именно `x`, `y` (→ `left`, `top`), `rotation`, `width`. То есть **каждый кадр триггерит Layout** внутри Blink, что форсирует Paint + Raster повреждённой области — ~10× дороже raster, чем если бы те же координаты писались через `transform: translate3d(...)`.
 
-Это количественно объясняет разницу: простой `test` (1 слой, layout дешевле) → ~49 fps; сложный `test1` (11 слоёв, layout дороже) → ~24 fps. И это согласуется с Research 3 / Recommendation 2 из `docs/development-proposals.md`, но теперь у нас есть **конкретная точка правки в коде**, а не абстрактная рекомендация. Детальный план оптимизации — [docs/PHASE_15_PERFORMANCE_PLAN.md](PHASE_15_PERFORMANCE_PLAN.md).
+Это количественно объясняет разницу: простой `test` (1 слой, layout дешевле) → ~49 fps; сложный `test1` (11 слоёв, layout дороже) → ~24 fps. И это согласуется с Research 3 / Recommendation 2 из `docs/other/development-proposals.md`, но теперь у нас есть **конкретная точка правки в коде**, а не абстрактная рекомендация. Детальный план оптимизации — [docs/other/PHASE_15_PERFORMANCE_PLAN.md](PHASE_15_PERFORMANCE_PLAN.md).
 
-Это ровно диагноз, который независимо поставил внешний программист в `docs/development-proposals.md`: узкое место — программная растеризация Skia (CPU raster), вызываемая избыточной Paint Invalidation внутри Blink. Findings Phase 12 (research другого агента, см. `docs/development-phases/phase-12-blink-pipeline.md`) подтверждают механизм на уровне кода:
+Это ровно диагноз, который независимо поставил внешний программист в `docs/other/development-proposals.md`: узкое место — программная растеризация Skia (CPU raster), вызываемая избыточной Paint Invalidation внутри Blink. Findings Phase 12 (research другого агента, см. `docs/development-phases/phase-12-blink-pipeline.md`) подтверждают механизм на уровне кода:
 
 1. Beacon вызывает paint+raster на каждый `requestAnimationFrame`, даже когда `styleWrites=0` (`channel.html:134-153`).
 2. Таймлайн-движок Titulus анимирует `left`/`top`, а не `transform` — то есть каждый кадр анимации это полноценный **Layout**, а не только Composite.
@@ -72,7 +72,7 @@ in_fps=24.6 out_fps=25.0 queue=0 d_pairs=0-9 d_singles=110-120 d_starved=1-10 ..
 | `SCHED_FIFO priority 2` | ❌ Недоступен на этом хосте | Во всех логах: `unavailable (Операция не позволена)` — нет прав RT. Второстепенный открытый пункт |
 | Тепловой троттлинг | ❌ Опровергнуто | См. выше — 3+ часа под нагрузкой без малейшего дрейфа температуры/частоты |
 
-## 1.3 Оценка рекомендаций `docs/development-proposals.md`
+## 1.3 Оценка рекомендаций `docs/other/development-proposals.md`
 
 Диагноз внешнего программиста (Perf → Chrome Trace → invalidation tracking → Skia CPU raster) подтверждается напрямую нашими данными и принимается как основной ориентир. Построчные вердикты:
 
@@ -160,7 +160,7 @@ in_fps=24.6 out_fps=25.0 queue=0 d_pairs=0-9 d_singles=110-120 d_starved=1-10 ..
 
 ## 2.4 План действий — Phase 14
 
-**Полная, очень подробная техническая версия плана с командами, код-диффами, скриптами анализа и пошаговыми инструкциями для оператора вынесена в отдельный документ:** [docs/PHASE_14_MICROFREEZE_PLAN.md](PHASE_14_MICROFREEZE_PLAN.md). Ниже — краткая сводка.
+**Полная, очень подробная техническая версия плана с командами, код-диффами, скриптами анализа и пошаговыми инструкциями для оператора вынесена в отдельный документ:** [docs/other/PHASE_14_MICROFREEZE_PLAN.md](PHASE_14_MICROFREEZE_PLAN.md). Ниже — краткая сводка.
 
 Ключевое методологическое правило детального плана, которого не было в первоначальном наброске: **сначала строится объективный детектор фризов (покадровый `--frame-log` + скрипт `analyze-frame-log.mjs`) и валидируется глазами (E1), и только потом запускаются A/B тесты.** Без этого каждый A/B приходится оценивать «на глаз», что при хаотичном паттерне 5-11с превращает эксперимент в угадайку.
 
@@ -208,15 +208,15 @@ Phase 17 (насыщение raster-пула / латентность)          
 
 **Все детали вынесены в отдельные документы:**
 
-- [docs/PHASE_15_PERFORMANCE_PLAN.md](PHASE_15_PERFORMANCE_PLAN.md) — детальный план текущей фазы (P0-P6: телеметрия → cost matrix → правка `transform.ts`/`domRenderer.ts` → валидация).
-- [docs/PERFORMANCE_ROADMAP.md](PERFORMANCE_ROADMAP.md) — сводный обзор всех фаз 15-20 с зависимостями, приблизительными сроками и критериями успеха.
+- [docs/other/PHASE_15_PERFORMANCE_PLAN.md](PHASE_15_PERFORMANCE_PLAN.md) — детальный план текущей фазы (P0-P6: телеметрия → cost matrix → правка `transform.ts`/`domRenderer.ts` → валидация).
+- [docs/other/PERFORMANCE_ROADMAP.md](PERFORMANCE_ROADMAP.md) — сводный обзор всех фаз 15-20 с зависимостями, приблизительными сроками и критериями успеха.
 
 Краткое резюме по фазам:
 
 ## Phase 15 — Оптимизация transform (ТЕКУЩИЙ ФОКУС, 3-5 дней)
 
 **Статус 7 июля 2026: ЗАВЕРШЕНО.** Полный отчёт с числами и изменениями в
-коде — [docs/PHASE_15_RESULTS.md](PHASE_15_RESULTS.md).
+коде — [docs/other/PHASE_15_RESULTS.md](PHASE_15_RESULTS.md).
 Краткий итог: 3-канальный DeckLink soak (15 минут) достиг **in_fps≈25** на
 всех каналах (потолок 25p-as-50i, был ~24), raster p95 упал с 234.7 до 189.9
 ms/frame за счёт P3-B (мемоизация projected-mask геометрии). Класс A
@@ -225,11 +225,11 @@ ms/frame за счёт P3-B (мемоизация projected-mask геометр�
 `transform` (наивный `translate3d` ломает пивот вращения для всех слоёв с
 `anchorX/Y ≠ 0`) — переносится в Phase 16.
 
-**Главная находка:** [runtime/src/transform.ts](../runtime/src/transform.ts) и [runtime/src/domRenderer.ts](../runtime/src/domRenderer.ts) пишут `left`/`top` в CSS на каждый кадр — это триггерит Layout в Blink и делает кадр в ~10× дороже raster, чем нужно. Перевод `x`/`y`/`rotation` в единый `transform: translate3d(...) rotate(...)` — главное направление. **Цель:** `in_fps` на `test1` с ~24 → 25 (достигнуть движкового потолка). Реальные 50 — Phase 18.
+**Главная находка:** [runtime/src/transform.ts](../../runtime/src/transform.ts) и [runtime/src/domRenderer.ts](../../runtime/src/domRenderer.ts) пишут `left`/`top` в CSS на каждый кадр — это триггерит Layout в Blink и делает кадр в ~10× дороже raster, чем нужно. Перевод `x`/`y`/`rotation` в единый `transform: translate3d(...) rotate(...)` — главное направление. **Цель:** `in_fps` на `test1` с ~24 → 25 (достигнуть движкового потолка). Реальные 50 — Phase 18.
 
 ## Phase 16 — Performance Matrix + layer promotion (ЗАВЕРШЕНО, 8 июля 2026)
 
-Деливерабл: [docs/development-phases/phase-16-performance-matrix.md](development-phases/phase-16-performance-matrix.md).
+Деливерабл: [docs/development-phases/phase-16-performance-matrix.md](../development-phases/phase-16-performance-matrix.md).
 
 Краткий итог:
 - Расширена матрица bench-стендов (clip-circle, css-blur, drop-shadow, text-100, image-stack, gradients + layer A/B).
@@ -239,7 +239,7 @@ ms/frame за счёт P3-B (мемоизация projected-mask геометр�
 
 ## Phase 17 — Почему CPU ~60%, а не 100%? (ЗАВЕРШЕНО, 8 июля 2026)
 
-Деливерабл: [docs/development-phases/phase-17-raster-latency.md](development-phases/phase-17-raster-latency.md).
+Деливерабл: [docs/development-phases/phase-17-raster-latency.md](../development-phases/phase-17-raster-latency.md).
 
 Вердикт смешанный: raster-пул недонасыщен для self-timer/headless пути
 (`num-raster-threads=3` даёт +5.6% fps / −44% paint-latency p95), но для
@@ -251,7 +251,7 @@ CPU не является главным ограничителем там). `nu
 
 ## Phase 18 — Реальный 50p progressive pipeline — DONE (потолок задокументирован)
 
-См. [phase-18-true-50p-pipeline.md](development-phases/phase-18-true-50p-pipeline.md). Approach A (CEF in-flight) опровергнут; Approach B не обоснован бюджетом; Fallback реализован. На `test1` 3ch: `in_fps≈25`, `d_pairs` без lift vs Phase 17. True 50p на empty/cheap уже работает. Следующий рычаг — снижение стоимости кадра (Phase 19), не pump.
+См. [phase-18-true-50p-pipeline.md](../development-phases/phase-18-true-50p-pipeline.md). Approach A (CEF in-flight) опровергнут; Approach B не обоснован бюджетом; Fallback реализован. На `test1` 3ch: `in_fps≈25`, `d_pairs` без lift vs Phase 17. True 50p на empty/cheap уже работает. Следующий рычаг — снижение стоимости кадра (Phase 19), не pump.
 
 ## Phase 19 — Style Guide + Cost Model в runtime (2-3 дня)
 
@@ -315,7 +315,7 @@ CPU не является главным ограничителем там). `nu
 
 1. **Закрыто**: есть два готовых шаблона. **Внимание: 7 июля 2026 имена поменяны местами** — актуальное соответствие: `test` = простой (1 группа, rect + clock), `test1` = сложный (11 слоёв, маски, timeline-анимации x/y/rotation/width). Шаблоны спасены в `tests/templates/test.json` и `tests/templates/test1.json`. Используются в Phase 14 (микрофризы) и Phase 15 (оптимизация) по умолчанию.
 2. **Закрыто**: у друга `irqbalance` = **inactive** (исключён как общая причина, остаётся только локальным sanity-тестом у пользователя), THP `madvise` (как и у пользователя — общий кандидат).
-3. **Закрыто**: да, готов. Подробная инструкция для оператора (один терминал на `mark-freeze.sh`, Enter при фризах) — в [docs/PHASE_14_MICROFREEZE_PLAN.md](PHASE_14_MICROFREEZE_PLAN.md), эксперимент E1.
+3. **Закрыто**: да, готов. Подробная инструкция для оператора (один терминал на `mark-freeze.sh`, Enter при фризах) — в [docs/other/PHASE_14_MICROFREEZE_PLAN.md](PHASE_14_MICROFREEZE_PLAN.md), эксперимент E1.
 4. **Закрыто**: не повторялась, считаем разовой аномалией и больше не расследуем.
 5. **Закрыто**: да, приемлемо.
 

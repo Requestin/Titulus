@@ -33,10 +33,10 @@ flowchart TD
 
 ## Phase 15 — Оптимизация transform (ТЕКУЩИЙ ФОКУС)
 
-**Деливерабл:** [docs/PHASE_15_PERFORMANCE_PLAN.md](PHASE_15_PERFORMANCE_PLAN.md).
+**Деливерабл:** [docs/other/PHASE_15_PERFORMANCE_PLAN.md](PHASE_15_PERFORMANCE_PLAN.md).
 **Цель:** `in_fps` на `test1` с ~24 → 25 при 3 каналах.
 
-**Главная находка:** [runtime/src/transform.ts](../runtime/src/transform.ts) и [runtime/src/domRenderer.ts](../runtime/src/domRenderer.ts) пишут `left/top` в CSS на каждый кадр для каждого слоя — это триггерит Layout в Blink, что форсирует ~10× дороже raster. Перевод в `transform: translate3d()` — главное направление.
+**Главная находка:** [runtime/src/transform.ts](../../runtime/src/transform.ts) и [runtime/src/domRenderer.ts](../../runtime/src/domRenderer.ts) пишут `left/top` в CSS на каждый кадр для каждого слоя — это триггерит Layout в Blink, что форсирует ~10× дороже raster. Перевод в `transform: translate3d()` — главное направление.
 
 **Подэтапы:** P0 (телеметрия Layout/Paint/Raster events) → P1 (cost matrix на bench-шаблонах) → P2 (решение) → P3 (правка transform.ts/domRenderer.ts) → P4 (width-анимация на масках) → P5 (layer promotion если P3-P4 недостаточно) → P6 (soak-валидация).
 
@@ -46,7 +46,7 @@ flowchart TD
 
 ## Phase 16 — Performance Matrix + layer promotion (ЗАВЕРШЕНО, 8 июля 2026)
 
-**Деливерабл:** [docs/development-phases/phase-16-performance-matrix.md](development-phases/phase-16-performance-matrix.md).
+**Деливерабл:** [docs/development-phases/phase-16-performance-matrix.md](../development-phases/phase-16-performance-matrix.md).
 
 **Цель:** систематизировать стоимость всех CSS-свойств в нашем CPU-renderer и зафиксировать layer promotion стратегию.
 
@@ -67,7 +67,7 @@ Phase 15: Class A реализован и validated.
 
 ## Phase 17 — Почему CPU ~60%, а не 100%? (ЗАВЕРШЕНО, 8 июля 2026)
 
-**Деливерабл:** [docs/development-phases/phase-17-raster-latency.md](development-phases/phase-17-raster-latency.md).
+**Деливерабл:** [docs/development-phases/phase-17-raster-latency.md](../development-phases/phase-17-raster-latency.md).
 
 **Цель:** количественный ответ на вопрос пользователя «почему ядра не загружены полностью?».
 
@@ -84,7 +84,7 @@ Phase 15: Class A реализован и validated.
   `engine/research/lib/analyze-frame-log.mjs`.
 - `BG_NUM_RASTER_THREADS` env-hook в `engine_app.cpp`; закреплён как default
   `(закреплённые логические ядра канала − 1)` в
-  [engine/run-channel.sh](../engine/run-channel.sh).
+  [engine/run-channel.sh](../../engine/run-channel.sh).
 - 3-канальный DeckLink soak (~16.7 мин): `d_late=0 d_dropped=0` на всех
   каналах, без регрессии.
 
@@ -102,7 +102,7 @@ pump-режимов) ответ получен с числами.
 
 ## Phase 18 — Реальный 50p progressive pipeline — DONE (потолок задокументирован)
 
-**Статус:** DONE (2026-07-09). Отчёт (включая Decision Gate): [phase-18-true-50p-pipeline.md](development-phases/phase-18-true-50p-pipeline.md).
+**Статус:** DONE (2026-07-09). Отчёт (включая Decision Gate): [phase-18-true-50p-pipeline.md](../development-phases/phase-18-true-50p-pipeline.md).
 
 **Цель была:** `in_fps=50` на `test1` при 3 каналах (true 50p-as-50i).
 
@@ -127,7 +127,7 @@ pump-режимов) ответ получен с числами.
 **Цель:** зафиксировать знания из Phase 15-16 в:
 
 1. `docs/TEMPLATE_PERFORMANCE_GUIDE.md` — для дизайнеров шаблонов: «предпочитай transform, избегай width-анимации на масках» и т.д.
-2. Cost model в [runtime/src/transform.ts](../runtime/src/transform.ts) (или новом `runtime/src/costModel.ts`) — каждая анимируемая операция получает оценку стоимости; при загрузке шаблона runtime логирует предупреждения вида «анимация `width` на слое X стоит ~Y ms/frame, рассмотрите `scaleX`».
+2. Cost model в [runtime/src/transform.ts](../../runtime/src/transform.ts) (или новом `runtime/src/costModel.ts`) — каждая анимируемая операция получает оценку стоимости; при загрузке шаблона runtime логирует предупреждения вида «анимация `width` на слое X стоит ~Y ms/frame, рассмотрите `scaleX`».
 
 **Действия:**
 

@@ -69,12 +69,12 @@ flowchart TD
 
 Пишет построчно в CSV `wall_clock_us, interval_us, paint_seq` каждый раз, когда движок доставляет новый кадр. Точка вставки — сразу после `stats.RecordFrame(interval_us, expected_us)` в **обеих** ветках main loop:
 
-- decklink_driven ветка: [engine/src/main.cpp](../engine/src/main.cpp) после строки ~266 (`stats.RecordFrame(...)`)
-- self-timer ветка: [engine/src/main.cpp](../engine/src/main.cpp) после строки ~355 (`stats.RecordFrame(...)`)
+- decklink_driven ветка: [engine/src/main.cpp](../../engine/src/main.cpp) после строки ~266 (`stats.RecordFrame(...)`)
+- self-timer ветка: [engine/src/main.cpp](../../engine/src/main.cpp) после строки ~355 (`stats.RecordFrame(...)`)
 
 ### Изменения в коде
 
-**[engine/src/config.h](../engine/src/config.h)** — добавить поле в `struct Config` (район строки 68, рядом с `blink_research`):
+**[engine/src/config.h](../../engine/src/config.h)** — добавить поле в `struct Config` (район строки 68, рядом с `blink_research`):
 
 ```cpp
 // Phase 14: per-frame CSV log for microfreeze diagnostics. Empty = off.
@@ -82,7 +82,7 @@ flowchart TD
 std::string frame_log;
 ```
 
-**[engine/src/config.cpp](../engine/src/config.cpp)** — env fallback (после строки ~123, рядом с другими env):
+**[engine/src/config.cpp](../../engine/src/config.cpp)** — env fallback (после строки ~123, рядом с другими env):
 
 ```cpp
 frame_log       = env_or("FRAME_LOG",    frame_log.c_str());
@@ -102,7 +102,7 @@ if (match_prefix(arg, "--frame-log",  val, i, argc, argv)) { frame_log = val; co
 
 в `Describe()` — добавить ` frame_log=...` в snprintf-строку, чтобы было видно в startup-логе.
 
-**[engine/src/main.cpp](../engine/src/main.cpp)** — открыть файл сразу после `bg::Config cfg;` (строка ~87). **Важно:** используем `system_clock`, а не `steady_clock` — `steady_clock` на Linux это `CLOCK_MONOTONIC` с произвольной «эпохой» (обычно момент загрузки системы), а нам нужно сопоставлять wall-clock с `date +%s%6N` из `mark-freeze.sh` (это Unix epoch, `CLOCK_REALTIME`). `steady_clock` для измерения *интервалов* внутри движка остаётся как есть — он правильно монотонный.
+**[engine/src/main.cpp](../../engine/src/main.cpp)** — открыть файл сразу после `bg::Config cfg;` (строка ~87). **Важно:** используем `system_clock`, а не `steady_clock` — `steady_clock` на Linux это `CLOCK_MONOTONIC` с произвольной «эпохой» (обычно момент загрузки системы), а нам нужно сопоставлять wall-clock с `date +%s%6N` из `mark-freeze.sh` (это Unix epoch, `CLOCK_REALTIME`). `steady_clock` для измерения *интервалов* внутри движка остаётся как есть — он правильно монотонный.
 
 ```cpp
 std::FILE* frame_log_file = nullptr;
@@ -149,7 +149,7 @@ cmake --build build -j
 
 ### Передача флага через run-channel.sh
 
-В [engine/run-channel.sh](../engine/run-channel.sh) есть уже парсинг `--remote-debugging-port`. По аналогии добавить `--frame-log=PATH`:
+В [engine/run-channel.sh](../../engine/run-channel.sh) есть уже парсинг `--remote-debugging-port`. По аналогии добавить `--frame-log=PATH`:
 
 ```bash
 FRAME_LOG="${FRAME_LOG:-}"
@@ -170,9 +170,9 @@ FRAME_LOG=/tmp/titulus-engines/frame-Ch1.csv \
 
 ## E0.2 — Поштучное логирование late/dropped карты (та же пересборка)
 
-Сейчас в [engine/src/consumers/decklink_consumer.cpp](../engine/src/consumers/decklink_consumer.cpp) есть только 5с-агрегаты `d_late/d_dropped/d_flushed` (район строки 676). Покадровая корреляция невозможна. Добавим отдельный CSV `late_log` — по одной строке на каждое завершённое `ScheduledFrameCompleted` с не-OK результатом.
+Сейчас в [engine/src/consumers/decklink_consumer.cpp](../../engine/src/consumers/decklink_consumer.cpp) есть только 5с-агрегаты `d_late/d_dropped/d_flushed` (район строки 676). Покадровая корреляция невозможна. Добавим отдельный CSV `late_log` — по одной строке на каждое завершённое `ScheduledFrameCompleted` с не-OK результатом.
 
-Точка вставки — [engine/src/consumers/decklink_consumer.cpp](../engine/src/consumers/decklink_consumer.cpp) строки 491-506, внутри `OnScheduledFrameCompleted`. Здесь тоже `system_clock` (та же причина — сопоставимость с `mark-freeze.sh` и с `frame-log`):
+Точка вставки — [engine/src/consumers/decklink_consumer.cpp](../../engine/src/consumers/decklink_consumer.cpp) строки 491-506, внутри `OnScheduledFrameCompleted`. Здесь тоже `system_clock` (та же причина — сопоставимость с `mark-freeze.sh` и с `frame-log`):
 
 ```cpp
 // Сразу после блока if/else if, увеличивающего late_/dropped_/flushed_:
@@ -402,7 +402,7 @@ echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/defrag
 
 ### Плюмбинг в коде
 
-В [engine/src/engine_app.cpp](../engine/src/engine_app.cpp) рядом с `g_blink_research` (строка 21) добавить:
+В [engine/src/engine_app.cpp](../../engine/src/engine_app.cpp) рядом с `g_blink_research` (строка 21) добавить:
 
 ```cpp
 std::string g_js_flags;  // пустая = не передавать
@@ -568,7 +568,7 @@ FRAME_LOG=/tmp/titulus-engines/frame-e3a.csv \
 
 ## E3b — Прогон через `null_consumer`
 
-Шаблон test1, но `--consumer=null` вместо decklink. Это переключает на **self-timer ветку** main loop (см. [engine/src/main.cpp:207](../engine/src/main.cpp) `decklink_driven = consumer && consumer->HasExternalClock()` — у NullConsumer `HasExternalClock()` по умолчанию false из [consumer.h](../engine/src/consumers/consumer.h)).
+Шаблон test1, но `--consumer=null` вместо decklink. Это переключает на **self-timer ветку** main loop (см. [engine/src/main.cpp:207](../../engine/src/main.cpp) `decklink_driven = consumer && consumer->HasExternalClock()` — у NullConsumer `HasExternalClock()` по умолчанию false из [consumer.h](../../engine/src/consumers/consumer.h)).
 
 **Важная оговорка по интерпретации:** self-timer ветка использует `MessagePump::Tick()` для пейсинга, а не `WaitForTick()` от карты. Это **другая** логика синхронизации — фризы от DeckLink-драйвера в этой ветке физически не появятся (карта не драйвит), но **и** фризы от CEF/V8/ОС тоже могут проявиться иначе (другая частота тиков, другой sleep-паттерн). Результат надо интерпретировать осторожно:
 
@@ -608,7 +608,7 @@ dpkg -l | grep -i blackmagic 2>/dev/null
 
 ## E4.1 — Расширение trace-startup-категорий (нужна пересборка)
 
-В [engine/src/engine_app.cpp](../engine/src/engine_app.cpp) сейчас зашит `kTraceStartupCategories` (строки 23-27), плюс 15с длительности (строка 111). Делаем конфигурируемым через env:
+В [engine/src/engine_app.cpp](../../engine/src/engine_app.cpp) сейчас зашит `kTraceStartupCategories` (строки 23-27), плюс 15с длительности (строка 111). Делаем конфигурируемым через env:
 
 ```cpp
 // В namespace { } (строка 16):
@@ -737,7 +737,7 @@ sudo perf sched timehist --pid=$PUMP_PID | head -200 > /tmp/perf-sched-Ch1.txt
 
 ## E6 — Покадровый лог «работа vs ожидание» в pump-цикле
 
-Расширить `--frame-log` CSV ещё одним полем `pump_active_us` — сколько микросекунд за этот тик ушло на `CefDoMessageLoopWork()` vs на сон в ожидании paint. Точка вставки — [engine/src/main.cpp](../engine/src/main.cpp) строки 241-251 (decklink_driven ветка): считать сумму `slice` до break и сумму sleeps.
+Расширить `--frame-log` CSV ещё одним полем `pump_active_us` — сколько микросекунд за этот тик ушло на `CefDoMessageLoopWork()` vs на сон в ожидании paint. Точка вставки — [engine/src/main.cpp](../../engine/src/main.cpp) строки 241-251 (decklink_driven ветка): считать сумму `slice` до break и сумму sleeps.
 
 Если фризы коррелируют с высоким `pump_active_us` (движок **делает работу** дольше обычного) — проблема в CEF work-load. Если с обычным `pump_active_us`, но долгим `interval_us` — проблема в ожидании (карта/IPC).
 

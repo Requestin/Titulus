@@ -3,7 +3,7 @@
 **Дата:** 7 июля 2026. **Цель:** минимизировать стоимость кадра (Layout/
 Paint/Raster) на сложном шаблоне `test1`, создав headroom для будущего
 Phase 18 (истинный 50p). Полный ход работы — в
-[docs/PHASE_15_PERFORMANCE_PLAN.md](../PHASE_15_PERFORMANCE_PLAN.md) и
+[docs/other/PHASE_15_PERFORMANCE_PLAN.md](../other/PHASE_15_PERFORMANCE_PLAN.md) и
 живом логе [engine/research/results/p15/p15-progress.md](../../engine/research/results/p15/p15-progress.md).
 
 ## Итоговый результат
@@ -20,7 +20,7 @@ soak на реальном железе:**
 
 **Все 3 канала практически достигли теоретического потолка `out_fps=25.0`**
 (текущий режим 1080i50 = 25p-as-50i, см. §1.1.1
-[PERFORMANCE_INVESTIGATION_PLAN.md](../PERFORMANCE_INVESTIGATION_PLAN.md)).
+[PERFORMANCE_INVESTIGATION_PLAN.md](../other/PERFORMANCE_INVESTIGATION_PLAN.md)).
 
 **Raster-стоимость (главная метрика для headroom к Phase 18):**
 
@@ -61,7 +61,7 @@ soak на реальном железе:**
    origin, задваивает смещение. Корректная реализация требует полной
    декомпозиции пивота вращения — риск визуальной регрессии выше, чем
    ожидаемый выигрыш (P1 показал 0% для изолированного случая). Отложено за
-   рамки Phase 15 (см. Phase 16 в [PERFORMANCE_ROADMAP.md](../PERFORMANCE_ROADMAP.md)).
+   рамки Phase 15 (см. Phase 16 в [PERFORMANCE_ROADMAP.md](../other/PERFORMANCE_ROADMAP.md)).
 6. **P4 — Editor проверен.** Изолированный frontend dev-инстанс, визуальная
    проверка `test1` (включая degenerate mask case — width→0) — без регрессий.
 7. **P5 — Soak на реальном железе.** 3 канала DeckLink (device-index 1/2/3),

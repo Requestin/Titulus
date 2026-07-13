@@ -61,7 +61,7 @@ Raster p95 = **189.9 ms/frame** при текущем 25 fps. Для 50p (кад
 бюджета 50p**. Это означает, что Phase 18 потребует не только архитектурного
 перехода на «поле-за-поле» в `main.cpp`/`decklink_consumer.cpp`, но и
 предварительной **глубокой raster-оптимизации** (Phase 17 в
-[docs/PERFORMANCE_ROADMAP.md](../PERFORMANCE_ROADMAP.md) — «насыщение
+[docs/other/PERFORMANCE_ROADMAP.md](PERFORMANCE_ROADMAP.md) — «насыщение
 raster-пула или латентность»).
 
 **Вердикт:** Phase 18 без Phase 17 нереалистичен. Фокус следующей работы —

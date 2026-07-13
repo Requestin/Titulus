@@ -8,8 +8,8 @@
 
 При изучении runtime обнаружена **главная, количественно объяснимая причина** низкой производительности на сложных шаблонах. Это не узкое место (bottleneck) движка и не map драйвера — это **способ записи координат в DOM**:
 
-- [runtime/src/transform.ts:56-65](../runtime/src/transform.ts) возвращает `left`, `top`, `width`, `height` + отдельное поле `transform` только для rotation/scale/perspective.
-- [runtime/src/domRenderer.ts:601-602, 750-751](../runtime/src/domRenderer.ts) пишет `el.style.left = "${at.left}px"; el.style.top = "${at.top}px"` на каждый кадр для каждого слоя.
+- [runtime/src/transform.ts:56-65](../../runtime/src/transform.ts) возвращает `left`, `top`, `width`, `height` + отдельное поле `transform` только для rotation/scale/perspective.
+- [runtime/src/domRenderer.ts:601-602, 750-751](../../runtime/src/domRenderer.ts) пишет `el.style.left = "${at.left}px"; el.style.top = "${at.top}px"` на каждый кадр для каждого слоя.
 - В `test1` анимируются **`x`, `y`, `rotation`, `width`** по timeline (`tests/templates/test1.json`, см. trackDirectors и keyframes). Поскольку `x/y` транслируются в `left/top` — **каждый кадр триггерит Layout** внутри Blink, что форсирует Paint + Raster всей повреждённой (invalidated) области. Это ~10-кратное удорожание кадра против transform-only.
 
 Одно это объясняет и `in_fps ≈ 24` на `test1`, и `in_fps ≈ 49` на простом `test` (где тоже анимируется X/Y у одной группы — но только 1 слой,layout дешевле).
@@ -35,7 +35,7 @@
 telemetry5s in_fps=24.6 out_fps=25.0 queue=0 d_pairs=0-9 d_singles=110-120 d_starved=1-10 ...
 ```
 
-`out_fps=25.0` — **DeckLink работает в режиме «25 прогрессивных кадров, отправляемых как 50i»**, то есть пара полей формируется из одного и того же bitmap (weave одинаковых полей). Это поведение зашито в [decklink_consumer.cpp](../engine/src/consumers/decklink_consumer.cpp): пара полей строится из одного приходящего от CEF кадра; движок запрашивает у CEF **новый** кадр только когда `paint_seq` изменился, иначе пара берётся из старого.
+`out_fps=25.0` — **DeckLink работает в режиме «25 прогрессивных кадров, отправляемых как 50i»**, то есть пара полей формируется из одного и того же bitmap (weave одинаковых полей). Это поведение зашито в [decklink_consumer.cpp](../../engine/src/consumers/decklink_consumer.cpp): пара полей строится из одного приходящего от CEF кадра; движок запрашивает у CEF **новый** кадр только когда `paint_seq` изменился, иначе пара берётся из старого.
 
 Это означает, что **целевой потолок `in_fps` = 25, а не 50** — если мы формируем кадр прогрессивно. Чтобы получить реальное временное разрешение 50 (движение сдвигается между двумя полями одной пары), нужна отдельная архитектурная работа (Phase 18 — см. [PERFORMANCE_ROADMAP.md](PERFORMANCE_ROADMAP.md)). Это **не цель Phase 15**.
 
@@ -75,7 +75,7 @@ this.setStyle(el, cache, 'top', `${at.top}px`);     // ← КАЖДЫЙ КАДР
 
 1. **Anchor pivot**. В схеме Titulus `x/y` — это позиция пивота в родительском пространстве, а не top-left элемента. `left = x - width*anchorX`. Чтобы перенести в transform, нужно либо сохранять `transform-origin: ${anchorX*width}px ${anchorY*height}px` и писать `transform: translate3d(${x}px, ${y}px, 0)`, либо учитывать anchor внутри самого translate. Это локальное изменение в `transform.ts`, но требует аккуратности.
 2. **3D perspective**. Если есть `rotationX`/`rotationY`, в transform уже есть `perspective(...)`. Добавить translate3d нужно в правильном порядке (translate должен быть **после** perspective в CSS-строке, иначе perspective применится к уже смещённому элементу). Технически решаемо.
-3. **Masks**. Маски вычисляют clip-path через `applyTransform` родителя и себя (см. [maskGeometry.ts](../runtime/src/maskGeometry.ts)). При переходе на transform-based координаты геометрия маски тоже должна использовать transform pipeline, иначе рассинхрон.
+3. **Masks**. Маски вычисляют clip-path через `applyTransform` родителя и себя (см. [maskGeometry.ts](../../runtime/src/maskGeometry.ts)). При переходе на transform-based координаты геометрия маски тоже должна использовать transform pipeline, иначе рассинхрон.
 4. **`width`**. `width` принципиально нельзя засунуть в transform — это layout-box свойство. Для масок в `test1`, где ширина анимируется (`210ee6a3: width: 566 → 0`), это означает, что либо LayerMask надо полностью перерисовывать (как сейчас), либо использовать `clip-path: inset(0 ${(1-w/origW)*100}% 0 0)` (compositor-friendly), либо `scaleX` на inner-элементе (если маска не зависит от содержимого).
 
 **Вывод:** это **не «меняем `left` на `transform` в одной строке»**, это многошаговая работа, поэтому Phase 15 разбит на подэтапы с метриками после каждого.
@@ -117,7 +117,7 @@ flowchart TD
 
 ### Как измеряем (без пересборки движка для каждого изменения)
 
-**Уже существует** (Phase 12): [engine/src/engine_app.cpp](../engine/src/engine_app.cpp) пишет `blink-trace.json` при старте движка, если есть `--remote-debugging-port=N` или `--blink-research=N`, длительность зашита 15с, категории зашиты в `kTraceStartupCategories` (см. [engine_app.cpp:23-28](../engine/src/engine_app.cpp)).
+**Уже существует** (Phase 12): [engine/src/engine_app.cpp](../../engine/src/engine_app.cpp) пишет `blink-trace.json` при старте движка, если есть `--remote-debugging-port=N` или `--blink-research=N`, длительность зашита 15с, категории зашиты в `kTraceStartupCategories` (см. [engine_app.cpp:23-28](../../engine/src/engine_app.cpp)).
 
 **Phase 14 уже заложил правку** (E4.1 в [PHASE_14_MICROFREEZE_PLAN.md](PHASE_14_MICROFREEZE_PLAN.md)): env-переменные `BG_TRACE_SECONDS` и `BG_TRACE_CATEGORIES`. Они нужны и здесь. Если Phase 14 ещё не выполнен — делаем ту же правку здесь (она идентична).
 
@@ -201,7 +201,7 @@ bench/
 └── run-all.sh
 ```
 
-Каждый bench сам пишет статистику через `[runtime/src/stats.ts](../runtime/src/stats.ts)` + `engine_app.cpp` trace-startup, так что прогон идентичен Phase 12 схеме. Все запускаем через `engine/run-channel.sh` с `BG_TRACE_SECONDS=30 BG_TRACE_CATEGORIES="blink,devtools.timeline,disabled-by-default-devtools.timeline.invalidationTracking"`, затем анализируем `analyze-blink-trace.mjs`.
+Каждый bench сам пишет статистику через `[runtime/src/stats.ts](../../runtime/src/stats.ts)` + `engine_app.cpp` trace-startup, так что прогон идентичен Phase 12 схеме. Все запускаем через `engine/run-channel.sh` с `BG_TRACE_SECONDS=30 BG_TRACE_CATEGORIES="blink,devtools.timeline,disabled-by-default-devtools.timeline.invalidationTracking"`, затем анализируем `analyze-blink-trace.mjs`.
 
 ### Сводим в таблицу `docs/development-phases/phase-15-cost-matrix.md`
 
@@ -240,7 +240,7 @@ bench/
 
 **Самая большая по риску правка.** Меняется «источник истины» для позиционирования слоя.
 
-### 3.1. Меняем `applyTransform` в [runtime/src/transform.ts](../runtime/src/transform.ts)
+### 3.1. Меняем `applyTransform` в [runtime/src/transform.ts](../../runtime/src/transform.ts)
 
 Текущий возврат `AppliedTransform` имеет `left/top/width/height/transform`. Новая схема:
 
@@ -279,7 +279,7 @@ if (t.scaleX !== 1 || t.scaleY !== 1) parts.push(`scale(${t.scaleX}, ${t.scaleY}
 
 `width`/`height` теперь возвращаются как статичные (берутся из `base.transform`, а не из `anim`) — устанавливаются один раз при создании элемента, не пишутся на каждый кадр.
 
-### 3.2. Меняем запись в [runtime/src/domRenderer.ts:596-602, 745-751](../runtime/src/domRenderer.ts)
+### 3.2. Меняем запись в [runtime/src/domRenderer.ts:596-602, 745-751](../../runtime/src/domRenderer.ts)
 
 Было:
 
@@ -302,7 +302,7 @@ this.setStyle(el, cache, 'transform', at.transform);
 
 ### 3.3. Проверка регрессий в editor preview
 
-[domRenderer.ts:1-19](../runtime/src/domRenderer.ts) явно отмечает, что runtime используется **и в движке, и в editor canvas**. После перевода на transform-based позиционирование editor должен работать так же (визуально WYSIWYG). Проверить вручную:
+[domRenderer.ts:1-19](../../runtime/src/domRenderer.ts) явно отмечает, что runtime используется **и в движке, и в editor canvas**. После перевода на transform-based позиционирование editor должен работать так же (визуально WYSIWYG). Проверить вручную:
 
 1. Открыть editor, перетащить слой мышкой — должен двигаться.
 2. Изменить anchor pivot — visual placement должен остаться неизменным (см. `anchorCompensatedUpdate` в transform.ts).
@@ -328,7 +328,7 @@ this.setStyle(el, cache, 'transform', at.transform);
 
 ### 4.1. Анализ маски
 
-Маска в Titulus = clip-path на wrapper (см. [maskScopes.ts](../runtime/src/maskScopes.ts) и [maskGeometry.ts](../runtime/src/maskGeometry.ts)). Если маска задаёт видимую область контейнера через clip, то изменение её `width` меняет clip-area. Возможные замены:
+Маска в Titulus = clip-path на wrapper (см. [maskScopes.ts](../../runtime/src/maskScopes.ts) и [maskGeometry.ts](../../runtime/src/maskGeometry.ts)). Если маска задаёт видимую область контейнера через clip, то изменение её `width` меняет clip-area. Возможные замены:
 
 - **`clip-path: inset(0 right% 0 0)`** — прямо в CSS, не триггерит Layout (compositor-friendly). `right%` = `100 * (1 - anim_width / base_width)`.
 - **`transform: scaleX(w/base_w)` на inner-элементе маски** — если маска не зависит от содержимого.
@@ -336,7 +336,7 @@ this.setStyle(el, cache, 'transform', at.transform);
 
 ### 4.2. Реализация
 
-В [maskGeometry.ts](../runtime/src/maskGeometry.ts) — добавить поле `clipScale` вместо/в дополнение к `width` при трансляции анимации. В [domRenderer.ts](../runtime/src/domRenderer.ts) — для типа слоя `mask`, при анимировании `width`, писать не `style.width`, а `style.clipPath = inset(0 ${rightPct}% 0 0)`.
+В [maskGeometry.ts](../../runtime/src/maskGeometry.ts) — добавить поле `clipScale` вместо/в дополнение к `width` при трансляции анимации. В [domRenderer.ts](../../runtime/src/domRenderer.ts) — для типа слоя `mask`, при анимировании `width`, писать не `style.width`, а `style.clipPath = inset(0 ${rightPct}% 0 0)`.
 
 ### 4.3. Метрика после P4
 
@@ -348,7 +348,7 @@ this.setStyle(el, cache, 'transform', at.transform);
 
 Если P3-P4 недостаточны — принудительно продвигаем каждый group/layer в собственный composited layer. Это указание Blink не пересчитывать layout/paint для данного слоя при изменении его transform.
 
-### 5.1. CSS-правка в [backend/public/channel.html](../backend/public/channel.html) или в style renderer
+### 5.1. CSS-правка в [backend/public/channel.html](../../backend/public/channel.html) или в style renderer
 
 Для каждого group element, который **может** анимироваться:
 
