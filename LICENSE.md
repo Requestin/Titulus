@@ -1,4 +1,4 @@
-Copyright (c) 2026 [Karen Darchiniants]. All rights reserved.
+Copyright © 2026 [Karen Darchiniants]. All rights reserved.
 
 This software and associated documentation files (the "Software") are
 the proprietary and confidential property of the copyright holder.
