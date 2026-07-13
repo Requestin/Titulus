@@ -7,7 +7,8 @@
 **Связанные документы:** [00-overview-and-cost-model.md](00-overview-and-cost-model.md) · [04-scheduling-os-and-genlock.md](04-scheduling-os-and-genlock.md) · [05-cef-pipeline-and-upgrade.md](05-cef-pipeline-and-upgrade.md) · [07-execution-roadmap-and-verification.md](07-execution-roadmap-and-verification.md)
 
 > **Язык:** русский narrative + English technical terms (`frame-log`, `khugepaged`, `SCHED_FIFO`, `WaitForTick`, …).  
-> **Constraints:** CPU-only CEF OSR, HTML5/DOM runtime, DeckLink + reference/genlock, no CasparCG copy, scalable beyond Ryzen 5 3600.
+> **Constraints:** CPU-only CEF OSR, HTML5/DOM runtime, DeckLink + reference/genlock, no CasparCG copy, scalable beyond Ryzen 5 3600.  
+> **Templates:** `test` = `tests/templates/test.json` (простой, для изоляции фризов от контента), `test1` = `tests/templates/test1.json` (сложный — **acceptance target**; финальный soak без фризов на нём).
 
 ---
 

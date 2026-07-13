@@ -4,8 +4,9 @@
 > **Аудитория:** engine / platform / broadcast ops  
 > **Хост-референс:** AMD Ryzen 5 3600 (6C/12T), DeckLink Quad 2, LES DG-14B  
 > **Цель продукта:** 3×1080i50 CPU-only HTML5 graphics без frame drops, с масштабированием pinning на 16/32-core серверы  
-> **Связанные документы:** `docs/ARCHITECTURE.md`, `docs/CASPARRCG_PORTING.md`, Phase 11/17, `06-microfreeze-thp-khugepaged.md` (THP)  
-> **Статус:** investigation / ops design — не копировать CasparCG GPL-код; reimplement by reference
+> **Связанные документы:** `docs/ARCHITECTURE.md`, `docs/CASPARRCG_PORTING.md`, Phase 11/17, `06-microfreeze-elimination.md` (THP)  
+> **Статус:** investigation / ops design — не копировать CasparCG GPL-код; reimplement by reference  
+> **Тестовые шаблоны:** `tests/templates/test.json` (простой canary), `tests/templates/test1.json` (сложный — **acceptance target**; soak/gate прогоны pinning-конфигураций выполняются на нём)
 
 ---
 

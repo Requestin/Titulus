@@ -3,6 +3,7 @@
 **Документ:** `docs/performance investigation/05-cef-pipeline-and-upgrade.md`  
 **Статус:** living design / decision record  
 **Аудитория:** engine, render-plane, perf research  
+**Тестовые шаблоны:** `test` = `tests/templates/test.json` (простой), `test1` = `tests/templates/test1.json` (сложный — **acceptance target** программы)  
 **Связанные артефакты:**
 
 | Документ / код | Роль |

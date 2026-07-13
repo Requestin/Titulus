@@ -6,6 +6,7 @@
 **Связанные фазы:** Phase 10 (SDI perf), Phase 11 (CasparCG-parity / pools / StreamCopy), Phase 17 (raster latency), Phase 18 (true 50p)  
 **Код-якоря:** `engine/src/frame_ring.h`, `engine/src/aligned_buffer.h`, `engine/src/simd_copy.h`, `engine/src/consumers/decklink_consumer.cpp`, `engine/src/main.cpp`  
 **Ограничения архитектуры:** CPU-only render, HTML5/DOM runtime, DeckLink scheduled playback + reference, clean-room reimplement (no GPL copy), scalable multi-channel  
+**Тестовые шаблоны:** `tests/templates/test.json` (простой canary), `tests/templates/test1.json` (сложный — **acceptance target** программы; финальная валидация fewer-copy пути делается на нём)  
 
 ---
 

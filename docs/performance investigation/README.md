@@ -6,6 +6,17 @@
 
 Эта папка — **аналитический и исполнительный пакет** после Phase 15–18. Phase 18 доказал: true 50p-as-50i на cheap content уже есть; на `test1` потолок ~25 unique fps — **content/raster-bound**, не pump. Дальше — снижать стоимость кадра и (при необходимости) менять архитектуру композитинга.
 
+## Тестовые шаблоны (canonical)
+
+Все perf-замеры серии используют шаблоны из `tests/templates/`:
+
+| Шаблон | Путь | Класс | Роль |
+|---|---|---|---|
+| `test` | [`tests/templates/test.json`](../../tests/templates/test.json) | простой (cheap) | sanity / regression canary; true 50p уже работает |
+| `test1` | [`tests/templates/test1.json`](../../tests/templates/test1.json) | сложный (complex) | **acceptance target**: целевые показатели программы (3ch ≥50 unique fps) обязаны достигаться именно на нём |
+
+Везде в docs 00–07, где упоминаются `test` / `test1` без пути, имеются в виду эти файлы. PASS на `test` или bench-сценах не заменяет PASS на `test1`.
+
 ## Как читать
 
 1. Начните с [`00-overview-and-cost-model.md`](./00-overview-and-cost-model.md) — budgets и cost model.  
