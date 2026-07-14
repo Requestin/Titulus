@@ -70,6 +70,13 @@ Producer (CEF HTML) → [channel-paced pull] → Consumer (decklink / ffmpeg / n
 | `modules/decklink/consumer/config.h:126-130` (`buffer_depth()`) | `engine/src/consumers/decklink_consumer.cpp` (`Start`, preroll) | Preroll depth formula: base 3 + 1 if not low-latency + 1 if embedded audio (we have no audio term) | ✅ done | 11.5 |
 | `common/memory.h`, `common/memshfl.h` (aligned pools, SIMD shuffle) | `engine/src/aligned_buffer.h`, `engine/src/simd_copy.h` | **Reimplemented, not copied**: 64-byte-aligned pooled buffers for the DeckLink input queue + weave output; AVX2 non-temporal (`_mm256_stream_si256`) bulk copy for the weave destination (CasparCG uses SSSE3 `aligned_memshfl` for a different purpose — alpha/key channel shuffle; we use streaming stores for plain line-copy bandwidth, since our weave destination is write-once/never-read-back) | ✅ done | 11.3 |
 
+**Phase 19 doc03 memory decision:** Titulus independently added `memory5s` counters and
+singles aliasing (one progressive buffer supplies both fields, no clone). Experimental
+`--decklink-direct-paint` synchronously copies the CEF pointer into owned DeckLink queue
+storage and eliminates the intermediate FrameRing copy; it remains **OFF by default** because
+the 3ch A/B did not show a reliable throughput improvement. No CasparCG memory/allocator code
+was copied or linked. Evidence: `docs/performance investigation/reports/p19-03-memory-pipeline.md`.
+
 **Легенда статуса:** ⏳ todo · 🔨 in progress · ✅ done · ⏸ deferred · n/a (не применимо)
 
 ---

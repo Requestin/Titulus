@@ -1425,6 +1425,19 @@ ALTERNATIVES REJECTED: правки самого test1.json (не понадоб
   rendering-path); clock throttle / Class A (уже дёшево: text/f=0, writes/f=10).
 ROLLBACK: git revert -m 1 <merge-commit>; runtime — пересборка maskScopes.ts.
 OWNER: agent / user review
+
+DATE: 2026-07-14
+DECISION: doc 03 partial memory gates PASS; program G2 remains FAIL.
+  PR #68 instruments C1/C2/clone/weave/pools; PR #69 removes singles clone
+  in production; PR #70 proves direct OnPaint delivery can eliminate C1 but
+  leaves it OFF by default because 3ch OFF/ON crossover has no reliable fps gain.
+EVIDENCE RUNS: engine/research/results/p19/doc03-20260714/
+  (fresh baseline; alias 15min soak; direct 30min soak; final default 3ch)
+ALTERNATIVES REJECTED: pool deepening/MADV_HUGEPAGE (miss <0.1%);
+  ownership ring (no measured direct-delivery throughput advantage);
+  BGRA→YUV (outside evidence and breaks alpha/key assumptions).
+ROLLBACK: revert #68/#69/#70 independently; direct path disabled by omitting flag.
+OWNER: agent / user review
 ```
 
 ---
@@ -1958,6 +1971,7 @@ Apply to typ/high columns when forecasting G2.
 | 2026-07-13 | Initial comprehensive overview & cost model |
 | 2026-07-13 | Baseline re-verify (P19): §3.1 → MEASURED; G0 PASS; калибровка §8/App P числами из `reports/p19-00-baseline.md`; вердикт §4.5 = PRIMARY H1 (raster cost), secondary H2 видим на 3ch |
 | 2026-07-14 | Doc 01 executed (H1): inverted rect mask → clip-path (runtime, pixel-exact); null test1 41→50, gate PASS (median 49.78≥45); 1ch DeckLink 41.7→47.6, 3ch 25→~30. Отчёт `reports/p19-01-raster-cost.md`, style guide `style-guide.md`. Next: H2 (doc 03 память ∥ doc 04 pinning) для 3ch true-50p |
+| 2026-07-14 | Doc 03 executed (H2 memory): instrumentation + singles alias eliminate clone bytes; direct C1-elision works/safe but remains experimental OFF (no reliable 3ch fps gain); pools unchanged (<0.1% miss). G2 still FAIL (~27–31 in_fps) → doc04 next. Report `reports/p19-03-memory-pipeline.md` |
 
 При существенном изменении root cause / gates — bump запись сюда и notify sister docs.
 

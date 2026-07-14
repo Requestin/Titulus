@@ -1390,7 +1390,11 @@ A: Нет напрямую; FIFO снижает scheduling jitter completion pat
 | Date | Decision | Evidence | Revert path |
 |------|----------|----------|-------------|
 | YYYY-MM-DD | e.g. ship singles alias | soak link | flag off |
-| | | | |
+| 2026-07-14 | PR #68: add `memory5s` accounting (C1, C2, clone, weave, pools) before changing ownership | `engine/research/results/p19/doc03-20260714/memory-summary.json`; fresh 1ch/3ch baselines | revert merge commit #68 |
+| 2026-07-14 | PR #69: ship singles alias as production behavior | clone bytes/count=0; `alias_singles=d_singles`; 15min 3ch soak, no late/drop/flush | revert merge commit #69 |
+| 2026-07-14 | PR #70: retain direct OnPaint delivery as OFF-by-default experiment | C1 eliminated and 30min soak safe, but OFF/ON crossover showed no reliable 3ch fps uplift | omit flag; revert merge commit #70 |
+| 2026-07-14 | Do not deepen pools or attempt MADV_HUGEPAGE | input/output miss rate <0.1% after warmup; no evidence of allocation bottleneck | no change |
+| 2026-07-14 | Defer ownership ring / progressive direct schedule | direct delivery removes C1 but does not improve G2 throughput; target is interlaced 1080i50, weave remains required | revisit only after doc04 evidence |
 
 ### Appendix K — Extended risk matrix
 
@@ -1553,6 +1557,7 @@ ch | in_fps | copy_us | weave_us | late | drop | pool_miss | bytes_GBs
 | Ver | Date | Authoring context | Notes |
 |-----|------|-------------------|-------|
 | 0.1 | 2026-07-13 | performance investigation | Initial comprehensive design |
+| 0.2 | 2026-07-14 | Phase 19 doc03 execution | PR #68 instrumentation, #69 singles alias shipped, #70 direct-paint kept experimental; results in `reports/p19-03-memory-pipeline.md` |
 
 ---
 

@@ -53,8 +53,26 @@ SVG luminance mask-image** (ablation: −8.69 fps).
 Также добавлена runtime-инструментация: `maskWrites`/`textWrites` в RenderStats, `?stats=1`
 BGSTATS console line, форвардинг console→лог в `engine_client.cpp` (`OnConsoleMessage`).
 
+## Milestone 3 — Doc 03 fewer-copy memory pipeline (DONE, partial gate)
+
+Полный отчёт: [`docs/performance investigation/reports/p19-03-memory-pipeline.md`](../performance%20investigation/reports/p19-03-memory-pipeline.md).
+Evidence: `engine/research/results/p19/doc03-20260714/`.
+
+| Изменение | Результат |
+|---|---|
+| PR #68 `memory5s` instrumentation | C1/C2/clone/weave/pool traffic измеримы |
+| PR #69 singles alias | `singles_clone_bytes=0`; 15min 3ch soak без late/drop/flush |
+| PR #70 direct paint flag | C1 `ring_bytes=0`; 30min soak безопасен, но flag остаётся OFF |
+| Pools / huge pages | Не менялись: miss rate <0.1%, `MADV_HUGEPAGE` не обоснован |
+
+Fresh 3ch baseline подтвердил: C1 + C2 + clone дают несколько GB traffic на канал каждые
+5 секунд. Но final default 3ch остаётся **27.6 / 28.0 / 30.8 in_fps** (G2 FAIL), хотя
+clone устранён. Direct path не даёт устойчивого throughput uplift в crossover OFF/ON,
+поэтому ownership ring отложен как неоправданная сложность.
+
 ## Следующие milestone
 
-- **Doc 03 (память) ∥ Doc 04 (pinning/CCX)** — адресуют 3ch contention (теперь главный барьер
-  к 3×50: 1ch уже ~48, но 3 канала конкурируют за память/L3).
+- **Doc 04 (pinning/CCX)** — следующий workstream: doc03 подтвердил, что copy/clone traffic
+  реален, но его устранение не дало устойчивого 3ch uplift; теперь проверяем размещение
+  3 процессов по CCX/L3 и IRQ/scheduling.
 - Затем G1 (1ch ≥50) → G2 (3ch ≥50) → G3 soak — критерии в doc 00 §13.
