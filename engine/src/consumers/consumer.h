@@ -79,6 +79,11 @@ class Consumer {
     // wedged hardware clock can never fully freeze the render loop). Only
     // called when HasExternalClock() is true.
     virtual int WaitForTick(int64_t /*timeout_us*/) { return 0; }
+
+    // Optional memory-path instrumentation. The engine calls this immediately
+    // after copying a CEF OnPaint buffer into its FrameRing. Only DeckLink
+    // currently reports it; other consumers keep their existing behavior.
+    virtual void RecordRingCopy(uint64_t /*us*/, size_t /*bytes*/) {}
 };
 
 }  // namespace bg
