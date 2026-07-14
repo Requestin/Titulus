@@ -59,7 +59,7 @@ export interface VariableBinding {
   variableId: string;
 }
 
-export type VariableType = 'text' | 'image' | 'number' | 'color' | 'video';
+export type VariableType = 'text' | 'image' | 'number' | 'color' | 'video' | 'multitext' | 'textfile';
 
 export interface Variable {
   id: string;
@@ -205,13 +205,45 @@ export interface MaskLayer extends BaseLayer {
   borderWidth: number;
 }
 
+export type CrawlKind = 'ticker' | 'carousel';
+export type CrawlAxisDir = 'left' | 'right' | 'up' | 'down';
+export type CrawlSeparatorMode = 'none' | 'text' | 'image';
+export type CrawlAnimationType = 'batch' | 'continuous';
+
+export interface CrawlProps {
+  type: CrawlKind;
+  directionIn: CrawlAxisDir;
+  directionOut: CrawlAxisDir;
+  /** 1 = 60 px/s. Default 5. */
+  speed: number;
+  /** Hold frames when a line is fully on screen. Default 0. */
+  pause: number;
+  separatorMode: CrawlSeparatorMode;
+  separatorText: string;
+  separatorImage: string;
+  animationType: CrawlAnimationType;
+  useFile: boolean;
+  filePath: string;
+  maxTextLengthEnabled: boolean;
+  maxTextLength: number;
+}
+
+export interface CrawlLayer extends BaseLayer {
+  type: 'crawl';
+  content: string | VariableBinding;
+  style: TextStyle;
+  crawlDirectorId: string;
+  crawl: CrawlProps;
+}
+
 export type Layer =
   | TextLayer
   | RectLayer
   | ImageLayer
   | VideoLayer
   | ClockLayer
-  | MaskLayer;
+  | MaskLayer
+  | CrawlLayer;
 
 export type LayerType = Layer['type'];
 
@@ -229,6 +261,8 @@ export const ANIMATABLE_PROPS = [
   'rotation', 'rotationX', 'rotationY', 'perspective',
   'scaleX', 'scaleY',
   'opacity',
+  /** Crawl scroll progress 0..1 (dedicated Crawl director track). */
+  'crawlProgress',
 ] as const;
 export type AnimatableProp = (typeof ANIMATABLE_PROPS)[number];
 export type AnimatableValues = Partial<Record<AnimatableProp, number>>;
@@ -497,11 +531,69 @@ export function normalizeTextStyle(style: TextStyle): TextStyle {
   return next;
 }
 
-/** Normalize text/clock layer styles on a loaded template (in-place). */
+/** Normalize text/clock/crawl layer styles on a loaded template (in-place). */
 export function normalizeTemplateTextStyles(template: Template): void {
   for (const layer of template.layers) {
-    if (layer.type === 'text' || layer.type === 'clock') {
+    if (layer.type === 'text' || layer.type === 'clock' || layer.type === 'crawl') {
       layer.style = normalizeTextStyle(layer.style);
     }
+    if (layer.type === 'crawl') {
+      layer.crawl = normalizeCrawlProps(layer.crawl);
+    }
   }
+}
+
+export function defaultCrawlProps(): CrawlProps {
+  return {
+    type: 'ticker',
+    directionIn: 'right',
+    directionOut: 'left',
+    speed: 5,
+    pause: 0,
+    separatorMode: 'none',
+    separatorText: '',
+    separatorImage: '',
+    animationType: 'batch',
+    useFile: false,
+    filePath: '',
+    maxTextLengthEnabled: false,
+    maxTextLength: 80,
+  };
+}
+
+export function normalizeCrawlProps(crawl: Partial<CrawlProps> | undefined): CrawlProps {
+  const base = defaultCrawlProps();
+  if (!crawl) return base;
+  const type = crawl.type === 'ticker' || crawl.type === 'carousel' ? crawl.type : base.type;
+  const dirs = type === 'ticker'
+    ? { in: 'right' as const, out: 'left' as const }
+    : { in: 'up' as const, out: 'down' as const };
+  return {
+    type,
+    directionIn: crawl.directionIn ?? dirs.in,
+    directionOut: crawl.directionOut ?? dirs.out,
+    speed: typeof crawl.speed === 'number' && crawl.speed > 0 ? crawl.speed : base.speed,
+    pause: typeof crawl.pause === 'number' && crawl.pause >= 0 ? Math.round(crawl.pause) : base.pause,
+    separatorMode: crawl.separatorMode === 'text' || crawl.separatorMode === 'image' || crawl.separatorMode === 'none'
+      ? crawl.separatorMode
+      : base.separatorMode,
+    separatorText: crawl.separatorText ?? '',
+    separatorImage: crawl.separatorImage ?? '',
+    animationType: crawl.animationType === 'continuous' ? 'continuous' : 'batch',
+    useFile: Boolean(crawl.useFile),
+    filePath: crawl.filePath ?? '',
+    maxTextLengthEnabled: Boolean(crawl.maxTextLengthEnabled),
+    maxTextLength: typeof crawl.maxTextLength === 'number' && crawl.maxTextLength > 0
+      ? Math.floor(crawl.maxTextLength)
+      : base.maxTextLength,
+  };
+}
+
+/** Split crawl content into data lines (hard newlines only; spaces preserved). */
+export function splitCrawlLines(raw: string, maxLenEnabled: boolean, maxLen: number): string[] {
+  const lines = raw.replace(/\r\n/g, '\n').split('\n');
+  return lines.map((line) => {
+    if (!maxLenEnabled || maxLen <= 0) return line;
+    return line.length > maxLen ? line.slice(0, maxLen) : line;
+  });
 }

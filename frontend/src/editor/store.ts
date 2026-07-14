@@ -11,16 +11,25 @@ import type {
   Template, Layer, LayerType, Variable, Transform, RootStackEntry,
   TimelineDirector, TimelineKeyframe, AnimatableProp, EasingType,
 } from '@runtime';
-import { ANIMATABLE_PROPS, createDefaultTransform, normalizeTemplateTextStyles, resolveTrackDirector } from '@runtime';
+import {
+  ANIMATABLE_PROPS,
+  createDefaultTransform,
+  estimateCrawlDurationFrames,
+  normalizeTemplateTextStyles,
+  resolveTrackDirector,
+  splitCrawlLines,
+} from '@runtime';
 import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
 import { reparentEntriesIntoGroup } from './groupBounds';
+import { recomputeCrawlDirectorDuration, removeCrawlDirector, ensureCrawlProgressTrack } from './crawlTimeline';
 import { trackKey, type TimelineTrack } from './timelineTracks';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
 export type Target = { kind: 'layer' | 'group'; id: string };
 
 function baseValue(t: Template, target: Target, prop: AnimatableProp): number {
+  if (prop === 'crawlProgress') return 0;
   if (target.kind === 'layer') {
     const l = t.layers.find((x) => x.id === target.id);
     if (!l) return 0;
@@ -290,7 +299,9 @@ export const useEditor = create<EditorState>()(
       updateLayer: (id, mutator) =>
         get().patch((t) => {
           const l = t.layers.find((x) => x.id === id);
-          if (l) mutator(l);
+          if (!l) return;
+          mutator(l);
+          if (l.type === 'crawl') recomputeCrawlDirectorDuration(t, l);
         }),
 
       setLayerOpacity: (id, opacity) =>
@@ -316,6 +327,9 @@ export const useEditor = create<EditorState>()(
             target.transform.width = 0;
             target.transform.height = 0;
           }
+          if (kind === 'layer' && 'type' in target && target.type === 'crawl') {
+            recomputeCrawlDirectorDuration(t, target);
+          }
           syncAnimatedPropsAtPlayhead(
             t,
             { kind, id },
@@ -331,6 +345,45 @@ export const useEditor = create<EditorState>()(
         const t0 = get().template;
         if (!t0) return;
         const n = t0.layers.filter((l) => l.type === type).length + 1;
+        if (type === 'crawl') {
+          const directorId = createId();
+          const layer = createLayer('crawl', `${LAYER_LABEL.crawl} ${n}`, directorId);
+          if (layer.type !== 'crawl') return;
+          const raw = typeof layer.content === 'string' ? layer.content : 'New text1\nNew text2';
+          const lines = splitCrawlLines(raw, false, 80);
+          const fps = t0.timeline.fps || 50;
+          const durationFrames = estimateCrawlDurationFrames({
+            lines,
+            crawl: layer.crawl,
+            boxWidth: layer.transform.width,
+            boxHeight: layer.transform.height,
+            fontSize: layer.style.fontSize,
+            fps,
+            align: layer.style.align,
+          });
+          get().patch((t) => {
+            t.timeline.directors.push({
+              id: directorId,
+              name: 'Crawl',
+              durationFrames,
+              offsetFrames: 0,
+              autostart: true,
+              loop: layer.crawl.animationType === 'continuous',
+              swing: false,
+            });
+            const end = durationFrames;
+            if (end > t.timeline.durationFrames) t.timeline.durationFrames = end;
+            t.layers.push(layer);
+            t.rootStack.push({ kind: 'layer', id: layer.id });
+            ensureCrawlProgressTrack(t, layer);
+          });
+          set({
+            selection: { kind: 'layer', id: layer.id },
+            playheads: { ...get().playheads, [directorId]: 0 },
+            directorRel: { ...get().directorRel, [directorId]: 0 },
+          });
+          return;
+        }
         const layer = createLayer(type, `${LAYER_LABEL[type]} ${n}`);
         get().patch((t) => {
           t.layers.push(layer);
@@ -350,22 +403,50 @@ export const useEditor = create<EditorState>()(
         copy.transform.x += 24;
         copy.transform.y += 24;
         copy.groupId = null;
-        get().patch((t) => {
-          t.layers.push(copy);
-          t.rootStack.push({ kind: 'layer', id: copy.id });
-        });
+        if (copy.type === 'crawl') {
+          const directorId = createId();
+          copy.crawlDirectorId = directorId;
+          const srcDirectorId = src.type === 'crawl' ? src.crawlDirectorId : '';
+          get().patch((t) => {
+            const srcDir = t.timeline.directors.find((d) => d.id === srcDirectorId);
+            t.timeline.directors.push({
+              id: directorId,
+              name: 'Crawl',
+              durationFrames: srcDir?.durationFrames ?? 100,
+              offsetFrames: 0,
+              autostart: true,
+              loop: copy.crawl.animationType === 'continuous',
+              swing: false,
+            });
+            t.layers.push(copy);
+            t.rootStack.push({ kind: 'layer', id: copy.id });
+            recomputeCrawlDirectorDuration(t, copy);
+            ensureCrawlProgressTrack(t, copy);
+          });
+        } else {
+          get().patch((t) => {
+            t.layers.push(copy);
+            t.rootStack.push({ kind: 'layer', id: copy.id });
+          });
+        }
         set({ selection: { kind: 'layer', id: copy.id } });
       },
 
       deleteEntry: (kind, id) => {
         get().patch((t) => {
           if (kind === 'layer') {
+            const layer = t.layers.find((l) => l.id === id);
+            if (layer?.type === 'crawl') removeCrawlDirector(t, layer.crawlDirectorId);
             t.layers = t.layers.filter((l) => l.id !== id);
             removeEntryEverywhere(t, id);
             purgeTimelineTargets(t, [id]);
             return;
           }
           const { layerIds, groupIds } = collectGroupSubtree(t, id);
+          for (const lid of layerIds) {
+            const layer = t.layers.find((l) => l.id === lid);
+            if (layer?.type === 'crawl') removeCrawlDirector(t, layer.crawlDirectorId);
+          }
           t.layers = t.layers.filter((l) => !layerIds.includes(l.id));
           t.groups = t.groups.filter((g) => !groupIds.includes(g.id));
           for (const gid of groupIds) {
@@ -522,6 +603,13 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => {
           const d = t.timeline.directors.find((x) => x.id === id);
           if (d) Object.assign(d, partial);
+          if (partial.offsetFrames !== undefined || partial.durationFrames !== undefined) {
+            for (const layer of t.layers) {
+              if (layer.type === 'crawl' && layer.crawlDirectorId === id) {
+                ensureCrawlProgressTrack(t, layer);
+              }
+            }
+          }
         }),
 
       removeDirector: (id) => {

@@ -14,5 +14,6 @@ export * from './fonts.js';
 export * from './stats.js';
 export * from './maskScopes.js';
 export * from './maskGeometry.js';
+export * from './crawl.js';
 export * from './domRenderer.js';
 export * from './channelClient.js';

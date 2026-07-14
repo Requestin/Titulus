@@ -27,7 +27,7 @@ import { LAYER_TYPES, LAYER_LABEL } from '../factories';
 import { cn } from '@/lib/cn';
 
 const LAYER_ICON: Record<LayerType, ComponentType<{ className?: string }>> = {
-  text: Type, rect: Square, image: ImageIcon, video: Video, clock: Clock, mask: MaskIcon,
+  text: Type, rect: Square, image: ImageIcon, video: Video, clock: Clock, mask: MaskIcon, crawl: CrawlIcon,
 };
 
 type EntryKey = `${RootStackEntry['kind']}:${string}`;
@@ -375,6 +375,16 @@ function MaskIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 16 16" className={className} aria-hidden fill="none" stroke="currentColor" strokeWidth="1.5">
       <rect x="2" y="2" width="12" height="12" rx="1" />
       <text x="8" y="11.5" textAnchor="middle" fontSize="7" fontWeight="700" fill="currentColor" stroke="none">M</text>
+    </svg>
+  );
+}
+
+/** «T» with motion stripes left→right (crawl / ticker). */
+function CrawlIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} aria-hidden fill="none" stroke="currentColor" strokeWidth="1.5">
+      <text x="8" y="11.5" textAnchor="middle" fontSize="8" fontWeight="700" fill="currentColor" stroke="none">T</text>
+      <path d="M1 3.5h4M1 5h3M12 11h3M11 12.5h4" strokeLinecap="round" opacity="0.7" />
     </svg>
   );
 }

@@ -125,7 +125,7 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "label": { "type": "string" },
-        "type": { "type": "string", "enum": ["text", "image", "number", "color", "video"] },
+        "type": { "type": "string", "enum": ["text", "image", "number", "color", "video", "multitext", "textfile"] },
         "defaultValue": { "type": ["string", "number"] },
         "description": { "type": "string" },
         "required": { "type": "boolean" },
@@ -148,7 +148,7 @@
         },
         {
           "if": {
-            "properties": { "type": { "enum": ["text", "image", "color", "video"] } }
+            "properties": { "type": { "enum": ["text", "image", "color", "video", "multitext", "textfile"] } }
           },
           "then": {
             "properties": { "defaultValue": { "type": "string" } }
@@ -201,6 +201,30 @@
         "dropShadowDistance": { "type": "number", "description": "Deprecated: legacy Y offset; prefer dropShadowOffsetX/Y" }
       }
     },
+    "crawlProps": {
+      "type": "object",
+      "required": [
+        "type", "directionIn", "directionOut", "speed", "pause",
+        "separatorMode", "separatorText", "separatorImage", "animationType",
+        "useFile", "filePath", "maxTextLengthEnabled", "maxTextLength"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["ticker", "carousel"] },
+        "directionIn": { "type": "string", "enum": ["left", "right", "up", "down"] },
+        "directionOut": { "type": "string", "enum": ["left", "right", "up", "down"] },
+        "speed": { "type": "number", "exclusiveMinimum": 0 },
+        "pause": { "type": "number", "minimum": 0, "description": "Hold duration in frames when a line is fully on screen" },
+        "separatorMode": { "type": "string", "enum": ["none", "text", "image"] },
+        "separatorText": { "type": "string" },
+        "separatorImage": { "type": "string" },
+        "animationType": { "type": "string", "enum": ["batch", "continuous"] },
+        "useFile": { "type": "boolean" },
+        "filePath": { "type": "string" },
+        "maxTextLengthEnabled": { "type": "boolean" },
+        "maxTextLength": { "type": "number", "minimum": 1 }
+      }
+    },
     "layer": {
       "type": "object",
       "required": ["id", "name", "type", "visible", "locked", "opacity", "blendMode", "transform", "groupId"],
@@ -208,7 +232,7 @@
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
-        "type": { "type": "string", "enum": ["text", "rect", "image", "video", "clock", "mask"] },
+        "type": { "type": "string", "enum": ["text", "rect", "image", "video", "clock", "mask", "crawl"] },
         "visible": { "type": "boolean" },
         "locked": { "type": "boolean" },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
@@ -229,7 +253,9 @@
         "startTime": { "type": "number" },
         "targetTime": { "type": "number" },
         "maskMode": { "type": "string", "enum": ["normal", "inverted"] },
-        "shape": { "type": "string", "enum": ["rect", "ellipse"] }
+        "shape": { "type": "string", "enum": ["rect", "ellipse"] },
+        "crawlDirectorId": { "type": "string" },
+        "crawl": { "$ref": "#/$defs/crawlProps" }
       },
       "allOf": [
         {
@@ -302,6 +328,18 @@
               "borderWidth": { "type": "number" }
             }
           }
+        },
+        {
+          "if": { "properties": { "type": { "const": "crawl" } } },
+          "then": {
+            "required": ["content", "style", "crawlDirectorId", "crawl"],
+            "properties": {
+              "content": { "$ref": "#/$defs/stringOrBinding" },
+              "style": { "$ref": "#/$defs/textStyle" },
+              "crawlDirectorId": { "type": "string" },
+              "crawl": { "$ref": "#/$defs/crawlProps" }
+            }
+          }
         }
       ]
     },
@@ -349,7 +387,8 @@
         "perspective": { "type": "number" },
         "scaleX": { "type": "number" },
         "scaleY": { "type": "number" },
-        "opacity": { "type": "number" }
+        "opacity": { "type": "number" },
+        "crawlProgress": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     },
     "director": {

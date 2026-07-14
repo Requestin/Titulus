@@ -22,6 +22,7 @@ import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 const VIDEO_MIME = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
+const TEXT_MIME = new Set(['text/plain', 'application/txt']);
 const MAX_TRANSCODE_ATTEMPTS = 2;
 const TRANSCODE_TIMEOUT_MS = 12 * 60 * 1000; // 12 minutes per attempt
 const MAX_ERROR_TAIL = 1200;
@@ -30,6 +31,7 @@ const MAX_ERROR_TAIL = 1200;
 export function mediaTypeFor(mime) {
   if (typeof mime === 'string' && mime.startsWith('image/')) return 'image';
   if (VIDEO_MIME.has(mime)) return 'video';
+  if (typeof mime === 'string' && (TEXT_MIME.has(mime) || mime === 'text/plain')) return 'text';
   return null;
 }
 
@@ -115,10 +117,13 @@ export class MediaJobs {
    */
   ingest(file) {
     const id = randomUUID();
-    const type = mediaTypeFor(file.mimetype);
+    let type = mediaTypeFor(file.mimetype);
+    if (!type && typeof file.originalname === 'string' && /\.txt$/i.test(file.originalname)) {
+      type = 'text';
+    }
     const size = typeof file.size === 'number' ? file.size : 0;
 
-    if (type === 'image') {
+    if (type === 'image' || type === 'text') {
       const job = {
         id, type, status: 'ready',
         originalName: file.originalname,

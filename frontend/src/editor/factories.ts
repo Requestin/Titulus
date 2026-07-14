@@ -3,10 +3,20 @@
 // Schema-valid factories for new layers / variables (matches
 // shared/template.schema.json so saves pass /api/templates/validate).
 
-import { createDefaultTransform, type Layer, type LayerType, type TextStyle, type Transform, type Variable } from '@runtime';
+import {
+  createDefaultTransform,
+  defaultCrawlProps,
+  type CrawlProps,
+  type Layer,
+  type LayerType,
+  type TextStyle,
+  type Transform,
+  type Variable,
+  type VariableType,
+} from '@runtime';
 import { createId } from '@/core/id';
 
-export const LAYER_TYPES: LayerType[] = ['text', 'rect', 'image', 'video', 'clock', 'mask'];
+export const LAYER_TYPES: LayerType[] = ['text', 'rect', 'image', 'video', 'clock', 'mask', 'crawl'];
 
 export const LAYER_LABEL: Record<LayerType, string> = {
   text: 'Text',
@@ -15,6 +25,7 @@ export const LAYER_LABEL: Record<LayerType, string> = {
   video: 'Video',
   clock: 'Clock',
   mask: 'Mask',
+  crawl: 'Crawl',
 };
 
 /** Editor default: origin at top-left pivot (anchor 0,0), position 0,0. */
@@ -52,7 +63,9 @@ export function defaultTextStyle(): TextStyle {
   };
 }
 
-export function createLayer(type: LayerType, name: string): Layer {
+export { defaultCrawlProps };
+
+export function createLayer(type: LayerType, name: string, crawlDirectorId?: string): Layer {
   const base = {
     id: uuid(),
     name,
@@ -114,15 +127,36 @@ export function createLayer(type: LayerType, name: string): Layer {
         borderColor: '#000000',
         borderWidth: 0,
       };
+    case 'crawl':
+      return {
+        ...base, type: 'crawl',
+        transform: createEditorTransform(760, 96),
+        content: 'New text1\nNew text2',
+        style: defaultTextStyle(),
+        crawlDirectorId: crawlDirectorId ?? uuid(),
+        crawl: defaultCrawlProps(),
+      };
   }
 }
 
-export function createVariable(name: string): Variable {
+export function createVariable(name: string, type: VariableType = 'text'): Variable {
+  const defaults: Record<VariableType, string | number> = {
+    text: '',
+    multitext: 'Line 1\nLine 2',
+    textfile: '',
+    image: '',
+    video: '',
+    color: '#ffffff',
+    number: 0,
+  };
+  const resolvedName = type === 'multitext' && (!name || name === 'var') ? 'multitext' : name;
   return {
     id: uuid(),
-    name,
-    label: name,
-    type: 'text',
-    defaultValue: '',
+    name: resolvedName,
+    label: resolvedName,
+    type,
+    defaultValue: defaults[type],
   };
 }
+
+export type { CrawlProps };

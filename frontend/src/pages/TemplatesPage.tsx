@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/form';
 import { toast } from '@/core/toast';
 import { useControlWs } from '@/core/controlWs';
+import { crawlFileErrorMessage, templateForTake } from '@/core/crawlFile';
 import { cn } from '@/lib/cn';
 import { ProgramMonitor } from '@/control/ProgramMonitor';
 import { TemplatesTab } from '@/control/TemplatesTab';
@@ -275,9 +276,16 @@ function PlayTemplates() {
   const monitorChannelId = channelId || 'default';
   const browserSourceUrl = channelId ? `${location.origin}/channel.html?channel=${channelId}` : '';
 
-  function take(rec: TemplateRecord, values: Record<string, string | number>) {
+  async function take(rec: TemplateRecord, values: Record<string, string | number>) {
     if (!channelId) { toast.error('Select a channel first'); return; }
-    const ok = send({ type: 'take', channelId, templateId: rec.id, template: rec.data, variables: values });
+    let template = rec.data;
+    try {
+      template = await templateForTake(rec.data);
+    } catch (err) {
+      toast.error(crawlFileErrorMessage(err));
+      return;
+    }
+    const ok = send({ type: 'take', channelId, templateId: rec.id, template, variables: values });
     if (!ok) { toast.error('Control WebSocket not connected'); return; }
     setOnAir((prev) => ({ ...prev, [channelId]: Array.from(new Set([...(prev[channelId] ?? []), rec.id])) }));
   }

@@ -128,6 +128,7 @@ export function trackPropLabel(prop: AnimatableProp): string {
     rotation: 'rotationZ',
     rotationX: 'rotationX',
     rotationY: 'rotationY',
+    crawlProgress: 'Crawl',
   };
   return labels[prop] ?? prop;
 }

@@ -42,6 +42,105 @@
 | `468376c` | 10 июл | `big change Control page, add dataelements, change db` (sidebar resize + DE delete UX) |
 | `ddb0186` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `d60b80a` | 14 июл | `add text parameters` (text transform + drop shadow + login logo) |
+| `d78fc5c` | 14 июл | `add crawl` (Crawl layer + collapsible props + Multitext/TextFile) |
+
+---
+
+## 14 июля 2026 (вечер) — Crawl layer + collapsible props + Multitext/TextFile
+
+Новый слой **Crawl** (бегущая строка), сворачиваемые группы Properties, переменные Multitext/TextFile, Use File / Parse, runtime-анимация ticker/carousel.
+
+### Collapsible Properties
+
+- Компонент `Section` в `form.tsx` — группы свойств сворачиваются (Layer / Size / Position / type-specific).
+- Применяется ко всем типам слоёв в инспекторе.
+
+### Слой Crawl
+
+- Иконка в дереве: «T» с полосками движения (left→right).
+- Default size как у Text; Content по умолчанию `New text1\nNew text2`.
+- При add создаётся dedicated director **Crawl** + трек `crawlProgress` (label **Crawl**).
+- Длительность директора = f(speed, объём строк, pause, type/directions/align).
+
+**Defaults (актуальные):**
+| Prop | Default |
+|---|---|
+| Type | `ticker` |
+| In / Out | `right` / `left` |
+| Speed | `5` (= 60 px/s × 5) |
+| Pause(frame) | `0` (кадры, не секунды) |
+| Separator | `none` (X) |
+| Anim | `batch` |
+
+### Content + Use File
+
+- Multiline Content (resize по вертикали); bind к Multitext / TextFile / Text.
+- **Use File** + filepath + **Parse** (upload URL `/uploads/...` или allow-listed path через `POST /api/files/read`).
+- Maximum text length (per-line).
+- Пробелы в Content и Sep text **сохраняются** (`white-space: pre`).
+- После Parse Content сразу обновляет анимацию (даже при включённом Use File).
+- Перед **TAKE** (Templates → PLAY и rundown/DataElement): если Use File включён — Parse выполняется автоматически; ошибка файла → TAKE не уходит.
+
+### Pause / motion
+
+| Режим | Поведение |
+|---|---|
+| `pause = 0` | Лента всех строк; Continuous — бесшовный marquee (контент дублируется) |
+| `pause > 0` | Построчно: въезд → hold N кадров → выезд → следующая строка (Carousel и Ticker) |
+| Continuous + pause>0 | У последней строки hold = 0 → первая сразу без паузы на стыке |
+
+Play таймлайна крутит Crawl director → текст едет по In/Out.
+
+### Align + Shadow (Crawl Text style)
+
+- **Shadow** (Color/X/Y/Blur) применяется **сразу** в preview (стиль обновляется каждый paint, не только при смене текста).
+- **Align** учитывается только:
+  - всегда в **Carousel**;
+  - в **Ticker** только при **Pause>0** (rest-позиция hold);
+  - Ticker + Pause=0 — Align игнорируется.
+
+### Variables
+
+- **Multitext** — multiline value (editor + Control).
+- **TextFile** — Upload TextFile (`.txt`), по аналогии с image.
+
+### Backend
+
+- `backend/src/routes/files.js` — `POST /api/files/read` (roots: `TITULUS_DATA` + `TITULUS_FILE_ROOTS`).
+- Upload `*.txt` разрешён в media/uploads pipeline.
+
+### Offline smoke test
+
+```bash
+cd runtime && npm test   # esbuild bundle, без npx/tsx/сети
+```
+
+### Ключевые файлы (Crawl)
+
+| Area | Path |
+|---|---|
+| Schema TS | `runtime/src/schema.ts` (`CrawlLayer`, Multitext/TextFile, normalize) |
+| Schema JSON | `shared/template.schema.json` |
+| Motion | `runtime/src/crawl.ts` (schedule, pause, align, spaces) |
+| Renderer | `runtime/src/domRenderer.ts` (`paintCrawl`) |
+| Editor UI | `frontend/src/editor/CrawlProperties.tsx` |
+| Timeline helpers | `frontend/src/editor/crawlTimeline.ts` |
+| Parse/TAKE | `frontend/src/core/crawlFile.ts` |
+| Store / factory | `frontend/src/editor/store.ts`, `factories.ts` |
+| Collapsible Section | `frontend/src/components/ui/form.tsx` |
+| Files API | `backend/src/routes/files.js` |
+| Smoke | `runtime/test/crawl-smoke.mjs`, `crawl-smoke-entry.ts` |
+
+После runtime-правок: `cd runtime && npm run build` + hard refresh редактора.
+
+### Проверка (Crawl)
+
+- [ ] Add Crawl → director Crawl + трек Crawl; default Ticker in=right out=left
+- [ ] Play → текст едет; Pause(frame)>0 → построчный enter/hold/exit
+- [ ] Continuous → стык last→first без паузы; pause=0 → бесшовная лента
+- [ ] Parse при Use File → Content + анимация сразу; TAKE с Use File парсит файл
+- [ ] Shadow Color/X/Y/Blur сразу; Align только Carousel или Ticker+Pause>0
+- [ ] Пробелы в Content / Sep text видны; `cd runtime && npm test` → ALL OK
 
 ---
 
@@ -759,6 +858,8 @@ Stepper ↑↓, `extraActions` для rotation.
 | Group bbox (runtime) | `runtime/src/groupBounds.ts`, `domRenderer.ts` |
 | Layers tree / DnD | `frontend/src/editor/panels/LayersPanel.tsx` |
 | Properties / Scale / Text style | `frontend/src/editor/panels/PropertiesPanel.tsx` |
+| Crawl | `frontend/src/editor/CrawlProperties.tsx`, `crawlTimeline.ts`, `runtime/src/crawl.ts` |
+| Crawl Parse/TAKE | `frontend/src/core/crawlFile.ts`, `backend/src/routes/files.js` |
 | Login | `frontend/src/pages/LoginPage.tsx`, `frontend/public/titulus-logo.png` |
 | UI forms | `frontend/src/components/ui/form.tsx` (`PropertyField`) |
 | Group bbox (runtime) | `runtime/src/groupBounds.ts`, `domRenderer.ts`, `transform.ts` |
@@ -811,6 +912,7 @@ git push -u origin sergey-v1
 - [ ] Rotation группы — вокруг выбранного axis center
 - [ ] Drag в/из группы — координаты в Properties не пересчитываются
 - [ ] Text: Text transformation (X/AA/Aa/aa) + Drop shadow Color/X/Y/Blur
+- [ ] Crawl: Ticker/Carousel, Pause(frame), Parse/Use File, Align rules, shadow live
 - [ ] Login: логотип 560px над формой; форма по центру
 
 **Data:**

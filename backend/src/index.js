@@ -29,6 +29,7 @@ import { rundownsRouter } from './routes/rundowns.js';
 import { dataElementsRouter } from './routes/dataElements.js';
 import { uploadsRouter } from './routes/uploads.js';
 import { mediaRouter } from './routes/media.js';
+import { filesRouter } from './routes/files.js';
 import { licenseRouter } from './routes/license.js';
 import { wsRouter } from './routes/ws.js';
 
@@ -111,6 +112,7 @@ app.use('/api/rundowns', auth.requireAuth, rundownsRouter(db));
 app.use('/api/data-elements', auth.requireAuth, dataElementsRouter(dataElementsDb));
 app.use('/api/uploads', auth.requireAuth, uploadsCors, uploadsRouter(media, UPLOADS_DIR));
 app.use('/api/media', auth.requireAuth, mediaRouter(mediaLibrary, UPLOADS_DIR));
+app.use('/api/files', auth.requireAuth, filesRouter());
 app.use('/api/license', auth.requireAuth, auth.requireRole('admin'), licenseRouter(db));
 
 // On-air snapshot for the control panel (§7.4). Separate from the WS router so

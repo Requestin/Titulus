@@ -8,7 +8,7 @@ import {
   type SelectHTMLAttributes,
   type ReactNode,
 } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 const BASE_INPUT =
@@ -275,12 +275,41 @@ export function Field({ label, children, htmlFor }: { label: string; children: R
   );
 }
 
-/** A panel section with a heading. */
-export function Section({ title, children }: { title: string; children: ReactNode }) {
+/** A panel section with a heading; optionally collapsible. */
+export function Section({
+  title,
+  children,
+  collapsible = true,
+  defaultOpen = true,
+}: {
+  title: string;
+  children: ReactNode;
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (!collapsible) {
+    return (
+      <div className="border-b border-border px-3 py-3 last:border-b-0">
+        <h3 className="mb-2.5 text-[12px] font-semibold text-ink-muted">{title}</h3>
+        <div className="space-y-2">{children}</div>
+      </div>
+    );
+  }
   return (
     <div className="border-b border-border px-3 py-3 last:border-b-0">
-      <h3 className="mb-2.5 text-[12px] font-semibold text-ink-muted">{title}</h3>
-      <div className="space-y-2">{children}</div>
+      <button
+        type="button"
+        className="mb-2.5 flex w-full items-center gap-1 text-left"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open
+          ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden />
+          : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden />}
+        <h3 className="text-[12px] font-semibold text-ink-muted">{title}</h3>
+      </button>
+      {open ? <div className="space-y-2">{children}</div> : null}
     </div>
   );
 }

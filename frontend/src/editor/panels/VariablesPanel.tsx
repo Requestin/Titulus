@@ -11,7 +11,7 @@ import { useUpload } from '../useUpload';
 import { Input, NumberInput, Select, ColorInput } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 
-const TYPES: VariableType[] = ['text', 'number', 'color', 'image', 'video'];
+const TYPES: VariableType[] = ['text', 'multitext', 'textfile', 'number', 'color', 'image', 'video'];
 
 export function VariablesPanel() {
   const template = useEditor((s) => s.template);
@@ -111,12 +111,24 @@ function VariableRow({ v }: { v: Variable }) {
       <StackedField label="Type" hint="Type of data.">
         <Select
           value={v.type}
-          onChange={(e) =>
+          onChange={(e) => {
+            const type = e.target.value as VariableType;
+            const defaults: Record<VariableType, string | number> = {
+              text: '',
+              multitext: 'Line 1\nLine 2',
+              textfile: '',
+              image: '',
+              video: '',
+              color: '#ffffff',
+              number: 0,
+            };
             updateVariable(v.id, {
-              type: e.target.value as VariableType,
-              defaultValue: e.target.value === 'number' ? 0 : '',
-            })
-          }
+              type,
+              defaultValue: defaults[type],
+              ...(type === 'multitext' && !v.name ? { name: 'multitext', label: 'multitext' } : {}),
+              ...(type === 'multitext' ? { name: v.name === 'var' || /^var\d+$/.test(v.name) ? 'multitext' : v.name } : {}),
+            });
+          }}
         >
           {TYPES.map((t) => (
             <option key={t} value={t}>
@@ -164,19 +176,19 @@ function DefaultValueInput({
       <ColorInput value={String(v.defaultValue || '#ffffff')} onChange={onChange} />
     );
   }
-  if (v.type === 'image' || v.type === 'video') {
+  if (v.type === 'image' || v.type === 'video' || v.type === 'textfile') {
     return (
       <div className="flex items-center gap-2">
         <Input
           value={String(v.defaultValue || '')}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="media URL"
+          placeholder={v.type === 'textfile' ? 'TextFile URL' : 'media URL'}
           className="flex-1"
         />
         <input
           ref={fileRef}
           type="file"
-          accept={v.type === 'image' ? 'image/*' : 'video/*'}
+          accept={v.type === 'image' ? 'image/*' : v.type === 'video' ? 'video/*' : '.txt,text/plain'}
           className="hidden"
           onChange={async (e) => {
             const f = e.target.files?.[0];
@@ -189,7 +201,7 @@ function DefaultValueInput({
         <button
           onClick={() => fileRef.current?.click()}
           disabled={uploading}
-          title="Upload media"
+          title={v.type === 'textfile' ? 'Upload TextFile' : 'Upload media'}
           className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border text-ink-muted hover:text-ink disabled:opacity-50"
         >
           {uploading ? (
@@ -199,6 +211,17 @@ function DefaultValueInput({
           )}
         </button>
       </div>
+    );
+  }
+  if (v.type === 'multitext') {
+    return (
+      <textarea
+        value={String(v.defaultValue || '')}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="multiline text"
+        className="min-h-[72px] w-full resize-y rounded-md border border-border bg-surface-2 px-2 py-1.5 text-[13px] text-ink placeholder:text-ink-faint focus-visible:outline-none focus-visible:border-ring"
+        spellCheck={false}
+      />
     );
   }
   return (

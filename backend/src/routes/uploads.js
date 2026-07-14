@@ -18,6 +18,7 @@ import { mediaTypeFor } from '../media.js';
 const MAX_BYTES = 200 * 1024 * 1024; // 200 MB (§7.5)
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg']);
 const VIDEO_EXT = new Set(['.mp4', '.mov', '.webm']);
+const TEXT_EXT = new Set(['.txt']);
 
 function apiError(res, status, code, message, details) {
   return res.status(status).json({
@@ -41,14 +42,15 @@ export function uploadsRouter(media, uploadsDir) {
     storage,
     limits: { fileSize: MAX_BYTES },
     fileFilter: (req, file, cb) => {
-      const kind = mediaTypeFor(file.mimetype);
+      let kind = mediaTypeFor(file.mimetype);
+      const ext = (extname(file.originalname) || '').toLowerCase();
+      if (kind === null && TEXT_EXT.has(ext)) kind = 'text';
       if (kind === null) {
         const err = new Error(`unsupported media type: ${file.mimetype}`);
         err.code = 'UNSUPPORTED_TYPE';
         return cb(err);
       }
-      const ext = (extname(file.originalname) || '').toLowerCase();
-      const allowedExt = kind === 'image' ? IMAGE_EXT : VIDEO_EXT;
+      const allowedExt = kind === 'image' ? IMAGE_EXT : kind === 'text' ? TEXT_EXT : VIDEO_EXT;
       if (!allowedExt.has(ext)) {
         const err = new Error(`unsupported file extension: ${ext || '(none)'}`);
         err.code = 'UNSUPPORTED_EXTENSION';

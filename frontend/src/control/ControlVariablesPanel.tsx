@@ -79,21 +79,30 @@ function VarsEditor({
                 onChange={(c) => onChange(v.id, c)}
               />
             </div>
-          ) : v.type === 'image' || v.type === 'video' ? (
+          ) : v.type === 'image' || v.type === 'video' || v.type === 'textfile' ? (
             <div className="space-y-1">
               <Input
                 value={String(values[v.id] ?? '')}
                 disabled={disabled}
+                placeholder={v.type === 'textfile' ? 'TextFile URL' : undefined}
                 onChange={(e) => onChange(v.id, e.target.value)}
               />
               {!disabled && (
                 <MediaUploadButton
-                  accept={v.type === 'video' ? 'video/*' : 'image/*'}
+                  accept={v.type === 'video' ? 'video/*' : v.type === 'textfile' ? '.txt,text/plain' : 'image/*'}
                   onUploaded={(url) => onChange(v.id, url)}
-                  label={v.type === 'video' ? 'Upload video' : 'Upload image'}
+                  label={v.type === 'video' ? 'Upload video' : v.type === 'textfile' ? 'Upload TextFile' : 'Upload image'}
                 />
               )}
             </div>
+          ) : v.type === 'multitext' ? (
+            <textarea
+              value={String(values[v.id] ?? '')}
+              disabled={disabled}
+              onChange={(e) => onChange(v.id, e.target.value)}
+              className="min-h-[72px] w-full resize-y rounded-md border border-border bg-surface-2 px-2 py-1.5 text-[13px] text-ink disabled:opacity-50"
+              spellCheck={false}
+            />
           ) : (
             <Input
               value={String(values[v.id] ?? '')}

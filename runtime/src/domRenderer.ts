@@ -22,6 +22,14 @@ import type {
   Template, Layer, LayerGroup, AnimatableValues,
 } from './schema.js';
 import { applyTextTransform, resolveBinding } from './schema.js';
+import {
+  applyTextStyleToEl,
+  crawlAlignActive,
+  crawlDirectorLocalFrame,
+  crawlLinesFromContent,
+  formatCrawlLine,
+  sampleCrawlMotion,
+} from './crawl.js';
 import { applyTransform, blendModeCss, opacityCss, transformHas3D, type AppliedTransform } from './transform.js';
 import { applyGroupTransform, computeGroupBbox } from './groupBounds.js';
 import { computeStackOrder, groupMap } from './stackOrder.js';
@@ -49,9 +57,17 @@ interface LayerNode {
   el: HTMLElement;
   /** child element for text/clock content (so we can update text without re-layout). */
   contentEl?: HTMLElement;
+  /** Inner scrolling track for crawl layers. */
+  crawlTrackEl?: HTMLElement;
   layer: Layer;
   /** Cache of last-written property strings so we can skip identical writes. */
   cache: Record<string, string>;
+  /** Cached crawl lines (after fetch/parse). */
+  crawlLines?: string[];
+  crawlFetchKey?: string;
+  /** Tracks last Content string used to build crawlLines (Parse invalidation). */
+  crawlContentKey?: string;
+  crawlLoopEpoch?: number;
 }
 
 interface GroupNode {
@@ -449,14 +465,26 @@ export class TemplateRenderer {
     let node = this.layerEls.get(layer.id);
     if (!node) {
       const built = this.createLayerElement(layer);
-      node = { el: built.el, contentEl: built.contentEl, layer, cache: {} };
+      node = {
+        el: built.el,
+        contentEl: built.contentEl,
+        crawlTrackEl: built.crawlTrackEl,
+        layer,
+        cache: {},
+      };
       this.layerEls.set(layer.id, node);
     } else {
       // Type change? Recreate the element (and reset the cache).
       if (node.layer.type !== layer.type) {
         node.el.remove();
         const built = this.createLayerElement(layer);
-        node = { el: built.el, contentEl: built.contentEl, layer, cache: {} };
+        node = {
+          el: built.el,
+          contentEl: built.contentEl,
+          crawlTrackEl: built.crawlTrackEl,
+          layer,
+          cache: {},
+        };
         this.layerEls.set(layer.id, node);
       } else {
         node.layer = layer;
@@ -466,7 +494,11 @@ export class TemplateRenderer {
   }
 
   /** Build the layer wrapper element + optional content child. Does NOT touch the map. */
-  private createLayerElement(layer: Layer): { el: HTMLElement; contentEl?: HTMLElement } {
+  private createLayerElement(layer: Layer): {
+    el: HTMLElement;
+    contentEl?: HTMLElement;
+    crawlTrackEl?: HTMLElement;
+  } {
     const el = document.createElement('div');
     el.className = `titulus-layer titulus-${layer.type}`;
     el.dataset.layerId = layer.id;
@@ -477,6 +509,7 @@ export class TemplateRenderer {
     // Per-type inner content. For text/clock we keep a content child so we can
     // update text without touching the transform wrapper.
     let contentEl: HTMLElement | undefined;
+    let crawlTrackEl: HTMLElement | undefined;
     switch (layer.type) {
       case 'text':
       case 'clock': {
@@ -485,6 +518,25 @@ export class TemplateRenderer {
         contentEl.style.width = '100%';
         contentEl.style.height = '100%';
         contentEl.style.display = 'flex';
+        el.appendChild(contentEl);
+        break;
+      }
+      case 'crawl': {
+        el.style.overflow = 'hidden';
+        contentEl = document.createElement('div');
+        contentEl.className = 'titulus-crawl-viewport';
+        contentEl.style.width = '100%';
+        contentEl.style.height = '100%';
+        contentEl.style.overflow = 'hidden';
+        contentEl.style.position = 'relative';
+        crawlTrackEl = document.createElement('div');
+        crawlTrackEl.className = 'titulus-crawl-track';
+        crawlTrackEl.style.position = 'absolute';
+        crawlTrackEl.style.left = '0';
+        crawlTrackEl.style.top = '0';
+        crawlTrackEl.style.display = 'flex';
+        crawlTrackEl.style.willChange = 'transform';
+        contentEl.appendChild(crawlTrackEl);
         el.appendChild(contentEl);
         break;
       }
@@ -497,7 +549,6 @@ export class TemplateRenderer {
         if (layer.type === 'video') {
           (media as HTMLVideoElement).muted = true;
           (media as HTMLVideoElement).playsInline = true;
-          // autoplay/loop handled in applyLayerState when src resolves
         }
         contentEl = media as HTMLElement;
         el.appendChild(media);
@@ -505,10 +556,9 @@ export class TemplateRenderer {
       }
       case 'rect':
       case 'mask':
-        // No child; styling applied directly.
         break;
     }
-    return { el, contentEl };
+    return { el, contentEl, crawlTrackEl };
   }
 
   // -----------------------------------------------------------------------
@@ -646,7 +696,7 @@ export class TemplateRenderer {
       this.setStyle(el, cache, 'transformStyle', 'flat');
     }
 
-    this.paintLayerContent(layer, node);
+    this.paintLayerContent(layer, node, anim);
   }
 
   /** Update mask clip hosts from each mask layer's animated geometry (§6.5). */
@@ -828,7 +878,11 @@ export class TemplateRenderer {
   }
 
   /** Paint the type-specific content (text/media/fill/mask) for a layer. */
-  private paintLayerContent(layer: Layer, node: LayerNode): void {
+  private paintLayerContent(
+    layer: Layer,
+    node: LayerNode,
+    anim?: AnimatableValues,
+  ): void {
     const el = node.el;
     const v = this.variables;
     const cache = node.cache;
@@ -890,6 +944,10 @@ export class TemplateRenderer {
         }
         break;
       }
+      case 'crawl': {
+        this.paintCrawl(layer, node, v, anim);
+        break;
+      }
       case 'image': {
         const img = node.contentEl as HTMLImageElement;
         const src = String(resolveBinding(layer.src, v));
@@ -910,6 +968,205 @@ export class TemplateRenderer {
         break;
       }
     }
+  }
+
+  private paintCrawl(
+    layer: Extract<Layer, { type: 'crawl' }>,
+    node: LayerNode,
+    vars: Record<string, string | number>,
+    _anim?: AnimatableValues,
+  ): void {
+    const track = node.crawlTrackEl
+      ?? (node.contentEl?.querySelector('.titulus-crawl-track') as HTMLElement | null)
+      ?? undefined;
+    if (!track || !this.template) return;
+    node.crawlTrackEl = track;
+
+    const rawResolved = String(resolveBinding(layer.content, vars, ''));
+    const maxEnabled = layer.crawl.maxTextLengthEnabled;
+    const maxLen = layer.crawl.maxTextLength;
+    const contentKey = `${rawResolved}\0${maxEnabled}\0${maxLen}`;
+
+    // Always refresh lines when Content changes (fixes Parse while Use File is on).
+    if (node.crawlContentKey !== contentKey) {
+      node.crawlContentKey = contentKey;
+      node.crawlLines = crawlLinesFromContent(rawResolved, layer.crawl);
+    }
+
+    const dir = this.template.timeline.directors.find((d) => d.id === layer.crawlDirectorId);
+    const dur = Math.max(1, dir?.durationFrames ?? 1);
+    const offset = dir?.offsetFrames ?? 0;
+    const loop = layer.crawl.animationType === 'continuous' || Boolean(dir?.loop);
+    let local: number;
+    if (this.directorLocalFrames && layer.crawlDirectorId in this.directorLocalFrames) {
+      local = this.directorLocalFrames[layer.crawlDirectorId] ?? 0;
+    } else {
+      local = crawlDirectorLocalFrame(this.frame, offset, dur, loop);
+    }
+
+    const epoch = Math.floor(local / dur);
+    if (loop && node.crawlLoopEpoch !== undefined && epoch > node.crawlLoopEpoch) {
+      // Force re-fetch from Use File path at end of each Continuous cycle.
+      node.crawlFetchKey = undefined;
+    }
+    node.crawlLoopEpoch = epoch;
+
+    // Use File / URL: (re)fetch when path key is new or was invalidated on loop.
+    if (layer.crawl.useFile && layer.crawl.filePath) {
+      const pathKey = `path:${layer.crawl.filePath}`;
+      if (node.crawlFetchKey !== pathKey) {
+        node.crawlFetchKey = pathKey;
+        const path = layer.crawl.filePath;
+        const token = (typeof location !== 'undefined'
+          && new URLSearchParams(location.search).get('token')) || '';
+        void fetch('/api/files/read', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ path }),
+        })
+          .then(async (r) => {
+            if (!r.ok) throw new Error('read failed');
+            return r.json() as Promise<{ text: string }>;
+          })
+          .then((data) => {
+            if (node.crawlFetchKey !== pathKey) return;
+            node.crawlLines = crawlLinesFromContent(data.text, layer.crawl);
+            node.crawlContentKey = `${data.text}\0${maxEnabled}\0${maxLen}`;
+            if (this.template) {
+              const live = this.template.layers.find((l) => l.id === layer.id);
+              if (live && live.type === 'crawl' && live.crawl.useFile) {
+                live.content = data.text;
+              }
+            }
+            this.applyCurrentState();
+          })
+          .catch(() => {});
+      }
+    } else if (/\.txt(\?|$)/i.test(rawResolved) || rawResolved.startsWith('/uploads/')) {
+      const urlKey = `url:${rawResolved}`;
+      if (node.crawlFetchKey !== urlKey) {
+        node.crawlFetchKey = urlKey;
+        void fetch(rawResolved)
+          .then((r) => (r.ok ? r.text() : Promise.reject(new Error('missing'))))
+          .then((text) => {
+            if (node.crawlFetchKey !== urlKey) return;
+            node.crawlLines = crawlLinesFromContent(text, layer.crawl);
+            node.crawlContentKey = `${text}\0${maxEnabled}\0${maxLen}`;
+            this.applyCurrentState();
+          })
+          .catch(() => {});
+      }
+    } else {
+      node.crawlFetchKey = undefined;
+    }
+
+    const lines = node.crawlLines ?? crawlLinesFromContent(rawResolved, layer.crawl);
+    const fill = String(resolveBinding(layer.style.fill, vars));
+    const horizontal = layer.crawl.type === 'ticker';
+    const fps = this.template.timeline.fps || 50;
+    const align = layer.style.align ?? 'left';
+    const useAlign = crawlAlignActive(layer.crawl);
+    track.style.flexDirection = horizontal ? 'row' : 'column';
+    if (!horizontal) {
+      // Carousel: Align positions each line across the box width.
+      track.style.width = '100%';
+      track.style.alignItems = useAlign
+        ? (align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start')
+        : 'flex-start';
+    } else {
+      track.style.width = '';
+      track.style.alignItems = 'center';
+    }
+    track.style.gap = layer.crawl.separatorMode === 'none' ? '0px' : '16px';
+
+    const probe = sampleCrawlMotion({
+      localFrame: local,
+      lines,
+      crawl: layer.crawl,
+      boxW: layer.transform.width,
+      boxH: layer.transform.height,
+      fontSize: layer.style.fontSize,
+      fps,
+      measuredSpan: 1,
+      align,
+    });
+
+    const renderLines = probe.activeLineIndex !== null
+      ? [lines[probe.activeLineIndex] ?? '']
+      : lines;
+    const duplicate = probe.duplicateStrip;
+    const transformMode = layer.style.textTransform ?? 'none';
+    const sig = [
+      renderLines.join('\u0001'),
+      duplicate ? 'dup' : 'once',
+      layer.crawl.separatorMode,
+      layer.crawl.separatorText,
+      layer.crawl.separatorImage,
+      fill,
+      String(layer.style.fontSize),
+      transformMode,
+      probe.activeLineIndex === null ? 'strip' : `line:${probe.activeLineIndex}`,
+    ].join('|');
+
+    if (node.cache.crawlSig !== sig) {
+      node.cache.crawlSig = sig;
+      track.replaceChildren();
+      const appendSep = () => {
+        if (layer.crawl.separatorMode === 'text') {
+          const sep = document.createElement('span');
+          applyTextStyleToEl(sep, layer.style, fill, { applyAlign: useAlign });
+          sep.textContent = layer.crawl.separatorText;
+          track.appendChild(sep);
+        } else if (layer.crawl.separatorMode === 'image' && layer.crawl.separatorImage) {
+          const img = document.createElement('img');
+          img.src = layer.crawl.separatorImage;
+          img.style.height = `${Math.max(16, layer.style.fontSize)}px`;
+          img.style.width = 'auto';
+          img.style.objectFit = 'contain';
+          track.appendChild(img);
+        }
+      };
+      const appendCopy = (copyLines: string[]) => {
+        copyLines.forEach((line, i) => {
+          if (i > 0) appendSep();
+          const span = document.createElement('span');
+          applyTextStyleToEl(span, layer.style, fill, { applyAlign: useAlign });
+          span.textContent = formatCrawlLine(line, transformMode);
+          track.appendChild(span);
+        });
+      };
+      appendCopy(renderLines);
+      if (duplicate && renderLines.length > 0) {
+        if (layer.crawl.separatorMode !== 'none') appendSep();
+        appendCopy(renderLines);
+      }
+    } else {
+      // Style-only changes (shadow/align/weight…) must apply without waiting for text edits.
+      for (const child of Array.from(track.children)) {
+        if (child instanceof HTMLElement && child.tagName === 'SPAN') {
+          applyTextStyleToEl(child, layer.style, fill, { applyAlign: useAlign });
+        }
+      }
+    }
+
+    const measuredSpan = Math.max(1, horizontal ? track.scrollWidth : track.scrollHeight);
+    const measuredPeriod = duplicate ? Math.max(1, measuredSpan / 2) : measuredSpan;
+    const motion = sampleCrawlMotion({
+      localFrame: local,
+      lines,
+      crawl: layer.crawl,
+      boxW: layer.transform.width,
+      boxH: layer.transform.height,
+      fontSize: layer.style.fontSize,
+      fps,
+      measuredSpan,
+      measuredPeriod,
+      align,
+    });
+    track.style.transform = `translate3d(${motion.x}px, ${motion.y}px, 0)`;
   }
 
   /**

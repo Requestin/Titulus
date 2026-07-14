@@ -18,6 +18,7 @@ import {
   computeGroupBbox,
 } from '../groupBounds';
 import { MediaSourcePicker } from '../media/MediaSourcePicker';
+import { CrawlTypeSections } from '../CrawlProperties';
 import { PropertyField, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
 import type { NumberInputExtraAction } from '@/components/ui/form';
 import { Button } from '@/components/ui/Button';
@@ -541,6 +542,13 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
           <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} />
         </>
       );
+    case 'crawl':
+      return (
+        <>
+          <CrawlTypeSections layer={layer} variables={variables} updateLayer={updateLayer} />
+          <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} />
+        </>
+      );
   }
 }
 
@@ -566,7 +574,7 @@ function TextStyleSection({ layer, variables, updateLayer }: { layer: Extract<La
       <PropertyField label="Color">
         <BindableField kind="color" value={s.fill} variables={variables} onChange={(v) => setStyle((st) => { st.fill = v; })} />
       </PropertyField>
-      {layer.type === 'text' && (
+      {(layer.type === 'text' || layer.type === 'crawl') && (
         <div className="space-y-1.5">
           <div className="text-[12px] text-ink-muted">Text transformation</div>
           <div className="flex gap-1" role="radiogroup" aria-label="Text transformation">

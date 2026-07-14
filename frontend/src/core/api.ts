@@ -67,7 +67,7 @@ export interface Rundown {
 
 export interface UploadJob {
   id: string;
-  type: 'image' | 'video';
+  type: 'image' | 'video' | 'text';
   status: 'pending' | 'processing' | 'ready' | 'error';
   originalName?: string;
   src?: string;
@@ -323,6 +323,13 @@ export const api = {
       );
     },
     job: (id: string) => req<UploadJob>(`/api/uploads/jobs/${id}`),
+  },
+  files: {
+    read: (path: string) =>
+      req<{ text: string; lines: string[] }>('/api/files/read', {
+        method: 'POST',
+        body: JSON.stringify({ path }),
+      }),
   },
   media: {
     listTags: (q = '') => req<MediaTag[]>(`/api/media/tags${q ? `?q=${encodeURIComponent(q)}` : ''}`),

@@ -10,7 +10,7 @@ export function TemplatesTab({
 }: {
   templates: TemplateSummary[];
   live: string[];
-  onTake: (rec: TemplateRecord, values: Record<string, string | number>) => void;
+  onTake: (rec: TemplateRecord, values: Record<string, string | number>) => void | Promise<void>;
   onUpdate: (templateId: string, values: Record<string, string | number>) => void;
   onClear: (templateId: string) => void;
 }) {
@@ -81,7 +81,7 @@ export function TemplatesTab({
               <VariableValues variables={prep.data.variables} values={values} onChange={setValue} />
             </div>
             <div className="grid grid-cols-3 gap-2 border-t border-border p-3">
-              <Button variant="danger" onClick={() => onTake(prep, values)}>TAKE</Button>
+              <Button variant="danger" onClick={() => { void onTake(prep, values); }}>TAKE</Button>
               <Button variant="neutral" onClick={() => onUpdate(prep.id, values)} disabled={!live.includes(prep.id)}>UPDATE</Button>
               <Button variant="neutral" onClick={() => onClear(prep.id)} disabled={!live.includes(prep.id)}>CLEAR</Button>
             </div>

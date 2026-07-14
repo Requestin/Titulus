@@ -24,6 +24,7 @@ import { Input, Select } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { toast } from '@/core/toast';
 import { createId } from '@/core/id';
+import { crawlFileErrorMessage, templateForTake } from '@/core/crawlFile';
 import { ProgramMonitor } from '@/control/ProgramMonitor';
 import {
   ControlVariablesPanel,
@@ -300,12 +301,20 @@ export function RundownTab({
       toast.error('NOT FOUND IN DB — cannot TAKE');
       return;
     }
+    let template = tpl.data;
+    try {
+      template = await templateForTake(tpl.data);
+      setCache((prev) => ({ ...prev, [tpl.id]: { ...tpl, data: template } }));
+    } catch (err) {
+      toast.error(crawlFileErrorMessage(err));
+      return;
+    }
     const ok = send({
       type: 'take',
       channelId,
       templateId: slot.slotId,
-      template: tpl.data,
-      variables: buildPayload(slot, tpl.data.variables),
+      template,
+      variables: buildPayload(slot, template.variables),
     });
     if (!ok) return toast.error('Control socket disconnected');
     patchOnAir(channelId, (cur) => Array.from(new Set([...cur, slot.slotId])));

@@ -218,7 +218,9 @@ export function TimelinePanel() {
         return bag && bag[p] !== undefined;
       }))
     : [];
-  const untrackedProps = ANIMATABLE_PROPS.filter((p) => !selectedTrackedProps.includes(p));
+  const untrackedProps = ANIMATABLE_PROPS.filter(
+    (p) => p !== 'crawlProgress' && !selectedTrackedProps.includes(p),
+  );
 
   useLayoutEffect(() => {
     if (!addOpen || !addTrackBtnRef.current) return;
