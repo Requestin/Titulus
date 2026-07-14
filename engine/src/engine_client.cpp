@@ -69,4 +69,17 @@ void EngineClient::OnLoadError(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>,
                  failedUrl.ToString().c_str());
 }
 
+bool EngineClient::OnConsoleMessage(CefRefPtr<CefBrowser>, cef_log_severity_t,
+                                    const CefString& message, const CefString&,
+                                    int) {
+    const std::string msg = message.ToString();
+    // Only surface opt-in runtime stats lines (channel.html emits these when
+    // ?stats=1). Everything else stays swallowed so the engine log is clean.
+    if (msg.rfind("BGSTATS", 0) == 0) {
+        std::fprintf(stderr, "bg_engine[runtime]: %s\n", msg.c_str());
+        return true;
+    }
+    return false;
+}
+
 }  // namespace bg

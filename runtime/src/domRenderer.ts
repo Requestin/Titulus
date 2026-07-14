@@ -502,6 +502,8 @@ export class TemplateRenderer {
     this.stats.styleWrites = 0;
     this.stats.skippedWrites = 0;
     this.stats.frameTimeMs = 0;
+    this.stats.maskWrites = 0;
+    this.stats.textWrites = 0;
 
     const sample: TimelineSample = sampleAt(this.norm, frame);
 
@@ -524,7 +526,9 @@ export class TemplateRenderer {
       this.applyGroupState(g, anim);
     }
 
+    const maskWritesBefore = this.stats.styleWrites;
     this.applyMaskScopes(sample);
+    this.stats.maskWrites = this.stats.styleWrites - maskWritesBefore;
 
     const any3d = this.templateHas3D();
     this.setStyle(this.root, this.rootCache, 'transformStyle', any3d ? 'preserve-3d' : 'flat');
@@ -951,6 +955,7 @@ export class TemplateRenderer {
     }
     if (key === 'textContent') {
       (el as HTMLElement).textContent = value;
+      this.stats.textWrites += 1;
     } else {
       // img.src / video.src live on the element, not on .style
       (el as unknown as Record<string, string>)[key] = value;

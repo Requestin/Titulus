@@ -138,6 +138,32 @@ export function maskClipStyle(
     };
   }
 
+  // Inverted axis-aligned rect with square corners: express "show everything
+  // except this rect" as a single evenodd clip-path (outer container ring +
+  // inner rect hole) instead of a full-canvas SVG luminance mask-image.
+  // Phase 19 doc 01: the SVG mask-image path forces Skia to raster a
+  // container-sized (e.g. 1920x1080) luminance layer every frame — on test1
+  // this inverted band mask alone dropped the channel from 50 to ~41 fps.
+  // clip-path polygon is a cheap geometric clip and is pixel-equivalent for a
+  // hard-edged rectangular cutout. Rounded corners / ellipse keep the SVG
+  // fallback (polygon can't round a hole without many segments).
+  if (mask.shape === 'rect' && cr <= 0) {
+    const right = x + w;
+    const bottom = y + h;
+    const outer = `0px 0px, ${containerW}px 0px, ${containerW}px ${containerH}px, 0px ${containerH}px`;
+    const inner = `${x}px ${y}px, ${right}px ${y}px, ${right}px ${bottom}px, ${x}px ${bottom}px`;
+    return {
+      overflow: 'hidden',
+      clipPath: `polygon(evenodd, ${outer}, ${inner})`,
+      borderRadius: '0',
+      maskImage: 'none',
+      maskMode: 'match-source',
+      maskSize: 'auto',
+      maskRepeat: 'repeat',
+      maskPosition: '0 0',
+    };
+  }
+
   const maskImage = invertedMaskImage(mask, x, y, w, h, containerW, containerH, cr);
   return {
     overflow: 'hidden',

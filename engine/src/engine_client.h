@@ -23,7 +23,8 @@ namespace bg {
 class EngineClient : public CefClient,
                      public CefRenderHandler,
                      public CefLifeSpanHandler,
-                     public CefLoadHandler {
+                     public CefLoadHandler,
+                     public CefDisplayHandler {
   public:
     using OnPaintFn  = std::function<void(const uint8_t* bgra, int width, int height)>;
     using OnReadyFn  = std::function<void(bool ready)>;
@@ -36,6 +37,14 @@ class EngineClient : public CefClient,
     CefRefPtr<CefRenderHandler>    GetRenderHandler() override    { return this; }
     CefRefPtr<CefLifeSpanHandler>  GetLifeSpanHandler() override  { return this; }
     CefRefPtr<CefLoadHandler>      GetLoadHandler() override      { return this; }
+    CefRefPtr<CefDisplayHandler>   GetDisplayHandler() override   { return this; }
+
+    // CefDisplayHandler — forward only page console messages tagged with the
+    // "BGSTATS" marker to stderr (Phase 19 doc 01 runtime instrumentation).
+    // Filtering keeps Chromium's own chatty console output out of the log.
+    bool OnConsoleMessage(CefRefPtr<CefBrowser> browser, cef_log_severity_t level,
+                          const CefString& message, const CefString& source,
+                          int line) override;
 
     // CefRenderHandler
     void GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) override;

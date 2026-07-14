@@ -14,10 +14,14 @@ export interface RenderStats {
   skippedWrites: number;
   /** Wall-clock time spent in applyState for this frame, in ms. */
   frameTimeMs: number;
+  /** Subset of styleWrites that landed on a mask clip host (Phase 19 doc 01). */
+  maskWrites: number;
+  /** Number of text/clock content (textContent) updates this frame. */
+  textWrites: number;
 }
 
 export function emptyRenderStats(): RenderStats {
-  return { styleWrites: 0, skippedWrites: 0, frameTimeMs: 0 };
+  return { styleWrites: 0, skippedWrites: 0, frameTimeMs: 0, maskWrites: 0, textWrites: 0 };
 }
 
 /**
@@ -31,5 +35,11 @@ export function createStatsAccumulator(): RenderStats {
 
 /** Snapshot helper: returns a defensive copy suitable for handing to callers. */
 export function snapshotStats(s: RenderStats): RenderStats {
-  return { styleWrites: s.styleWrites, skippedWrites: s.skippedWrites, frameTimeMs: s.frameTimeMs };
+  return {
+    styleWrites: s.styleWrites,
+    skippedWrites: s.skippedWrites,
+    frameTimeMs: s.frameTimeMs,
+    maskWrites: s.maskWrites,
+    textWrites: s.textWrites,
+  };
 }
