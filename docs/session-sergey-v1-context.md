@@ -41,7 +41,7 @@
 | `dfe1dd9` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `468376c` | 10 июл | `big change Control page, add dataelements, change db` (sidebar resize + DE delete UX) |
 | `ddb0186` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
-| `2a55850` | 14 июл | `add text parameters` (text transform + drop shadow + login logo) |
+| `d60b80a` | 14 июл | `add text parameters` (text transform + drop shadow + login logo) |
 
 ---
 
