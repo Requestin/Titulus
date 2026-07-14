@@ -75,6 +75,11 @@
     var canvasH = parseInt(qs.get('h') || '1080', 10) || 1080;
     var backend = qs.get('backend') || '';
     var hudOn = qs.get('hud') === '1';
+    // Phase 19 doc 01: opt-in runtime style-write stats. When ?stats=1, emit a
+    // "BGSTATS" console line every ~5s that bg_engine's OnConsoleMessage
+    // forwards to its log. Aggregates RenderStats deltas across frames so we
+    // can see how many DOM writes per frame the template actually costs.
+    var statsOn = qs.get('stats') === '1';
 
     var stage = document.getElementById('stage');
     var hud = document.getElementById('hud');
@@ -86,6 +91,30 @@
 
     var lastStatus = 'disconnected';
     var lastActive = 0;
+    // ?stats=1 aggregation state (Phase 19 doc 01 instrumentation).
+    var statsAgg = { frames: 0, writes: 0, skipped: 0, frameMs: 0,
+                     maskWrites: 0, textWrites: 0, since: 0 };
+    function accumulateStats(s) {
+      statsAgg.frames += 1;
+      statsAgg.writes += s.styleWrites || 0;
+      statsAgg.skipped += s.skippedWrites || 0;
+      statsAgg.frameMs += s.frameTimeMs || 0;
+      statsAgg.maskWrites += s.maskWrites || 0;
+      statsAgg.textWrites += s.textWrites || 0;
+      var now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      if (statsAgg.since === 0) { statsAgg.since = now; return; }
+      if (now - statsAgg.since >= 5000 && statsAgg.frames > 0) {
+        var f = statsAgg.frames;
+        console.log('BGSTATS frames=' + f +
+          ' writes/f=' + (statsAgg.writes / f).toFixed(1) +
+          ' skipped/f=' + (statsAgg.skipped / f).toFixed(1) +
+          ' mask/f=' + (statsAgg.maskWrites / f).toFixed(1) +
+          ' text/f=' + (statsAgg.textWrites / f).toFixed(1) +
+          ' applyMs/f=' + (statsAgg.frameMs / f).toFixed(3));
+        statsAgg = { frames: 0, writes: 0, skipped: 0, frameMs: 0,
+                     maskWrites: 0, textWrites: 0, since: now };
+      }
+    }
     // Last reported RenderStats (Phase 9.1) — updated via onFrame; surfaced in
     // the hud overlay so the engine smoke / bench harness can read it.
     var lastStats = null;
@@ -101,6 +130,7 @@
         if (info.stats) {
           lastStats = info.stats;
           if (hudOn) paintHud();
+          if (statsOn) accumulateStats(info.stats);
         }
       }
     });
