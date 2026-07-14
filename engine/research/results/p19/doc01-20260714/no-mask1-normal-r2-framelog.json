@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/doc01-20260714/no-mask1-normal-r2-frame-log.csv",
+  "totalRows": 3249,
+  "deliveredFrames": 2269,
+  "timedOutTicks": 979,
+  "intervalUs": {
+    "p50": 22752,
+    "p95": 39992,
+    "max": 58386,
+    "mean": 28566.63
+  },
+  "pumpActiveUs": {
+    "p50": 842,
+    "p95": 995,
+    "max": 35638,
+    "mean": 700.56
+  },
+  "paintLatencyUs": {
+    "p50": 20,
+    "p95": 32,
+    "max": 32546,
+    "mean": 34.12
+  },
+  "pumpActiveRatio": 0.0216,
+  "effectiveFps": 35.01,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 1,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 12,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

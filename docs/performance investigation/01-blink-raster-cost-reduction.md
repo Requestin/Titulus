@@ -917,6 +917,21 @@ grep SUMMARY /tmp/engine-test1.log
 
 **Документ 01 закрывается по fps gate.** После PASS можно: (a) планировать true-50p re-gate; (b) решать, нужен ли doc 02 urgently. После FAIL — продолжать Style Guide / runtime / masks; **не** начинать true-50p soak как primary.
 
+**РЕЗУЛЬТАТ (2026-07-14, sha `9e5bb76`, отчёт `reports/p19-01-raster-cost.md`): PASS.**
+
+| Run | avg fps | min 5s fps | drops |
+| --- | --- | --- | --- |
+| 1 | 49.88 | 49.2 | 0.20% |
+| 2 | 49.78 | 47.4 | 0.46% |
+| 3 | 49.50 | 46.9 | 1.01% |
+| **median** | **49.78** | **47.4** | — |
+
+Регрессии: cheap `test` 50.00 / 0% drops; `bench 3ch` avg 49.94; static beacon 50.00 (awake OK).
+Главный рычаг — **runtime-правка** (inverted rect mask → `clip-path polygon`, `runtime/src/maskScopes.ts`):
+null test1 **~41 → 50**, pixel-exact (md5 кадров идентичны), `test1.json` не изменён.
+DeckLink sanity: 1ch **41.7 → 47.6** in_fps, 3ch **25–26 → 29–32** (true-50p на 3ch — later gate,
+упирается в contention → doc 03/04). Next: doc 03 (память) ∥ doc 04 (pinning/CCX).
+
 ### 12.6 Rollback
 
 N/A для gate; при ложном PASS из-за watchdog — invalidate results, fix harness.

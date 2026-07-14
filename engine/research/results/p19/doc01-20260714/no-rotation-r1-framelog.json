@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/doc01-20260714/no-rotation-r1-frame-log.csv",
+  "totalRows": 3249,
+  "deliveredFrames": 2810,
+  "timedOutTicks": 438,
+  "intervalUs": {
+    "p50": 20474,
+    "p95": 37852,
+    "max": 59854,
+    "mean": 23065.94
+  },
+  "pumpActiveUs": {
+    "p50": 903,
+    "p95": 998,
+    "max": 33661,
+    "mean": 827.48
+  },
+  "paintLatencyUs": {
+    "p50": 20,
+    "p95": 28,
+    "max": 28530,
+    "mean": 30.45
+  },
+  "pumpActiveRatio": 0.0352,
+  "effectiveFps": 43.35,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 1,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 6,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

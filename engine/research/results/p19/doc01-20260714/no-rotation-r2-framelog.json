@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/doc01-20260714/no-rotation-r2-frame-log.csv",
+  "totalRows": 3249,
+  "deliveredFrames": 2806,
+  "timedOutTicks": 442,
+  "intervalUs": {
+    "p50": 20402,
+    "p95": 37899,
+    "max": 58130,
+    "mean": 23105.68
+  },
+  "pumpActiveUs": {
+    "p50": 911,
+    "p95": 1004,
+    "max": 29083,
+    "mean": 830.21
+  },
+  "paintLatencyUs": {
+    "p50": 21,
+    "p95": 30,
+    "max": 24162,
+    "mean": 29.81
+  },
+  "pumpActiveRatio": 0.0353,
+  "effectiveFps": 43.28,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 1,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 4,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

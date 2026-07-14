@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/doc01-20260714/no-images-r2-frame-log.csv",
+  "totalRows": 3249,
+  "deliveredFrames": 3032,
+  "timedOutTicks": 216,
+  "intervalUs": {
+    "p50": 20147,
+    "p95": 37032,
+    "max": 42662,
+    "mean": 21377.36
+  },
+  "pumpActiveUs": {
+    "p50": 903,
+    "p95": 1059,
+    "max": 30162,
+    "mean": 888.49
+  },
+  "paintLatencyUs": {
+    "p50": 20,
+    "p95": 27,
+    "max": 26228,
+    "mean": 29.53
+  },
+  "pumpActiveRatio": 0.0411,
+  "effectiveFps": 46.78,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 1,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 3,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/doc01-20260714/no-clock-r2-frame-log.csv",
+  "totalRows": 3249,
+  "deliveredFrames": 2713,
+  "timedOutTicks": 535,
+  "intervalUs": {
+    "p50": 20572,
+    "p95": 38253,
+    "max": 42888,
+    "mean": 23891.06
+  },
+  "pumpActiveUs": {
+    "p50": 890,
+    "p95": 989,
+    "max": 36255,
+    "mean": 795.86
+  },
+  "paintLatencyUs": {
+    "p50": 20,
+    "p95": 30,
+    "max": 26414,
+    "mean": 31.1
+  },
+  "pumpActiveRatio": 0.0323,
+  "effectiveFps": 41.86,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 1,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 7,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

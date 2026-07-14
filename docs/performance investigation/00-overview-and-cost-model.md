@@ -1412,6 +1412,19 @@ ALTERNATIVES REJECTED: pump-трюки (re-confirm paint_seq_delta max=1);
   weave micro-opt как first step (weave 0.8-1.2ms avg — не блокер).
 ROLLBACK: n/a (measurement-only milestone)
 OWNER: agent / user review
+
+DATE: 2026-07-14
+DECISION: doc 01 gate PASS. Главный рычаг — inverted axis-aligned rect mask
+  без скругления теперь рендерится через clip-path polygon(evenodd) вместо
+  полноэкранной SVG luminance mask-image (runtime/src/maskScopes.ts).
+  Runtime-only, pixel-exact (md5 preview кадров идентичны), test1.json не тронут.
+EVIDENCE RUNS: engine/research/results/p19/doc01-20260714/
+  (ablation N=2; warm-cache isolation baseline-runtime 40-41 vs patched 50;
+   raster threads A/B; gate x3 49.78 median; DeckLink 1ch/3ch sanity)
+ALTERNATIVES REJECTED: правки самого test1.json (не понадобились — fix в
+  rendering-path); clock throttle / Class A (уже дёшево: text/f=0, writes/f=10).
+ROLLBACK: git revert -m 1 <merge-commit>; runtime — пересборка maskScopes.ts.
+OWNER: agent / user review
 ```
 
 ---
@@ -1944,6 +1957,7 @@ Apply to typ/high columns when forecasting G2.
 |---|---|
 | 2026-07-13 | Initial comprehensive overview & cost model |
 | 2026-07-13 | Baseline re-verify (P19): §3.1 → MEASURED; G0 PASS; калибровка §8/App P числами из `reports/p19-00-baseline.md`; вердикт §4.5 = PRIMARY H1 (raster cost), secondary H2 видим на 3ch |
+| 2026-07-14 | Doc 01 executed (H1): inverted rect mask → clip-path (runtime, pixel-exact); null test1 41→50, gate PASS (median 49.78≥45); 1ch DeckLink 41.7→47.6, 3ch 25→~30. Отчёт `reports/p19-01-raster-cost.md`, style guide `style-guide.md`. Next: H2 (doc 03 память ∥ doc 04 pinning) для 3ch true-50p |
 
 При существенном изменении root cause / gates — bump запись сюда и notify sister docs.
 
