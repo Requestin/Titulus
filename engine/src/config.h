@@ -73,6 +73,12 @@ struct Config {
     // production decklink/browser paths).
     std::string frame_log;
 
+    // Phase 19 doc 03: DeckLink-only fast path. Deliver an OnPaint buffer
+    // synchronously into DecklinkConsumer::OnFrame, which immediately copies
+    // it into owned queue storage. This eliminates the intermediate FrameRing
+    // copy while never retaining the CEF pointer after OnPaint returns.
+    bool decklink_direct_paint = false;
+
     // Parse argv into this config. Returns false on a fatal parse error (and
     // prints usage to stderr). Exits the process on --help / a missing required
     // arg so callers don't need to branch.

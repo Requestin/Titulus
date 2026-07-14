@@ -501,6 +501,11 @@ struct DecklinkConsumer::Impl {
         }
     }
 
+    void RecordDirectDelivery(size_t bytes) {
+        direct_deliveries_.fetch_add(1, std::memory_order_relaxed);
+        direct_delivery_bytes_.fetch_add(bytes, std::memory_order_relaxed);
+    }
+
     int PollExitCode() const {
         return requested_exit_code_.load(std::memory_order_acquire);
     }
@@ -720,6 +725,10 @@ struct DecklinkConsumer::Impl {
             output_pool_hits_.exchange(0, std::memory_order_relaxed);
         const uint64_t output_misses =
             output_pool_misses_.exchange(0, std::memory_order_relaxed);
+        const uint64_t direct_deliveries =
+            direct_deliveries_.exchange(0, std::memory_order_relaxed);
+        const uint64_t direct_bytes =
+            direct_delivery_bytes_.exchange(0, std::memory_order_relaxed);
 
         const double copy_avg  = copy_cnt  ? static_cast<double>(copy_sum)  / copy_cnt  : 0.0;
         const double weave_avg = weave_cnt ? static_cast<double>(weave_sum) / weave_cnt : 0.0;
@@ -785,7 +794,8 @@ struct DecklinkConsumer::Impl {
             "onframe_memcpy_count=%llu onframe_bytes=%llu "
             "singles_clone_avg_us=%.1f singles_clone_max_us=%llu "
             "singles_clone_count=%llu singles_clone_bytes=%llu "
-            "weave_bytes=%llu alias_singles=%llu input_pool_hit=%llu input_pool_miss=%llu "
+            "weave_bytes=%llu alias_singles=%llu direct_deliveries=%llu direct_bytes=%llu "
+            "input_pool_hit=%llu input_pool_miss=%llu "
             "output_pool_hit=%llu output_pool_miss=%llu",
             ring_avg, static_cast<unsigned long long>(ring_max),
             static_cast<unsigned long long>(ring_cnt),
@@ -800,6 +810,8 @@ struct DecklinkConsumer::Impl {
             static_cast<unsigned long long>(clone_bytes),
             static_cast<unsigned long long>(weave_bytes),
             static_cast<unsigned long long>(aliases - prev_alias_singles_),
+            static_cast<unsigned long long>(direct_deliveries),
+            static_cast<unsigned long long>(direct_bytes),
             static_cast<unsigned long long>(input_hits),
             static_cast<unsigned long long>(input_misses),
             static_cast<unsigned long long>(output_hits),
@@ -1191,6 +1203,7 @@ struct DecklinkConsumer::Impl {
     std::atomic<uint64_t> weave_copy_bytes_{0};
     std::atomic<uint64_t> input_pool_hits_{0}, input_pool_misses_{0};
     std::atomic<uint64_t> output_pool_hits_{0}, output_pool_misses_{0};
+    std::atomic<uint64_t> direct_deliveries_{0}, direct_delivery_bytes_{0};
 
     // Telemetry window state (touched only on the completion callback thread).
     std::chrono::steady_clock::time_point telemetry_last_{};
@@ -1238,6 +1251,10 @@ int DecklinkConsumer::WaitForTick(int64_t timeout_us) {
 
 void DecklinkConsumer::RecordRingCopy(uint64_t us, size_t bytes) {
     if (impl_) impl_->RecordRingCopy(us, bytes);
+}
+
+void DecklinkConsumer::RecordDirectDelivery(size_t bytes) {
+    if (impl_) impl_->RecordDirectDelivery(bytes);
 }
 
 }  // namespace bg

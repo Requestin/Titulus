@@ -49,6 +49,7 @@ void print_usage() {
         "  --device-index=N          DeckLink sub-device (-1 = none)\n"
         "  --display-mode=NAME       HD1080i50, HD1080p50, HD720p60, ...\n"
         "  --keyer=external|internal|fill_only\n"
+        "  --decklink-direct-paint  bypass FrameRing for DeckLink (research flag)\n"
         "\n"
         "Stream (--consumer=stream, Phase 5):\n"
         "  --stream-url=URL          srt://... | rtmp://...\n"
@@ -123,6 +124,9 @@ bool Config::Parse(int argc, char** argv) {
     preview_out     = env_or("PREVIEW_OUT",  preview_out.c_str());
     stream_url      = env_or("STREAM_URL",   stream_url.c_str());
     frame_log       = env_or("FRAME_LOG",    frame_log.c_str());
+    if (const char* v = std::getenv("BG_DECKLINK_DIRECT_PAINT")) {
+        decklink_direct_paint = std::atoi(v) != 0;
+    }
     if (const char* v = std::getenv("BG_ENGINE_FPS"))        fps    = std::atoi(v);
     if (const char* v = std::getenv("BG_ENGINE_WIDTH"))      width  = std::atoi(v);
     if (const char* v = std::getenv("BG_ENGINE_HEIGHT"))     height = std::atoi(v);
@@ -135,6 +139,10 @@ bool Config::Parse(int argc, char** argv) {
         if (std::strcmp(arg, "-h") == 0 || std::strcmp(arg, "--help") == 0) {
             print_usage();
             std::exit(0);
+        }
+        if (std::strcmp(arg, "--decklink-direct-paint") == 0) {
+            decklink_direct_paint = true;
+            continue;
         }
         if (match_prefix(arg, "--url",           val, i, argc, argv)) { url = val; continue; }
         if (match_prefix(arg, "--name",          val, i, argc, argv)) { name = val; continue; }
@@ -192,6 +200,10 @@ bool Config::Parse(int argc, char** argv) {
         std::fprintf(stderr, "bg_engine: decklink consumer needs --device-index=N\n");
         return false;
     }
+    if (decklink_direct_paint && consumer != ConsumerKind::Decklink) {
+        std::fprintf(stderr, "bg_engine: --decklink-direct-paint requires --consumer=decklink\n");
+        return false;
+    }
     if (consumer == ConsumerKind::Stream && stream_url.empty()) {
         std::fprintf(stderr, "bg_engine: stream consumer needs --stream-url=URL\n");
         return false;
@@ -202,9 +214,10 @@ bool Config::Parse(int argc, char** argv) {
 std::string Config::Describe() const {
     char buf[512];
     std::snprintf(buf, sizeof(buf),
-                  "name=%s %dx%d@%dfps consumer=%s cache=%s url=%s duration=%ds",
+                  "name=%s %dx%d@%dfps consumer=%s direct_paint=%s cache=%s url=%s duration=%ds",
                   name.c_str(), width, height, fps,
-                  ConsumerLabel(consumer), cache_dir.c_str(), url.c_str(), duration_sec);
+                  ConsumerLabel(consumer), decklink_direct_paint ? "on" : "off",
+                  cache_dir.c_str(), url.c_str(), duration_sec);
     return buf;
 }
 

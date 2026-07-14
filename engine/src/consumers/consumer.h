@@ -84,6 +84,10 @@ class Consumer {
     // after copying a CEF OnPaint buffer into its FrameRing. Only DeckLink
     // currently reports it; other consumers keep their existing behavior.
     virtual void RecordRingCopy(uint64_t /*us*/, size_t /*bytes*/) {}
+
+    // DeckLink-only direct-paint instrumentation. Called after a synchronous
+    // OnPaint→OnFrame handoff has copied CEF bytes into consumer-owned storage.
+    virtual void RecordDirectDelivery(size_t /*bytes*/) {}
 };
 
 }  // namespace bg
