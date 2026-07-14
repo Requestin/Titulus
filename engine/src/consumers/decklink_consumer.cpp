@@ -226,6 +226,7 @@ struct DecklinkConsumer::Impl {
         field_a_.ZeroFill();
         field_b_.Reset(frame_bytes_);
         field_b_.ZeroFill();
+        single_alias_ = false;
 
         if (!LoadDeckLinkRuntime()) return false;
 
@@ -570,6 +571,11 @@ struct DecklinkConsumer::Impl {
             } else if (fresh >= 1 && f0.bytes.size() == frame_bytes_) {
                 RecycleInputBuffer(std::move(field_a_));
                 RecycleInputBuffer(std::move(field_b_));
+                // RecycleInputBuffer intentionally drops a buffer when the
+                // pool is full. Explicitly clear B either way: in alias mode
+                // A is the sole owner and retaining a rejected B would strand
+                // an unnecessary 8MB allocation until the next pair.
+                field_b_ = AlignedBuffer{};
                 // A single fresh progressive bitmap must feed both interlaced
                 // fields. Keep one owner in field_a_ and let weave read it for
                 // A and B instead of cloning another 8MB input buffer.
