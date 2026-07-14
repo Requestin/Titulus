@@ -29,6 +29,7 @@ class DecklinkConsumer final : public Consumer {
     bool HasExternalClock() const override;
     int WaitForTick(int64_t timeout_us) override;
     void RecordRingCopy(uint64_t us, size_t bytes) override;
+    void RecordDirectDelivery(size_t bytes) override;
 
   private:
     struct Impl;

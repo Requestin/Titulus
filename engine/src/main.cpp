@@ -99,6 +99,20 @@ std::chrono::steady_clock::time_point last_paint_time;
 bool have_last_paint = false;
 
 void on_paint(const uint8_t* bgra, int width, int height) {
+    const size_t bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+    if (cfg.decklink_direct_paint && consumer &&
+        browser_ready.load(std::memory_order_acquire)) {
+        // CEF owns `bgra` only for this callback. DecklinkConsumer::OnFrame
+        // synchronously copies it into an owned AlignedBuffer before return,
+        // so this bypasses the FrameRing copy without letting a CEF pointer
+        // escape the OnPaint lifetime.
+        const uint64_t seq = paint_seq.fetch_add(1, std::memory_order_release) + 1;
+        const bg::Frame frame{bgra, width, height, seq};
+        consumer->OnFrame(frame);
+        consumer->RecordDirectDelivery(bytes);
+        return;
+    }
+
     const auto t_ring_copy = std::chrono::steady_clock::now();
     ring.Copy(bgra, width, height);
     if (consumer) {
@@ -106,7 +120,6 @@ void on_paint(const uint8_t* bgra, int width, int height) {
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - t_ring_copy)
                 .count());
-        const auto bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
         consumer->RecordRingCopy(us, bytes);
     }
     paint_seq.fetch_add(1, std::memory_order_release);
@@ -282,9 +295,11 @@ int main(int argc, char** argv) {
                 uint64_t interval_us = 0;
                 if (browser_ready.load(std::memory_order_acquire) && got_new_paint) {
                     last_delivered_seq = cur_seq;
-                    ring.Latest([&](const bg::Frame& f) {
-                        if (consumer) consumer->OnFrame(f);
-                    });
+                    if (!cfg.decklink_direct_paint) {
+                        ring.Latest([&](const bg::Frame& f) {
+                            if (consumer) consumer->OnFrame(f);
+                        });
+                    }
 
                     delivery_time = std::chrono::steady_clock::now();
                     if (have_last_paint) {
@@ -420,9 +435,11 @@ int main(int argc, char** argv) {
         auto delivery_time = std::chrono::steady_clock::now();
         if (browser_ready.load(std::memory_order_acquire) && got_new_paint) {
             last_delivered_seq = cur_seq;
-            ring.Latest([&](const bg::Frame& f) {
-                if (consumer) consumer->OnFrame(f);
-            });
+            if (!cfg.decklink_direct_paint) {
+                ring.Latest([&](const bg::Frame& f) {
+                    if (consumer) consumer->OnFrame(f);
+                });
+            }
 
             // Record cadence against the previous paint time.
             delivery_time = std::chrono::steady_clock::now();
@@ -503,9 +520,11 @@ int main(int argc, char** argv) {
         if (pipeline_probe && browser_ready.load(std::memory_order_acquire) &&
             seq_after_sleep != last_delivered_seq) {
             last_delivered_seq = seq_after_sleep;
-            ring.Latest([&](const bg::Frame& f) {
-                if (consumer) consumer->OnFrame(f);
-            });
+            if (!cfg.decklink_direct_paint) {
+                ring.Latest([&](const bg::Frame& f) {
+                    if (consumer) consumer->OnFrame(f);
+                });
+            }
             delivery_time = std::chrono::steady_clock::now();
             if (have_last_paint) {
                 interval_us = std::chrono::duration_cast<std::chrono::microseconds>(
