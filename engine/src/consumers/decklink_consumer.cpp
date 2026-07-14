@@ -453,7 +453,7 @@ struct DecklinkConsumer::Impl {
         if (!running_.load(std::memory_order_acquire)) return;
         if (!frame.bgra || frame.width != width_ || frame.height != height_) return;
 
-        const auto t0 = std::chrono::steady_clock::now();
+        const auto t_total = std::chrono::steady_clock::now();
 
         // Phase 11.3: pull a recycled 64B-aligned buffer instead of letting a
         // fresh BufferedFrame's default-constructed (empty) AlignedBuffer
@@ -463,8 +463,14 @@ struct DecklinkConsumer::Impl {
         // (docs/phase11-baseline.md §4).
         BufferedFrame packed;
         packed.seq = frame.seq;
+        const auto t_pool = std::chrono::steady_clock::now();
         packed.bytes = GetInputBuffer();
+        RecordStageTime(input_pool_us_sum_, input_pool_us_max_, input_pool_us_count_, t_pool);
+        const auto t_memcpy = std::chrono::steady_clock::now();
         packed.bytes.CopyFrom(frame.bgra, frame_bytes_);
+        RecordStageTime(onframe_memcpy_us_sum_, onframe_memcpy_us_max_,
+                        onframe_memcpy_us_count_, t_memcpy);
+        onframe_copy_bytes_.fetch_add(frame_bytes_, std::memory_order_relaxed);
 
         BufferedFrame overwritten;
         bool have_overwritten = false;
@@ -481,7 +487,18 @@ struct DecklinkConsumer::Impl {
         }
         if (have_overwritten) RecycleInputBuffer(std::move(overwritten.bytes));
 
-        RecordStageTime(copy_us_sum_, copy_us_max_, copy_us_count_, t0);
+        RecordStageTime(copy_us_sum_, copy_us_max_, copy_us_count_, t_total);
+    }
+
+    void RecordRingCopy(uint64_t us, size_t bytes) {
+        ring_copy_us_sum_.fetch_add(us, std::memory_order_relaxed);
+        ring_copy_count_.fetch_add(1, std::memory_order_relaxed);
+        ring_copy_bytes_.fetch_add(bytes, std::memory_order_relaxed);
+        uint64_t prev = ring_copy_us_max_.load(std::memory_order_relaxed);
+        while (us > prev &&
+               !ring_copy_us_max_.compare_exchange_weak(
+                   prev, us, std::memory_order_relaxed)) {
+        }
     }
 
     int PollExitCode() const {
@@ -549,8 +566,12 @@ struct DecklinkConsumer::Impl {
                 RecycleInputBuffer(std::move(field_b_));
                 // AlignedBuffer is move-only: clone f0 into field_a_ (its own
                 // buffer), then move f0 itself into field_b_.
+                const auto t_clone = std::chrono::steady_clock::now();
                 field_a_ = GetInputBuffer();
                 field_a_.CopyFrom(f0.bytes.data(), frame_bytes_);
+                RecordStageTime(singles_clone_us_sum_, singles_clone_us_max_,
+                                singles_clone_us_count_, t_clone);
+                singles_clone_bytes_.fetch_add(frame_bytes_, std::memory_order_relaxed);
                 field_b_ = std::move(f0.bytes);
                 singles_.fetch_add(1, std::memory_order_relaxed);
             } else {
@@ -663,10 +684,53 @@ struct DecklinkConsumer::Impl {
         const uint64_t sched_sum = schedule_us_sum_.exchange(0, std::memory_order_relaxed);
         const uint64_t sched_max = schedule_us_max_.exchange(0, std::memory_order_relaxed);
         const uint64_t sched_cnt = schedule_us_count_.exchange(0, std::memory_order_relaxed);
+        const uint64_t ring_sum = ring_copy_us_sum_.exchange(0, std::memory_order_relaxed);
+        const uint64_t ring_max = ring_copy_us_max_.exchange(0, std::memory_order_relaxed);
+        const uint64_t ring_cnt = ring_copy_count_.exchange(0, std::memory_order_relaxed);
+        const uint64_t ring_bytes = ring_copy_bytes_.exchange(0, std::memory_order_relaxed);
+        const uint64_t input_pool_sum =
+            input_pool_us_sum_.exchange(0, std::memory_order_relaxed);
+        const uint64_t input_pool_max =
+            input_pool_us_max_.exchange(0, std::memory_order_relaxed);
+        const uint64_t input_pool_cnt =
+            input_pool_us_count_.exchange(0, std::memory_order_relaxed);
+        const uint64_t onframe_sum =
+            onframe_memcpy_us_sum_.exchange(0, std::memory_order_relaxed);
+        const uint64_t onframe_max =
+            onframe_memcpy_us_max_.exchange(0, std::memory_order_relaxed);
+        const uint64_t onframe_cnt =
+            onframe_memcpy_us_count_.exchange(0, std::memory_order_relaxed);
+        const uint64_t onframe_bytes =
+            onframe_copy_bytes_.exchange(0, std::memory_order_relaxed);
+        const uint64_t clone_sum =
+            singles_clone_us_sum_.exchange(0, std::memory_order_relaxed);
+        const uint64_t clone_max =
+            singles_clone_us_max_.exchange(0, std::memory_order_relaxed);
+        const uint64_t clone_cnt =
+            singles_clone_us_count_.exchange(0, std::memory_order_relaxed);
+        const uint64_t clone_bytes =
+            singles_clone_bytes_.exchange(0, std::memory_order_relaxed);
+        const uint64_t weave_bytes =
+            weave_copy_bytes_.exchange(0, std::memory_order_relaxed);
+        const uint64_t input_hits =
+            input_pool_hits_.exchange(0, std::memory_order_relaxed);
+        const uint64_t input_misses =
+            input_pool_misses_.exchange(0, std::memory_order_relaxed);
+        const uint64_t output_hits =
+            output_pool_hits_.exchange(0, std::memory_order_relaxed);
+        const uint64_t output_misses =
+            output_pool_misses_.exchange(0, std::memory_order_relaxed);
 
         const double copy_avg  = copy_cnt  ? static_cast<double>(copy_sum)  / copy_cnt  : 0.0;
         const double weave_avg = weave_cnt ? static_cast<double>(weave_sum) / weave_cnt : 0.0;
         const double sched_avg = sched_cnt ? static_cast<double>(sched_sum) / sched_cnt : 0.0;
+        const double ring_avg = ring_cnt ? static_cast<double>(ring_sum) / ring_cnt : 0.0;
+        const double input_pool_avg =
+            input_pool_cnt ? static_cast<double>(input_pool_sum) / input_pool_cnt : 0.0;
+        const double onframe_avg =
+            onframe_cnt ? static_cast<double>(onframe_sum) / onframe_cnt : 0.0;
+        const double clone_avg =
+            clone_cnt ? static_cast<double>(clone_sum) / clone_cnt : 0.0;
 
         char buf[480];
         std::snprintf(
@@ -711,6 +775,35 @@ struct DecklinkConsumer::Impl {
             sched_avg, static_cast<unsigned long long>(sched_max),
             budget_us > 0.0 ? 100.0 * sched_avg / budget_us : 0.0);
         log_msg(label_, stage_buf);
+
+        char memory_buf[640];
+        std::snprintf(
+            memory_buf, sizeof(memory_buf),
+            "memory5s ring_avg_us=%.1f ring_max_us=%llu ring_count=%llu ring_bytes=%llu "
+            "input_pool_avg_us=%.1f input_pool_max_us=%llu input_pool_count=%llu "
+            "onframe_memcpy_avg_us=%.1f onframe_memcpy_max_us=%llu "
+            "onframe_memcpy_count=%llu onframe_bytes=%llu "
+            "singles_clone_avg_us=%.1f singles_clone_max_us=%llu "
+            "singles_clone_count=%llu singles_clone_bytes=%llu "
+            "weave_bytes=%llu input_pool_hit=%llu input_pool_miss=%llu "
+            "output_pool_hit=%llu output_pool_miss=%llu",
+            ring_avg, static_cast<unsigned long long>(ring_max),
+            static_cast<unsigned long long>(ring_cnt),
+            static_cast<unsigned long long>(ring_bytes),
+            input_pool_avg, static_cast<unsigned long long>(input_pool_max),
+            static_cast<unsigned long long>(input_pool_cnt),
+            onframe_avg, static_cast<unsigned long long>(onframe_max),
+            static_cast<unsigned long long>(onframe_cnt),
+            static_cast<unsigned long long>(onframe_bytes),
+            clone_avg, static_cast<unsigned long long>(clone_max),
+            static_cast<unsigned long long>(clone_cnt),
+            static_cast<unsigned long long>(clone_bytes),
+            static_cast<unsigned long long>(weave_bytes),
+            static_cast<unsigned long long>(input_hits),
+            static_cast<unsigned long long>(input_misses),
+            static_cast<unsigned long long>(output_hits),
+            static_cast<unsigned long long>(output_misses));
+        log_msg(label_, memory_buf);
 
         prev_in_          = in;
         prev_completed_   = completed;
@@ -856,9 +949,11 @@ struct DecklinkConsumer::Impl {
             if (!recycle_pool_.empty()) {
                 AlignedBuffer buf = std::move(recycle_pool_.back());
                 recycle_pool_.pop_back();
+                output_pool_hits_.fetch_add(1, std::memory_order_relaxed);
                 return buf;
             }
         }
+        output_pool_misses_.fetch_add(1, std::memory_order_relaxed);
         AlignedBuffer buf(output_bytes);
         // Zero once on first allocation: row_bytes_ can exceed width_*4 (SDK
         // stride padding) and the weave loop below only writes the visible
@@ -887,9 +982,11 @@ struct DecklinkConsumer::Impl {
             if (!input_pool_.empty()) {
                 AlignedBuffer buf = std::move(input_pool_.back());
                 input_pool_.pop_back();
+                input_pool_hits_.fetch_add(1, std::memory_order_relaxed);
                 return buf;
             }
         }
+        input_pool_misses_.fetch_add(1, std::memory_order_relaxed);
         return AlignedBuffer(frame_bytes_);
     }
 
@@ -928,6 +1025,9 @@ struct DecklinkConsumer::Impl {
         }
         StreamCopyFence();
         RecordStageTime(weave_us_sum_, weave_us_max_, weave_us_count_, t_weave0);
+        weave_copy_bytes_.fetch_add(
+            static_cast<uint64_t>(row_bytes_) * static_cast<uint64_t>(height_),
+            std::memory_order_relaxed);
 
         const auto t_sched0 = std::chrono::steady_clock::now();
         auto* frame = new OwnedDecklinkFrame(width_, height_, row_bytes_, std::move(out));
@@ -1071,6 +1171,18 @@ struct DecklinkConsumer::Impl {
     std::atomic<uint64_t> copy_us_sum_{0}, copy_us_max_{0}, copy_us_count_{0};
     std::atomic<uint64_t> weave_us_sum_{0}, weave_us_max_{0}, weave_us_count_{0};
     std::atomic<uint64_t> schedule_us_sum_{0}, schedule_us_max_{0}, schedule_us_count_{0};
+    std::atomic<uint64_t> ring_copy_us_sum_{0}, ring_copy_us_max_{0}, ring_copy_count_{0};
+    std::atomic<uint64_t> ring_copy_bytes_{0};
+    std::atomic<uint64_t> input_pool_us_sum_{0}, input_pool_us_max_{0}, input_pool_us_count_{0};
+    std::atomic<uint64_t> onframe_memcpy_us_sum_{0}, onframe_memcpy_us_max_{0},
+                          onframe_memcpy_us_count_{0};
+    std::atomic<uint64_t> onframe_copy_bytes_{0};
+    std::atomic<uint64_t> singles_clone_us_sum_{0}, singles_clone_us_max_{0},
+                          singles_clone_us_count_{0};
+    std::atomic<uint64_t> singles_clone_bytes_{0};
+    std::atomic<uint64_t> weave_copy_bytes_{0};
+    std::atomic<uint64_t> input_pool_hits_{0}, input_pool_misses_{0};
+    std::atomic<uint64_t> output_pool_hits_{0}, output_pool_misses_{0};
 
     // Telemetry window state (touched only on the completion callback thread).
     std::chrono::steady_clock::time_point telemetry_last_{};
@@ -1113,6 +1225,10 @@ bool DecklinkConsumer::HasExternalClock() const {
 
 int DecklinkConsumer::WaitForTick(int64_t timeout_us) {
     return impl_ ? impl_->WaitForTick(timeout_us) : 0;
+}
+
+void DecklinkConsumer::RecordRingCopy(uint64_t us, size_t bytes) {
+    if (impl_) impl_->RecordRingCopy(us, bytes);
 }
 
 }  // namespace bg

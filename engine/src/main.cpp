@@ -99,7 +99,16 @@ std::chrono::steady_clock::time_point last_paint_time;
 bool have_last_paint = false;
 
 void on_paint(const uint8_t* bgra, int width, int height) {
+    const auto t_ring_copy = std::chrono::steady_clock::now();
     ring.Copy(bgra, width, height);
+    if (consumer) {
+        const auto us = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - t_ring_copy)
+                .count());
+        const auto bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+        consumer->RecordRingCopy(us, bytes);
+    }
     paint_seq.fetch_add(1, std::memory_order_release);
 }
 
