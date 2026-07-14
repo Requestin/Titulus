@@ -1,0 +1,14 @@
+[bench] host: 12 physical cores; 3ch x 2c = 6 pinned cores
+[bench] ch0: cores 0-1 -> ch0.log
+[bench] ch1: cores 2-3 -> ch1.log
+[bench] ch2: cores 4-5 -> ch2.log
+
+================ bench summary ================
+channels=3 duration=60s graphics=5 fps_target=50 host_cores=12 cpu_used=99,7%
+-----------------------------------------------
+ch     fps      p50_us         p99_us         p999_us        late     drops%  
+ch0     50.00    20001          21901          25191          0        0.000%  
+ch1     49.87    20002          24284          35770          8        0.268%  
+ch2     49.99    20000          22036          25876          1        0.033%  
+===============================================
+[bench] avg_fps=49,95 (target 50); per-channel logs in /tmp/bg-bench-yJs5dd/  (kept until script exits)
