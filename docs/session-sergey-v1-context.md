@@ -42,7 +42,7 @@
 | `468376c` | 10 июл | `big change Control page, add dataelements, change db` (sidebar resize + DE delete UX) |
 | `ddb0186` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `d60b80a` | 14 июл | `add text parameters` (text transform + drop shadow + login logo) |
-| `d78fc5c` | 14 июл | `add crawl` (Crawl layer + collapsible props + Multitext/TextFile) |
+| `4075a3c` | 14 июл | `add crawl` (Crawl layer + collapsible props + Multitext/TextFile) |
 
 ---
 
