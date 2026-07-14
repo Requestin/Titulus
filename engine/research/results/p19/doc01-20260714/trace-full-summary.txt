@@ -1,0 +1,36 @@
+Trace: /tmp/p19-trace-full/cache/blink-trace.json
+Duration: ~15s | events=566621 | frames≈1920 (SendBeginMainFrame=1920)
+Per-frame slicing marker: SendBeginMainFrame | slices=1920
+
+Per-frame averages (trace-wide, events / frame):
+  Layout:  10
+  Paint:   4.66
+  Raster:  68.57
+  Style:   4.32
+  JS ev:   0
+
+Per-frame distribution (p50 / p95 / max):
+  Layout events:  0 / 30 / 39
+  Paint events:   0 / 14 / 18
+  Raster events:  0 / 206 / 306
+  Raster ms:      0 / 135.292 / 208.952
+
+Heavy frames (raster events > 2x p50, floor=206.0): 3
+  frame#5 raster=215 (176.968ms)
+  frame#8 raster=306 (208.952ms)
+  frame#1829 raster=230 (132.381ms)
+
+Sub-category breakdown (durMs desc, top 15):
+  raster.task: count=26202 durMs=18576.19
+  raster.drawFrame: count=639 durMs=10956.5
+  layout.updateLayout: count=1280 durMs=898.07
+  style.recalc: count=1280 durMs=841.98
+  layout.performLayout: count=1914 durMs=67.49
+  invalidation: count=3194 durMs=1.48
+
+Total duration (ms, slice dur sum where present):
+  Layout=2966.44 Paint=801.1 Raster=84141.34 Style=2565.13 JS=0
+
+Top JS symbols (sample weight):
+
+[parse] wrote engine/research/results/p19/doc01-20260714/trace-full-parsed.json

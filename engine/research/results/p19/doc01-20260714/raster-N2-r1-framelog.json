@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/doc01-20260714/raster-N2-r1-frame-log.csv",
+  "totalRows": 3749,
+  "deliveredFrames": 3736,
+  "timedOutTicks": 12,
+  "intervalUs": {
+    "p50": 20000,
+    "p95": 20090,
+    "max": 39898,
+    "mean": 20030.6
+  },
+  "pumpActiveUs": {
+    "p50": 942,
+    "p95": 1016,
+    "max": 36792,
+    "mean": 960.14
+  },
+  "paintLatencyUs": {
+    "p50": 22,
+    "p95": 34,
+    "max": 31784,
+    "mean": 32.99
+  },
+  "pumpActiveRatio": 0.0473,
+  "effectiveFps": 49.92,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 0,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 0,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

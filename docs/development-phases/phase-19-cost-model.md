@@ -28,8 +28,33 @@ Raw: `engine/research/results/p19/baseline-20260713/`.
    vs исторических ~25 — multi-channel contention (copy ×1.65, weave ×1.33) весомее,
    чем считалось (H2 — doc 03/04).
 
+## Milestone 2 — Doc 01 raster cost reduction (DONE 2026-07-14)
+
+Полный отчёт: [`docs/performance investigation/reports/p19-01-raster-cost.md`](../performance%20investigation/reports/p19-01-raster-cost.md).
+Style Guide: [`docs/performance investigation/style-guide.md`](../performance%20investigation/style-guide.md).
+Raw: `engine/research/results/p19/doc01-20260714/`.
+
+Диагноз: bottleneck **raster-bound** (BGSTATS: writes/f=10, applyMs/f≈0.16 — не JS;
+trace: raster.task ≫ style+layout+paint). Главный виновник — **inverted полноэкранная
+SVG luminance mask-image** (ablation: −8.69 fps).
+
+Фикс (runtime-only, `runtime/src/maskScopes.ts`): inverted axis-aligned rect mask без
+скругления → `clip-path: polygon(evenodd)` вместо mask-image. Pixel-exact (md5 кадров
+идентичны), `test1.json` не изменён, выигрывают все шаблоны с такими масками.
+
+| Метрика | До | После |
+|---|---|---|
+| null test1 (warm, median) | 40–41 | **50** |
+| null gate ×3 (median avg) | ~40 | **49.78** (PASS ≥45) |
+| 1ch DeckLink in_fps | 41.7 | **47.6** |
+| 3ch DeckLink in_fps | 25–26 | **29–32** |
+
+Регрессий нет: cheap `test` 50.0, bench 3ch 49.94, static beacon 50.0.
+Также добавлена runtime-инструментация: `maskWrites`/`textWrites` в RenderStats, `?stats=1`
+BGSTATS console line, форвардинг console→лог в `engine_client.cpp` (`OnConsoleMessage`).
+
 ## Следующие milestone
 
-- Doc 01: raster cost reduction (style guide, runtime, masks) → gate null `test1` ≥45 fps.
-- Doc 03/04 параллельно после GATE-01: память (C1-инструментация, fewer-copy) и pinning/CCX.
+- **Doc 03 (память) ∥ Doc 04 (pinning/CCX)** — адресуют 3ch contention (теперь главный барьер
+  к 3×50: 1ch уже ~48, но 3 канала конкурируют за память/L3).
 - Затем G1 (1ch ≥50) → G2 (3ch ≥50) → G3 soak — критерии в doc 00 §13.

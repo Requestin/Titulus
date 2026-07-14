@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/doc01-20260714/no-anim-r2-frame-log.csv",
+  "totalRows": 3249,
+  "deliveredFrames": 3239,
+  "timedOutTicks": 9,
+  "intervalUs": {
+    "p50": 20001,
+    "p95": 20084,
+    "max": 39675,
+    "mean": 20016.66
+  },
+  "pumpActiveUs": {
+    "p50": 1029,
+    "p95": 1070,
+    "max": 34320,
+    "mean": 1042.62
+  },
+  "paintLatencyUs": {
+    "p50": 30,
+    "p95": 37,
+    "max": 30908,
+    "mean": 41.69
+  },
+  "pumpActiveRatio": 0.0515,
+  "effectiveFps": 49.96,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 1,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 1,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

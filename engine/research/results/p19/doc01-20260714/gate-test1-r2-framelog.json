@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/doc01-20260714/gate-test1-r2-frame-log.csv",
+  "totalRows": 3499,
+  "deliveredFrames": 3475,
+  "timedOutTicks": 23,
+  "intervalUs": {
+    "p50": 20000,
+    "p95": 20090,
+    "max": 40338,
+    "mean": 20090.39
+  },
+  "pumpActiveUs": {
+    "p50": 949,
+    "p95": 1010,
+    "max": 34965,
+    "mean": 954.76
+  },
+  "paintLatencyUs": {
+    "p50": 27,
+    "p95": 36,
+    "max": 25682,
+    "mean": 34.39
+  },
+  "pumpActiveRatio": 0.047,
+  "effectiveFps": 49.78,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 0,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 0,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

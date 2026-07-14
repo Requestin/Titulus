@@ -1,0 +1,36 @@
+{
+  "source": "engine/research/results/p19/doc01-20260714/no-mask2-inverted-r1-frame-log.csv",
+  "totalRows": 3249,
+  "deliveredFrames": 3242,
+  "timedOutTicks": 6,
+  "intervalUs": {
+    "p50": 20000,
+    "p95": 20088,
+    "max": 25611,
+    "mean": 19998.14
+  },
+  "pumpActiveUs": {
+    "p50": 939,
+    "p95": 1007,
+    "max": 28904,
+    "mean": 953.05
+  },
+  "paintLatencyUs": {
+    "p50": 31,
+    "p95": 42,
+    "max": 23164,
+    "mean": 39.03
+  },
+  "pumpActiveRatio": 0.0471,
+  "effectiveFps": 50,
+  "paintSeqDelta": {
+    "p50": 0,
+    "p95": 0,
+    "max": 0,
+    "mean": 0
+  },
+  "ticksWithDeltaGe2": 0,
+  "ticksWithDeltaGe1": 0,
+  "maxInflight": 1,
+  "pctTicksDeltaGe2": 0
+}

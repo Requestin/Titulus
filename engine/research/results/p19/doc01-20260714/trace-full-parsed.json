@@ -1,0 +1,269 @@
+{
+  "source": "/tmp/p19-trace-full/cache/blink-trace.json",
+  "durationSec": 15,
+  "eventCount": 566621,
+  "beginFrames": 1920,
+  "drawFrames": 0,
+  "frameCount": 1920,
+  "frameMarkerUsedForSlicing": "SendBeginMainFrame",
+  "perFrameSliceCount": 1920,
+  "perFrame": {
+    "layout": 10,
+    "paint": 4.66,
+    "raster": 68.57,
+    "style": 4.32,
+    "jsEvents": 0
+  },
+  "perFrameDistribution": {
+    "layoutEvents": {
+      "p50": 0,
+      "p95": 30,
+      "max": 39
+    },
+    "paintEvents": {
+      "p50": 0,
+      "p95": 14,
+      "max": 18
+    },
+    "rasterEvents": {
+      "p50": 0,
+      "p95": 206,
+      "max": 306
+    },
+    "rasterMs": {
+      "p50": 0,
+      "p95": 135.292,
+      "max": 208.952
+    }
+  },
+  "heavyFrames": [
+    {
+      "frameIdx": 5,
+      "tsStart": 11215755573,
+      "raster": 215,
+      "rasterMs": 176.968
+    },
+    {
+      "frameIdx": 8,
+      "tsStart": 11215787450,
+      "raster": 306,
+      "rasterMs": 208.952
+    },
+    {
+      "frameIdx": 1829,
+      "tsStart": 11229989019,
+      "raster": 230,
+      "rasterMs": 132.381
+    }
+  ],
+  "subCategoryBreakdown": [
+    {
+      "name": "raster.task",
+      "count": 26202,
+      "durMs": 18576.19
+    },
+    {
+      "name": "raster.drawFrame",
+      "count": 639,
+      "durMs": 10956.5
+    },
+    {
+      "name": "layout.updateLayout",
+      "count": 1280,
+      "durMs": 898.07
+    },
+    {
+      "name": "style.recalc",
+      "count": 1280,
+      "durMs": 841.98
+    },
+    {
+      "name": "layout.performLayout",
+      "count": 1914,
+      "durMs": 67.49
+    },
+    {
+      "name": "invalidation",
+      "count": 3194,
+      "durMs": 1.48
+    }
+  ],
+  "totals": {
+    "layout": 19198,
+    "paint": 8950,
+    "raster": 131649,
+    "style": 8294,
+    "js": 0,
+    "other": 181846
+  },
+  "durMs": {
+    "layout": 2966.44,
+    "paint": 801.1,
+    "raster": 84141.34,
+    "style": 2565.13,
+    "js": 0
+  },
+  "topEventNames": [
+    {
+      "name": "LayerTreeHostImpl::NotifyTileStateChanged",
+      "count": 52369
+    },
+    {
+      "name": "RunTask",
+      "count": 48189
+    },
+    {
+      "name": "auto cc::(anonymous namespace)::InsertNodeForTask(TaskGraph *, TileTask *, uint16_t, uint16_t, size_t, bool)::(anonymous class)::operator()()::(anonymous class)::operator()(uint32_t) const",
+      "count": 30051
+    },
+    {
+      "name": "RasterSource::PerformSolidColorAnalysis",
+      "count": 26202
+    },
+    {
+      "name": "RasterizerTaskImpl::RunOnWorkerThread",
+      "count": 26202
+    },
+    {
+      "name": "RasterTask",
+      "count": 26202
+    },
+    {
+      "name": "ZeroCopyRasterBuffer::Playback",
+      "count": 26202
+    },
+    {
+      "name": "DisplayItemList::Raster",
+      "count": 26202
+    },
+    {
+      "name": "Graphics.Pipeline",
+      "count": 19877
+    },
+    {
+      "name": "Document::SetReadyState",
+      "count": 15527
+    },
+    {
+      "name": "AsyncTask Scheduled",
+      "count": 6408
+    },
+    {
+      "name": "LocalFrameView::ScheduleAnimation",
+      "count": 5739
+    },
+    {
+      "name": "Document::CancelParsing",
+      "count": 5526
+    },
+    {
+      "name": "RenderSurfaceReasonCount",
+      "count": 5108
+    },
+    {
+      "name": "UpdateLayer",
+      "count": 4470
+    },
+    {
+      "name": "ScheduledTasksState",
+      "count": 3846
+    },
+    {
+      "name": "Document::Initialize",
+      "count": 3822
+    },
+    {
+      "name": "Document::OpenForNavigation",
+      "count": 3822
+    },
+    {
+      "name": "Document::FinishedParsing",
+      "count": 3822
+    },
+    {
+      "name": "TileTaskManagerImpl::CheckForCompletedTasks",
+      "count": 3781
+    },
+    {
+      "name": "Document::Document",
+      "count": 3312
+    },
+    {
+      "name": "LocalFrameView::UpdateStyleAndLayout",
+      "count": 3195
+    },
+    {
+      "name": "TileManager::CheckPendingGpuWorkAndIssueSignals",
+      "count": 3142
+    },
+    {
+      "name": "ScheduledTasks",
+      "count": 2564
+    },
+    {
+      "name": "TaskSetFinishedTaskImpl::RunOnWorkerThread",
+      "count": 2564
+    },
+    {
+      "name": "PipelineReporter",
+      "count": 2558
+    },
+    {
+      "name": "BeginImplFrameToSendBeginMainFrame",
+      "count": 2558
+    },
+    {
+      "name": "InvalidateLayout",
+      "count": 2552
+    },
+    {
+      "name": "EndActivateToSubmitCompositorFrame",
+      "count": 2550
+    },
+    {
+      "name": "SubmitCompositorFrameToPresentationCompositorFrame",
+      "count": 2550
+    },
+    {
+      "name": "SubmitToReceiveCompositorFrame",
+      "count": 2550
+    },
+    {
+      "name": "ReceiveCompositorFrameToStartDraw",
+      "count": 2550
+    },
+    {
+      "name": "StartDrawToSwapStart",
+      "count": 2550
+    },
+    {
+      "name": "SwapEndToPresentationCompositorFrame",
+      "count": 2550
+    },
+    {
+      "name": "Document::BeginLifecycleUpdatesIfRenderingReady",
+      "count": 2548
+    },
+    {
+      "name": "LocalFrameView::BeginLifecycleUpdates",
+      "count": 2548
+    },
+    {
+      "name": "TileManager::CheckForCompletedTasksAndIssueSignals",
+      "count": 2502
+    },
+    {
+      "name": "AsyncTask Run",
+      "count": 1974
+    },
+    {
+      "name": "AnimationHost::TickAnimations",
+      "count": 1928
+    },
+    {
+      "name": "HTMLDocumentParser::PumpTokenizerIfPossible",
+      "count": 1923
+    }
+  ],
+  "topJsSymbols": []
+}
