@@ -560,25 +560,24 @@ struct DecklinkConsumer::Impl {
                 RecycleInputBuffer(std::move(field_b_));
                 field_a_ = std::move(f0.bytes);
                 field_b_ = std::move(f1.bytes);
+                single_alias_ = false;
                 pairs_.fetch_add(1, std::memory_order_relaxed);
             } else if (fresh >= 1 && f0.bytes.size() == frame_bytes_) {
                 RecycleInputBuffer(std::move(field_a_));
                 RecycleInputBuffer(std::move(field_b_));
-                // AlignedBuffer is move-only: clone f0 into field_a_ (its own
-                // buffer), then move f0 itself into field_b_.
-                const auto t_clone = std::chrono::steady_clock::now();
-                field_a_ = GetInputBuffer();
-                field_a_.CopyFrom(f0.bytes.data(), frame_bytes_);
-                RecordStageTime(singles_clone_us_sum_, singles_clone_us_max_,
-                                singles_clone_us_count_, t_clone);
-                singles_clone_bytes_.fetch_add(frame_bytes_, std::memory_order_relaxed);
-                field_b_ = std::move(f0.bytes);
+                // A single fresh progressive bitmap must feed both interlaced
+                // fields. Keep one owner in field_a_ and let weave read it for
+                // A and B instead of cloning another 8MB input buffer.
+                field_a_ = std::move(f0.bytes);
+                single_alias_ = true;
+                alias_singles_.fetch_add(1, std::memory_order_relaxed);
                 singles_.fetch_add(1, std::memory_order_relaxed);
             } else {
                 starved_.fetch_add(1, std::memory_order_relaxed);
                 // keep previous field_a_/field_b_ -> exact repeat
             }
         } else {
+            single_alias_ = false;
             if (fresh >= 1 && f0.bytes.size() == frame_bytes_) {
                 RecycleInputBuffer(std::move(field_a_));
                 field_a_ = std::move(f0.bytes);
@@ -653,6 +652,7 @@ struct DecklinkConsumer::Impl {
         const uint64_t starved   = starved_.load(std::memory_order_relaxed);
         const uint64_t pairs     = pairs_.load(std::memory_order_relaxed);
         const uint64_t singles   = singles_.load(std::memory_order_relaxed);
+        const uint64_t aliases   = alias_singles_.load(std::memory_order_relaxed);
 
         size_t queue_depth = 0;
         {
@@ -785,7 +785,7 @@ struct DecklinkConsumer::Impl {
             "onframe_memcpy_count=%llu onframe_bytes=%llu "
             "singles_clone_avg_us=%.1f singles_clone_max_us=%llu "
             "singles_clone_count=%llu singles_clone_bytes=%llu "
-            "weave_bytes=%llu input_pool_hit=%llu input_pool_miss=%llu "
+            "weave_bytes=%llu alias_singles=%llu input_pool_hit=%llu input_pool_miss=%llu "
             "output_pool_hit=%llu output_pool_miss=%llu",
             ring_avg, static_cast<unsigned long long>(ring_max),
             static_cast<unsigned long long>(ring_cnt),
@@ -799,6 +799,7 @@ struct DecklinkConsumer::Impl {
             static_cast<unsigned long long>(clone_cnt),
             static_cast<unsigned long long>(clone_bytes),
             static_cast<unsigned long long>(weave_bytes),
+            static_cast<unsigned long long>(aliases - prev_alias_singles_),
             static_cast<unsigned long long>(input_hits),
             static_cast<unsigned long long>(input_misses),
             static_cast<unsigned long long>(output_hits),
@@ -814,6 +815,7 @@ struct DecklinkConsumer::Impl {
         prev_starved_     = starved;
         prev_pairs_       = pairs;
         prev_singles_     = singles;
+        prev_alias_singles_ = aliases;
     }
 
     void RequestRestart(int code) {
@@ -999,7 +1001,9 @@ struct DecklinkConsumer::Impl {
         const auto t_weave0 = std::chrono::steady_clock::now();
 
         const AlignedBuffer& a = (field_a_.size() == frame_bytes_) ? field_a_ : black_frame_;
-        const AlignedBuffer& b = (field_b_.size() == frame_bytes_) ? field_b_ : black_frame_;
+        const AlignedBuffer& b = single_alias_
+            ? a
+            : ((field_b_.size() == frame_bytes_) ? field_b_ : black_frame_);
 
         AlignedBuffer out = GetOutputBuffer();
         const size_t line_bytes = static_cast<size_t>(width_) * 4;
@@ -1132,6 +1136,9 @@ struct DecklinkConsumer::Impl {
     // progressive field_a_ holds the whole frame.
     AlignedBuffer field_a_;
     AlignedBuffer field_b_;
+    // Interlaced singles: field_a_ is intentionally reused for both fields;
+    // field_b_ stays empty and must not be recycled/owned twice.
+    bool single_alias_ = false;
 
     std::mutex recycle_mu_;
     std::vector<AlignedBuffer> recycle_pool_;
@@ -1160,6 +1167,7 @@ struct DecklinkConsumer::Impl {
     std::atomic<uint64_t> starved_{0};  // queue empty on pull -> full-frame repeat
     std::atomic<uint64_t> pairs_{0};    // interlaced: 2 fresh fields woven
     std::atomic<uint64_t> singles_{0};  // interlaced: 1 fresh frame duplicated to both fields
+    std::atomic<uint64_t> alias_singles_{0};
 
     // Stage-time telemetry (Phase 11.1): microsecond sum/max/count per stage,
     // reset each 5s window in MaybeLogTelemetry. copy_us_* is the render-thread
@@ -1188,7 +1196,8 @@ struct DecklinkConsumer::Impl {
     std::chrono::steady_clock::time_point telemetry_last_{};
     uint64_t prev_in_ = 0, prev_completed_ = 0, prev_late_ = 0,
              prev_dropped_ = 0, prev_flushed_ = 0, prev_overwritten_ = 0,
-             prev_starved_ = 0, prev_pairs_ = 0, prev_singles_ = 0;
+             prev_starved_ = 0, prev_pairs_ = 0, prev_singles_ = 0,
+             prev_alias_singles_ = 0;
 
     OutputCallback output_callback_{this};
     ProfileCallback profile_callback_{this};
