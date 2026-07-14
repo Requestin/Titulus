@@ -114,15 +114,16 @@ export function NumberInput({
         value={draft}
         onChange={(e) => commit(e.target.value)}
         onBlur={() => setDraft(formatNumber(value))}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerDown={props.disabled ? undefined : onPointerDown}
+        onPointerMove={props.disabled ? undefined : onPointerMove}
+        onPointerUp={props.disabled ? undefined : onPointerUp}
+        onPointerCancel={props.disabled ? undefined : onPointerUp}
       />
       <div className="flex h-8 shrink-0 flex-col justify-center gap-px">
         <button
           type="button"
           title={`Increase by ${nudge}`}
+          disabled={props.disabled}
           onClick={() => nudgeBy(nudge)}
           className={cn(stepperBtn, 'h-3.5')}
         >
@@ -131,6 +132,7 @@ export function NumberInput({
         <button
           type="button"
           title={`Decrease by ${nudge}`}
+          disabled={props.disabled}
           onClick={() => nudgeBy(-nudge)}
           className={cn(stepperBtn, 'h-3.5')}
         >
@@ -141,8 +143,9 @@ export function NumberInput({
         <button
           type="button"
           title="Reset"
+          disabled={props.disabled}
           onClick={() => onChange(resetValue)}
-          className="grid h-8 w-7 shrink-0 place-items-center rounded-md border border-border bg-surface-2 text-[11px] font-semibold text-ink-muted hover:border-ink-faint hover:text-ink"
+          className="grid h-8 w-7 shrink-0 place-items-center rounded-md border border-border bg-surface-2 text-[11px] font-semibold text-ink-muted hover:border-ink-faint hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
         >
           R
         </button>
@@ -152,8 +155,9 @@ export function NumberInput({
           key={action.label}
           type="button"
           title={action.title ?? action.label}
+          disabled={props.disabled}
           onClick={action.onClick}
-          className="grid h-8 shrink-0 place-items-center rounded-md border border-border bg-surface-2 px-1 text-[10px] font-semibold tabular-nums text-ink-muted hover:border-ink-faint hover:text-ink"
+          className="grid h-8 shrink-0 place-items-center rounded-md border border-border bg-surface-2 px-1 text-[10px] font-semibold tabular-nums text-ink-muted hover:border-ink-faint hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
         >
           {action.label}
         </button>
@@ -186,19 +190,34 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   },
 );
 
-export function ColorInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function ColorInput({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
   return (
-    <div className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface-2 px-1.5">
+    <div
+      className={cn(
+        'flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface-2 px-1.5',
+        disabled && 'opacity-50',
+      )}
+    >
       <input
         type="color"
         aria-label="Color"
-        className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
+        disabled={disabled}
+        className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0 disabled:cursor-not-allowed"
         value={normalizeHex(value)}
         onChange={(e) => onChange(e.target.value)}
       />
       <input
-        className="min-w-0 flex-1 bg-transparent text-[12px] tabular-nums text-ink focus-visible:outline-none"
+        className="min-w-0 flex-1 bg-transparent text-[12px] tabular-nums text-ink focus-visible:outline-none disabled:cursor-not-allowed"
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         spellCheck={false}
       />

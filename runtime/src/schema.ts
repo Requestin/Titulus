@@ -111,6 +111,15 @@ export interface BaseLayer {
   groupId: string | null;
 }
 
+/**
+ * Case transform applied to resolved text content (literal or variable).
+ * - `none` — leave as-is
+ * - `uppercase` — all caps
+ * - `titlecase` — first letter of each word upper, rest lower
+ * - `lowercase` — all lower
+ */
+export type TextTransformMode = 'none' | 'uppercase' | 'titlecase' | 'lowercase';
+
 export interface TextStyle {
   fontFamily: string;
   fontSize: number;
@@ -121,10 +130,20 @@ export interface TextStyle {
   letterSpacing: number;
   strokeColor: string;
   strokeWidth: number;
+  /** Case transform for rendered text content. Default `none`. */
+  textTransform?: TextTransformMode;
   dropShadow: boolean;
   dropShadowBlur: number;
   dropShadowColor: string;
-  dropShadowDistance: number;
+  /** Shadow offset X in px. Default 1. */
+  dropShadowOffsetX?: number;
+  /** Shadow offset Y in px. Default 1. */
+  dropShadowOffsetY?: number;
+  /**
+   * @deprecated Legacy single-axis offset (treated as Y, X=0). Prefer
+   * dropShadowOffsetX/Y. Kept optional for soft-migration of old templates.
+   */
+  dropShadowDistance?: number;
 }
 
 export interface TextLayer extends BaseLayer {
@@ -421,4 +440,68 @@ export function resolveVariableMap(
   for (const v of template.variables) out[v.id] = v.defaultValue;
   Object.assign(out, overrides);
   return out;
+}
+
+/** Apply a TextStyle textTransform to already-resolved string content. */
+export function applyTextTransform(
+  text: string,
+  mode: TextTransformMode | undefined,
+): string {
+  switch (mode ?? 'none') {
+    case 'uppercase':
+      return text.toLocaleUpperCase();
+    case 'lowercase':
+      return text.toLocaleLowerCase();
+    case 'titlecase':
+      return text.replace(/\S+/g, (word) =>
+        word.charAt(0).toLocaleUpperCase() + word.slice(1).toLocaleLowerCase(),
+      );
+    case 'none':
+    default:
+      return text;
+  }
+}
+
+/**
+ * Soft-migrate / fill defaults for TextStyle so older templates (distance-only
+ * shadow, missing textTransform) render and validate cleanly.
+ */
+export function normalizeTextStyle(style: TextStyle): TextStyle {
+  const legacy = typeof style.dropShadowDistance === 'number' ? style.dropShadowDistance : undefined;
+  const hasX = typeof style.dropShadowOffsetX === 'number';
+  const hasY = typeof style.dropShadowOffsetY === 'number';
+
+  let offsetX: number;
+  let offsetY: number;
+  if (hasX || hasY) {
+    offsetX = hasX ? style.dropShadowOffsetX! : 0;
+    offsetY = hasY ? style.dropShadowOffsetY! : 1;
+  } else if (legacy !== undefined) {
+    // Old templates: renderer used X=0 and distance as Y.
+    offsetX = 0;
+    offsetY = legacy;
+  } else {
+    offsetX = 1;
+    offsetY = 1;
+  }
+
+  const next: TextStyle = {
+    ...style,
+    textTransform: style.textTransform ?? 'none',
+    dropShadowOffsetX: offsetX,
+    dropShadowOffsetY: offsetY,
+    dropShadowBlur: typeof style.dropShadowBlur === 'number' ? style.dropShadowBlur : 0,
+    dropShadowColor: style.dropShadowColor || '#000000',
+  };
+  delete next.dropShadowDistance;
+  return next;
+}
+
+/** Normalize text/clock layer styles on a loaded template (in-place). */
+export function normalizeTemplateTextStyles(template: Template): void {
+  for (const layer of template.layers) {
+    if (layer.type === 'text' || layer.type === 'clock') {
+      layer.style = normalizeTextStyle(layer.style);
+    }
+  }
 }

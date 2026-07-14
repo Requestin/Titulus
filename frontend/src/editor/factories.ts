@@ -43,10 +43,12 @@ export function defaultTextStyle(): TextStyle {
     letterSpacing: 0,
     strokeColor: '#000000',
     strokeWidth: 0,
+    textTransform: 'none',
     dropShadow: false,
-    dropShadowBlur: 6,
+    dropShadowBlur: 0,
     dropShadowColor: '#000000',
-    dropShadowDistance: 2,
+    dropShadowOffsetX: 1,
+    dropShadowOffsetY: 1,
   };
 }
 

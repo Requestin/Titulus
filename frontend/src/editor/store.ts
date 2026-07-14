@@ -11,7 +11,7 @@ import type {
   Template, Layer, LayerType, Variable, Transform, RootStackEntry,
   TimelineDirector, TimelineKeyframe, AnimatableProp, EasingType,
 } from '@runtime';
-import { ANIMATABLE_PROPS, createDefaultTransform, resolveTrackDirector } from '@runtime';
+import { ANIMATABLE_PROPS, createDefaultTransform, normalizeTemplateTextStyles, resolveTrackDirector } from '@runtime';
 import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
 import { reparentEntriesIntoGroup } from './groupBounds';
@@ -258,6 +258,7 @@ export const useEditor = create<EditorState>()(
 
       load: (t) => {
         const normalized = clone(t);
+        normalizeTemplateTextStyles(normalized);
         for (const g of normalized.groups) {
           g.transform.width = 0;
           g.transform.height = 0;

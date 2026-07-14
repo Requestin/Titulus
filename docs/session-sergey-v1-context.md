@@ -1,7 +1,7 @@
 # Ветка `sergey-v1` — контекст и changelog
 
 > Сводка работы Sergey + агент Cursor на ветке `sergey-v1`.  
-> Обновлено: **10 июля 2026**.
+> Обновлено: **14 июля 2026**.
 
 ---
 
@@ -40,6 +40,65 @@
 | `1532b58` | 10 июл | `big change Control page, add dataelements, change db` |
 | `dfe1dd9` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `468376c` | 10 июл | `big change Control page, add dataelements, change db` (sidebar resize + DE delete UX) |
+| `ddb0186` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
+| `2a55850` | 14 июл | `add text parameters` (text transform + drop shadow + login logo) |
+
+---
+
+## 14 июля 2026 — Text style: transform + drop shadow; Login logo
+
+Редактор: свойства текстового слоя; login: брендинг.
+
+### Text transformation (слой Text)
+
+В инспекторе **Text style** — блок **Text transformation**, 4 взаимоисключающие кнопки (default **X**):
+
+| Кнопка | Mode | Поведение |
+|---|---|---|
+| X | `none` | текст как есть |
+| AA | `uppercase` | верхний регистр |
+| Aa | `titlecase` | каждое слово: первая буква upper, остальные lower |
+| aa | `lowercase` | нижний регистр |
+
+Применяется к уже resolved content (литерал **или** binding из переменной) в `@titulus/runtime` (`applyTextTransform` → `domRenderer` при paint).
+
+### Drop Shadow (Text / Clock style)
+
+- При выключенном checkbox параметры тени **disabled** (Color / X / Y / Blur).
+- При включении доступны:
+  - **Color** — color picker как у fill, default `#000000`
+  - **X** / **Y** — offset px, default `1` / `1`
+  - **Blur** — default `0`
+- Schema: `dropShadowOffsetX` / `dropShadowOffsetY` (вместо единого `dropShadowDistance`; legacy distance soft-migrate → Y, X=0).
+- `normalizeTextStyle` / `normalizeTemplateTextStyles` при load в editor store.
+
+### Файлы
+
+| Area | Path |
+|---|---|
+| Schema TS | `runtime/src/schema.ts` (`TextTransformMode`, offsets, normalize/apply) |
+| Schema JSON | `shared/template.schema.json` |
+| Renderer | `runtime/src/domRenderer.ts` |
+| Properties UI | `frontend/src/editor/panels/PropertiesPanel.tsx` |
+| Defaults | `frontend/src/editor/factories.ts` |
+| Load migrate | `frontend/src/editor/store.ts` |
+| Number/Color disabled | `frontend/src/components/ui/form.tsx` |
+
+После runtime-правок: `cd runtime && npm run build` (обновляет gitignored `backend/public/bg-runtime.js`).
+
+### Login page
+
+- Логотип `frontend/public/titulus-logo.png` над формой.
+- Размер логотипа **560px** (2× от 280).
+- Форма по вертикальному/горизонтальному центру экрана; логотип `absolute` над формой (`bottom-full`), фон страницы — стандартный `bg-bg` (~`#0d0e13`).
+- UI: `frontend/src/pages/LoginPage.tsx`.
+
+### Проверка
+
+- [ ] Text layer: X / AA / Aa / aa меняют preview и эфир (в т.ч. content из variable)
+- [ ] Drop shadow off → Color/X/Y/Blur недоступны; on → CSS `text-shadow` в preview
+- [ ] Старый шаблон с `dropShadowDistance` открывается без ошибок (migrate)
+- [ ] `/login` — логотип сверху, форма по центру экрана
 
 ---
 
@@ -699,7 +758,8 @@ Stepper ↑↓, `extraActions` для rotation.
 | Axis center / groups | `frontend/src/editor/groupBounds.ts`, `pivot.ts` |
 | Group bbox (runtime) | `runtime/src/groupBounds.ts`, `domRenderer.ts` |
 | Layers tree / DnD | `frontend/src/editor/panels/LayersPanel.tsx` |
-| Properties / Scale | `frontend/src/editor/panels/PropertiesPanel.tsx` |
+| Properties / Scale / Text style | `frontend/src/editor/panels/PropertiesPanel.tsx` |
+| Login | `frontend/src/pages/LoginPage.tsx`, `frontend/public/titulus-logo.png` |
 | UI forms | `frontend/src/components/ui/form.tsx` (`PropertyField`) |
 | Group bbox (runtime) | `runtime/src/groupBounds.ts`, `domRenderer.ts`, `transform.ts` |
 | Media library | `frontend/src/editor/media/*`, `backend/src/mediaLibrary.js` |
@@ -750,6 +810,8 @@ git push -u origin sergey-v1
 - [ ] Axis center группы — crosshair двигается, дети на месте
 - [ ] Rotation группы — вокруг выбранного axis center
 - [ ] Drag в/из группы — координаты в Properties не пересчитываются
+- [ ] Text: Text transformation (X/AA/Aa/aa) + Drop shadow Color/X/Y/Blur
+- [ ] Login: логотип 560px над формой; форма по центру
 
 **Data:**
 - [ ] `ls -la /var/lib/titulus/` — `app.db`, `uploads/`

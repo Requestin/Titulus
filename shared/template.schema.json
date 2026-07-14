@@ -180,7 +180,7 @@
     },
     "textStyle": {
       "type": "object",
-      "required": ["fontFamily", "fontSize", "fontWeight", "fill", "align", "lineHeight", "letterSpacing", "strokeColor", "strokeWidth", "dropShadow", "dropShadowBlur", "dropShadowColor", "dropShadowDistance"],
+      "required": ["fontFamily", "fontSize", "fontWeight", "fill", "align", "lineHeight", "letterSpacing", "strokeColor", "strokeWidth", "dropShadow", "dropShadowBlur", "dropShadowColor"],
       "additionalProperties": false,
       "properties": {
         "fontFamily": { "type": "string" },
@@ -192,10 +192,13 @@
         "letterSpacing": { "type": "number" },
         "strokeColor": { "type": "string" },
         "strokeWidth": { "type": "number" },
+        "textTransform": { "type": "string", "enum": ["none", "uppercase", "titlecase", "lowercase"] },
         "dropShadow": { "type": "boolean" },
         "dropShadowBlur": { "type": "number" },
         "dropShadowColor": { "type": "string" },
-        "dropShadowDistance": { "type": "number" }
+        "dropShadowOffsetX": { "type": "number" },
+        "dropShadowOffsetY": { "type": "number" },
+        "dropShadowDistance": { "type": "number", "description": "Deprecated: legacy Y offset; prefer dropShadowOffsetX/Y" }
       }
     },
     "layer": {

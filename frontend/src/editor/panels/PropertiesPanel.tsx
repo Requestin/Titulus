@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { Braces, Link2, Unlink } from 'lucide-react';
-import type { Layer, Template, Variable, VariableBinding, BlendMode } from '@runtime';
+import type { Layer, Template, Variable, VariableBinding, BlendMode, TextTransformMode } from '@runtime';
 import { useEditor } from '../store';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
 import {
@@ -379,6 +379,7 @@ function LabeledNum({
   step,
   resetValue,
   extraActions,
+  disabled,
 }: {
   label: string;
   value: number;
@@ -386,10 +387,18 @@ function LabeledNum({
   step?: number;
   resetValue?: number;
   extraActions?: NumberInputExtraAction[];
+  disabled?: boolean;
 }) {
   return (
     <PropertyField label={label}>
-      <NumberInput value={value} step={step} resetValue={resetValue} extraActions={extraActions} onChange={onChange} />
+      <NumberInput
+        value={value}
+        step={step}
+        resetValue={resetValue}
+        extraActions={extraActions}
+        onChange={onChange}
+        disabled={disabled}
+      />
     </PropertyField>
   );
 }
@@ -539,6 +548,10 @@ function TextStyleSection({ layer, variables, updateLayer }: { layer: Extract<La
   const s = layer.style;
   const setStyle = (mutator: (st: import('@runtime').TextStyle) => void) =>
     updateLayer(layer.id, (l) => { if ('style' in l) mutator(l.style); });
+  const shadowOn = s.dropShadow;
+  const transform = s.textTransform ?? 'none';
+  const shadowX = typeof s.dropShadowOffsetX === 'number' ? s.dropShadowOffsetX : 1;
+  const shadowY = typeof s.dropShadowOffsetY === 'number' ? s.dropShadowOffsetY : 1;
   return (
     <Section title="Text style">
       <PropertyField label="Font">
@@ -553,6 +566,41 @@ function TextStyleSection({ layer, variables, updateLayer }: { layer: Extract<La
       <PropertyField label="Color">
         <BindableField kind="color" value={s.fill} variables={variables} onChange={(v) => setStyle((st) => { st.fill = v; })} />
       </PropertyField>
+      {layer.type === 'text' && (
+        <div className="space-y-1.5">
+          <div className="text-[12px] text-ink-muted">Text transformation</div>
+          <div className="flex gap-1" role="radiogroup" aria-label="Text transformation">
+            {(
+              [
+                { mode: 'none', label: 'X', title: 'As written' },
+                { mode: 'uppercase', label: 'AA', title: 'Uppercase' },
+                { mode: 'titlecase', label: 'Aa', title: 'Title case' },
+                { mode: 'lowercase', label: 'aa', title: 'Lowercase' },
+              ] as const
+            ).map((opt) => {
+              const active = transform === opt.mode;
+              return (
+                <button
+                  key={opt.mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  title={opt.title}
+                  onClick={() => setStyle((st) => { st.textTransform = opt.mode as TextTransformMode; })}
+                  className={cn(
+                    'h-8 min-w-0 flex-1 rounded-md border text-[12px] font-semibold tabular-nums transition-colors',
+                    active
+                      ? 'border-primary bg-primary/15 text-primary'
+                      : 'border-border bg-surface-2 text-ink-muted hover:text-ink',
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <PropertyField label="Align">
         <Select value={s.align} onChange={(e) => setStyle((st) => { st.align = e.target.value as 'left' | 'center' | 'right'; })}>
           <option value="left">left</option>
@@ -562,7 +610,37 @@ function TextStyleSection({ layer, variables, updateLayer }: { layer: Extract<La
       </PropertyField>
       <LabeledNum label="Line height" value={s.lineHeight} resetValue={1.1} step={0.05} onChange={(v) => setStyle((st) => { st.lineHeight = v; })} />
       <LabeledNum label="Spacing" value={s.letterSpacing} resetValue={0} onChange={(v) => setStyle((st) => { st.letterSpacing = v; })} />
-      <Checkbox label="Drop shadow" checked={s.dropShadow} onChange={(v) => setStyle((st) => { st.dropShadow = v; })} />
+      <Checkbox label="Drop shadow" checked={shadowOn} onChange={(v) => setStyle((st) => { st.dropShadow = v; })} />
+      <div className={cn('space-y-2', !shadowOn && 'opacity-40')}>
+        <PropertyField label="Color">
+          <ColorInput
+            value={s.dropShadowColor || '#000000'}
+            disabled={!shadowOn}
+            onChange={(c) => setStyle((st) => { st.dropShadowColor = c; })}
+          />
+        </PropertyField>
+        <LabeledNum
+          label="X"
+          value={shadowX}
+          resetValue={1}
+          disabled={!shadowOn}
+          onChange={(v) => setStyle((st) => { st.dropShadowOffsetX = v; delete st.dropShadowDistance; })}
+        />
+        <LabeledNum
+          label="Y"
+          value={shadowY}
+          resetValue={1}
+          disabled={!shadowOn}
+          onChange={(v) => setStyle((st) => { st.dropShadowOffsetY = v; delete st.dropShadowDistance; })}
+        />
+        <LabeledNum
+          label="Blur"
+          value={s.dropShadowBlur}
+          resetValue={0}
+          disabled={!shadowOn}
+          onChange={(v) => setStyle((st) => { st.dropShadowBlur = v; })}
+        />
+      </div>
     </Section>
   );
 }

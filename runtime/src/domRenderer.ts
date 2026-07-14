@@ -21,7 +21,7 @@
 import type {
   Template, Layer, LayerGroup, AnimatableValues,
 } from './schema.js';
-import { resolveBinding } from './schema.js';
+import { applyTextTransform, resolveBinding } from './schema.js';
 import { applyTransform, blendModeCss, opacityCss, transformHas3D, type AppliedTransform } from './transform.js';
 import { applyGroupTransform, computeGroupBbox } from './groupBounds.js';
 import { computeStackOrder, groupMap } from './stackOrder.js';
@@ -870,12 +870,19 @@ export class TemplateRenderer {
         this.setStyle(content, cache, 'whiteSpace', 'pre');
         this.setStyle(content, cache, 'webkitTextStroke',
           s.strokeWidth > 0 ? `${s.strokeWidth}px ${s.strokeColor}` : '');
+        const shadowX = typeof s.dropShadowOffsetX === 'number'
+          ? s.dropShadowOffsetX
+          : 0;
+        const shadowY = typeof s.dropShadowOffsetY === 'number'
+          ? s.dropShadowOffsetY
+          : (typeof s.dropShadowDistance === 'number' ? s.dropShadowDistance : 1);
         this.setStyle(content, cache, 'textShadow',
           s.dropShadow
-            ? `${0}px ${s.dropShadowDistance}px ${s.dropShadowBlur}px ${s.dropShadowColor}`
+            ? `${shadowX}px ${shadowY}px ${s.dropShadowBlur}px ${s.dropShadowColor}`
             : '');
         if (layer.type === 'text') {
-          this.setText(content, cache, 'textContent', String(resolveBinding(layer.content, v)));
+          const raw = String(resolveBinding(layer.content, v));
+          this.setText(content, cache, 'textContent', applyTextTransform(raw, s.textTransform));
         } else {
           // clock content is refreshed by the clock ticker; set an initial value.
           this.setText(content, cache, 'textContent', formatClock(layer.format, layer.mode, Date.now(),
