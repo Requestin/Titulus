@@ -1,40 +1,52 @@
-# Phase 19 / doc02: CPU layer compositor preflight
+# Phase 19 / doc02: operator-aware CPU layer compositor preflight
 
 ## Decision
 
-**Do not start the CPU layer compositor implementation for canonical `test1`.**
+**Proceed to an operator-aware render-graph POC for canonical `test1`.**
 
-The doc02 plan requires a conservative static-fraction preflight before
-modifying the render pump. The measured cacheable static coverage is **0%**,
-below the 20% minimum bet threshold. The two-plate MVP would add a CPU blend
-and another buffer without removing any CEF raster work.
+PR #75 correctly measured that `test1` has no ready-made static underlay for a
+two-plate `static + dynamic` split. It incorrectly treated that result as proof
+that no source pixels can be cached. The two statements are not equivalent.
+
+The corrected analysis finds **7 of 8 pixel-bearing sources cacheable** between
+content updates. Their area-weighted preflight opportunity score is **96.70%**.
+Only the clock requires per-frame source raster. The two animated masks become
+mixer operators rather than invalidating every source they affect.
 
 ## Method
 
 `engine/research/p19/analyze_doc02_static_fraction.mjs` projects a template
 without rendering it:
 
-- clocks, video, variable-bound and timeline-animated layers are dynamic;
-- an animated group promotes its descendants;
-- a dynamic mask promotes all siblings it clips in its stack scope;
-- only layers outside every dynamic scope count toward cacheable coverage.
+- `content_dirty`: pixels must be recaptured (`clock`/`video` per frame,
+  variable-bound text only on update);
+- `props_dirty`: cached pixels remain valid while transform/opacity changes;
+- `mask_dirty`: cached sources remain valid while mask geometry changes;
+- unsupported operators are reported explicitly and require whole-template
+  legacy fallback.
 
-The classifier is intentionally conservative: false-static output could put
-stale pixels on air, while false-dynamic output only underestimates the
-opportunity.
+`opportunityScore` is a preflight proxy:
+`cacheable local source area / all pixel-source area`. It is not a predicted FPS
+uplift; measured raster/CPU attribution in the POC remains the architectural
+gate.
 
 ## Canonical `test1` result
 
 | Signal | Value |
 | --- | ---: |
-| Layers | 10 |
-| Cacheable static layers | 0 |
-| Cacheable static coverage | 0% |
+| Pixel-bearing sources | 8 |
+| Cacheable source bitmaps | 7 |
+| Per-frame live sources | 1 (clock) |
+| Mask operators | 2 |
+| Unsupported operators | 0 |
+| Area-weighted opportunity | 96.70% |
+| Legacy two-plate static coverage | 0% |
 | Required preflight minimum | 20% |
 
-The animated root-level inverted mask clips all preceding root siblings.
-Together with animated groups, the clock, and other timeline targets it
-promotes every layer into the dynamic plate. The evidence summary is
+The animated group rotations/translations and moving images are property-only
+changes. The variable-bound text layers need recapture only on `update`. The
+normal image mask and root-level inverted rectangle mask are supported operator
+candidates. The evidence summary is
 `engine/research/results/p19/doc02-20260715/preflight/static-fraction.json`.
 
 ## Relation to previous gates
@@ -42,19 +54,19 @@ promotes every layer into the dynamic plate. The evidence summary is
 - Doc01 raised headless `test1` to the 50 Hz ceiling, but 3-channel DeckLink
   remains around 28–30 unique fps.
 - Doc03 and doc04 did not find a safe memory or scheduling throughput lever.
-- That does not make any compositor automatically useful: its benefit requires
-  static pixels outside the dynamic/mask scope, which `test1` lacks.
+- The corrected preflight shows enough reusable source work to justify a POC;
+  it does not yet prove that CPU affine/mask composition is cheaper than CEF.
 
 ## Consequence
 
-The planned L1–L5 mixer work, CEF protocol, AVX2 blend, cache and 3-channel
-K2 gate are intentionally not implemented. This is a pre-engine kill-switch,
-not a failed DeckLink run.
+The two-plate MVP remains rejected. The next implementation must instead model
+cached source bitmaps, transform/group nodes, opacity/z nodes, mask operators
+and a live clock node. Scalar correctness comes before SIMD. All behavior stays
+behind `BG_LAYERED_COMPOSITOR=0|1`; unsupported state falls back to the complete
+legacy monolith before TAKE.
 
-Reopen doc02 only after a separately accepted template/style change creates a
-semantically equivalent acceptance workload with at least 20% cacheable static
-coverage, or after a new architecture can isolate the animated root mask
-without violating mask semantics. Either path requires a new ADR and baseline.
+The POC proceeds only through the corrected staged plan. Production optimization
+still requires pixel parity and a paired 3-channel uplift gate.
 
 ## Verification
 

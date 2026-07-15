@@ -1,17 +1,18 @@
 # 02 — Own CPU Layer Compositor
 
-> **Статус:** preflight STOP for canonical `test1` (2026-07-15)
+> **Статус:** operator-aware POC approved by corrected preflight (2026-07-15)
 > **Дата:** 2026-07-13  
 > **Контекст:** после Phase 18 (`test1` потолок ~25 unique fps, content/raster-bound)  
 > **Связанные:** `docs/ARCHITECTURE.md`, `docs/CASPARRCG_PORTING.md`, Phase 11/16/17/18  
 > **Compliance:** reimplement by reference; **не** копировать код CasparCG (GPLv3+)  
 > **Templates:** `test` = `tests/templates/test.json` (простой), `test1` = `tests/templates/test1.json` (сложный, **acceptance target** программы)
 
-> **Preflight result:** conservative static-fraction analysis found 0%
-> cacheable coverage in `test1`: its animated root-level mask scope promotes
-> every layer to dynamic. The required 20% threshold is not met, so the L0–L5
-> implementation below remains a design draft and must not enter the engine
-> without a new ADR. Evidence and method:
+> **Corrected preflight:** PR #75's 0% result rejects a ready-made two-plate
+> static underlay, not source-pixel caching. Operator-aware analysis separates
+> `content_dirty`, `props_dirty` and `mask_dirty`: `test1` has 7/8 cacheable
+> pixel sources, one live clock and two supported mask operators (96.70%
+> area-weighted opportunity). A default-off scalar render-graph POC may proceed;
+> production still requires pixel parity and paired 3-channel uplift. Evidence:
 > [`p19-02-layer-compositor.md`](reports/p19-02-layer-compositor.md).
 
 ---
