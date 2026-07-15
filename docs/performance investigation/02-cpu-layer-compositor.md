@@ -1,11 +1,18 @@
 # 02 — Own CPU Layer Compositor
 
-> **Статус:** architectural bet / design draft  
+> **Статус:** preflight STOP for canonical `test1` (2026-07-15)
 > **Дата:** 2026-07-13  
 > **Контекст:** после Phase 18 (`test1` потолок ~25 unique fps, content/raster-bound)  
 > **Связанные:** `docs/ARCHITECTURE.md`, `docs/CASPARRCG_PORTING.md`, Phase 11/16/17/18  
 > **Compliance:** reimplement by reference; **не** копировать код CasparCG (GPLv3+)  
 > **Templates:** `test` = `tests/templates/test.json` (простой), `test1` = `tests/templates/test1.json` (сложный, **acceptance target** программы)
+
+> **Preflight result:** conservative static-fraction analysis found 0%
+> cacheable coverage in `test1`: its animated root-level mask scope promotes
+> every layer to dynamic. The required 20% threshold is not met, so the L0–L5
+> implementation below remains a design draft and must not enter the engine
+> without a new ADR. Evidence and method:
+> [`p19-02-layer-compositor.md`](reports/p19-02-layer-compositor.md).
 
 ---
 

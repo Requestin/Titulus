@@ -81,4 +81,9 @@ clone устранён. Direct path не даёт устойчивого through
   file capabilities are incompatible with the CEF binary on this host.
   Evidence: `engine/research/results/p19/doc04-20260715/`; report:
   [`p19-04-scheduling.md`](../performance%20investigation/reports/p19-04-scheduling.md).
+- **Doc 02 (CPU layer compositor)** — preflight STOP: the canonical `test1`
+  has 0% conservatively cacheable static coverage because its animated
+  root-level mask scope promotes every layer to dynamic. The required 20%
+  threshold is not met, so no mixer/protocol/AVX2 implementation is justified.
+  Report: [`p19-02-layer-compositor.md`](../performance%20investigation/reports/p19-02-layer-compositor.md).
 - Затем G1 (1ch ≥50) → G2 (3ch ≥50) → G3 soak — критерии в doc 00 §13.
