@@ -345,6 +345,15 @@ Build: `cd runtime && npm run build` → `backend/public/bg-runtime.js` (IIFE `w
 - `device_scale_factor=1.0`
 - → `FrameRing` SPSC (latest frame)
 
+### Research flag: `BG_LAYERED_COMPOSITOR` (Phase 19 Doc02)
+
+Optional default-**off** path that captures per-layer CEF snapshots and mixes
+them on CPU (`engine/src/compositor/`, `engine/src/mixer/`). Phase 19 Doc02
+**K2 STOP**: paired 3ch DeckLink `test1` uplift was ≪1.2×, so this path is
+**not** a production lever. Keep the flag unset/`0` unless explicitly
+researching a new capture/compose contract. Details:
+`docs/performance investigation/reports/p19-02-layer-compositor.md`.
+
 ### Stats / SUMMARY
 
 `engine/src/stats.cpp` — контракт с `bench/run-bench.sh`:

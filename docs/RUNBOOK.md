@@ -135,6 +135,14 @@ Collector берёт host-wide lock, но не запускает, не оста
 affinity engine-процессов. Не запускайте второй DeckLink soak параллельно:
 на Ryzen 5 3600 все шесть physical cores уже заняты 3×2c packing.
 
+Research-only (default off; **Doc02 K2 STOP** — do not enable for production):
+
+```bash
+# BG_LAYERED_COMPOSITOR=1 or --layered-compositor
+# Paired gate harness (expects doc04 channel setup + token):
+#   engine/research/p19/run_doc02_k2_gate.sh 1ch|3ch off|on [duration]
+```
+
 ## 9. Blink research (bench)
 
 ```bash

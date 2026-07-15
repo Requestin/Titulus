@@ -1,19 +1,26 @@
-# Phase 19 / doc02: operator-aware CPU layer compositor preflight
+# Phase 19 / doc02: operator-aware CPU layer compositor
 
 ## Decision
 
-**Proceed to an operator-aware render-graph POC for canonical `test1`.**
+**STOP after K2.** The operator-aware render-graph POC was built
+(PR0–PR5, flag `BG_LAYERED_COMPOSITOR`, default off) and failed the paired
+3-channel DeckLink uplift gate (PR6). Worst-channel uplift was **0.14× (1ch)** /
+**0.21× (3ch)** versus paired control — far below the **1.2×** fail threshold.
 
-PR #75 correctly measured that `test1` has no ready-made static underlay for a
-two-plate `static + dynamic` split. It incorrectly treated that result as proof
-that no source pixels can be cached. The two statements are not equivalent.
+`BG_LAYERED_COMPOSITOR` remains **default off**. Doc02 production optimization
+(PR7 AVX2, PR8 dirty/cache, PR9 allowlist/soaks) is **cancelled** on this
+architecture. A future revisit requires a different capture/compose contract,
+not SIMD on the current full-path swap.
 
-The corrected analysis finds **7 of 8 pixel-bearing sources cacheable** between
-content updates. Their area-weighted preflight opportunity score is **96.70%**.
-Only the clock requires per-frame source raster. The two animated masks become
-mixer operators rather than invalidating every source they affect.
+Preflight (below) correctly justified attempting the POC: **7 of 8**
+pixel-bearing sources are cacheable between content updates (area-weighted
+opportunity **96.70%**). Opportunity score is not a predicted FPS uplift; K2
+measured throughput is the architectural gate, and it failed.
 
-## Method
+Evidence: `engine/research/results/p19/doc02-20260715/k2-gate/`
+(see also [K2 gate](#k2-gate-pr6--stop) below).
+
+## Preflight method
 
 `engine/research/p19/analyze_doc02_static_fraction.mjs` projects a template
 without rendering it:
@@ -66,7 +73,8 @@ behind `BG_LAYERED_COMPOSITOR=0|1`; unsupported state falls back to the complete
 legacy monolith before TAKE.
 
 The POC proceeds only through the corrected staged plan. Production optimization
-still requires pixel parity and a paired 3-channel uplift gate.
+still requires pixel parity and a paired 3-channel uplift gate. **That gate was
+run in PR6 and failed (STOP); see Decision and K2 section.**
 
 ## Implementation progress
 
@@ -140,9 +148,9 @@ mixer, no SIMD, no parallelism):
 The scalar mixer is ~45x slower than a single `memcpy`, which is expected for
 a per-pixel, per-layer walk with no SIMD. The Phase 18 monolith (full CEF
 raster) costs ~35-40 ms/frame for the same content; the scalar mixer at 17 ms
-is already under that ceiling without any optimisation. PR7 (AVX2 + parallel
-scanlines) targets ~2-4 ms/frame, which is the order-of-magnitude uplift
-needed for the K2 decision gate.
+looked under that ceiling in synthetic isolation. Live DeckLink K2 (PR6) showed
+that headroom does not survive the full-path capture + live-overlay contract,
+so AVX2/PR7 was never unlocked.
 
 PR5 wires the **full path swap** behind `BG_LAYERED_COMPOSITOR=1` (default
 off):
@@ -240,3 +248,26 @@ fails K2. A future revisit would need a different capture/compose contract
 (region caches, props applied in the mixer without full-canvas recapture,
 mix off the CEF UI thread, or dropping live overlay from the hot path) — not
 SIMD on the current full-path swap.
+
+## Plan closure
+
+Doc02 is **complete as a research track** under the plan’s own K2 decision
+tree (`FAIL <1.2×` → STOP). Delivered:
+
+| Item | Status |
+| --- | --- |
+| PR0–PR5 implementation behind default-off flag | merged |
+| PR6 paired 1ch + 3ch K2 | STOP (PR #82) |
+| PR7–PR9 production-opt | cancelled by K2 |
+| Flag-OFF legacy path | remains production path |
+| Report + evidence + harness | in tree |
+
+### Closure verification (2026-07-15)
+
+- Classifier: 7/7 pass; runtime tests 17/17; `mixer_scalar_goldens` PASS.
+- Flag-OFF 1ch DeckLink smoke 45s: median `in_fps=48.1`, late/drop/flush/unlock=0
+  (legacy path healthy; formal ≥49 was the longer PR5/K2 control window).
+- Docs: Decision STOP, phase-19, ARCHITECTURE, RUNBOOK, development-plan snapshot.
+
+No further Doc02 work is scheduled on this architecture. Phase 19 continues on
+other docs (Style Guide / cost model) without relying on layered compose uplift.
