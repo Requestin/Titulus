@@ -83,6 +83,25 @@ list(APPEND BG_SOURCES
   src/consumers/ffmpeg_consumer.cpp
 )
 
+# Doc02 scalar layer mixer (PR2). Compiled into bg_engine unconditionally so the
+# source stays warning-clean on the main build, but is not yet wired into the
+# render pump. Production gating lives behind BG_LAYERED_COMPOSITOR in later
+# PRs. The standalone CTest in engine/tests/ covers the goldens.
+list(APPEND BG_SOURCES
+  src/mixer/cpu_layer_mixer.cpp
+  src/mixer/affine_sampler.cpp
+  src/mixer/mask_ops.cpp
+  src/mixer/mixer_buffer_pool.cpp
+  src/mixer/fallback_reason.cpp
+)
+list(APPEND BG_HEADERS
+  src/mixer/render_graph_types.h
+  src/mixer/cpu_layer_mixer.h
+  src/mixer/affine_sampler.h
+  src/mixer/mask_ops.h
+  src/mixer/mixer_buffer_pool.h
+)
+
 add_executable(bg_engine ${BG_SOURCES} ${BG_HEADERS})
 
 target_include_directories(bg_engine PRIVATE

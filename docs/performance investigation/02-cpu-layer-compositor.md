@@ -14,6 +14,12 @@
 > area-weighted opportunity). A default-off scalar render-graph POC may proceed;
 > production still requires pixel parity and paired 3-channel uplift. Evidence:
 > [`p19-02-layer-compositor.md`](reports/p19-02-layer-compositor.md).
+>
+> **Scalar reference path:** `engine/src/mixer/` provides a warning-clean
+> scalar `CpuLayerMixer` (straight-alpha src-over BGRA8, affine
+> translation/scale/anchor-rotation, opacity, normal/inverted rect masks,
+> explicit fallback reasons). Compiled into `bg_engine` but not yet wired
+> into the render pump; `engine/tests/` covers 15 pixel goldens via CTest.
 
 ---
 

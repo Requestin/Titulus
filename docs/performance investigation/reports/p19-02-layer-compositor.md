@@ -82,6 +82,20 @@ PR1 adds the pure runtime projection in `runtime/src/layerPromote.ts`. It:
 
 It does not change DOM rendering or the engine frame path.
 
+PR2 adds the scalar reference mixer under `engine/src/mixer/` and a standalone
+`engine/tests/` CTest target. It:
+
+- walks a stable z-order layer list back-to-front;
+- performs straight-alpha src-over BGRA8 blend;
+- supports affine translation, scale, anchor rotation and opacity;
+- supports axis-aligned normal/inverted rect masks;
+- reports unsupported operators (fractional rotation, non-positive scale,
+  oversized buffers, unsupported mask shapes) as explicit fallback reasons;
+- includes a 64-byte aligned `MixerBufferPool` for the upcoming SIMD PR.
+
+The mixer is compiled into `bg_engine` but is not yet connected to the render
+pump; production gating remains behind `BG_LAYERED_COMPOSITOR` in later PRs.
+
 ## Verification
 
 ```bash
@@ -91,4 +105,9 @@ cd runtime
 npm test
 npm run typecheck
 npm run build
+cd ../engine/tests
+mkdir -p build && cd build
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+cmake --build .
+ctest --output-on-failure
 ```
