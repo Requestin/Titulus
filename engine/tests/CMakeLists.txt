@@ -51,3 +51,24 @@ target_compile_options(test_protocol PRIVATE
 )
 
 add_test(NAME protocol_v1_shadow_store COMMAND test_protocol)
+
+add_executable(test_compositor
+  test_compositor.cpp
+  ../src/compositor/synthetic_snapshot.cpp
+  ../src/compositor/layered_compositor.cpp
+  ../src/mixer/cpu_layer_mixer.cpp
+  ../src/mixer/affine_sampler.cpp
+  ../src/mixer/mask_ops.cpp
+  ../src/mixer/mixer_buffer_pool.cpp
+  ../src/mixer/fallback_reason.cpp
+)
+
+target_include_directories(test_compositor PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+)
+
+target_compile_options(test_compositor PRIVATE
+  -Wall -Wextra -Wno-unused-parameter
+)
+
+add_test(NAME compositor_synthetic_poc COMMAND test_compositor)
