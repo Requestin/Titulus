@@ -1,0 +1,9 @@
+{
+  "template": "tests/templates/test1.json",
+  "classifier": "engine/research/p19/analyze_doc02_static_fraction.mjs",
+  "staticCoverage": 0,
+  "staticLayerCount": 0,
+  "dynamicLayerCount": 10,
+  "decision": "KILL_PRE_ENGINE",
+  "reason": "The animated root mask scope conservatively promotes every layer to dynamic_html. A correct two-plate compositor has no cacheable static underlay for the canonical acceptance template."
+}
