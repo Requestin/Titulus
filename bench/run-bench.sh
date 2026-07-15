@@ -17,6 +17,7 @@
 # (see docs/phase9-25d-masks.md).
 
 set -euo pipefail
+export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"

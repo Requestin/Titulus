@@ -18,6 +18,7 @@
 #   TITULUS_API_PASSWORD  default admin123 (used when token absent)
 
 set -euo pipefail
+export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_CHANNEL="${ROOT}/engine/run-channel.sh"
@@ -151,6 +152,7 @@ print(channel["cpus"], channel["quality"], channel["raster_threads"])
     --cores="$cores"
   )
   if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "[run-engines] plan ${ch_name}: cpus=${cores} quality=${quality} raster=${raster_threads}"
     args+=(--dry-run)
     DRY_RUN=1 BACKEND_URL="$BACKEND_URL" ENGINE_BIN="$ENGINE_BIN" CACHE_ROOT="$CACHE_ROOT" "${args[@]}"
   else
