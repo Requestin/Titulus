@@ -1985,13 +1985,28 @@ Hardware lab — единственное место G1–G4.
 1. Три канала = шесть physical cores на 3600; SMT siblings в mask обязательны.  
 2. Не жди isolcpus на 6c — некуда.  
 3. Genlock must lock; иначе не начинай soak.  
-4. `SCHED_FIFO` — бонус, не фундамент.  
-5. IRQ DeckLink держи на house.  
-6. Governor performance на эфире.  
+4. `SCHED_FIFO` — бонус, не фундамент; для CEF используй systemd
+   `AmbientCapabilities`, не file capability.
+5. IRQ DeckLink держи на house, но на 6c / 3×2c house core отсутствует:
+   не перемещай IRQ без late-frame symptom и отдельного A/B.
+6. На текущем 3600 governor `performance` не поднял limiting-channel FPS;
+   оставить `schedutil`.
 7. Spikes без late stage → смотри THP doc 06.  
 8. Низкий fps при чистом OS → cost model / content.  
 9. Любой тюнинг → bench null regression.  
 10. Большие серверы: house + isol + auto pack script.
+
+---
+
+## 31. Hardware result — July 2026
+
+3× DeckLink `test1` GATE-04 (sequential, `schedutil`) прошёл более 30 минут:
+531 telemetry windows на канал, нулевые `d_late`, `d_dropped`,
+`d_flushed` и `ref=UNLOCKED`. Это подтверждает стабильность delivery, но не
+throughput: median `in_fps` составил 29.6 / 28.0 / 30.2, поэтому G2 (≥50 fps)
+не пройден. CCX packing и governor `performance` не дали repeatable uplift.
+Полный evidence и factor decisions:
+[`p19-04-scheduling.md`](reports/p19-04-scheduling.md).
 
 ---
 

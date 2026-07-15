@@ -52,36 +52,54 @@ The same cheap null scene with `TITULUS_PACK=ccx` also stayed at 50.01 fps.
 That only verifies mask plumbing; it is not evidence that CCX packing helps
 the complex `test1` DeckLink workload.
 
-## Hardware gates: blocked, not waived
+## DeckLink factor results
 
-The canonical `test1` refers to three upload files:
+The canonical `test1` assets were restored to an isolated backend and taken on
+three genlocked DeckLink channels (`HD1080i50`, devices 1–3). Every factor used
+the same sequential 2-physical-core-per-channel plan unless stated otherwise.
 
-- `94ae0689-77c4-41fb-89b6-49eb5d5ce280.jpg`
-- `b1936396-f999-4d55-bdae-ec0686653d1c.png`
-- `0d28e312-5714-44a8-9844-c2d9b003da4d.jpg`
+| Factor | Median `in_fps` ch0 / ch1 / ch2 | Conclusion |
+| --- | --- | --- |
+| Sequential baseline | 29.5 / 27.3 / 29.0 | Reference |
+| `TITULUS_PACK=ccx` | 28.8 / 30.0 / 27.2 | No repeatable uplift; retain sequential default |
+| Governor `performance` | 30.7 / 27.3 / 29.8 | No improvement in the limiting channel; restore `schedutil` |
+| Sequential GATE-04, ≥30 min | 29.6 / 28.0 / 30.2 | Stable delivery, but G2 throughput fails |
 
-They are absent from the available isolated data directory. Running a
-DeckLink comparison without them would not be an acceptance run.
+The GATE-04 run contains 531 five-second telemetry windows per channel. It
+recorded zero `d_late`, `d_dropped`, `d_flushed`, and reference-unlocked
+windows. Its worst channel reached only 28.0 median `in_fps`, far below the
+50 fps G2 threshold. Evidence is committed under
+`engine/research/results/p19/doc04-20260715/gate04-sequential-30m/`; raw logs
+remain ignored by policy.
 
-The host also requires an interactive sudo password, so governor, IRQ
-affinity, and RT capability changes were not applied. No OS setting was
-changed as part of this work.
+## Factors deliberately not adopted
 
-Consequently the following remain open:
+- **IRQ affinity:** IRQ 71 ran on CPU 5 and IRQ 73 on CPU 7, both render CPUs.
+  On the six-core 3×2c layout there is no house core: moving either IRQ merely
+  moves its load to another render channel. Since GATE-04 has no late frames,
+  an arbitrary affinity crossover is not an evidence-led experiment.
+- **`SCHED_FIFO`:** the CFS baseline correctly soft-fails at `ulimit -r = 0`.
+  A temporary `cap_sys_nice=ep` file capability made every CEF process exit
+  133 at ICU initialization (`Invalid file descriptor to ICU data`). The
+  capability was immediately removed; this is a failed launch, not an RT
+  throughput measurement. A future RT gate must use a systemd unit with
+  `AmbientCapabilities=CAP_SYS_NICE` and `LimitRTPRIO`, not a file capability
+  on the CEF executable.
+- **THP / C-states / kernel isolation:** remain unchanged. With zero late or
+  dropped frames, these intrusive factors have no observed symptom to target.
 
-- paired 3-channel `test1` DeckLink baseline and sequential/CCX crossover;
-- governor `schedutil` / `performance` crossover;
-- evidence-led IRQ affinity experiment;
-- actual `SCHED_FIFO:2` test;
-- 30-minute GATE-04 and program G2.
+## Gate decision
+
+GATE-04 delivery stability passes; program G2 fails. Scheduling, L3 packing,
+and the tested governor are therefore not the limiting lever for this
+workload. The next investigation returns to the template cost model rather
+than accumulating host tuning.
 
 ## Next action
 
-Restore the three canonical upload assets into an isolated `TITULUS_DATA`
-directory, create/take `test1` on three DeckLink channels, and provide a
-non-interactive approved mechanism for the reversible OS experiments. Then
-run the planned factors one at a time and record all telemetry windows with
-the doc04 collector.
+Run a separately scoped systemd-based RT experiment only if jitter (late
+frames) reappears. For the current bottleneck, profile the complex template's
+render/decode cost and reduce per-frame work.
 
 ## Rollback
 
