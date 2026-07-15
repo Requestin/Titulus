@@ -2,8 +2,12 @@
 
 #include "engine_client.h"
 
+#include "mixer/graph_message_parser.h"
+#include "mixer/render_graph_store.h"
+
 #include <cstdio>
 #include <cstring>
+#include <utility>
 
 namespace bg {
 
@@ -78,6 +82,32 @@ bool EngineClient::OnConsoleMessage(CefRefPtr<CefBrowser>, cef_log_severity_t,
     if (msg.rfind("BGSTATS", 0) == 0) {
         std::fprintf(stderr, "bg_engine[runtime]: %s\n", msg.c_str());
         return true;
+    }
+    // Doc02 PR3: forward BGGRAPH v1 snapshots to the shadow store. The store is
+    // shadow-only; it never reaches the render pump. Failures are recorded as
+    // counters so a paired K2 run can correlate spikes with malformed frames.
+    if (msg.rfind("BGGRAPH", 0) == 0) {
+        if (graph_store_) {
+            auto parsed = bg::ParseGraphMessage(msg);
+            switch (parsed.status) {
+                case bg::GraphParseStatus::Ok:
+                    graph_store_->Commit(std::move(parsed.snapshot));
+                    break;
+                case bg::GraphParseStatus::NotGraphMessage:
+                    graph_store_->RecordUnsupported("header mismatch");
+                    break;
+                case bg::GraphParseStatus::MalformedJson:
+                case bg::GraphParseStatus::MissingRequiredField:
+                case bg::GraphParseStatus::UnsupportedFieldValue:
+                case bg::GraphParseStatus::UnsupportedVersion:
+                    graph_store_->RecordMalformed(parsed.error_detail);
+                    break;
+                case bg::GraphParseStatus::BoundsViolation:
+                    graph_store_->RecordBoundsViolation(parsed.error_detail);
+                    break;
+            }
+        }
+        return true;  // swallow either way: graph traffic is opt-in telemetry
     }
     return false;
 }

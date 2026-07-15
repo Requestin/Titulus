@@ -22,6 +22,7 @@
 #include "frame_log.h"
 #include "frame_ring.h"
 #include "message_pump.h"
+#include "mixer/render_graph_store.h"
 #include "stats.h"
 
 #include "include/cef_browser.h"
@@ -191,6 +192,13 @@ int main(int argc, char** argv) {
     // Build the OSR browser pointing at channel.html.
     CefRefPtr<bg::EngineClient> client = new bg::EngineClient(
         cfg.width, cfg.height, on_paint, on_ready);
+
+    // Doc02 PR3: attach a shadow RenderGraphStore so the page's BGGRAPH v1
+    // snapshots are captured for offline diff debugging. Default-on: even when
+    // the production compositor gate is off, the page may emit graph messages,
+    // and we want the K2 review to have a baseline.
+    bg::RenderGraphStore graph_store;
+    client->set_graph_store(&graph_store);
 
     CefWindowInfo window_info;
     window_info.SetAsWindowless(0);  // OSR, no native window

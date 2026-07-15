@@ -20,6 +20,12 @@
 > translation/scale/anchor-rotation, opacity, normal/inverted rect masks,
 > explicit fallback reasons). Compiled into `bg_engine` but not yet wired
 > into the render pump; `engine/tests/` covers 15 pixel goldens via CTest.
+>
+> **Bounded layer protocol v1:** `BGGRAPH v1 <json>` snapshots flow from the
+> page (`runtime/src/graphProtocol.ts` + `runtime/src/graphPublisher.ts`) into
+> a shadow `RenderGraphStore` on the engine side. The store never feeds the
+> render pump; opt in via `?graph=1` on the channel page. 13 protocol goldens
+> covered by `engine/tests/test_protocol.cpp`.
 
 ---
 

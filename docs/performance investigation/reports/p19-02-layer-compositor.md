@@ -96,6 +96,22 @@ PR2 adds the scalar reference mixer under `engine/src/mixer/` and a standalone
 The mixer is compiled into `bg_engine` but is not yet connected to the render
 pump; production gating remains behind `BG_LAYERED_COMPOSITOR` in later PRs.
 
+PR3 adds the bounded layer protocol v1 and a shadow `RenderGraphStore`. It:
+
+- defines the `BGGRAPH v1 <json>` wire format plus strict size/extent bounds;
+- implements an allocation-light parser on the CEF UI thread inside
+  `OnConsoleMessage` (mirrors the existing `BGSTATS` opt-in pattern);
+- stores the latest accepted snapshot plus telemetry counters (accepted,
+  stale-dropped, malformed, bounds-violation, unsupported);
+- wires the shadow store into `EngineClient` and `main.cpp`;
+- adds a runtime-side encoder (`runtime/src/graphProtocol.ts`) and a
+  `publishTemplateGraph` helper plus an opt-in flag (`?graph=1` or
+  `window.BG_GRAPH_PUBLISH=1`).
+
+Shadow mode means the store never feeds the render pump; production still uses
+the legacy monolith. The encoder is invoked at most once per `take`, never on
+the per-frame path, and is dropped silently when bounds are exceeded.
+
 ## Verification
 
 ```bash
@@ -111,3 +127,8 @@ cmake -DCMAKE_BUILD_TYPE=Debug ..
 cmake --build .
 ctest --output-on-failure
 ```
+
+To opt a channel into the shadow graph publisher, open the page with
+`?graph=1` (or set `window.BG_GRAPH_PUBLISH = 1` before `channel.html` boots).
+The engine logs the store telemetry via the standard `BGSTATS` channel; see
+`engine/src/mixer/render_graph_store.h` for the counter meanings.

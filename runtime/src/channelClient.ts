@@ -20,6 +20,8 @@
 
 import type { Template } from './schema.js';
 import { TemplateRenderer, type TemplateRendererOptions, type OnFrameFn } from './domRenderer.js';
+import { classifyRenderGraph } from './layerPromote.js';
+import { isGraphPublishingEnabled, publishTemplateGraph } from './graphPublisher.js';
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -185,6 +187,28 @@ export class ChannelClient {
     renderer.playTimeline(msg.template, msg.variables ?? {},
       this.opts.onFrame ? { onFrame: this.opts.onFrame } : {});
     this.opts.onActiveCount?.(this.active.size);
+    // Doc02 PR3: emit the operator-aware render graph so the engine shadow
+    // RenderGraphStore can capture it for diff debugging. Opt-in via ?graph=1
+    // or window.BG_GRAPH_PUBLISH=1; runs at most once per take.
+    this.publishGraphSnapshot(msg.template);
+  }
+
+  private publishGraphSnapshot(template: Template): void {
+    if (!isGraphPublishingEnabled(globalThis)) return;
+    let analysis;
+    try {
+      analysis = classifyRenderGraph(template);
+    } catch {
+      return; // malformed template -> no snapshot
+    }
+    const revision = Date.now() & 0xffffffff;
+    const line = publishTemplateGraph(template, revision, analysis);
+    if (line) {
+      // The engine OnConsoleMessage hook intercepts the BGGRAPH prefix and
+      // forwards to the shadow RenderGraphStore. Never log a partial line.
+      // eslint-disable-next-line no-console
+      console.log(line);
+    }
   }
 
   private onUpdate(msg: ChannelMessage): void {

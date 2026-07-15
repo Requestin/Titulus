@@ -14,5 +14,7 @@ export * from './stats.js';
 export * from './maskScopes.js';
 export * from './maskGeometry.js';
 export * from './layerPromote.js';
+export * from './graphProtocol.js';
+export * from './graphPublisher.js';
 export * from './domRenderer.js';
 export * from './channelClient.js';
