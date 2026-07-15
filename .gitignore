@@ -170,6 +170,8 @@ backend/public/bg-runtime.js
 engine/build
 engine/build-p15
 engine/build-p17
+engine/build-p18/
+engine/tests/build/
 engine/third_party/cef/
 engine/third_party/cef_*.tar.bz2
 
