@@ -1,0 +1,85 @@
+{
+  "channels": [
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 29.36,
+        "maximum": 58.0,
+        "median": 31.5,
+        "minimum": 9.0
+      },
+      "d_singles": {
+        "average": 95.36,
+        "maximum": 110.0,
+        "median": 93.0,
+        "minimum": 68.0
+      },
+      "d_starved_sum": 11,
+      "in_fps": {
+        "average": 30.71,
+        "maximum": 36.5,
+        "median": 31.0,
+        "minimum": 25.6
+      },
+      "log": "/tmp/titulus-doc02-k2/3ch-off-20260715T150311Z/raw-logs/doc04-ch0.log",
+      "ref_unlock_windows": 0,
+      "windows": 14
+    },
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 21.64,
+        "maximum": 34.0,
+        "median": 22.0,
+        "minimum": 6.0
+      },
+      "d_singles": {
+        "average": 103.5,
+        "maximum": 118.0,
+        "median": 102.5,
+        "minimum": 92.0
+      },
+      "d_starved_sum": 7,
+      "in_fps": {
+        "average": 29.24,
+        "maximum": 31.7,
+        "median": 29.4,
+        "minimum": 25.8
+      },
+      "log": "/tmp/titulus-doc02-k2/3ch-off-20260715T150311Z/raw-logs/doc04-ch1.log",
+      "ref_unlock_windows": 0,
+      "windows": 14
+    },
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 28.14,
+        "maximum": 49.0,
+        "median": 29.0,
+        "minimum": 9.0
+      },
+      "d_singles": {
+        "average": 97.21,
+        "maximum": 116.0,
+        "median": 97.0,
+        "minimum": 75.0
+      },
+      "d_starved_sum": 5,
+      "in_fps": {
+        "average": 30.54,
+        "maximum": 34.5,
+        "median": 30.8,
+        "minimum": 26.8
+      },
+      "log": "/tmp/titulus-doc02-k2/3ch-off-20260715T150311Z/raw-logs/doc04-ch2.log",
+      "ref_unlock_windows": 0,
+      "windows": 14
+    }
+  ]
+}

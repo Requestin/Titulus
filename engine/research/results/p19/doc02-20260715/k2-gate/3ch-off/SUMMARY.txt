@@ -1,0 +1,5 @@
+=== DOC02 K2 SUMMARY ===
+doc04-ch0.log: windows=14 in_fps med=31.0 avg=30.71 min=25.6 max=36.5 late=0 drop=0 flush=0 unlock=0
+doc04-ch1.log: windows=14 in_fps med=29.4 avg=29.24 min=25.8 max=31.7 late=0 drop=0 flush=0 unlock=0
+doc04-ch2.log: windows=14 in_fps med=30.8 avg=30.54 min=26.8 max=34.5 late=0 drop=0 flush=0 unlock=0
+worst_channel_median_in_fps=29.4

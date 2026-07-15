@@ -1,0 +1,85 @@
+{
+  "channels": [
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 0.0,
+        "maximum": 0.0,
+        "median": 0.0,
+        "minimum": 0.0
+      },
+      "d_singles": {
+        "average": 32.93,
+        "maximum": 34.0,
+        "median": 33.0,
+        "minimum": 30.0
+      },
+      "d_starved_sum": 1297,
+      "in_fps": {
+        "average": 6.54,
+        "maximum": 6.8,
+        "median": 6.6,
+        "minimum": 6.0
+      },
+      "log": "/tmp/titulus-doc02-k2/3ch-on-20260715T150439Z/raw-logs/doc04-ch0.log",
+      "ref_unlock_windows": 0,
+      "windows": 14
+    },
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 0.0,
+        "maximum": 0.0,
+        "median": 0.0,
+        "minimum": 0.0
+      },
+      "d_singles": {
+        "average": 32.0,
+        "maximum": 33.0,
+        "median": 32.0,
+        "minimum": 28.0
+      },
+      "d_starved_sum": 1312,
+      "in_fps": {
+        "average": 6.36,
+        "maximum": 6.5,
+        "median": 6.4,
+        "minimum": 5.6
+      },
+      "log": "/tmp/titulus-doc02-k2/3ch-on-20260715T150439Z/raw-logs/doc04-ch1.log",
+      "ref_unlock_windows": 0,
+      "windows": 14
+    },
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 0.0,
+        "maximum": 0.0,
+        "median": 0.0,
+        "minimum": 0.0
+      },
+      "d_singles": {
+        "average": 32.71,
+        "maximum": 34.0,
+        "median": 33.0,
+        "minimum": 28.0
+      },
+      "d_starved_sum": 1300,
+      "in_fps": {
+        "average": 6.49,
+        "maximum": 6.7,
+        "median": 6.55,
+        "minimum": 5.6
+      },
+      "log": "/tmp/titulus-doc02-k2/3ch-on-20260715T150439Z/raw-logs/doc04-ch2.log",
+      "ref_unlock_windows": 0,
+      "windows": 14
+    }
+  ]
+}

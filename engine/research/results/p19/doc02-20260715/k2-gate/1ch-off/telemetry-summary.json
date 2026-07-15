@@ -1,0 +1,31 @@
+{
+  "channels": [
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 113.68,
+        "maximum": 126.0,
+        "median": 121.0,
+        "minimum": 84.0
+      },
+      "d_singles": {
+        "average": 11.68,
+        "maximum": 42.0,
+        "median": 4.0,
+        "minimum": 0.0
+      },
+      "d_starved_sum": 3,
+      "in_fps": {
+        "average": 47.76,
+        "maximum": 50.2,
+        "median": 49.2,
+        "minimum": 41.7
+      },
+      "log": "/tmp/titulus-doc02-k2/1ch-off-20260715T145749Z/raw-logs/doc04-ch0.log",
+      "ref_unlock_windows": 0,
+      "windows": 19
+    }
+  ]
+}

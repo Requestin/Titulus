@@ -1,0 +1,1 @@
+mode=1ch variant=off duration=90 layered=0

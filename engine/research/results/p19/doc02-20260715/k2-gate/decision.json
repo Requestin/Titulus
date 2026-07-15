@@ -1,0 +1,50 @@
+{
+  "gate": "K2",
+  "date": "2026-07-15",
+  "template": "test1",
+  "display_mode": "HD1080i50",
+  "flag": "BG_LAYERED_COMPOSITOR",
+  "1ch": {
+    "control_median_in_fps": [
+      49.2
+    ],
+    "treatment_median_in_fps": [
+      7.0
+    ],
+    "uplift": [
+      0.142
+    ],
+    "smoke_control_pass": true,
+    "note": "1ch control med>=49; treatment collapses to ~7 fps"
+  },
+  "3ch": {
+    "control_median_in_fps": [
+      31.0,
+      29.4,
+      30.8
+    ],
+    "treatment_median_in_fps": [
+      6.6,
+      6.4,
+      6.55
+    ],
+    "uplift": [
+      0.213,
+      0.218,
+      0.213
+    ],
+    "baseline_frozen_reference": [
+      29.6,
+      28.0,
+      30.2
+    ],
+    "worst_channel_uplift": 0.213
+  },
+  "criteria": {
+    "pass_ge": 1.5,
+    "iterate_ge": 1.2,
+    "fail_lt": 1.2
+  },
+  "verdict": "STOP",
+  "reason": "Paired uplift << 1.2x on both 1ch and 3ch; layered path regresses throughput instead of improving it. Flag remains OFF. PR7-PR9 cancelled pending architectural rethink or capture-path bugfix outside production-opt track."
+}
