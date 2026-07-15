@@ -1,0 +1,85 @@
+{
+  "channels": [
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 20.87,
+        "maximum": 48.0,
+        "median": 19.0,
+        "minimum": 4.0
+      },
+      "d_singles": {
+        "average": 104.59,
+        "maximum": 120.0,
+        "median": 107.0,
+        "minimum": 78.0
+      },
+      "d_starved_sum": 5,
+      "in_fps": {
+        "average": 29.15,
+        "maximum": 34.5,
+        "median": 28.8,
+        "minimum": 25.2
+      },
+      "log": "engine/research/results/p19/doc04-20260715/crossover-ccx/raw-logs/engine-doc04-ch0.log",
+      "ref_unlock_windows": 0,
+      "windows": 39
+    },
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 25.13,
+        "maximum": 56.0,
+        "median": 25.0,
+        "minimum": 0.0
+      },
+      "d_singles": {
+        "average": 100.26,
+        "maximum": 126.0,
+        "median": 101.0,
+        "minimum": 69.0
+      },
+      "d_starved_sum": 6,
+      "in_fps": {
+        "average": 30.0,
+        "maximum": 36.2,
+        "median": 30.0,
+        "minimum": 25.0
+      },
+      "log": "engine/research/results/p19/doc04-20260715/crossover-ccx/raw-logs/engine-doc04-ch1.log",
+      "ref_unlock_windows": 0,
+      "windows": 39
+    },
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 13.44,
+        "maximum": 34.0,
+        "median": 11.0,
+        "minimum": 2.0
+      },
+      "d_singles": {
+        "average": 111.87,
+        "maximum": 123.0,
+        "median": 115.0,
+        "minimum": 92.0
+      },
+      "d_starved_sum": 9,
+      "in_fps": {
+        "average": 27.64,
+        "maximum": 31.7,
+        "median": 27.2,
+        "minimum": 25.4
+      },
+      "log": "engine/research/results/p19/doc04-20260715/crossover-ccx/raw-logs/engine-doc04-ch2.log",
+      "ref_unlock_windows": 0,
+      "windows": 39
+    }
+  ]
+}

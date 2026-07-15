@@ -58,7 +58,8 @@ fi
   echo "thp=$(< /sys/kernel/mm/transparent_hugepage/enabled)"
   echo "irqbalance=$(systemctl is-active irqbalance 2>&1 || true)"
   echo "rtprio_limit=$(ulimit -r)"
-  echo "engines=$(pgrep -af 'bg_engine|run-channel|run-engines' || true)"
+  echo "engines=$(pgrep -af 'bg_engine|run-channel|run-engines' 2>/dev/null |
+    python3 -c 'import re, sys; print(re.sub(r"TITULUS_API_PASSWORD=[^ ]+", "TITULUS_API_PASSWORD=REDACTED", sys.stdin.read()), end="")' || true)"
   echo "decklink_irq_71=$(< /proc/irq/71/effective_affinity_list 2>/dev/null || true)"
   echo "decklink_irq_73=$(< /proc/irq/73/effective_affinity_list 2>/dev/null || true)"
 } > "${OUT_DIR}/host.env"

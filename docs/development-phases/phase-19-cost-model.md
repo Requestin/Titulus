@@ -72,10 +72,13 @@ clone устранён. Direct path не даёт устойчивого through
 
 ## Следующие milestone
 
-- **Doc 04 (pinning/CCX)** — implementation started: generic SMT/L3 planner is shared by
-  `run-engines.sh` and `bench/run-bench.sh`; it supports `TITULUS_PACK=sequential|ccx`,
-  fails loudly on capacity shortfall, and keeps sequential as default. The doc04 collector
-  aggregates telemetry under an exclusive host lock. Hardware factor gates remain open:
-  the current host lacks the canonical `test1` upload assets and non-interactive sudo for
-  governor/IRQ/RT changes, so no DeckLink GATE-04 or G2 conclusion is recorded yet.
+- **Doc 04 (pinning/CCX)** — hardware gate complete: sequential, CCX and
+  `performance` governor produced no reliable throughput uplift on 3× DeckLink
+  `test1`; sequential / `schedutil` remain defaults. The ≥30-minute GATE-04
+  has zero late/drop/flush or reference-unlock windows, but its limiting
+  channel is only 28.0 median `in_fps`: delivery stability passes, program G2
+  fails. `SCHED_FIFO` needs a future systemd AmbientCapabilities experiment;
+  file capabilities are incompatible with the CEF binary on this host.
+  Evidence: `engine/research/results/p19/doc04-20260715/`; report:
+  [`p19-04-scheduling.md`](../performance%20investigation/reports/p19-04-scheduling.md).
 - Затем G1 (1ch ≥50) → G2 (3ch ≥50) → G3 soak — критерии в doc 00 §13.

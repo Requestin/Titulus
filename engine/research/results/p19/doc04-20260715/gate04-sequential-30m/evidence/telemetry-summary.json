@@ -1,0 +1,85 @@
+{
+  "channels": [
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 23.92,
+        "maximum": 56.0,
+        "median": 23.0,
+        "minimum": 0.0
+      },
+      "d_singles": {
+        "average": 101.52,
+        "maximum": 126.0,
+        "median": 102.0,
+        "minimum": 69.0
+      },
+      "d_starved_sum": 11,
+      "in_fps": {
+        "average": 29.77,
+        "maximum": 36.2,
+        "median": 29.6,
+        "minimum": 25.0
+      },
+      "log": "engine/research/results/p19/doc04-20260715/gate04-sequential-30m/evidence/raw-logs/engine-doc04-ch0.log",
+      "ref_unlock_windows": 0,
+      "windows": 531
+    },
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 15.99,
+        "maximum": 48.0,
+        "median": 15.0,
+        "minimum": 0.0
+      },
+      "d_singles": {
+        "average": 109.43,
+        "maximum": 126.0,
+        "median": 111.0,
+        "minimum": 77.0
+      },
+      "d_starved_sum": 22,
+      "in_fps": {
+        "average": 28.19,
+        "maximum": 34.6,
+        "median": 28.0,
+        "minimum": 25.0
+      },
+      "log": "engine/research/results/p19/doc04-20260715/gate04-sequential-30m/evidence/raw-logs/engine-doc04-ch1.log",
+      "ref_unlock_windows": 0,
+      "windows": 531
+    },
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 26.13,
+        "maximum": 60.0,
+        "median": 26.0,
+        "minimum": 1.0
+      },
+      "d_singles": {
+        "average": 99.33,
+        "maximum": 124.0,
+        "median": 100.0,
+        "minimum": 65.0
+      },
+      "d_starved_sum": 11,
+      "in_fps": {
+        "average": 30.21,
+        "maximum": 37.0,
+        "median": 30.2,
+        "minimum": 25.2
+      },
+      "log": "engine/research/results/p19/doc04-20260715/gate04-sequential-30m/evidence/raw-logs/engine-doc04-ch2.log",
+      "ref_unlock_windows": 0,
+      "windows": 531
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "channels": [
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 24.15,
+        "maximum": 52.0,
+        "median": 22.5,
+        "minimum": 5.0
+      },
+      "d_singles": {
+        "average": 101.22,
+        "maximum": 120.0,
+        "median": 103.0,
+        "minimum": 74.0
+      },
+      "d_starved_sum": 6,
+      "in_fps": {
+        "average": 29.79,
+        "maximum": 35.3,
+        "median": 29.5,
+        "minimum": 26.0
+      },
+      "log": "engine/research/results/p19/doc04-20260715/baseline-sequential/raw-logs/engine-doc04-ch0.log",
+      "ref_unlock_windows": 0,
+      "windows": 40
+    },
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 11.38,
+        "maximum": 21.0,
+        "median": 12.0,
+        "minimum": 2.0
+      },
+      "d_singles": {
+        "average": 113.97,
+        "maximum": 123.0,
+        "median": 114.0,
+        "minimum": 104.0
+      },
+      "d_starved_sum": 9,
+      "in_fps": {
+        "average": 27.23,
+        "maximum": 29.2,
+        "median": 27.3,
+        "minimum": 24.8
+      },
+      "log": "engine/research/results/p19/doc04-20260715/baseline-sequential/raw-logs/engine-doc04-ch1.log",
+      "ref_unlock_windows": 0,
+      "windows": 40
+    },
+    {
+      "d_dropped_sum": 0,
+      "d_flushed_sum": 0,
+      "d_late_sum": 0,
+      "d_pairs": {
+        "average": 21.82,
+        "maximum": 50.0,
+        "median": 20.0,
+        "minimum": 0.0
+      },
+      "d_singles": {
+        "average": 103.65,
+        "maximum": 126.0,
+        "median": 105.0,
+        "minimum": 76.0
+      },
+      "d_starved_sum": 5,
+      "in_fps": {
+        "average": 29.32,
+        "maximum": 34.9,
+        "median": 29.0,
+        "minimum": 25.0
+      },
+      "log": "engine/research/results/p19/doc04-20260715/baseline-sequential/raw-logs/engine-doc04-ch2.log",
+      "ref_unlock_windows": 0,
+      "windows": 40
+    }
+  ]
+}
