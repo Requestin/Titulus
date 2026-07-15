@@ -79,6 +79,13 @@ struct Config {
     // copy while never retaining the CEF pointer after OnPaint returns.
     bool decklink_direct_paint = false;
 
+    // Phase 19 Doc02 PR5: full-path layered compositor. When true, the engine
+    // captures per-layer CEF snapshots (via DOM visibility filters), caches
+    // cacheable sources, and publishes composed frames through FrameRing
+    // instead of the monolithic OnPaint. Default off; unsupported graphs and
+    // capture failures fall back to the legacy monolith automatically.
+    bool layered_compositor = false;
+
     // Parse argv into this config. Returns false on a fatal parse error (and
     // prints usage to stderr). Exits the process on --help / a missing required
     // arg so callers don't need to branch.

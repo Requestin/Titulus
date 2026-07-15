@@ -23,6 +23,7 @@
 #include "frame_ring.h"
 #include "message_pump.h"
 #include "mixer/render_graph_store.h"
+#include "compositor/live_pipeline.h"
 #include "stats.h"
 
 #include "include/cef_browser.h"
@@ -37,6 +38,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #if defined(__linux__)
 #include <pthread.h>
@@ -99,7 +101,37 @@ uint64_t last_delivered_seq = 0;
 std::chrono::steady_clock::time_point last_paint_time;
 bool have_last_paint = false;
 
+// Doc02 PR5: composed output buffer for the layered path. Sized on Start.
+std::vector<uint8_t> compose_buf;
+bg::compositor::LivePipeline* g_live_pipeline = nullptr;
+
+// Publish a composed frame into the FrameRing and bump paint_seq. Returns true
+// when a frame was published.
+bool TryPublishComposedFrame() {
+    if (!g_live_pipeline || !g_live_pipeline->PrefersComposedOutput()) return false;
+    if (compose_buf.empty()) return false;
+    if (!g_live_pipeline->ComposeInto(compose_buf.data(), cfg.width, cfg.height)) {
+        return false;
+    }
+    if (cfg.decklink_direct_paint && consumer &&
+        browser_ready.load(std::memory_order_acquire)) {
+        const uint64_t seq = paint_seq.fetch_add(1, std::memory_order_release) + 1;
+        const bg::Frame frame{compose_buf.data(), cfg.width, cfg.height, seq};
+        consumer->OnFrame(frame);
+        return true;
+    }
+    ring.Copy(compose_buf.data(), cfg.width, cfg.height);
+    paint_seq.fetch_add(1, std::memory_order_release);
+    return true;
+}
+
 void on_paint(const uint8_t* bgra, int width, int height) {
+    // Doc02 PR5: when the live pipeline consumed a live-overlay paint, EngineClient
+    // still forwards here with a null buffer as a "compose opportunity" signal.
+    if (bgra == nullptr) {
+        TryPublishComposedFrame();
+        return;
+    }
     const size_t bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
     if (cfg.decklink_direct_paint && consumer &&
         browser_ready.load(std::memory_order_acquire)) {
@@ -200,6 +232,24 @@ int main(int argc, char** argv) {
     bg::RenderGraphStore graph_store;
     client->set_graph_store(&graph_store);
 
+    // Doc02 PR5: full-path layered compositor (default off). When enabled,
+    // per-layer CEF snapshots feed the CPU mixer; unsupported graphs fall back
+    // to the legacy monolith automatically.
+    bg::compositor::LivePipeline live_pipeline;
+    live_pipeline.Attach(&graph_store, cfg.width, cfg.height);
+    live_pipeline.set_enabled(cfg.layered_compositor);
+    if (cfg.layered_compositor) {
+        compose_buf.assign(static_cast<size_t>(cfg.width) * cfg.height * 4, 0);
+        g_live_pipeline = &live_pipeline;
+        client->set_live_pipeline(&live_pipeline);
+        // Graph publishing must be on so the store receives BGGRAPH snapshots.
+        if (cfg.url.find("graph=1") == std::string::npos) {
+            cfg.url += (cfg.url.find('?') == std::string::npos) ? "?graph=1" : "&graph=1";
+            BG_LOG("layered compositor: appended graph=1 to url");
+        }
+        BG_LOG("layered compositor ENABLED (BG_LAYERED_COMPOSITOR=1)");
+    }
+
     CefWindowInfo window_info;
     window_info.SetAsWindowless(0);  // OSR, no native window
     // External begin-frame: the engine pump is the compositor clock. Damage-
@@ -259,6 +309,12 @@ int main(int argc, char** argv) {
                 const auto tick_deadline = tick_start + std::chrono::microseconds(expected_us);
 
                 if (browser_ready.load(std::memory_order_acquire)) {
+                    if (g_live_pipeline) g_live_pipeline->OnTick();
+                    // Cache-only compose: publish without waiting for CEF paint.
+                    if (g_live_pipeline && g_live_pipeline->PrefersComposedOutput()
+                        && !g_live_pipeline->NeedsLivePaint()) {
+                        TryPublishComposedFrame();
+                    }
                     if (CefRefPtr<CefBrowser> b = client->browser()) {
                         if (auto host = b->GetHost()) host->SendExternalBeginFrame();
                     }
@@ -407,6 +463,7 @@ int main(int argc, char** argv) {
         // BeginFrame(s) per channel tick. rAF/CSS/video follow the channel
         // cadence under external begin-frame scheduling.
         if (browser_ready.load(std::memory_order_acquire)) {
+            if (g_live_pipeline) g_live_pipeline->OnTick();
             if (CefRefPtr<CefBrowser> b = client->browser()) {
                 if (auto host = b->GetHost()) {
                     host->SendExternalBeginFrame();
@@ -419,6 +476,15 @@ int main(int argc, char** argv) {
                     }
                 }
             }
+        }
+
+        // Doc02 PR5: when composing from cache with no live layers, publish a
+        // composed frame even without a CEF OnPaint this tick. Live overlays
+        // publish via the OnPaint sentinel instead (avoids a double-publish
+        // of a stale frame before the live paint lands).
+        if (g_live_pipeline && g_live_pipeline->PrefersComposedOutput()
+            && !g_live_pipeline->NeedsLivePaint()) {
+            TryPublishComposedFrame();
         }
 
         // Phase 17 P0: see the decklink-driven branch above for rationale.

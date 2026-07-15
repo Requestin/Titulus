@@ -72,3 +72,30 @@ target_compile_options(test_compositor PRIVATE
 )
 
 add_test(NAME compositor_synthetic_poc COMMAND test_compositor)
+
+add_executable(test_live_pipeline
+  test_live_pipeline.cpp
+  ../src/compositor/layer_bitmap_cache.cpp
+  ../src/compositor/live_pipeline.cpp
+  ../src/compositor/layered_compositor.cpp
+  ../src/compositor/synthetic_snapshot.cpp
+  ../src/mixer/cpu_layer_mixer.cpp
+  ../src/mixer/affine_sampler.cpp
+  ../src/mixer/mask_ops.cpp
+  ../src/mixer/mixer_buffer_pool.cpp
+  ../src/mixer/fallback_reason.cpp
+  ../src/mixer/render_graph_store.cpp
+)
+
+target_include_directories(test_live_pipeline PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/stubs"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+)
+
+# live_pipeline.h includes cef_browser.h — provide tiny stubs under
+# engine/tests/stubs/ so this target builds without the CEF SDK.
+target_compile_options(test_live_pipeline PRIVATE
+  -Wall -Wextra -Wno-unused-parameter
+)
+
+add_test(NAME live_pipeline_unit COMMAND test_live_pipeline)

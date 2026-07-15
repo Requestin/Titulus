@@ -144,9 +144,22 @@ is already under that ceiling without any optimisation. PR7 (AVX2 + parallel
 scanlines) targets ~2-4 ms/frame, which is the order-of-magnitude uplift
 needed for the K2 decision gate.
 
-`BG_LAYERED_COMPOSITOR=1` production wiring is intentionally deferred to PR5
-so this POC stays pure: it does not touch the engine render pump, the
-FrameRing or any consumer.
+PR5 wires the **full path swap** behind `BG_LAYERED_COMPOSITOR=1` (default
+off):
+
+- Runtime: `TemplateRenderer.setLayerVisibilityFilter` +
+  `ChannelClient.setLayerVisibilityFilter('*', ids)` so the engine can isolate
+  one layer at a time via `data-layer-id` DOM attributes.
+- Engine: `LivePipeline` drives per-layer CEF snapshot capture (visibility
+  filter → BeginFrame → OnPaint → `LayerBitmapCache`), then each frame either:
+  - **cache-only** (no `live_html`): compose from cache without waiting for
+    CEF paint;
+  - **live overlay** (`test1` clock): show only live layers, capture a
+    full-canvas live overlay, src-over it on top of the cached mix.
+- Unsupported operators / missing cache / mixer fallback → automatic return
+  to the legacy monolith OnPaint path for that channel.
+- URL gets `graph=1` appended automatically when the flag is on so the page
+  publishes `BGGRAPH` snapshots into the shadow store.
 
 ## Verification
 

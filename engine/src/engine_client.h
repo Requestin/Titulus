@@ -15,6 +15,7 @@
 #include "frame_ring.h"
 #include "include/cef_client.h"
 #include "mixer/render_graph_store.h"
+#include "compositor/live_pipeline.h"
 
 #include <atomic>
 #include <functional>
@@ -39,6 +40,13 @@ class EngineClient : public CefClient,
     // every OnConsoleMessage call.
     void set_graph_store(RenderGraphStore* store) { graph_store_ = store; }
     RenderGraphStore* graph_store() const { return graph_store_; }
+
+    // Doc02 PR5: attach the live layered pipeline so OnPaint can be redirected
+    // into per-layer capture / live-overlay paths.
+    void set_live_pipeline(compositor::LivePipeline* pipeline) {
+        live_pipeline_ = pipeline;
+    }
+    compositor::LivePipeline* live_pipeline() const { return live_pipeline_; }
 
     // CefClient
     CefRefPtr<CefRenderHandler>    GetRenderHandler() override    { return this; }
@@ -89,6 +97,7 @@ class EngineClient : public CefClient,
     OnPaintFn      on_paint_;
     OnReadyFn      on_ready_;
     RenderGraphStore* graph_store_ = nullptr;  // shadow only, never null-checked on hot path
+    compositor::LivePipeline* live_pipeline_ = nullptr;
     std::atomic<bool> closing_{false};
     CefRefPtr<CefBrowser> browser_;
 };

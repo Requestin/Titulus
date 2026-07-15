@@ -32,7 +32,13 @@
 > deterministic source bitmaps (no CEF). `engine/bench/layered_compositor_bench`
 > reports per-frame cost vs a `memcpy` baseline. Scalar mean on canonical
 > `test1` (10 layers, 1920x1080) is ~17 ms; SIMD + parallelism is the PR7 bet.
-> `BG_LAYERED_COMPOSITOR=1` production wiring is deferred to PR5.
+>
+> **Full path swap (PR5):** `BG_LAYERED_COMPOSITOR=1` enables per-layer CEF
+> snapshot capture via DOM visibility filters (`data-layer-id` +
+> `setLayerVisibilityFilter`), `LayerBitmapCache`, and `LivePipeline`
+> compose into FrameRing. Cache-only templates skip CEF paint between
+> content updates; live_html (clock) uses a live-overlay paint each frame.
+> Unsupported graphs fall back to the monolith automatically. Default off.
 
 ---
 
