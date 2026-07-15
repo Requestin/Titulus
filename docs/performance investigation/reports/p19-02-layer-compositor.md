@@ -194,3 +194,49 @@ cmake --build .
 ./layered_compositor_bench \
   ../../research/results/p19/doc02-20260715/graph/test1.bgraph 200 1920 1080
 ```
+
+## K2 gate (PR6) — STOP
+
+Paired DeckLink `test1` on HD1080i50, fill_only, same host pins as doc04
+(`0-3` / `4-7` / `8-11`), flag `BG_LAYERED_COMPOSITOR=0|1`. Harness:
+`engine/research/p19/run_doc02_k2_gate.sh`. Evidence:
+`engine/research/results/p19/doc02-20260715/k2-gate/`.
+
+| Run | ch0 med | ch1 med | ch2 med | worst uplift vs paired control |
+| --- | ---: | ---: | ---: | ---: |
+| 1ch control (off, 90s) | 49.2 | — | — | — |
+| 1ch treatment (on, 90s) | 7.0 | — | — | **0.14×** |
+| 3ch control (off, 60s) | 31.0 | 29.4 | 30.8 | — (matches frozen ~29–30) |
+| 3ch treatment (on, 60s) | 6.6 | 6.4 | 6.55 | **0.21×** |
+
+Delivery errors: `d_late=d_dropped=d_flushed=0`, `ref=locked` on all measured
+windows for both variants. The path is stable — just far too slow.
+
+### Decision
+
+**STOP.** Worst-channel uplift is **≪ 1.2×** (plan fail threshold). The
+layered path is a large regression, not an uplift. `BG_LAYERED_COMPOSITOR`
+stays **default off**. PR7 (AVX2), PR8 (dirty/cache), and PR9 (allowlist /
+soaks) are **cancelled** on this architecture until a new approach clears a
+fresh K2.
+
+Full ABBA×3 was not repeated after the first A/B pair: further repetitions
+cannot change a 0.14–0.21× result into ≥1.2×.
+
+### Attribution notes (not excuses)
+
+Synthetic scalar mix for `test1` was ~17 ms/frame in PR4 — under the CEF
+monolith cost, which is why K2 was attempted. The live DeckLink path does not
+realize that headroom:
+
+- every frame still needs a CEF live paint for the clock (`NeedsLivePaint`);
+- `ComposeInto` runs on the paint/UI path (full scalar mix of seven full-canvas
+  cached bitmaps + naive live-overlay blend);
+- per-tick `ExecuteJavaScript` visibility filters add more CEF work.
+
+Whether the dominant cost is mixer CPU, capture/filter thrash, or UI-thread
+blocking is open; it does not matter for the gate. Measured paired throughput
+fails K2. A future revisit would need a different capture/compose contract
+(region caches, props applied in the mixer without full-canvas recapture,
+mix off the CEF UI thread, or dropping live overlay from the hot path) — not
+SIMD on the current full-path swap.

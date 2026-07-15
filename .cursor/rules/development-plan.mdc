@@ -29,15 +29,18 @@ alwaysApply: true
 | 16 | Performance matrix + layer promotion | DONE | phase-16-performance-matrix.md |
 | 17 | Raster pool vs latency | DONE (PR #60) | phase-17-raster-latency.md |
 | 18 | True 50p progressive pipeline | DONE (потолок задокументирован) | phase-18-true-50p-pipeline.md |
-| 19 | Style Guide + cost model | в процессе; baseline+G0 DONE | phase-19-cost-model.md |
+| 19 | Style Guide + cost model | в процессе; Doc02 K2 STOP | phase-19-cost-model.md |
 
 ## Последний milestone в main
 
-PR #61 — Phase 18 True 50p: Fallback + Decision Gate; на `test1` потолок ~25 unique fps подтверждён (не поднят); P3.3 визуально «без разницы».
+Phase 19 Doc02 K2 STOP: paired DeckLink `test1` layered compositor uplift ≪1.2×
+(1ch 0.14×, 3ch 0.21×); `BG_LAYERED_COMPOSITOR` остаётся OFF; PR7–9 отменены.
+Evidence: `engine/research/results/p19/doc02-20260715/k2-gate/`.
 
 ## Следующие задачи
 
-- Phase 19 — Style Guide + cost model (снижение стоимости кадра до уровня `test`)
+- Phase 19 — продолжение cost model / Style Guide вне Doc02 full-path swap
+  (Doc02 production-opt закрыт K2 STOP; нужен другой контракт capture/compose)
 - Повторный true-50p gate, когда headless `test1` ≥45–50 fps
 
 ## Как обновлять этот файл

@@ -1,0 +1,1 @@
+mode=3ch variant=on duration=60 layered=1
