@@ -46,5 +46,18 @@
     "fail_lt": 1.2
   },
   "verdict": "STOP",
-  "reason": "Paired uplift << 1.2x on both 1ch and 3ch; layered path regresses throughput instead of improving it. Flag remains OFF. PR7-PR9 cancelled pending architectural rethink or capture-path bugfix outside production-opt track."
+  "reason": "Paired uplift << 1.2x on both 1ch and 3ch; layered path regresses throughput instead of improving it. Flag remains OFF. PR7-PR9 cancelled pending architectural rethink or capture-path bugfix outside production-opt track.",
+  "plan_closure": {
+    "date": "2026-07-15",
+    "flag_off_smoke": "=== DOC02 K2 SUMMARY ===\ndoc04-ch0.log: windows=10 in_fps med=48.1 avg=48.28 min=46.6 max=49.8 late=0 drop=0 flush=0 unlock=0\nworst_channel_median_in_fps=48.1",
+    "unit_tests": "classifier 7/7, runtime 17/17, mixer_scalar_goldens PASS",
+    "docs_updated": [
+      "docs/performance investigation/reports/p19-02-layer-compositor.md",
+      "docs/development-phases/phase-19-cost-model.md",
+      "docs/ARCHITECTURE.md",
+      "docs/RUNBOOK.md",
+      ".cursor/rules/development-plan.mdc"
+    ],
+    "verdict": "PLAN_CLOSED"
+  }
 }
