@@ -100,6 +100,17 @@ test('keeps transform-only animation as a cached bitmap', () => {
   assert.deepEqual(report.layers.bug.animatedProps, ['x']);
 });
 
+test('keeps unknown content-changing animation on the live HTML path', () => {
+  const scene = template();
+  scene.timeline.keyframes[0].layers.bug = { fill: '#000' } as never;
+
+  const report = classifyRenderGraph(scene);
+
+  assert.equal(report.layers.bug.nodeKind, 'live_html');
+  assert.equal(report.layers.bug.contentPolicy, 'per_frame');
+  assert.deepEqual(report.layers.bug.dirtyDomains, ['content_dirty']);
+});
+
 test('recaptures variable-bound text only when its variable updates', () => {
   const scene = template({
     layers: [layer('title', 'text', {
