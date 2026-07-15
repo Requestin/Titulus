@@ -14,6 +14,7 @@
 
 #include "frame_ring.h"
 #include "include/cef_client.h"
+#include "mixer/render_graph_store.h"
 
 #include <atomic>
 #include <functional>
@@ -32,6 +33,12 @@ class EngineClient : public CefClient,
     EngineClient(int width, int height, OnPaintFn on_paint, OnReadyFn on_ready)
         : width_(width), height_(height),
           on_paint_(std::move(on_paint)), on_ready_(std::move(on_ready)) {}
+
+    // Doc02 PR3: attach a shadow RenderGraphStore so BGGRAPH v1 messages from
+    // the page are recorded. Ownership stays with the caller; must outlive
+    // every OnConsoleMessage call.
+    void set_graph_store(RenderGraphStore* store) { graph_store_ = store; }
+    RenderGraphStore* graph_store() const { return graph_store_; }
 
     // CefClient
     CefRefPtr<CefRenderHandler>    GetRenderHandler() override    { return this; }
@@ -81,6 +88,7 @@ class EngineClient : public CefClient,
     int            height_;
     OnPaintFn      on_paint_;
     OnReadyFn      on_ready_;
+    RenderGraphStore* graph_store_ = nullptr;  // shadow only, never null-checked on hot path
     std::atomic<bool> closing_{false};
     CefRefPtr<CefBrowser> browser_;
 };

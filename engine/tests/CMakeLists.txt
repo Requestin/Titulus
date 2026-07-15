@@ -35,3 +35,19 @@ target_compile_options(test_mixer PRIVATE
 )
 
 add_test(NAME mixer_scalar_goldens COMMAND test_mixer)
+
+add_executable(test_protocol
+  test_protocol.cpp
+  ../src/mixer/graph_message_parser.cpp
+  ../src/mixer/render_graph_store.cpp
+)
+
+target_include_directories(test_protocol PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+)
+
+target_compile_options(test_protocol PRIVATE
+  -Wall -Wextra -Wno-unused-parameter
+)
+
+add_test(NAME protocol_v1_shadow_store COMMAND test_protocol)

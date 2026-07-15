@@ -102,6 +102,20 @@ list(APPEND BG_HEADERS
   src/mixer/mixer_buffer_pool.h
 )
 
+# Doc02 bounded layer protocol v1 + RenderGraphStore shadow mode (PR3). Parses
+# `BGGRAPH v1 ...` lines received from the page via OnConsoleMessage; the store
+# is shadow-only and never feeds the render pump.
+list(APPEND BG_SOURCES
+  src/mixer/graph_message_parser.cpp
+  src/mixer/render_graph_store.cpp
+)
+list(APPEND BG_HEADERS
+  src/mixer/protocol_types.h
+  src/mixer/protocol_limits.h
+  src/mixer/graph_message_parser.h
+  src/mixer/render_graph_store.h
+)
+
 add_executable(bg_engine ${BG_SOURCES} ${BG_HEADERS})
 
 target_include_directories(bg_engine PRIVATE
