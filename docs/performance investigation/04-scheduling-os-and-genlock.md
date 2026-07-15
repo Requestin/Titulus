@@ -1120,10 +1120,27 @@ WARN if remaining < N*K
 
 Сегодня discovery уже есть внутри `run-engines.sh`. Эволюция:
 
-1. Вынести в `engine/tools/detect-cpu-pack.py`.
-2. `run-engines.sh` вызывает tool, читает JSON.
+1. `engine/tools/detect-cpu-pack.py` читает `lscpu -p=CPU,CORE,SOCKET,NODE`
+   и L3 `shared_cpu_list`, затем эмитит JSON plan.
+2. `run-engines.sh` вызывает tool и читает per-channel masks.
 3. Env overrides: `TITULUS_PACK=ccx`, `TITULUS_HOUSE_CORES=2`, `TITULUS_CORES_PER_CH=2`.
-4. Bench scripts используют тот же tool — одна правда.
+4. `bench/run-bench.sh` использует тот же tool — одна правда для null и
+   supervised engine path.
+
+`sequential` / `2` / `0` — безопасные defaults. При capacity shortfall planner
+завершается с ошибкой: fallback к unpinned channel скрывает contention и
+делает результат gate невалидным.
+
+Для текущего 3600:
+
+```bash
+python3 engine/tools/detect-cpu-pack.py --channels 3 --pack sequential --json
+python3 engine/tools/detect-cpu-pack.py --channels 3 --pack ccx --json
+```
+
+CCX mode отдаёт B1: два channel локальны к L3, третий явно имеет
+`quality=straddle`; это экспериментальный профиль, а не новый default до
+paired DeckLink A/B.
 
 ### 11.5 Pseudo-code ядра (Python)
 

@@ -72,7 +72,10 @@ clone устранён. Direct path не даёт устойчивого through
 
 ## Следующие milestone
 
-- **Doc 04 (pinning/CCX)** — следующий workstream: doc03 подтвердил, что copy/clone traffic
-  реален, но его устранение не дало устойчивого 3ch uplift; теперь проверяем размещение
-  3 процессов по CCX/L3 и IRQ/scheduling.
+- **Doc 04 (pinning/CCX)** — implementation started: generic SMT/L3 planner is shared by
+  `run-engines.sh` and `bench/run-bench.sh`; it supports `TITULUS_PACK=sequential|ccx`,
+  fails loudly on capacity shortfall, and keeps sequential as default. The doc04 collector
+  aggregates telemetry under an exclusive host lock. Hardware factor gates remain open:
+  the current host lacks the canonical `test1` upload assets and non-interactive sudo for
+  governor/IRQ/RT changes, so no DeckLink GATE-04 or G2 conclusion is recorded yet.
 - Затем G1 (1ch ≥50) → G2 (3ch ≥50) → G3 soak — критерии в doc 00 §13.
