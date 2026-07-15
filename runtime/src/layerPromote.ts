@@ -242,8 +242,11 @@ export function classifyRenderGraph(template: Template): RenderGraphAnalysis {
     pixelSourceLayerIds.push(layer.id);
     const variableIds = [...collectVariableIds(layer)].sort();
     const propertyAnimation = animatedProps.filter((prop) => PROPERTY_KEYS.has(prop));
+    const contentAnimation = animatedProps.filter((prop) => !PROPERTY_KEYS.has(prop));
     const animatedGroupIds = [...(animatedGroupsByLayer.get(layer.id) ?? [])].sort();
-    const contentPolicy: ContentPolicy = layer.type === 'clock' || layer.type === 'video'
+    const contentPolicy: ContentPolicy = layer.type === 'clock'
+      || layer.type === 'video'
+      || contentAnimation.length > 0
       ? 'per_frame'
       : variableIds.length > 0 ? 'on_update' : 'immutable';
     const cacheableSource = contentPolicy !== 'per_frame' && operatorSupport.supported;
