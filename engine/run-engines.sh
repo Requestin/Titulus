@@ -18,14 +18,19 @@
 #   TITULUS_API_PASSWORD  default admin123 (used when token absent)
 
 set -euo pipefail
+export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_CHANNEL="${ROOT}/engine/run-channel.sh"
+CPU_PLANNER="${ROOT}/engine/tools/detect-cpu-pack.py"
 BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:3001}"
 ENGINE_BIN="${ENGINE_BIN:-${ROOT}/engine/build/Release/bg_engine}"
 CACHE_ROOT="${CACHE_ROOT:-/tmp/titulus-engines}"
 ENGINE_LOG_DIR="${ENGINE_LOG_DIR:-${ROOT}/logs}"
 API_TOKEN="${TITULUS_API_TOKEN:-}"
+TITULUS_PACK="${TITULUS_PACK:-sequential}"
+TITULUS_CORES_PER_CH="${TITULUS_CORES_PER_CH:-2}"
+TITULUS_HOUSE_CORES="${TITULUS_HOUSE_CORES:-0}"
 DRY_RUN=0
 
 usage() {
@@ -49,7 +54,8 @@ CPU affinity: 2 dedicated physical cores per channel incl. SMT siblings
 (taskset); channels beyond physical capacity run unpinned.
 
 Environment: BACKEND_URL, ENGINE_BIN, CACHE_ROOT, TITULUS_API_TOKEN,
-             TITULUS_API_USER, TITULUS_API_PASSWORD
+             TITULUS_API_USER, TITULUS_API_PASSWORD, TITULUS_PACK,
+             TITULUS_CORES_PER_CH, TITULUS_HOUSE_CORES
 EOF
 }
 
@@ -74,6 +80,14 @@ fi
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "run-engines.sh: python3 required (JSON parse)" >&2
+  exit 1
+fi
+if [[ ! -f "$CPU_PLANNER" ]]; then
+  echo "run-engines.sh: missing CPU planner $CPU_PLANNER" >&2
+  exit 1
+fi
+if [[ "$TITULUS_PACK" != "sequential" && "$TITULUS_PACK" != "ccx" ]]; then
+  echo "run-engines.sh: TITULUS_PACK must be sequential or ccx" >&2
   exit 1
 fi
 
@@ -105,50 +119,26 @@ if [[ "$COUNT" -eq 0 ]]; then
   exit 0
 fi
 
-# Physical core discovery — locale-independent. The old text parse of `lscpu`
-# broke on non-English locales (fell back to nproc and counted SMT threads as
-# physical cores). `lscpu -p` output is stable across locales.
-# core_map[i] = comma list of ALL logical CPUs of physical core i (including
-# SMT siblings), e.g. Ryzen 3600: core_map[0]="0,6", core_map[1]="1,7", ...
-mapfile -t core_map < <(LC_ALL=C lscpu -p=CPU,CORE 2>/dev/null | awk -F, '
-  /^[0-9]/ {
-    if (cpus[$2] == "") cpus[$2] = $1
-    else                cpus[$2] = cpus[$2] "," $1
-    if ($2 + 0 > max) max = $2 + 0
-  }
-  END { for (i = 0; i <= max; i++) if (cpus[i] != "") print cpus[i] }')
-phys_cores="${#core_map[@]}"
-if [[ "$phys_cores" -eq 0 ]]; then
-  phys_cores="$(nproc)"
-  core_map=()
-  for ((i = 0; i < phys_cores; i++)); do core_map+=("$i"); done
-fi
-cores_per_channel=2
-total_needed=$((COUNT * cores_per_channel))
-if [[ "$phys_cores" -lt "$total_needed" ]]; then
-  echo "[run-engines] WARNING: ${phys_cores} physical cores < ${total_needed} needed for ${COUNT}ch @${cores_per_channel}c/ch — channels beyond capacity run unpinned" >&2
-fi
-echo "[run-engines] ${COUNT} channel(s); host ${phys_cores} physical cores; pinning ${cores_per_channel} cores (+SMT siblings)/ch"
+PACK_JSON="$(LC_ALL=C python3 "$CPU_PLANNER" \
+  --channels "$COUNT" \
+  --cores-per-channel "$TITULUS_CORES_PER_CH" \
+  --house-cores "$TITULUS_HOUSE_CORES" \
+  --pack "$TITULUS_PACK" \
+  --json)" || exit $?
+phys_cores="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["phys_cores"])' <<<"$PACK_JSON")"
+echo "[run-engines] ${COUNT} channel(s); host ${phys_cores} physical cores; pack=${TITULUS_PACK} cores/ch=${TITULUS_CORES_PER_CH} house=${TITULUS_HOUSE_CORES}"
 
 mkdir -p "$CACHE_ROOT"
 
-# Emit one run-channel.sh line per channel with disjoint core ranges.
-core=0
+# Emit one run-channel.sh line per channel with planner-generated masks.
+channel_index=0
 while IFS= read -r line; do
   eval "$line"
-  core_start=$core
-  core_end=$((core + cores_per_channel - 1))
-  # CPU set = the channel's physical cores INCLUDING their SMT siblings; the
-  # old "0-1" ranges left half of every pinned core idle (CEF render is
-  # multi-threaded and starved at ~20-25fps instead of 50 on this pinning).
-  if [[ "$core_end" -lt "$phys_cores" ]]; then
-    cores=""
-    for ((ci = core_start; ci <= core_end; ci++)); do
-      cores="${cores:+${cores},}${core_map[$ci]}"
-    done
-  else
-    cores=""  # not enough physical cores -> run unpinned (scheduler balances)
-  fi
+  read -r cores quality raster_threads < <(python3 -c '
+import json, sys
+channel = json.load(sys.stdin)["channels"][int(sys.argv[1])]
+print(channel["cpus"], channel["quality"], channel["raster_threads"])
+' "$channel_index" <<<"$PACK_JSON")
 
   args=(
     "$RUN_CHANNEL"
@@ -162,6 +152,7 @@ while IFS= read -r line; do
     --cores="$cores"
   )
   if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "[run-engines] plan ${ch_name}: cpus=${cores} quality=${quality} raster=${raster_threads}"
     args+=(--dry-run)
     DRY_RUN=1 BACKEND_URL="$BACKEND_URL" ENGINE_BIN="$ENGINE_BIN" CACHE_ROOT="$CACHE_ROOT" "${args[@]}"
   else
@@ -169,11 +160,11 @@ while IFS= read -r line; do
     # telemetry unreadable (Phase 10.1).
     mkdir -p "$ENGINE_LOG_DIR"
     ch_log="${ENGINE_LOG_DIR}/engine-$(echo "$ch_name" | tr ' /' '__').log"
-    echo "[run-engines] launching ${ch_name} on cpus ${cores:-unpinned} (mode=${output_mode}) log=${ch_log}"
+    echo "[run-engines] launching ${ch_name} on cpus ${cores} quality=${quality} raster=${raster_threads} (mode=${output_mode}) log=${ch_log}"
     BACKEND_URL="$BACKEND_URL" ENGINE_BIN="$ENGINE_BIN" CACHE_ROOT="$CACHE_ROOT" \
       "${args[@]}" > "$ch_log" 2>&1 &
   fi
-  core=$((core + cores_per_channel))
+  channel_index=$((channel_index + 1))
 done < <(python3 -c "
 import json, sys, shlex
 channels = json.load(sys.stdin)

@@ -17,6 +17,7 @@
 # (see docs/phase9-25d-masks.md).
 
 set -euo pipefail
+export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -26,30 +27,33 @@ DURATION="${2:-60}"
 GRAPHICS="${3:-5}"
 
 ENGINE_BIN="${ROOT}/engine/build/Release/bg_engine"
+CPU_PLANNER="${ROOT}/engine/tools/detect-cpu-pack.py"
 BENCH_URL="file://${ROOT}/bench/bench.html?graphics=${GRAPHICS}"
 FPS="${FPS:-50}"
 WIDTH="${WIDTH:-1920}"
 HEIGHT="${HEIGHT:-1080}"
+TITULUS_PACK="${TITULUS_PACK:-sequential}"
+TITULUS_CORES_PER_CH="${TITULUS_CORES_PER_CH:-2}"
+TITULUS_HOUSE_CORES="${TITULUS_HOUSE_CORES:-0}"
 
 if [[ ! -x "$ENGINE_BIN" ]]; then
   echo "[bench] bg_engine not found at $ENGINE_BIN" >&2
   echo "[bench] build it first: cd engine && cmake -B build -DCMAKE_BUILD_TYPE=Release && make -C build -j" >&2
   exit 1
 fi
+if [[ ! -f "$CPU_PLANNER" ]]; then
+  echo "[bench] CPU planner not found at $CPU_PLANNER" >&2
+  exit 1
+fi
 
-# Physical core discovery — 2 dedicated cores per channel (§4.3, §11.3).
-# We read the actual physical core count from /proc/cpuinfo (socket * cores).
-phys_cores="$(lscpu | awk '/^Core\(s\) per socket:/ {c=$4} /^Socket\(s\):/ {s=$4} END {print c*s}')"
-if [[ -z "$phys_cores" || "$phys_cores" -eq 0 ]]; then
-  phys_cores="$(nproc)"
-fi
-cores_per_channel=2
-total_needed=$((CHANNELS * cores_per_channel))
-if [[ "$phys_cores" -lt "$total_needed" ]]; then
-  echo "[bench] WARNING: ${phys_cores} physical cores < ${total_needed} needed for ${CHANNELS}ch @${cores_per_channel}c/ch" >&2
-  echo "[bench]          results will reflect contention, not clean channel isolation" >&2
-fi
-echo "[bench] host: ${phys_cores} physical cores; ${CHANNELS}ch x ${cores_per_channel}c = ${total_needed} pinned cores"
+PACK_JSON="$(LC_ALL=C python3 "$CPU_PLANNER" \
+  --channels "$CHANNELS" \
+  --cores-per-channel "$TITULUS_CORES_PER_CH" \
+  --house-cores "$TITULUS_HOUSE_CORES" \
+  --pack "$TITULUS_PACK" \
+  --json)" || exit $?
+phys_cores="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["phys_cores"])' <<<"$PACK_JSON")"
+echo "[bench] host: ${phys_cores} physical cores; pack=${TITULUS_PACK} cores/ch=${TITULUS_CORES_PER_CH} house=${TITULUS_HOUSE_CORES}"
 
 WORK="$(mktemp -d -t bg-bench-XXXXXX)"
 trap 'rm -rf "$WORK"; pkill -f "bg_engine.*bg-bench" 2>/dev/null || true' EXIT
@@ -57,17 +61,19 @@ trap 'rm -rf "$WORK"; pkill -f "bg_engine.*bg-bench" 2>/dev/null || true' EXIT
 declare -a PIDS=()
 LOGS=()
 
-core=0
 for ((i=0; i<CHANNELS; i++)); do
-  core_start=$core
-  core_end=$((core + cores_per_channel - 1))
+  read -r cores quality raster_threads < <(python3 -c '
+import json, sys
+channel = json.load(sys.stdin)["channels"][int(sys.argv[1])]
+print(channel["cpus"], channel["quality"], channel["raster_threads"])
+' "$i" <<<"$PACK_JSON")
   cache="${WORK}/cache-ch${i}"
   log="${WORK}/ch${i}.log"
   mkdir -p "$cache"
   LOGS+=("$log")
 
-  echo "[bench] ch${i}: cores ${core_start}-${core_end} -> ${log##*/}"
-  taskset -c "${core_start}-${core_end}" "$ENGINE_BIN" \
+  echo "[bench] ch${i}: cpus ${cores} quality=${quality} raster=${raster_threads} -> ${log##*/}"
+  BG_NUM_RASTER_THREADS="$raster_threads" taskset -c "$cores" "$ENGINE_BIN" \
     --url="${BENCH_URL}" \
     --width="$WIDTH" --height="$HEIGHT" --fps="$FPS" \
     --duration="$DURATION" --stats-interval="$((DURATION / 4 > 0 ? DURATION / 4 : 1))" \
@@ -76,7 +82,6 @@ for ((i=0; i<CHANNELS; i++)); do
     --name="bench-ch${i}" \
     > "$log" 2>&1 &
   PIDS+=("$!")
-  core=$((core + cores_per_channel))
 done
 
 # Snapshot total CPU jiffies before the run for an overall CPU% read.

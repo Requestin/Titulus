@@ -86,6 +86,19 @@ TITULUS_API_USER=admin TITULUS_API_PASSWORD=admin123 \
 ./engine/run-engines.sh
 ```
 
+Для исследования packing можно явно выбрать L3-aware планировщик:
+
+```bash
+TITULUS_PACK=ccx \
+BACKEND_URL=http://127.0.0.1:3002 \
+TITULUS_API_USER=admin TITULUS_API_PASSWORD=admin123 \
+./engine/run-engines.sh --dry-run
+```
+
+`sequential` остаётся default. Planner всегда включает SMT siblings и
+останавливает запуск при нехватке physical cores; не заменяйте это ручным
+`taskset -c 0-3`.
+
 ## 7. Smoke
 
 - Validate: `POST /api/templates/validate`
@@ -109,6 +122,18 @@ TITULUS_API_USER=admin TITULUS_API_PASSWORD=admin123 \
 Evidence: `OUT_ROOT=/var/log/titulus ./engine/collect-decklink-evidence.sh`
 
 `SCHED_FIFO` для decklink — soft-fail без `CAP_SYS_NICE`; для prod — systemd `LimitRTPRIO`.
+
+Для одного уже запущенного 3-channel doc04 soak собрать изолированный bundle:
+
+```bash
+./engine/research/p19/collect-doc04-evidence.sh \
+  --out-dir=/tmp/titulus-doc04-evidence \
+  --logs-dir=./logs
+```
+
+Collector берёт host-wide lock, но не запускает, не останавливает и не меняет
+affinity engine-процессов. Не запускайте второй DeckLink soak параллельно:
+на Ryzen 5 3600 все шесть physical cores уже заняты 3×2c packing.
 
 ## 9. Blink research (bench)
 
