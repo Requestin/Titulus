@@ -26,6 +26,13 @@
 > a shadow `RenderGraphStore` on the engine side. The store never feeds the
 > render pump; opt in via `?graph=1` on the channel page. 13 protocol goldens
 > covered by `engine/tests/test_protocol.cpp`.
+>
+> **Synthetic POC (PR4):** `engine/src/compositor/synthetic_snapshot.{h,cpp}`
+> + `layered_compositor.{h,cpp}` exercise the full protocol → mixer stack with
+> deterministic source bitmaps (no CEF). `engine/bench/layered_compositor_bench`
+> reports per-frame cost vs a `memcpy` baseline. Scalar mean on canonical
+> `test1` (10 layers, 1920x1080) is ~17 ms; SIMD + parallelism is the PR7 bet.
+> `BG_LAYERED_COMPOSITOR=1` production wiring is deferred to PR5.
 
 ---
 

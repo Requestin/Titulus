@@ -116,6 +116,19 @@ list(APPEND BG_HEADERS
   src/mixer/render_graph_store.h
 )
 
+# Doc02 synthetic snapshot + layered compositor orchestrator (PR4). Compiled
+# into bg_engine so the sources stay warning-clean, but production wiring is
+# deferred to PR5. The standalone CTest in engine/tests/ + the no-CEF bench in
+# engine/bench/ exercise the path in isolation.
+list(APPEND BG_SOURCES
+  src/compositor/synthetic_snapshot.cpp
+  src/compositor/layered_compositor.cpp
+)
+list(APPEND BG_HEADERS
+  src/compositor/synthetic_snapshot.h
+  src/compositor/layered_compositor.h
+)
+
 add_executable(bg_engine ${BG_SOURCES} ${BG_HEADERS})
 
 target_include_directories(bg_engine PRIVATE

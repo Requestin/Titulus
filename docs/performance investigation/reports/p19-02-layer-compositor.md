@@ -112,6 +112,42 @@ Shadow mode means the store never feeds the render pump; production still uses
 the legacy monolith. The encoder is invoked at most once per `take`, never on
 the per-frame path, and is dropped silently when bounds are exceeded.
 
+PR4 delivers the synthetic operator-aware POC: the first end-to-end exercise
+of the protocol + mixer + compositor stack with no CEF dependency. It:
+
+- adds `engine/src/compositor/synthetic_snapshot.{h,cpp}`, deterministic
+  BGRA8 source bitmaps keyed by layer id hash (so POC runs are reproducible
+  without needing live CEF snapshot capture);
+- adds `engine/src/compositor/layered_compositor.{h,cpp}`, the orchestrator
+  that turns a parsed protocol snapshot into a `MixInput` and delegates to
+  the scalar `CpuLayerMixer`, reporting per-frame nanoseconds and explicit
+  fallback reasons;
+- adds `engine/bench/layered_compositor_bench.cpp`, a no-CEF bench that
+  loads a `BGGRAPH v1` snapshot, builds the synthetic sources and reports
+  mean/min/max for the layered path vs a `memcpy` baseline;
+- adds `engine/research/p19/emit_test1_graph.mjs`, which produces a `.bgraph`
+  file from `tests/templates/test1.json` via the runtime classifier +
+  encoder, so the bench can run without a live engine.
+
+POC result on the canonical `test1` snapshot (10 layers, 1920x1080, scalar
+mixer, no SIMD, no parallelism):
+
+| Path                       | mean (us) | min   | max   |
+|----------------------------|-----------|-------|-------|
+| layered_mixer_scalar       | ~17 300   | 17.1k | 18.6k |
+| monolith_memcpy_baseline   | ~380      | 362   | 491   |
+
+The scalar mixer is ~45x slower than a single `memcpy`, which is expected for
+a per-pixel, per-layer walk with no SIMD. The Phase 18 monolith (full CEF
+raster) costs ~35-40 ms/frame for the same content; the scalar mixer at 17 ms
+is already under that ceiling without any optimisation. PR7 (AVX2 + parallel
+scanlines) targets ~2-4 ms/frame, which is the order-of-magnitude uplift
+needed for the K2 decision gate.
+
+`BG_LAYERED_COMPOSITOR=1` production wiring is intentionally deferred to PR5
+so this POC stays pure: it does not touch the engine render pump, the
+FrameRing or any consumer.
+
 ## Verification
 
 ```bash
@@ -132,3 +168,16 @@ To opt a channel into the shadow graph publisher, open the page with
 `?graph=1` (or set `window.BG_GRAPH_PUBLISH = 1` before `channel.html` boots).
 The engine logs the store telemetry via the standard `BGSTATS` channel; see
 `engine/src/mixer/render_graph_store.h` for the counter meanings.
+
+To run the synthetic layered-compositor bench:
+
+```bash
+node engine/research/p19/emit_test1_graph.mjs \
+  tests/templates/test1.json \
+  engine/research/results/p19/doc02-20260715/graph/test1.bgraph
+cd engine/bench && mkdir -p build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build .
+./layered_compositor_bench \
+  ../../research/results/p19/doc02-20260715/graph/test1.bgraph 200 1920 1080
+```

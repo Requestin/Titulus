@@ -172,6 +172,7 @@ engine/build-p15
 engine/build-p17
 engine/build-p18/
 engine/tests/build/
+engine/bench/build/
 engine/third_party/cef/
 engine/third_party/cef_*.tar.bz2
 
