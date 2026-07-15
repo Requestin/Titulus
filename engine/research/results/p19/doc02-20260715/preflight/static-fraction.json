@@ -1,9 +1,14 @@
 {
   "template": "tests/templates/test1.json",
   "classifier": "engine/research/p19/analyze_doc02_static_fraction.mjs",
-  "staticCoverage": 0,
-  "staticLayerCount": 0,
-  "dynamicLayerCount": 10,
-  "decision": "KILL_PRE_ENGINE",
-  "reason": "The animated root mask scope conservatively promotes every layer to dynamic_html. A correct two-plate compositor has no cacheable static underlay for the canonical acceptance template."
+  "analysisVersion": 2,
+  "legacyTwoPlateStaticCoverage": 0,
+  "pixelSourceLayerCount": 8,
+  "cacheableSourceLayerCount": 7,
+  "liveSourceLayerCount": 1,
+  "maskOperatorLayerCount": 2,
+  "opportunityScore": 0.966971971669479,
+  "unsupportedLayerCount": 0,
+  "decision": "PROCEED_TO_OPERATOR_GRAPH_POC",
+  "reason": "The 0% result only rejects a ready-made static underlay. Seven of eight pixel-bearing sources are reusable when transform-only and mask-only changes are represented as CPU mixer operators; only the clock requires per-frame source raster."
 }
