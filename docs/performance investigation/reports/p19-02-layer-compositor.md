@@ -68,9 +68,27 @@ legacy monolith before TAKE.
 The POC proceeds only through the corrected staged plan. Production optimization
 still requires pixel parity and a paired 3-channel uplift gate.
 
+## Implementation progress
+
+PR1 adds the pure runtime projection in `runtime/src/layerPromote.ts`. It:
+
+- preserves root/group stack order and canonical mask scopes;
+- emits cached bitmap, live HTML and mask operator nodes;
+- tracks content/property/mask dirty domains and variable dependencies;
+- rejects unsupported 3D, blend and mask operators with explicit whole-template
+  fallback reasons;
+- projects canonical `test1` as 7 cacheable sources, one live clock and two
+  supported mask operators.
+
+It does not change DOM rendering or the engine frame path.
+
 ## Verification
 
 ```bash
 node --test engine/research/p19/tests/test_doc02_static_fraction.mjs
 node engine/research/p19/analyze_doc02_static_fraction.mjs tests/templates/test1.json
+cd runtime
+npm test
+npm run typecheck
+npm run build
 ```
