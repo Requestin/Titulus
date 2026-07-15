@@ -228,7 +228,15 @@
     fitStage();
 
     // Expose for debugging in the CEF DevTools (when remote-debugging enabled).
-    window.__titulus = { client: client, stage: stage };
+    // Doc02 PR5: setLayerVisibilityFilter is the per-layer snapshot capture
+    // hook used by the engine when BG_LAYERED_COMPOSITOR=1 is active.
+    window.__titulus = {
+      client: client,
+      stage: stage,
+      setLayerVisibilityFilter: function (templateId, visibleIds) {
+        client.setLayerVisibilityFilter(templateId, visibleIds);
+      },
+    };
   })();
   </script>
 </body>

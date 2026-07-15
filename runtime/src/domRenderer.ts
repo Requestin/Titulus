@@ -104,6 +104,11 @@ export class TemplateRenderer {
   private onFrame: OnFrameFn | null = null;
   private clockTimer: number | null = null;
 
+  // Doc02 PR5: per-layer visibility filter for snapshot capture. When non-null,
+  // only layers whose id appears in the set have `display:block`; every other
+  // layer is forced to `display:none`. Cleared by passing null.
+  private layerVisibilityFilter: Set<string> | null = null;
+
   constructor(stage: HTMLElement, opts: TemplateRendererOptions = {}) {
     this.stage = stage;
     this.mode = opts.playbackMode ?? 'raf';
@@ -210,6 +215,24 @@ export class TemplateRenderer {
     this.maskScopeEls.clear();
     this.entryMaskOrigin.clear();
     if (this.root.parentNode) this.root.parentNode.removeChild(this.root);
+  }
+
+  /**
+   * Doc02 PR5: per-layer visibility override for snapshot capture. When
+   * enabled, layers not in `visibleIds` are hidden via `display:none` so the
+   * engine can raster one layer at a time through CEF OSR. Pass `null` to
+   * restore the template's own visibility. The override survives `syncTemplate`
+   * (it is re-applied on the next `applyState`); toggling it does not advance
+   * the timeline.
+   */
+  setLayerVisibilityFilter(visibleIds: ReadonlySet<string> | null): void {
+    this.layerVisibilityFilter = visibleIds ? new Set(visibleIds) : null;
+    if (this.template) this.applyState(this.frame);
+  }
+
+  /** True when a layer visibility filter is currently in effect. */
+  isLayerVisibilityFiltered(): boolean {
+    return this.layerVisibilityFilter !== null;
   }
 
   /** The template currently rendered, or null. (Used by ChannelClient for live updates.) */
@@ -589,6 +612,12 @@ export class TemplateRenderer {
     const isMask = layer.type === 'mask';
 
     this.setStyle(el, cache, 'display', layer.visible ? 'block' : 'none');
+    // Doc02 PR5: when a visibility filter is active (snapshot capture), layers
+    // outside the filter are forced to display:none regardless of their own
+    // visibility flag. The filter is owned by the host and cleared on demand.
+    if (this.layerVisibilityFilter && !this.layerVisibilityFilter.has(layer.id)) {
+      this.setStyle(el, cache, 'display', 'none');
+    }
     if (isMask) {
       this.setStyle(el, cache, 'opacity', '1');
       this.setStyle(el, cache, 'mixBlendMode', 'normal');

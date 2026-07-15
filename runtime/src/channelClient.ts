@@ -22,7 +22,6 @@ import type { Template } from './schema.js';
 import { TemplateRenderer, type TemplateRendererOptions, type OnFrameFn } from './domRenderer.js';
 import { classifyRenderGraph } from './layerPromote.js';
 import { isGraphPublishingEnabled, publishTemplateGraph } from './graphPublisher.js';
-
 export type WsStatus = 'connecting' | 'connected' | 'disconnected';
 
 /** A take/update/clear message on /ws/renderer (mirrors §7.4). */
@@ -232,4 +231,24 @@ export class ChannelClient {
 
   /** Expose current status for the page UI. */
   getStatus(): WsStatus { return this.status; }
+
+  /**
+   * Doc02 PR5: per-layer visibility filter pass-through. The engine calls this
+   * through `__titulus.setLayerVisibilityFilter` while capturing per-layer
+   * snapshots. Pass `null` for `visibleIds` to clear the filter. Pass `"*"`
+   * (or empty string) for `templateId` to apply to every active template —
+   * the engine does not know the authoring UUID a priori.
+   */
+  setLayerVisibilityFilter(templateId: string, visibleIds: string[] | null): void {
+    const apply = (a: ActiveTemplate) => {
+      a.renderer.setLayerVisibilityFilter(visibleIds ? new Set(visibleIds) : null);
+    };
+    if (!templateId || templateId === '*') {
+      for (const a of this.active.values()) apply(a);
+      return;
+    }
+    const a = this.active.get(templateId);
+    if (!a) return;
+    apply(a);
+  }
 }

@@ -34,6 +34,26 @@ void EngineClient::OnPaint(CefRefPtr<CefBrowser>, PaintElementType type,
     // Only the view surface, never popups (CasparCG html_producer.cpp:361).
     if (type != PET_VIEW) return;
 
+    // Doc02 PR5: when the live pipeline is capturing or composing, it may
+    // consume this paint instead of forwarding it to FrameRing.
+    if (live_pipeline_) {
+        const uint64_t seq = 0;  // main.cpp stamps paint_seq; pipeline uses wall seq
+        auto disposition = live_pipeline_->OnPaint(
+            static_cast<const uint8_t*>(buffer), width, height, seq);
+        using Disposition = compositor::PaintDisposition;
+        switch (disposition) {
+            case Disposition::ConsumedByCapture:
+                return;
+            case Disposition::ConsumedByCompose:
+                // Signal the pump to ComposeInto + publish. Null buffer is a
+                // sentinel understood by main.cpp::on_paint.
+                if (on_paint_) on_paint_(nullptr, 0, 0);
+                return;
+            case Disposition::ForwardToRing:
+                break;
+        }
+    }
+
     // Single BGRA memcpy on Linux — CasparCG html_producer.cpp:379-383 found the
     // tbb parallel_for unnecessary on Linux for a 1080p frame.
     const size_t bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
@@ -49,6 +69,7 @@ void EngineClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
     // Browser is up. The page will start painting once its DOM is ready and the
     // perpetual rAF heartbeat (channel.html) keeps the compositor ticking.
     browser_ = browser;
+    if (live_pipeline_) live_pipeline_->set_browser(browser);
     if (on_ready_) on_ready_(true);
 }
 

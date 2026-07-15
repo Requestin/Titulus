@@ -51,6 +51,10 @@ void print_usage() {
         "  --keyer=external|internal|fill_only\n"
         "  --decklink-direct-paint  bypass FrameRing for DeckLink (research flag)\n"
         "\n"
+        "Layered compositor (Phase 19 Doc02, default off):\n"
+        "  --layered-compositor     enable per-layer CEF snapshot + CPU mix path\n"
+        "                           (also: BG_LAYERED_COMPOSITOR=1)\n"
+        "\n"
         "Stream (--consumer=stream, Phase 5):\n"
         "  --stream-url=URL          srt://... | rtmp://...\n"
         "\n"
@@ -127,6 +131,9 @@ bool Config::Parse(int argc, char** argv) {
     if (const char* v = std::getenv("BG_DECKLINK_DIRECT_PAINT")) {
         decklink_direct_paint = std::atoi(v) != 0;
     }
+    if (const char* v = std::getenv("BG_LAYERED_COMPOSITOR")) {
+        layered_compositor = std::atoi(v) != 0;
+    }
     if (const char* v = std::getenv("BG_ENGINE_FPS"))        fps    = std::atoi(v);
     if (const char* v = std::getenv("BG_ENGINE_WIDTH"))      width  = std::atoi(v);
     if (const char* v = std::getenv("BG_ENGINE_HEIGHT"))     height = std::atoi(v);
@@ -142,6 +149,10 @@ bool Config::Parse(int argc, char** argv) {
         }
         if (std::strcmp(arg, "--decklink-direct-paint") == 0) {
             decklink_direct_paint = true;
+            continue;
+        }
+        if (std::strcmp(arg, "--layered-compositor") == 0) {
+            layered_compositor = true;
             continue;
         }
         if (match_prefix(arg, "--url",           val, i, argc, argv)) { url = val; continue; }
@@ -212,11 +223,12 @@ bool Config::Parse(int argc, char** argv) {
 }
 
 std::string Config::Describe() const {
-    char buf[512];
+    char buf[640];
     std::snprintf(buf, sizeof(buf),
-                  "name=%s %dx%d@%dfps consumer=%s direct_paint=%s cache=%s url=%s duration=%ds",
+                  "name=%s %dx%d@%dfps consumer=%s direct_paint=%s layered=%s cache=%s url=%s duration=%ds",
                   name.c_str(), width, height, fps,
                   ConsumerLabel(consumer), decklink_direct_paint ? "on" : "off",
+                  layered_compositor ? "on" : "off",
                   cache_dir.c_str(), url.c_str(), duration_sec);
     return buf;
 }

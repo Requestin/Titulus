@@ -123,10 +123,14 @@ list(APPEND BG_HEADERS
 list(APPEND BG_SOURCES
   src/compositor/synthetic_snapshot.cpp
   src/compositor/layered_compositor.cpp
+  src/compositor/layer_bitmap_cache.cpp
+  src/compositor/live_pipeline.cpp
 )
 list(APPEND BG_HEADERS
   src/compositor/synthetic_snapshot.h
   src/compositor/layered_compositor.h
+  src/compositor/layer_bitmap_cache.h
+  src/compositor/live_pipeline.h
 )
 
 add_executable(bg_engine ${BG_SOURCES} ${BG_HEADERS})
