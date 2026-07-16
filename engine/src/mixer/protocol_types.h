@@ -6,11 +6,13 @@
 //   BGGRAPH v1 <json-one-line>
 //
 // Where JSON has shape:
-//   {"type":"snapshot","rev":42,"layers":[
+//   {"type":"snapshot","template_id":"<id>","graph_rev":42,
+//    "state_rev":1001,"layers":[
 //     {"id":"<id>","kind":"cached_bitmap"|"live_html"|"mask_operator",
 //      "dirty":["content_dirty"|"props_dirty"|"mask_dirty"],
 //      "opacity":1.0,"mask_mode":"none"|"normal"|"inverted",
-//      "rect":[x,y,w,h],"x":0,"y":0,"sx":1.0,"sy":1.0,
+//      "rect":[x,y,w,h],"affects":["source-id"],"m":[a,b,c,d,e,f],
+//      "x":0,"y":0,"sx":1.0,"sy":1.0,
 //      "rot":0.0,"ax":0.0,"ay":0.0,"sw":0,"sh":0,
 //      "unsupported":["fractional_rotation"|...]
 //     }, ...]}
@@ -69,6 +71,7 @@ struct ProtocolLayerNode {
     float opacity = 1.0f;
     ProtocolMaskMode mask_mode = ProtocolMaskMode::None;
     ProtocolLayerRect mask_rect;
+    std::vector<std::string> affected_source_ids;
     ProtocolLayerRect layout_position;  // canvas-space top-left
     float scale_x = 1.0f;
     float scale_y = 1.0f;
@@ -77,11 +80,21 @@ struct ProtocolLayerNode {
     float anchor_y = 0.0f;
     int32_t source_w = 0;
     int32_t source_h = 0;
+    bool has_affine = false;
+    // Source-local -> canvas matrix [m00,m01,m02,m10,m11,m12].
+    float affine[6] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
     std::vector<ProtocolUnsupportedReason> unsupported;
 };
 
 struct ProtocolSnapshot {
-    uint64_t revision = 0;
+    // Stable authoring template id used by the production allowlist.
+    std::string template_id;
+    // Topology/content revision. A change requires selective source recapture.
+    uint64_t graph_revision = 0;
+    // Monotonic props/mask state revision inside one graph revision.
+    uint64_t state_revision = 0;
+    // Cacheable source ids whose pixels changed in this state revision.
+    std::vector<std::string> invalidated_layer_ids;
     std::vector<ProtocolLayerNode> layers;
 };
 

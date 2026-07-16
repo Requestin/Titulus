@@ -34,6 +34,9 @@ import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, t
 import { formatClock } from './clock.js';
 import { ensureFonts, collectFonts } from './fonts.js';
 import { type RenderStats, emptyRenderStats, snapshotStats } from './stats.js';
+import { buildProtocolFrameLayouts } from './renderGraphFrame.js';
+import type { ProtocolLayerLayout } from './graphProtocol.js';
+import type { RenderGraphAnalysis } from './layerPromote.js';
 
 export interface TemplateRendererOptions {
   /** fixed: caller drives tick(fixedTickRate); raf: internal rAF loop. */
@@ -57,6 +60,16 @@ interface LayerNode {
 interface GroupNode {
   el: HTMLElement;
   cache: Record<string, string>;
+}
+
+interface LayerCaptureState {
+  layerId: string;
+  padding: number;
+  captureSeq: number;
+  host: HTMLElement;
+  parent: Node;
+  nextSibling: ChildNode | null;
+  rootVisibility: string;
 }
 
 /** DOM nodes for a stack-scoped mask (маска.txt). */
@@ -99,6 +112,7 @@ export class TemplateRenderer {
   private playing = false;
   private frame = 0;                  // global playhead (frames)
   private lastFrameSampled: number | null = null;
+  private lastTimelineSample: TimelineSample | null = null;
   private rafId: number | null = null;
   private rafLastWall: number | null = null;
   private onFrame: OnFrameFn | null = null;
@@ -108,6 +122,7 @@ export class TemplateRenderer {
   // only layers whose id appears in the set have `display:block`; every other
   // layer is forced to `display:none`. Cleared by passing null.
   private layerVisibilityFilter: Set<string> | null = null;
+  private layerCapture: LayerCaptureState | null = null;
 
   constructor(stage: HTMLElement, opts: TemplateRendererOptions = {}) {
     this.stage = stage;
@@ -210,6 +225,7 @@ export class TemplateRenderer {
 
   destroy(): void {
     this.stopTimeline();
+    this.restoreLayerCapture();
     this.layerEls.clear();
     this.groupEls.clear();
     this.maskScopeEls.clear();
@@ -230,6 +246,70 @@ export class TemplateRenderer {
     if (this.template) this.applyState(this.frame);
   }
 
+  /**
+   * Move one source layer into an isolated origin-aligned capture host. Group
+   * transforms, masks and layer opacity are deliberately excluded; the engine
+   * applies those operators to the tight cached bitmap.
+   */
+  async setLayerCaptureMode(
+    layerId: string | null,
+    padding = 32,
+    captureSeq = 0,
+  ): Promise<void> {
+    if (layerId === null) {
+      this.restoreLayerCapture();
+      return;
+    }
+    if (this.layerCapture?.layerId !== layerId) {
+      this.restoreLayerCapture();
+      const node = this.layerEls.get(layerId);
+      if (!node?.el.parentNode) throw new Error(`unknown capture layer: ${layerId}`);
+      const host = document.createElement('div');
+      host.dataset.titulusCaptureHost = layerId;
+      Object.assign(host.style, {
+        position: 'absolute',
+        left: '0',
+        top: '0',
+        width: `${node.layer.transform.width + padding * 2}px`,
+        height: `${node.layer.transform.height + padding * 2}px`,
+        overflow: 'visible',
+        zIndex: '2147483647',
+        pointerEvents: 'none',
+      } as Partial<CSSStyleDeclaration>);
+      this.layerCapture = {
+        layerId,
+        padding,
+        captureSeq,
+        host,
+        parent: node.el.parentNode,
+        nextSibling: node.el.nextSibling,
+        rootVisibility: this.root.style.visibility,
+      };
+      this.root.style.visibility = 'hidden';
+      this.stage.appendChild(host);
+      for (const [part, left] of [['low', 0], ['high', 2]] as const) {
+        const marker = document.createElement('div');
+        marker.dataset.titulusCaptureMarker = part;
+        Object.assign(marker.style, {
+          position: 'absolute',
+          left: `${left}px`,
+          top: '0',
+          width: '2px',
+          height: '4px',
+          zIndex: '2147483647',
+          pointerEvents: 'none',
+        } as Partial<CSSStyleDeclaration>);
+        host.appendChild(marker);
+      }
+      host.appendChild(node.el);
+      node.cache = {};
+      if (this.template) this.applyState(this.frame);
+    }
+    this.updateCaptureMarker(captureSeq);
+    this.applyLayerCaptureOverride();
+    await this.waitForCaptureAssets(layerId);
+  }
+
   /** True when a layer visibility filter is currently in effect. */
   isLayerVisibilityFiltered(): boolean {
     return this.layerVisibilityFilter !== null;
@@ -240,6 +320,18 @@ export class TemplateRenderer {
 
   /** The variable map currently applied. */
   getVariables(): Record<string, string | number> { return this.variables; }
+
+  /** Current flattened operator state for the engine graph publisher. */
+  getProtocolFrameLayouts(
+    analysis: RenderGraphAnalysis,
+  ): Record<string, ProtocolLayerLayout> | null {
+    if (!this.template || !this.lastTimelineSample) return null;
+    return buildProtocolFrameLayouts(
+      this.template,
+      analysis,
+      this.lastTimelineSample,
+    );
+  }
 
   // -----------------------------------------------------------------------
   // DOM construction
@@ -529,6 +621,7 @@ export class TemplateRenderer {
     this.stats.textWrites = 0;
 
     const sample: TimelineSample = sampleAt(this.norm, frame);
+    this.lastTimelineSample = sample;
 
     // Fire actions crossed since the last sampled frame (cue points).
     if (this.lastFrameSampled !== null && frame > this.lastFrameSampled) {
@@ -555,6 +648,7 @@ export class TemplateRenderer {
 
     const any3d = this.templateHas3D();
     this.setStyle(this.root, this.rootCache, 'transformStyle', any3d ? 'preserve-3d' : 'flat');
+    this.applyLayerCaptureOverride();
 
     this.stats.frameTimeMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startWall;
 
@@ -589,6 +683,78 @@ export class TemplateRenderer {
     (el.style as unknown as Record<string, string>)[prop] = value;
     cache[prop] = value;
     this.stats.styleWrites += 1;
+  }
+
+  private updateCaptureMarker(captureSeq: number): void {
+    const capture = this.layerCapture;
+    if (!capture) return;
+    capture.captureSeq = captureSeq;
+    const color = (shift: number) => {
+      const value = Math.floor(captureSeq / 2 ** shift);
+      const r = value & 0xff;
+      const g = Math.floor(value / 0x100) & 0xff;
+      const b = Math.floor(value / 0x10000) & 0xff;
+      return `rgb(${r}, ${g}, ${b})`;
+    };
+    const low = capture.host.querySelector<HTMLElement>(
+      '[data-titulus-capture-marker="low"]',
+    );
+    const high = capture.host.querySelector<HTMLElement>(
+      '[data-titulus-capture-marker="high"]',
+    );
+    if (low) low.style.backgroundColor = color(0);
+    if (high) high.style.backgroundColor = color(24);
+  }
+
+  private applyLayerCaptureOverride(): void {
+    const capture = this.layerCapture;
+    if (!capture) return;
+    const node = this.layerEls.get(capture.layerId);
+    if (!node) return;
+    const { el, cache } = node;
+    this.setStyle(el, cache, 'display', 'block');
+    this.setStyle(el, cache, 'opacity', '1');
+    this.setStyle(el, cache, 'mixBlendMode', 'normal');
+    this.setStyle(el, cache, 'left', `${capture.padding}px`);
+    this.setStyle(el, cache, 'top', `${capture.padding}px`);
+    this.setStyle(el, cache, 'transformOrigin', '0px 0px');
+    this.setStyle(el, cache, 'transform', 'none');
+    this.setStyle(el, cache, 'transformStyle', 'flat');
+  }
+
+  private restoreLayerCapture(): void {
+    const capture = this.layerCapture;
+    if (!capture) return;
+    const node = this.layerEls.get(capture.layerId);
+    if (node) {
+      if (capture.nextSibling?.parentNode === capture.parent) {
+        capture.parent.insertBefore(node.el, capture.nextSibling);
+      } else {
+        capture.parent.appendChild(node.el);
+      }
+      node.cache = {};
+    }
+    capture.host.remove();
+    this.root.style.visibility = capture.rootVisibility;
+    this.layerCapture = null;
+    if (this.template) this.applyState(this.frame);
+  }
+
+  private async waitForCaptureAssets(layerId: string): Promise<void> {
+    const node = this.layerEls.get(layerId);
+    if (!node) return;
+    const fonts = document.fonts?.ready;
+    const images = [...node.el.querySelectorAll('img')].map(async (image) => {
+      if (image.complete && image.naturalWidth > 0) return;
+      try {
+        await image.decode();
+      } catch {
+        // Broken media is rendered by Chromium's normal fallback and remains
+        // a valid capture result.
+      }
+    });
+    if (fonts) await fonts;
+    await Promise.all(images);
   }
 
   private runActions(acts: import('./schema.js').TimelineAction[]): void {

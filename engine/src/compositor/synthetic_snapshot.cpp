@@ -2,6 +2,7 @@
 
 #include "synthetic_snapshot.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace bg::compositor {
@@ -66,21 +67,8 @@ SyntheticSnapshot BuildSyntheticSnapshot(const ProtocolSnapshot& snap) {
     if (out.input.canvas_width == 0) out.input.canvas_width = 1;
     if (out.input.canvas_height == 0) out.input.canvas_height = 1;
 
-    // Pending mask op carried from the most recent mask operator. The mixer
-    // applies it to whatever pixel-bearing layer comes next; this matches the
-    // render-graph semantics where masks affect their siblings.
-    std::optional<MaskOp> pending_mask;
     for (const auto& layer : snap.layers) {
-        if (layer.kind == ProtocolNodeKind::MaskOperator) {
-            MaskOp op;
-            op.mode = layer.mask_mode == ProtocolMaskMode::Inverted
-                ? MaskMode::Inverted
-                : MaskMode::Normal;
-            op.rect = {layer.mask_rect.x, layer.mask_rect.y,
-                       layer.mask_rect.width, layer.mask_rect.height};
-            pending_mask = op;
-            continue;
-        }
+        if (layer.kind == ProtocolNodeKind::MaskOperator) continue;
         LayerNode node;
         node.layout.position_x = layer.layout_position.x;
         node.layout.position_y = layer.layout_position.y;
@@ -91,10 +79,27 @@ SyntheticSnapshot BuildSyntheticSnapshot(const ProtocolSnapshot& snap) {
         node.layout.anchor_y = layer.anchor_y;
         node.layout.source_w = layer.source_w;
         node.layout.source_h = layer.source_h;
+        if (layer.has_affine) {
+            node.layout.affine = LayerAffine{
+                layer.affine[0], layer.affine[1], layer.affine[2],
+                layer.affine[3], layer.affine[4], layer.affine[5],
+            };
+        }
         node.opacity = layer.opacity;
-        if (pending_mask) {
-            node.mask = *pending_mask;
-            pending_mask.reset();
+        for (const auto& mask : snap.layers) {
+            if (mask.kind != ProtocolNodeKind::MaskOperator) continue;
+            const bool affects = std::find(
+                mask.affected_source_ids.begin(),
+                mask.affected_source_ids.end(), layer.id)
+                != mask.affected_source_ids.end();
+            if (!affects) continue;
+            MaskOp op;
+            op.mode = mask.mask_mode == ProtocolMaskMode::Inverted
+                ? MaskMode::Inverted
+                : MaskMode::Normal;
+            op.rect = {mask.mask_rect.x, mask.mask_rect.y,
+                       mask.mask_rect.width, mask.mask_rect.height};
+            node.masks.push_back(op);
         }
         std::vector<uint8_t> bitmap(
             static_cast<size_t>(layer.source_w > 0 ? layer.source_w : 1)

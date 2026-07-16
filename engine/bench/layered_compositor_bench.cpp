@@ -40,12 +40,14 @@ struct Stats {
     int64_t max_ns = 0;
     int64_t sum_ns = 0;
     int64_t count = 0;
+    std::vector<int64_t> samples;
 
     void Add(int64_t v) {
         min_ns = std::min(min_ns, v);
         max_ns = std::max(max_ns, v);
         sum_ns += v;
         ++count;
+        samples.push_back(v);
     }
 
     void Print(const char* label) const {
@@ -55,8 +57,18 @@ struct Stats {
         }
         const double mean_ns = static_cast<double>(sum_ns) / count;
         const double mean_us = mean_ns / 1000.0;
-        std::printf("  %-32s n=%-5lld mean=%7.2fus  min=%7.2fus  max=%7.2fus\n",
+        auto sorted = samples;
+        std::sort(sorted.begin(), sorted.end());
+        const auto percentile_us = [&sorted](size_t percentile) {
+            const size_t index =
+                ((sorted.size() - 1) * percentile) / 100;
+            return static_cast<double>(sorted[index]) / 1000.0;
+        };
+        std::printf(
+                    "  %-32s n=%-5lld mean=%7.2fus  p50=%7.2fus  "
+                    "p95=%7.2fus  p99=%7.2fus  min=%7.2fus  max=%7.2fus\n",
                     label, static_cast<long long>(count), mean_us,
+                    percentile_us(50), percentile_us(95), percentile_us(99),
                     static_cast<double>(min_ns) / 1000.0,
                     static_cast<double>(max_ns) / 1000.0);
     }
@@ -133,7 +145,7 @@ int main(int argc, char** argv) {
         compositor.Composite(synthetic, canvas_w, canvas_h, dst_frame.data());
     }
 
-    // Layered path: scalar mixer over cached synthetic sources.
+    // Layered path: runtime-dispatched mixer over cached synthetic sources.
     for (int i = 0; i < iterations; ++i) {
         MemsetFrame(dst_frame.data(), canvas_w, canvas_h, 0);
         const auto t0 = NowNs();
@@ -162,7 +174,7 @@ int main(int argc, char** argv) {
     }
 
     std::printf("\nResults\n");
-    layered_stats.Print("layered_mixer_scalar");
+    layered_stats.Print("layered_mixer_dispatched");
     monolith_stats.Print("monolith_memcpy_baseline");
     const double layered_mean_us =
         static_cast<double>(layered_stats.sum_ns) / layered_stats.count / 1000.0;

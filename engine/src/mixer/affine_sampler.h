@@ -14,15 +14,16 @@
 namespace bg {
 
 struct AffineMapping {
-    // Top-left source coordinate (in source pixels) for the destination pixel
-    // (0, 0) of the layer's bounding box.
-    float src_origin_x = 0.0f;
-    float src_origin_y = 0.0f;
-    // Forward affine coefficients mapping destination dx,dy -> source sx,sy.
-    float a = 1.0f;  // dx coefficient on x
-    float b = 0.0f;  // dy coefficient on x
-    float c = 0.0f;  // dx coefficient on y
-    float d = 1.0f;  // dy coefficient on y
+    // Inverse affine coefficients mapping canvas pixel centers to source pixel
+    // centers. Sample source coordinates as:
+    //   sx = inv00*(x+.5) + inv01*(y+.5) + inv02
+    //   sy = inv10*(x+.5) + inv11*(y+.5) + inv12
+    float inv00 = 1.0f;
+    float inv01 = 0.0f;
+    float inv02 = 0.0f;
+    float inv10 = 0.0f;
+    float inv11 = 1.0f;
+    float inv12 = 0.0f;
     // Destination bounding box on the canvas.
     int32_t dest_x = 0;
     int32_t dest_y = 0;
@@ -31,8 +32,8 @@ struct AffineMapping {
     bool supported = true;
 };
 
-// Build the affine mapping for one layer layout. Returns `supported=false` for
-// configurations the scalar mixer cannot represent exactly.
+// Build the affine mapping for one layer layout. Arbitrary finite 2D rotations
+// are supported. Returns `supported=false` for singular/non-finite transforms.
 AffineMapping BuildAffineMapping(const LayerLayout& layout);
 
 // Sample one BGRA8 pixel via nearest-neighbour. Returns false when the source

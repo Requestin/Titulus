@@ -5,10 +5,13 @@
 #include "protocol_limits.h"
 
 #include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 
 namespace bg {
 
@@ -198,6 +201,12 @@ class Reader {
 bool ReadInt32(Reader& r, int32_t& out) {
     double v = 0;
     if (!r.ReadNumber(v)) return false;
+    if (!std::isfinite(v) || std::trunc(v) != v
+        || v < std::numeric_limits<int32_t>::min()
+        || v > std::numeric_limits<int32_t>::max()) {
+        r.Fail("int32 range");
+        return false;
+    }
     out = static_cast<int32_t>(v);
     return true;
 }
@@ -205,6 +214,11 @@ bool ReadInt32(Reader& r, int32_t& out) {
 bool ReadFloat(Reader& r, float& out) {
     double v = 0;
     if (!r.ReadNumber(v)) return false;
+    if (!std::isfinite(v)
+        || std::abs(v) > std::numeric_limits<float>::max()) {
+        r.Fail("float range");
+        return false;
+    }
     out = static_cast<float>(v);
     return true;
 }
@@ -235,6 +249,25 @@ bool ReadRect(Reader& r, ProtocolLayerRect& out) {
     return true;
 }
 
+bool ReadAffine(Reader& r, float out[6]) {
+    if (!r.Consume('[')) {
+        r.Fail("affine array open");
+        return false;
+    }
+    for (int i = 0; i < 6; ++i) {
+        if (!ReadFloat(r, out[i])) return false;
+        if (i + 1 < 6 && !r.Consume(',')) {
+            r.Fail("affine comma");
+            return false;
+        }
+    }
+    if (!r.Consume(']')) {
+        r.Fail("affine array close");
+        return false;
+    }
+    return true;
+}
+
 bool ReadStringArray(Reader& r, std::vector<std::string>& out) {
     if (!r.Consume('[')) {
         r.Fail("array open");
@@ -262,6 +295,7 @@ bool ReadLayerNode(Reader& r, ProtocolLayerNode& node) {
     }
     bool seen_id = false;
     bool seen_kind = false;
+    std::unordered_set<std::string> seen_keys;
     r.SkipWs();
     if (r.Consume('}')) {
         r.Fail("empty layer");
@@ -270,6 +304,10 @@ bool ReadLayerNode(Reader& r, ProtocolLayerNode& node) {
     for (;;) {
         std::string key;
         if (!r.ReadString(key)) return false;
+        if (!seen_keys.insert(key).second) {
+            r.Fail("duplicate layer key");
+            return false;
+        }
         if (!r.Consume(':')) {
             r.Fail("layer colon");
             return false;
@@ -321,6 +359,11 @@ bool ReadLayerNode(Reader& r, ProtocolLayerNode& node) {
             }
         } else if (key == "rect") {
             if (!ReadRect(r, node.mask_rect)) return false;
+        } else if (key == "affects") {
+            if (!ReadStringArray(r, node.affected_source_ids)) return false;
+        } else if (key == "m") {
+            if (!ReadAffine(r, node.affine)) return false;
+            node.has_affine = true;
         } else if (key == "x") {
             if (!ReadInt32(r, node.layout_position.x)) return false;
         } else if (key == "y") {
@@ -405,8 +448,12 @@ bool ReadLayerArray(Reader& r, std::vector<ProtocolLayerNode>& out) {
 bool ReadUint64(Reader& r, uint64_t& out) {
     double v = 0;
     if (!r.ReadNumber(v)) return false;
-    if (v < 0) {
-        r.Fail("negative revision");
+    // JSON numbers are emitted by JavaScript and are exact only through
+    // Number.MAX_SAFE_INTEGER.
+    constexpr double kMaxSafeInteger = 9007199254740991.0;
+    if (!std::isfinite(v) || v < 0 || std::trunc(v) != v
+        || v > kMaxSafeInteger) {
+        r.Fail("invalid revision");
         return false;
     }
     out = static_cast<uint64_t>(v);
@@ -414,13 +461,22 @@ bool ReadUint64(Reader& r, uint64_t& out) {
 }
 
 bool CheckBounds(const ProtocolSnapshot& s, std::string& detail) {
+    if (s.template_id.size() > protocol::kMaxTemplateIdBytes) {
+        detail = "template id length";
+        return false;
+    }
     if (s.layers.size() > protocol::kMaxLayers) {
         detail = "layer count";
         return false;
     }
+    std::unordered_set<std::string> ids;
     for (const auto& layer : s.layers) {
         if (layer.id.size() > protocol::kMaxLayerIdBytes) {
             detail = "layer id length";
+            return false;
+        }
+        if (layer.id.empty() || !ids.insert(layer.id).second) {
+            detail = "empty/duplicate layer id";
             return false;
         }
         if (layer.dirty.size() > protocol::kMaxDirtyDomainsPerLayer) {
@@ -430,6 +486,17 @@ bool CheckBounds(const ProtocolSnapshot& s, std::string& detail) {
         if (layer.unsupported.size() > protocol::kMaxUnsupportedReasonsPerLayer) {
             detail = "unsupported reason count";
             return false;
+        }
+        if (layer.affected_source_ids.size()
+            > protocol::kMaxAffectedSourcesPerMask) {
+            detail = "affected source count";
+            return false;
+        }
+        for (const auto& id : layer.affected_source_ids) {
+            if (id.empty() || id.size() > protocol::kMaxLayerIdBytes) {
+                detail = "affected source id length";
+                return false;
+            }
         }
         const auto extent_ok = [](int32_t v) {
             return v >= -protocol::kMaxLayerExtent
@@ -445,6 +512,57 @@ bool CheckBounds(const ProtocolSnapshot& s, std::string& detail) {
             !extent_ok(layer.source_h)) {
             detail = "extent";
             return false;
+        }
+        if (!std::isfinite(layer.opacity) || layer.opacity < 0.0f
+            || layer.opacity > 1.0f || !std::isfinite(layer.scale_x)
+            || !std::isfinite(layer.scale_y)
+            || !std::isfinite(layer.rotation_deg)
+            || !std::isfinite(layer.anchor_x)
+            || !std::isfinite(layer.anchor_y)) {
+            detail = "non-finite/range";
+            return false;
+        }
+        if (layer.kind != ProtocolNodeKind::MaskOperator
+            && (layer.source_w <= 0 || layer.source_h <= 0
+                || layer.scale_x <= 0.0f || layer.scale_y <= 0.0f)) {
+            detail = "source dimensions/scale";
+            return false;
+        }
+        if (layer.has_affine) {
+            for (const float coefficient : layer.affine) {
+                if (!std::isfinite(coefficient)
+                    || std::abs(coefficient) > protocol::kMaxLayerExtent) {
+                    detail = "affine";
+                    return false;
+                }
+            }
+            const float det = layer.affine[0] * layer.affine[4]
+                - layer.affine[1] * layer.affine[3];
+            if (!std::isfinite(det)
+                || std::abs(det) <= std::numeric_limits<float>::epsilon()) {
+                detail = "singular affine";
+                return false;
+            }
+        }
+    }
+    if (s.invalidated_layer_ids.size() > protocol::kMaxLayers) {
+        detail = "invalidate count";
+        return false;
+    }
+    std::unordered_set<std::string> invalidated;
+    for (const auto& id : s.invalidated_layer_ids) {
+        if (id.empty() || id.size() > protocol::kMaxLayerIdBytes
+            || !ids.contains(id) || !invalidated.insert(id).second) {
+            detail = "invalid invalidate id";
+            return false;
+        }
+    }
+    for (const auto& layer : s.layers) {
+        for (const auto& affected : layer.affected_source_ids) {
+            if (!ids.contains(affected)) {
+                detail = "unknown affected source";
+                return false;
+            }
         }
     }
     return true;
@@ -471,8 +589,10 @@ GraphParseResult ParseGraphMessage(std::string_view line) {
         return res;
     }
     bool seen_type = false;
-    bool seen_rev = false;
+    bool seen_graph_rev = false;
+    bool seen_state_rev = false;
     bool seen_layers = false;
+    std::unordered_set<std::string> seen_keys;
     ProtocolSnapshot snap;
     r.SkipWs();
     if (r.Consume('}')) {
@@ -485,6 +605,11 @@ GraphParseResult ParseGraphMessage(std::string_view line) {
         if (!r.ReadString(key)) {
             res.status = GraphParseStatus::MalformedJson;
             res.error_detail = "object key";
+            return res;
+        }
+        if (!seen_keys.insert(key).second) {
+            res.status = GraphParseStatus::MalformedJson;
+            res.error_detail = "duplicate object key";
             return res;
         }
         if (!r.Consume(':')) {
@@ -505,13 +630,34 @@ GraphParseResult ParseGraphMessage(std::string_view line) {
                 return res;
             }
             seen_type = true;
-        } else if (key == "rev") {
-            if (!ReadUint64(r, snap.revision)) {
+        } else if (key == "template_id") {
+            if (!r.ReadString(snap.template_id)) {
                 res.status = GraphParseStatus::MalformedJson;
-                res.error_detail = "rev value";
+                res.error_detail = "template_id";
                 return res;
             }
-            seen_rev = true;
+        } else if (key == "graph_rev" || key == "rev") {
+            if (seen_graph_rev
+                || !ReadUint64(r, snap.graph_revision)) {
+                res.status = GraphParseStatus::MalformedJson;
+                res.error_detail = "graph_rev value/duplicate";
+                return res;
+            }
+            seen_graph_rev = true;
+        } else if (key == "state_rev") {
+            if (seen_state_rev
+                || !ReadUint64(r, snap.state_revision)) {
+                res.status = GraphParseStatus::MalformedJson;
+                res.error_detail = "state_rev value/duplicate";
+                return res;
+            }
+            seen_state_rev = true;
+        } else if (key == "invalidate") {
+            if (!ReadStringArray(r, snap.invalidated_layer_ids)) {
+                res.status = GraphParseStatus::MalformedJson;
+                res.error_detail = "invalidate";
+                return res;
+            }
         } else if (key == "layers") {
             if (!ReadLayerArray(r, snap.layers)) {
                 res.status = GraphParseStatus::MalformedJson;
@@ -536,9 +682,9 @@ GraphParseResult ParseGraphMessage(std::string_view line) {
         res.error_detail = r.ErrorContext();
         return res;
     }
-    if (!(seen_type && seen_rev && seen_layers)) {
+    if (!(seen_type && seen_graph_rev && seen_layers)) {
         res.status = GraphParseStatus::MissingRequiredField;
-        res.error_detail = "type/rev/layers";
+        res.error_detail = "type/graph_rev/layers";
         return res;
     }
     std::string detail;

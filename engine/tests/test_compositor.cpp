@@ -72,7 +72,7 @@ TEST(SyntheticSnapshotBakesPixelBearingLayers) {
     CHECK(s.input.layers.size() == 1, "expected one pixel layer");
     CHECK(s.input.layers[0].buffer.width == 4, "buffer width mismatch");
     CHECK(s.input.layers[0].buffer.height == 4, "buffer height mismatch");
-    CHECK(!s.input.layers[0].mask.has_value(), "no mask expected");
+    CHECK(s.input.layers[0].masks.empty(), "no mask expected");
 }
 
 TEST(SyntheticSnapshotSkipsMaskOperatorAndAppliesToNextLayer) {
@@ -82,6 +82,7 @@ TEST(SyntheticSnapshotSkipsMaskOperatorAndAppliesToNextLayer) {
     snap.layers.back().kind = bg::ProtocolNodeKind::MaskOperator;
     snap.layers.back().mask_mode = bg::ProtocolMaskMode::Inverted;
     snap.layers.back().mask_rect = {0, 0, 2, 2};
+    snap.layers.back().affected_source_ids = {"a"};
     snap.layers.push_back({});
     snap.layers.back().id = "a";
     snap.layers.back().kind = bg::ProtocolNodeKind::CachedBitmap;
@@ -89,13 +90,15 @@ TEST(SyntheticSnapshotSkipsMaskOperatorAndAppliesToNextLayer) {
     snap.layers.back().source_h = 4;
     auto s = bg::compositor::BuildSyntheticSnapshot(snap);
     CHECK(s.input.layers.size() == 1, "mask operator should not emit a layer");
-    CHECK(s.input.layers[0].mask.has_value(), "mask op should attach to next layer");
-    CHECK(s.input.layers[0].mask->mode == bg::MaskMode::Inverted,
+    CHECK(s.input.layers[0].masks.size() == 1,
+          "mask op should attach to next layer");
+    CHECK(s.input.layers[0].masks[0].mode == bg::MaskMode::Inverted,
           "mask mode mismatch");
-    CHECK(s.input.layers[0].mask->rect.width == 2, "mask rect width mismatch");
+    CHECK(s.input.layers[0].masks[0].rect.width == 2,
+          "mask rect width mismatch");
 }
 
-TEST(LayeredCompositorFallsBackOnUnsupportedLayout) {
+TEST(LayeredCompositorSupportsFractionalRotation) {
     bg::ProtocolSnapshot snap;
     snap.layers.push_back({});
     snap.layers.back().id = "a";
@@ -105,10 +108,10 @@ TEST(LayeredCompositorFallsBackOnUnsupportedLayout) {
     snap.layers.back().rotation_deg = 17.5f;
     auto s = bg::compositor::BuildSyntheticSnapshot(snap);
     bg::compositor::LayeredCompositor c;
-    std::vector<uint8_t> dst(8 * 4, 0);
-    auto res = c.Composite(s, 8, 1, dst.data());
-    CHECK(!res.ok, "fractional rotation should fall back");
-    CHECK(!res.fallback_reasons.empty(), "fallback reasons should be populated");
+    std::vector<uint8_t> dst(8 * 8 * 4, 0);
+    auto res = c.Composite(s, 8, 8, dst.data());
+    CHECK(res.ok, "fractional rotation should be supported");
+    CHECK(res.fallback_reasons.empty(), "unexpected fallback reasons");
 }
 
 TEST(LayeredCompositorProducesNonZeroOutputForOpaqueSource) {

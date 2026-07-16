@@ -111,6 +111,23 @@ function animatedProperties(template: Template): AnimationMaps {
   return { layers, groups };
 }
 
+function hasInvalidAnimatedScale(
+  template: Template,
+  id: string,
+  target: 'layers' | 'groups',
+): boolean {
+  for (const keyframe of template.timeline.keyframes) {
+    const props = keyframe[target][id];
+    if (!props) continue;
+    for (const value of [props.scaleX, props.scaleY]) {
+      if (value !== undefined && (!Number.isFinite(value) || value <= 0)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function expandEntries(
   entries: RootStackEntry[],
   groupStacks: Template['groupStacks'],
@@ -137,9 +154,19 @@ function sourceArea(layer: Layer): number {
   return Math.max(0, width) * Math.max(0, height);
 }
 
-function layerOperatorSupport(layer: Layer, animatedProps: string[]): OperatorSupport {
+function layerOperatorSupport(
+  layer: Layer,
+  animatedProps: string[],
+  invalidAnimatedScale: boolean,
+): OperatorSupport {
   const reasons: string[] = [];
   if (layer.blendMode !== 'normal') reasons.push(`blend_mode:${layer.blendMode}`);
+  if (!Number.isFinite(layer.transform.scaleX)
+      || !Number.isFinite(layer.transform.scaleY)
+      || layer.transform.scaleX <= 0 || layer.transform.scaleY <= 0
+      || invalidAnimatedScale) {
+    reasons.push('non_positive_scale');
+  }
   const has3dState = layer.transform.rotationX !== 0 || layer.transform.rotationY !== 0;
   const has3dAnimation = animatedProps.includes('rotationX')
     || animatedProps.includes('rotationY')
@@ -152,12 +179,26 @@ function layerOperatorSupport(layer: Layer, animatedProps: string[]): OperatorSu
     if (layer.transform.rotation !== 0 || animatedProps.includes('rotation')) {
       reasons.push('rotated_mask');
     }
+  } else if (animatedProps.includes('width') || animatedProps.includes('height')) {
+    // Source extent changes alter text layout/object-fit/raster content. The
+    // current cache protocol recaptures on update, not every timeline tick.
+    reasons.push('animated_source_extent');
   }
   return { supported: reasons.length === 0, reasons };
 }
 
-function groupOperatorSupport(group: LayerGroup, animatedProps: string[]): OperatorSupport {
+function groupOperatorSupport(
+  group: LayerGroup,
+  animatedProps: string[],
+  invalidAnimatedScale: boolean,
+): OperatorSupport {
   const reasons: string[] = [];
+  if (!Number.isFinite(group.transform.scaleX)
+      || !Number.isFinite(group.transform.scaleY)
+      || group.transform.scaleX <= 0 || group.transform.scaleY <= 0
+      || invalidAnimatedScale) {
+    reasons.push('non_positive_scale');
+  }
   const has3dState = group.transform.rotationX !== 0 || group.transform.rotationY !== 0;
   const has3dAnimation = animatedProps.includes('rotationX')
     || animatedProps.includes('rotationY')
@@ -181,6 +222,7 @@ function makeMaskScopes(
 /** Build the immutable operator-aware graph projection for one template. */
 export function classifyRenderGraph(template: Template): RenderGraphAnalysis {
   const layerById = new Map(template.layers.map((layer) => [layer.id, layer]));
+  const groupById = new Map(template.groups.map((group) => [group.id, group]));
   const animation = animatedProperties(template);
   const maskScopes = makeMaskScopes(template, layerById);
   const maskScopeById = new Map(maskScopes.map((scope) => [scope.maskLayerId, scope]));
@@ -199,7 +241,11 @@ export function classifyRenderGraph(template: Template): RenderGraphAnalysis {
   const unsupportedGroupIds: string[] = [];
   for (const group of template.groups) {
     const animatedProps = [...(animation.groups.get(group.id) ?? [])].sort();
-    const operatorSupport = groupOperatorSupport(group, animatedProps);
+    const operatorSupport = groupOperatorSupport(
+      group,
+      animatedProps,
+      hasInvalidAnimatedScale(template, group.id, 'groups'),
+    );
     if (!operatorSupport.supported) unsupportedGroupIds.push(group.id);
     groups[group.id] = {
       animatedProps,
@@ -219,7 +265,27 @@ export function classifyRenderGraph(template: Template): RenderGraphAnalysis {
 
   for (const layer of template.layers) {
     const animatedProps = [...(animation.layers.get(layer.id) ?? [])].sort();
-    const operatorSupport = layerOperatorSupport(layer, animatedProps);
+    const operatorSupport = layerOperatorSupport(
+      layer,
+      animatedProps,
+      hasInvalidAnimatedScale(template, layer.id, 'layers'),
+    );
+    if (layer.type === 'mask') {
+      const seen = new Set<string>();
+      let groupId = layer.groupId;
+      while (groupId && !seen.has(groupId)) {
+        seen.add(groupId);
+        const group = groupById.get(groupId);
+        if (!group) break;
+        const groupAnimated = animation.groups.get(groupId);
+        if (group.transform.rotation !== 0 || groupAnimated?.has('rotation')) {
+          operatorSupport.reasons.push('rotated_mask_ancestor');
+          operatorSupport.supported = false;
+          break;
+        }
+        groupId = group.parentId;
+      }
+    }
     if (!operatorSupport.supported) unsupportedLayerIds.push(layer.id);
 
     if (layer.type === 'mask') {

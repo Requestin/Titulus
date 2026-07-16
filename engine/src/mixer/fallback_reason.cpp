@@ -17,6 +17,12 @@ const char* FallbackReasonLabel(FallbackReason reason) {
             return "non_rect_mask_shape";
         case FallbackReason::OversizedLayer:
             return "oversized_layer";
+        case FallbackReason::InvalidBuffer:
+            return "invalid_buffer";
+        case FallbackReason::NonFiniteTransform:
+            return "non_finite_transform";
+        case FallbackReason::SingularTransform:
+            return "singular_transform";
     }
     return "unknown";
 }

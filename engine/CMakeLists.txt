@@ -89,6 +89,7 @@ list(APPEND BG_SOURCES
 # PRs. The standalone CTest in engine/tests/ covers the goldens.
 list(APPEND BG_SOURCES
   src/mixer/cpu_layer_mixer.cpp
+  src/mixer/simd_blend.cpp
   src/mixer/affine_sampler.cpp
   src/mixer/mask_ops.cpp
   src/mixer/mixer_buffer_pool.cpp

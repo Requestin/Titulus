@@ -2,6 +2,8 @@
 
 #include "mask_ops.h"
 
+#include <cstdint>
+
 namespace bg {
 
 bool IsMaskSupported(const MaskOp& mask) {
@@ -11,10 +13,15 @@ bool IsMaskSupported(const MaskOp& mask) {
 }
 
 bool PixelSurvivesMask(const MaskOp& mask, int32_t x, int32_t y) {
-    const bool inside = x >= mask.rect.x
-        && x < mask.rect.x + mask.rect.width
-        && y >= mask.rect.y
-        && y < mask.rect.y + mask.rect.height;
+    const int64_t right =
+        static_cast<int64_t>(mask.rect.x) + mask.rect.width;
+    const int64_t bottom =
+        static_cast<int64_t>(mask.rect.y) + mask.rect.height;
+    const bool inside = mask.rect.width > 0 && mask.rect.height > 0
+        && static_cast<int64_t>(x) >= mask.rect.x
+        && static_cast<int64_t>(x) < right
+        && static_cast<int64_t>(y) >= mask.rect.y
+        && static_cast<int64_t>(y) < bottom;
     return mask.mode == MaskMode::Normal ? inside : !inside;
 }
 

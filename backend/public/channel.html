@@ -170,7 +170,7 @@
     // refresh requests delivers blank buffers (black flicker on SDI).
     var beacon = document.createElement('div');
     beacon.style.cssText =
-      'position:fixed;left:0;top:0;width:1px;height:1px;' +
+      'position:fixed;right:0;bottom:0;width:1px;height:1px;' +
       'pointer-events:none;z-index:2147483647;';
     document.body.appendChild(beacon);
 
@@ -235,6 +235,9 @@
       stage: stage,
       setLayerVisibilityFilter: function (templateId, visibleIds) {
         client.setLayerVisibilityFilter(templateId, visibleIds);
+      },
+      setLayerCaptureMode: function (templateId, layerId, padding, captureSeq) {
+        return client.setLayerCaptureMode(templateId, layerId, padding, captureSeq);
       },
     };
   })();

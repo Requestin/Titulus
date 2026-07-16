@@ -23,6 +23,7 @@
 #include "frame_ring.h"
 #include "message_pump.h"
 #include "mixer/render_graph_store.h"
+#include "paint_sequence_tracker.h"
 #include "compositor/live_pipeline.h"
 #include "stats.h"
 
@@ -86,6 +87,7 @@ std::string ts() {
 // own BG_LOG(severity) macro (cef_logging.h).
 void BG_LOG(const std::string& msg) {
     std::printf("[%s bg_engine] %s\n", ts().c_str(), msg.c_str());
+    std::fflush(stdout);
 }
 
 bg::Config cfg;
@@ -105,23 +107,114 @@ bool have_last_paint = false;
 std::vector<uint8_t> compose_buf;
 bg::compositor::LivePipeline* g_live_pipeline = nullptr;
 
+const char* PipelineModeLabel(bg::compositor::PipelineMode mode) {
+    using Mode = bg::compositor::PipelineMode;
+    switch (mode) {
+        case Mode::Disabled: return "disabled";
+        case Mode::Capturing: return "capturing";
+        case Mode::Composing: return "composing";
+        case Mode::FallbackMonolith: return "fallback";
+    }
+    return "unknown";
+}
+
+std::vector<std::string> LayeredTemplateAllowlist() {
+    const char* raw = std::getenv("BG_LAYERED_COMPOSITOR_ALLOWLIST");
+    if (!raw || *raw == '\0') return {};
+    std::vector<std::string> ids;
+    std::string value(raw);
+    size_t begin = 0;
+    while (begin <= value.size()) {
+        const size_t comma = value.find(',', begin);
+        const size_t end =
+            comma == std::string::npos ? value.size() : comma;
+        size_t left = begin;
+        size_t right = end;
+        while (left < right
+               && (value[left] == ' ' || value[left] == '\t')) {
+            ++left;
+        }
+        while (right > left
+               && (value[right - 1] == ' ' || value[right - 1] == '\t')) {
+            --right;
+        }
+        if (left < right) ids.emplace_back(value.substr(left, right - left));
+        if (comma == std::string::npos) break;
+        begin = comma + 1;
+    }
+    return ids;
+}
+
+void LogLayeredStats() {
+    if (!g_live_pipeline || !g_live_pipeline->enabled()) return;
+    const auto& layered = g_live_pipeline->stats();
+    BG_LOG(
+        "layered_stats mode="
+        + std::string(PipelineModeLabel(g_live_pipeline->mode()))
+        + " composed=" + std::to_string(layered.composed_frames)
+        + " capture_passes=" + std::to_string(layered.capture_passes)
+        + " capture_ready=" + std::to_string(layered.capture_ready_acks)
+        + " capture_failures=" + std::to_string(layered.capture_failures)
+        + " live_reuse=" + std::to_string(layered.reused_live_frames)
+        + " live_regions=" + std::to_string(layered.live_region_updates)
+        + " live_region_bytes=" + std::to_string(layered.live_region_bytes)
+        + " live_full_bytes=" + std::to_string(layered.live_full_bytes)
+        + " incremental_frames=" + std::to_string(
+            layered.incremental_frames)
+        + " incremental_regions=" + std::to_string(
+            layered.incremental_tiles)
+        + " full_composes=" + std::to_string(layered.full_composes)
+        + " fallback=" + std::to_string(layered.fallback_frames)
+        + " cache_bytes=" + std::to_string(layered.cache_bytes)
+        + " compose_us=" + std::to_string(layered.last_compose_ns / 1000)
+        + " compose_p50_us=" + std::to_string(
+            g_live_pipeline->ComposeLatencyPercentileUs(50))
+        + " compose_p95_us=" + std::to_string(
+            g_live_pipeline->ComposeLatencyPercentileUs(95))
+        + " compose_p99_us=" + std::to_string(
+            g_live_pipeline->ComposeLatencyPercentileUs(99))
+        + " reason=" + (layered.last_fallback_reason.empty()
+            ? "none" : layered.last_fallback_reason));
+}
+
 // Publish a composed frame into the FrameRing and bump paint_seq. Returns true
 // when a frame was published.
 bool TryPublishComposedFrame() {
     if (!g_live_pipeline || !g_live_pipeline->PrefersComposedOutput()) return false;
-    if (compose_buf.empty()) return false;
-    if (!g_live_pipeline->ComposeInto(compose_buf.data(), cfg.width, cfg.height)) {
-        return false;
-    }
     if (cfg.decklink_direct_paint && consumer &&
         browser_ready.load(std::memory_order_acquire)) {
+        if (compose_buf.empty()
+            || !g_live_pipeline->ComposeIncrementalInto(
+                compose_buf.data(), cfg.width, cfg.height)) {
+            return false;
+        }
         const uint64_t seq = paint_seq.fetch_add(1, std::memory_order_release) + 1;
         const bg::Frame frame{compose_buf.data(), cfg.width, cfg.height, seq};
         consumer->OnFrame(frame);
         return true;
     }
-    ring.Copy(compose_buf.data(), cfg.width, cfg.height);
+    if (!ring.UpdateLatest(cfg.width, cfg.height, [](uint8_t* destination) {
+            return g_live_pipeline->ComposeIncrementalInto(
+                destination, cfg.width, cfg.height);
+        })) {
+        return false;
+    }
     paint_seq.fetch_add(1, std::memory_order_release);
+    return true;
+}
+
+// Hold the last verified live bitmap when CEF misses a requested paint deadline.
+// This preserves output cadence, but deliberately does not count as fresh CEF
+// activity for the paint watchdog.
+bool TryPublishReusableLiveFrameAfterMiss(uint64_t observed_seq) {
+    if (!browser_ready.load(std::memory_order_acquire)
+        || observed_seq != last_delivered_seq
+        || !g_live_pipeline
+        || !g_live_pipeline->HasReusableLiveFrame()
+        || !TryPublishComposedFrame()) {
+        return false;
+    }
+    g_live_pipeline->RecordReusedLiveFrame();
     return true;
 }
 
@@ -237,9 +330,15 @@ int main(int argc, char** argv) {
     // to the legacy monolith automatically.
     bg::compositor::LivePipeline live_pipeline;
     live_pipeline.Attach(&graph_store, cfg.width, cfg.height);
+    auto layered_allowlist = LayeredTemplateAllowlist();
+    const size_t layered_allowlist_size = layered_allowlist.size();
+    live_pipeline.set_template_allowlist(std::move(layered_allowlist));
     live_pipeline.set_enabled(cfg.layered_compositor);
     if (cfg.layered_compositor) {
-        compose_buf.assign(static_cast<size_t>(cfg.width) * cfg.height * 4, 0);
+        if (cfg.decklink_direct_paint) {
+            compose_buf.assign(
+                static_cast<size_t>(cfg.width) * cfg.height * 4, 0);
+        }
         g_live_pipeline = &live_pipeline;
         client->set_live_pipeline(&live_pipeline);
         // Graph publishing must be on so the store receives BGGRAPH snapshots.
@@ -248,6 +347,11 @@ int main(int argc, char** argv) {
             BG_LOG("layered compositor: appended graph=1 to url");
         }
         BG_LOG("layered compositor ENABLED (BG_LAYERED_COMPOSITOR=1)");
+        BG_LOG(
+            "layered compositor allowlist="
+            + (layered_allowlist_size == 0
+                ? std::string("unrestricted_research")
+                : std::to_string(layered_allowlist_size)));
     }
 
     CefWindowInfo window_info;
@@ -280,6 +384,12 @@ int main(int argc, char** argv) {
     // to the capturer's RequestRefreshFrame and floods it into delivering
     // blank buffers (black flicker on air, Phase 10.5 regression).
     auto last_any_paint = std::chrono::steady_clock::now();
+    bg::PaintSequenceTracker cef_paint_tracker(client->cef_paint_seq());
+    const auto observe_cef_paint_activity = [&] {
+        if (cef_paint_tracker.Observe(client->cef_paint_seq())) {
+            last_any_paint = std::chrono::steady_clock::now();
+        }
+    };
 
     // Phase 11.2: consumers with a hardware clock (DeckLink genlock +
     // scheduled playback) drive the pump directly instead of the engine
@@ -353,6 +463,9 @@ int main(int argc, char** argv) {
                     std::this_thread::sleep_for(slice);
                 }
 
+                observe_cef_paint_activity();
+                TryPublishReusableLiveFrameAfterMiss(
+                    paint_seq.load(std::memory_order_acquire));
                 const uint64_t cur_seq = paint_seq.load(std::memory_order_acquire);
                 const bool got_new_paint = cur_seq != last_delivered_seq;
                 auto delivery_time = std::chrono::steady_clock::now();
@@ -373,7 +486,6 @@ int main(int argc, char** argv) {
                     stats.RecordFrame(interval_us, expected_us);
                     last_paint_time = delivery_time;
                     have_last_paint = true;
-                    last_any_paint = delivery_time;
                 }
 
                 if (frame_log && frame_log->enabled()) {
@@ -419,6 +531,7 @@ int main(int argc, char** argv) {
                 elapsed_s >= last_stats_report + static_cast<uint64_t>(cfg.stats_interval_sec)) {
                 last_stats_report = elapsed_s;
                 BG_LOG(stats.Progress());
+                LogLayeredStats();
             }
 
             if (cfg.duration_sec > 0 && elapsed_s >= static_cast<uint64_t>(cfg.duration_sec)) {
@@ -495,6 +608,7 @@ int main(int argc, char** argv) {
         const int64_t sleep_us = pump.Tick(/*out_painted=*/false);
         uint64_t pump_active_us = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - pump_tick_t0).count();
+        observe_cef_paint_activity();
 
         // Deliver the latest painted frame to the consumer, but only when a new
         // OnPaint actually arrived (avoid double-counting / re-delivering).
@@ -524,7 +638,6 @@ int main(int argc, char** argv) {
             stats.RecordFrame(interval_us, expected_us);
             last_paint_time = delivery_time;
             have_last_paint = true;
-            last_any_paint = delivery_time;
         }
 
         // Paint watchdog: the channel.html damage beacon keeps OnPaint alive at
@@ -548,6 +661,7 @@ int main(int argc, char** argv) {
             elapsed_s >= last_stats_report + static_cast<uint64_t>(cfg.stats_interval_sec)) {
             last_stats_report = elapsed_s;
             BG_LOG(stats.Progress());
+            LogLayeredStats();
         }
 
         // Duration cap (0 = infinite).
@@ -581,18 +695,26 @@ int main(int argc, char** argv) {
                 std::chrono::steady_clock::now() - slice_t0).count();
             remaining_us -= slice_us;
         }
+        observe_cef_paint_activity();
 
         // Re-sample paint_seq after the sleep window so paint_seq_delta
         // includes paints that landed during the remaining_us slices (the
         // probe's whole point — did the second BeginFrame produce a second
-        // OnPaint within one field period?). Only under pipeline_probe do we
-        // also deliver a late paint here — the default path keeps the
-        // pre-Phase-18 behaviour (deliver on the next tick).
-        const uint64_t seq_after_sleep = paint_seq.load(std::memory_order_acquire);
+        // OnPaint within one field period?). The default path still defers a
+        // late fresh paint to the next tick, but publishes a verified hold-last
+        // frame when no CEF paint arrived at all.
+        uint64_t seq_after_sleep = paint_seq.load(std::memory_order_acquire);
         const int paint_seq_delta_final = static_cast<int>(
             seq_after_sleep >= seq_at_tick_start ? seq_after_sleep - seq_at_tick_start : 0);
-        if (pipeline_probe && browser_ready.load(std::memory_order_acquire) &&
-            seq_after_sleep != last_delivered_seq) {
+        const bool reused_live_frame =
+            !got_new_paint && !pipeline_probe
+            && TryPublishReusableLiveFrameAfterMiss(seq_after_sleep);
+        if (reused_live_frame) {
+            seq_after_sleep = paint_seq.load(std::memory_order_acquire);
+        }
+        if ((pipeline_probe || reused_live_frame)
+            && browser_ready.load(std::memory_order_acquire)
+            && seq_after_sleep != last_delivered_seq) {
             last_delivered_seq = seq_after_sleep;
             if (!cfg.decklink_direct_paint) {
                 ring.Latest([&](const bg::Frame& f) {
@@ -607,7 +729,6 @@ int main(int argc, char** argv) {
             if (interval_us > 0) stats.RecordFrame(interval_us, expected_us);
             last_paint_time = delivery_time;
             have_last_paint = true;
-            last_any_paint = delivery_time;
         }
 
         if (frame_log && frame_log->enabled()) {
@@ -615,10 +736,11 @@ int main(int argc, char** argv) {
                 std::chrono::microseconds>(delivery_time - tick_start).count();
             const uint64_t wall_clock_us = std::chrono::duration_cast<
                 std::chrono::microseconds>(delivery_time.time_since_epoch()).count();
-            const bool delivered = got_new_paint ||
-                (pipeline_probe && seq_after_sleep != seq_at_tick_start);
+            const bool delivered = got_new_paint || reused_live_frame
+                || (pipeline_probe && seq_after_sleep != seq_at_tick_start);
             frame_log->RecordTick(wall_clock_us, interval_us,
-                                  pipeline_probe ? seq_after_sleep : cur_seq,
+                                  (pipeline_probe || reused_live_frame)
+                                      ? seq_after_sleep : cur_seq,
                                   pump_active_us, paint_latency_us,
                                   delivered ? 0 : 1,
                                   inflight_depth,

@@ -44,12 +44,20 @@ function buildLayoutResolver(template: Template): LayerLayoutResolver {
     const layer = byId.get(layerId);
     if (!layer) return null;
     const transform = layer.transform;
+    const radians = transform.rotation * Math.PI / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const originX = transform.width * transform.anchorX;
+    const originY = transform.height * transform.anchorY;
+    const m00 = cos * transform.scaleX;
+    const m01 = -sin * transform.scaleY;
+    const m10 = sin * transform.scaleX;
+    const m11 = cos * transform.scaleY;
+    const left = transform.x - originX;
+    const top = transform.y - originY;
     return {
-      // Channel DOM positions layers via CSS using transform.x/y; the engine
-      // graph tracks canvas-space top-left as 0 because the compositor already
-      // owns the canvas origin. Per-layer offset is carried by the DOM.
-      x: 0,
-      y: 0,
+      x: Math.round(left),
+      y: Math.round(top),
       scale_x: transform.scaleX,
       scale_y: transform.scaleY,
       rotation_deg: transform.rotation,
@@ -60,6 +68,14 @@ function buildLayoutResolver(template: Template): LayerLayoutResolver {
       opacity: layer.opacity,
       mask_mode: layerMaskMode(layer),
       mask_rect: layerMaskRect(layer),
+      affine: [
+        m00,
+        m01,
+        left + originX - m00 * originX - m01 * originY,
+        m10,
+        m11,
+        top + originY - m10 * originX - m11 * originY,
+      ],
     };
   };
 }
@@ -74,14 +90,20 @@ function buildLayoutResolver(template: Template): LayerLayoutResolver {
  */
 export function publishTemplateGraph(
   template: Template,
-  revision: number,
+  graphRevision: number,
+  stateRevision: number,
   analysis?: ReturnType<typeof classifyRenderGraph>,
+  resolveLayout?: LayerLayoutResolver,
+  invalidatedLayerIds?: ReadonlyArray<string>,
 ): string | null {
   const graph = analysis ?? classifyRenderGraph(template);
   return encodeGraphSnapshot({
-    revision,
+    templateId: template.id,
+    graphRevision,
+    stateRevision,
+    invalidatedLayerIds,
     analysis: graph,
-    resolveLayout: buildLayoutResolver(template),
+    resolveLayout: resolveLayout ?? buildLayoutResolver(template),
   });
 }
 

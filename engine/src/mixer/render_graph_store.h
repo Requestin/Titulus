@@ -9,8 +9,9 @@
 //   - Thread of origin: CEF UI thread (OnConsoleMessage). All public methods
 //     are intended to be called from there. We do not lock on the hot path.
 //   - The store never touches the render pump or the FrameRing.
-//   - A snapshot whose `revision` is older than or equal to the stored one
-//     is dropped silently.
+//   - Graph revisions replace topology/content. State revisions update
+//     props/masks inside the same graph without forcing source recapture.
+//   - Older/equal (graph,state) pairs are dropped.
 //   - Malformed or out-of-bounds messages are recorded as a failure counter
 //     with the last reason label, again without affecting rendering.
 
@@ -31,7 +32,8 @@ struct RenderGraphStoreStats {
     uint64_t malformed = 0;         // parser returned MalformedJson/Missing*
     uint64_t bounds_violations = 0; // parser returned BoundsViolation
     uint64_t unsupported = 0;       // unsupported version or type
-    uint64_t current_revision = 0;
+    uint64_t current_graph_revision = 0;
+    uint64_t current_state_revision = 0;
     size_t layer_count = 0;
     std::string last_error_detail;
 };
@@ -41,9 +43,8 @@ class RenderGraphStore {
     RenderGraphStore() = default;
 
     // Commit a freshly-parsed snapshot. Returns true if the snapshot was
-    // accepted (revision strictly greater than current). Returns false for
-    // stale revisions; the snapshot is discarded either way (caller still
-    // owns the parsed payload and can inspect it).
+    // accepted (lexicographically newer graph/state revision). Returns false
+    // for stale revisions.
     bool Commit(ProtocolSnapshot snapshot);
 
     // Read-only view of the current snapshot. Pointer is stable until the next
@@ -53,6 +54,10 @@ class RenderGraphStore {
     bool HasSnapshot() const { return have_snapshot_; }
 
     const RenderGraphStoreStats& Stats() const { return stats_; }
+
+    // Clear ordering state when the CEF page navigates/reloads. Runtime graph
+    // revisions are page-local and restart from their initial value.
+    void Reset();
 
     // Record a parse failure for telemetry without storing anything.
     void RecordMalformed(std::string detail);

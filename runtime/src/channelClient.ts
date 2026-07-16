@@ -57,6 +57,11 @@ export interface ChannelClientOptions {
 
 interface ActiveTemplate {
   renderer: TemplateRenderer;
+  template: Template;
+  analysis: ReturnType<typeof classifyRenderGraph>;
+  graphRevision: number;
+  stateRevision: number;
+  dynamicGraph: boolean;
 }
 
 const DEFAULT_RECONNECT_MS = 3000;
@@ -68,6 +73,7 @@ export class ChannelClient {
   private active = new Map<string, ActiveTemplate>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  private nextGraphRevision = 1;
 
   constructor(opts: ChannelClientOptions) {
     this.opts = opts;
@@ -182,31 +188,113 @@ export class ChannelClient {
     const prev = this.active.get(id);
     if (prev) { prev.renderer.destroy(); this.active.delete(id); }
     const renderer = new TemplateRenderer(this.opts.stage, this.rendererOpts());
-    this.active.set(id, { renderer });
+    const analysis = classifyRenderGraph(msg.template);
+    const active: ActiveTemplate = {
+      renderer,
+      template: msg.template,
+      analysis,
+      graphRevision: this.nextGraphRevision++,
+      stateRevision: 0,
+      dynamicGraph: Object.values(analysis.layers).some(
+        (node) => node.dirtyDomains.includes('props_dirty')
+          || node.dirtyDomains.includes('mask_dirty'),
+      ),
+    };
+    this.active.set(id, active);
     renderer.playTimeline(msg.template, msg.variables ?? {},
-      this.opts.onFrame ? { onFrame: this.opts.onFrame } : {});
+      {
+        onFrame: (info) => {
+          this.opts.onFrame?.(info);
+          this.publishGraphFrame(id);
+        },
+      });
     this.opts.onActiveCount?.(this.active.size);
-    // Doc02 PR3: emit the operator-aware render graph so the engine shadow
-    // RenderGraphStore can capture it for diff debugging. Opt-in via ?graph=1
-    // or window.BG_GRAPH_PUBLISH=1; runs at most once per take.
-    this.publishGraphSnapshot(msg.template);
+    this.publishCurrentGraph();
   }
 
-  private publishGraphSnapshot(template: Template): void {
+  private emitGraphLine(line: string | null): void {
+    if (!line) return;
+    // eslint-disable-next-line no-console
+    console.log(line);
+  }
+
+  private emitFallbackGraph(graphRevision: number): void {
+    this.emitGraphLine(
+      `BGGRAPH v1 {"type":"snapshot","graph_rev":${graphRevision},`
+      + '"state_rev":0,"layers":[]}',
+    );
+  }
+
+  private publishCurrentGraph(): void {
     if (!isGraphPublishingEnabled(globalThis)) return;
-    let analysis;
-    try {
-      analysis = classifyRenderGraph(template);
-    } catch {
-      return; // malformed template -> no snapshot
+    if (this.active.size !== 1) {
+      this.emitFallbackGraph(this.nextGraphRevision++);
+      return;
     }
-    const revision = Date.now() & 0xffffffff;
-    const line = publishTemplateGraph(template, revision, analysis);
+    const active = this.active.values().next().value as ActiveTemplate;
+    active.graphRevision = this.nextGraphRevision++;
+    active.stateRevision = 0;
+    if (!active.analysis.supported) {
+      this.emitFallbackGraph(active.graphRevision);
+      return;
+    }
+    const layouts = active.renderer.getProtocolFrameLayouts(active.analysis);
+    const line = publishTemplateGraph(
+      active.template,
+      active.graphRevision,
+      active.stateRevision,
+      active.analysis,
+      layouts ? (layerId) => layouts[layerId] ?? null : undefined,
+    );
+    if (line) this.emitGraphLine(line);
+    else this.emitFallbackGraph(active.graphRevision);
+  }
+
+  private publishGraphFrame(templateId: string): void {
+    if (!isGraphPublishingEnabled(globalThis) || this.active.size !== 1) return;
+    const active = this.active.get(templateId);
+    if (!active || !active.dynamicGraph || !active.analysis.supported) return;
+    const layouts = active.renderer.getProtocolFrameLayouts(active.analysis);
+    if (!layouts) return;
+    active.stateRevision += 1;
+    const line = publishTemplateGraph(
+      active.template,
+      active.graphRevision,
+      active.stateRevision,
+      active.analysis,
+      (layerId) => layouts[layerId] ?? null,
+    );
     if (line) {
-      // The engine OnConsoleMessage hook intercepts the BGGRAPH prefix and
-      // forwards to the shadow RenderGraphStore. Never log a partial line.
-      // eslint-disable-next-line no-console
-      console.log(line);
+      this.emitGraphLine(line);
+    } else {
+      active.dynamicGraph = false;
+      active.graphRevision = this.nextGraphRevision++;
+      this.emitFallbackGraph(active.graphRevision);
+    }
+  }
+
+  private publishContentUpdate(active: ActiveTemplate): void {
+    if (!isGraphPublishingEnabled(globalThis) || this.active.size !== 1
+        || !active.analysis.supported) return;
+    const layouts = active.renderer.getProtocolFrameLayouts(active.analysis);
+    if (!layouts) return;
+    const invalidated = Object.entries(active.analysis.layers)
+      .filter(([, node]) => node.nodeKind === 'cached_bitmap'
+        && node.dirtyDomains.includes('content_dirty'))
+      .map(([id]) => id);
+    active.stateRevision += 1;
+    const line = publishTemplateGraph(
+      active.template,
+      active.graphRevision,
+      active.stateRevision,
+      active.analysis,
+      (layerId) => layouts[layerId] ?? null,
+      invalidated,
+    );
+    if (line) this.emitGraphLine(line);
+    else {
+      active.graphRevision = this.nextGraphRevision++;
+      this.emitFallbackGraph(active.graphRevision);
     }
   }
 
@@ -216,7 +304,10 @@ export class ChannelClient {
     // Live variable change: re-sync the same template with new variables without
     // restarting the timeline (keeps the current playhead).
     const tpl = a.renderer.getTemplate();
-    if (tpl) a.renderer.syncTemplate(tpl, msg.variables ?? {});
+    if (tpl) {
+      a.renderer.syncTemplate(tpl, msg.variables ?? {});
+      this.publishContentUpdate(a);
+    }
   }
 
   private onClear(msg: ChannelMessage): void {
@@ -227,6 +318,7 @@ export class ChannelClient {
     a.renderer.destroy();
     this.active.delete(msg.templateId);
     this.opts.onActiveCount?.(this.active.size);
+    this.publishCurrentGraph();
   }
 
   /** Expose current status for the page UI. */
@@ -250,5 +342,22 @@ export class ChannelClient {
     const a = this.active.get(templateId);
     if (!a) return;
     apply(a);
+  }
+
+  /** Isolate one source in a tight origin-aligned capture host. */
+  async setLayerCaptureMode(
+    templateId: string,
+    layerId: string | null,
+    padding = 32,
+    captureSeq = 0,
+  ): Promise<void> {
+    const apply = (active: ActiveTemplate) =>
+      active.renderer.setLayerCaptureMode(layerId, padding, captureSeq);
+    if (!templateId || templateId === '*') {
+      await Promise.all([...this.active.values()].map(apply));
+      return;
+    }
+    const active = this.active.get(templateId);
+    if (active) await apply(active);
   }
 }
