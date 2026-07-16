@@ -53,19 +53,38 @@ struct Registrar {
 
 void StampCaptureMarker(std::vector<uint8_t>& bgra, int width,
                         uint64_t capture_seq) {
+    const auto stamp = [&](int left, int shift, int y) {
+        const uint64_t value = capture_seq >> shift;
+        const uint8_t red = static_cast<uint8_t>(value & 0xFF);
+        const uint8_t green = static_cast<uint8_t>((value >> 8) & 0xFF);
+        const uint8_t blue = static_cast<uint8_t>((value >> 16) & 0xFF);
+        for (int x = left; x < left + 2; ++x) {
+            uint8_t* pixel = bgra.data() + (y * width + x) * 4;
+            pixel[0] = blue;
+            pixel[1] = green;
+            pixel[2] = red;
+            pixel[3] = 0xFF;
+        }
+    };
+    for (int y = 0; y < 4; ++y) {
+        stamp(0, 0, y);
+        stamp(2, 24, y);
+    }
+}
+
+void StampCaptureMarkerTopRow(std::vector<uint8_t>& bgra, int width,
+                              uint64_t capture_seq) {
     const auto stamp = [&](int left, int shift) {
         const uint64_t value = capture_seq >> shift;
         const uint8_t red = static_cast<uint8_t>(value & 0xFF);
         const uint8_t green = static_cast<uint8_t>((value >> 8) & 0xFF);
         const uint8_t blue = static_cast<uint8_t>((value >> 16) & 0xFF);
-        for (int y = 0; y < 4; ++y) {
-            for (int x = left; x < left + 2; ++x) {
-                uint8_t* pixel = bgra.data() + (y * width + x) * 4;
-                pixel[0] = blue;
-                pixel[1] = green;
-                pixel[2] = red;
-                pixel[3] = 0xFF;
-            }
+        for (int x = left; x < left + 2; ++x) {
+            uint8_t* pixel = bgra.data() + x * 4;
+            pixel[0] = blue;
+            pixel[1] = green;
+            pixel[2] = red;
+            pixel[3] = 0xFF;
         }
     };
     stamp(0, 0);
@@ -375,6 +394,32 @@ TEST(LivePipelineDiscardsPaintThatWasInFlightBeforeReady) {
           "compose percentile telemetry did not record first sample");
 }
 
+TEST(LivePipelineValidatesCaptureMarkerAtItsAnchoredTopRow) {
+    bg::RenderGraphStore store;
+    bg::ProtocolSnapshot snap;
+    snap.graph_revision = 1;
+    bg::ProtocolLayerNode layer;
+    layer.id = "a";
+    layer.kind = bg::ProtocolNodeKind::CachedBitmap;
+    layer.source_w = 1;
+    layer.source_h = 1;
+    snap.layers.push_back(layer);
+    store.Commit(std::move(snap));
+
+    bg::compositor::LivePipeline pipe;
+    pipe.Attach(&store, 65, 65);
+    pipe.set_enabled(true);
+    pipe.OnTick();
+    pipe.OnCaptureReady(1);
+
+    std::vector<uint8_t> pixels(65 * 65 * 4, 0x22);
+    pipe.OnPaint(pixels.data(), 65, 65, 1);
+    StampCaptureMarkerTopRow(pixels, 65, 1);
+    pipe.OnPaint(pixels.data(), 65, 65, 2);
+    CHECK(pipe.mode() == bg::compositor::PipelineMode::Composing,
+          "top-anchored marker was validated from the wrong scanline");
+}
+
 TEST(LivePipelineCanReuseLastVerifiedLiveBitmap) {
     bg::RenderGraphStore store;
     bg::ProtocolSnapshot snapshot;
@@ -396,6 +441,7 @@ TEST(LivePipelineCanReuseLastVerifiedLiveBitmap) {
     pipe.OnPaint(pixels.data(), 65, 65, 1);
     StampCaptureMarker(pixels, 65, 1);
     pipe.OnPaint(pixels.data(), 65, 65, 2);
+    CHECK(pipe.NeedsLivePaint(), "live graph must request a fresh CEF paint");
     CHECK(pipe.HasReusableLiveFrame(), "verified live bitmap is not reusable");
     pipe.OnCaptureError(1);
     CHECK(pipe.mode() == bg::compositor::PipelineMode::Composing,
