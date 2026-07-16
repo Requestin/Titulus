@@ -28,7 +28,10 @@
 
 #include "include/cef_browser.h"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -52,6 +55,15 @@ struct PipelineStats {
     uint64_t fallback_frames = 0;
     uint64_t capture_passes = 0;
     uint64_t capture_failures = 0;
+    uint64_t capture_ready_acks = 0;
+    uint64_t reused_live_frames = 0;
+    uint64_t live_region_updates = 0;
+    uint64_t live_region_bytes = 0;
+    uint64_t live_full_bytes = 0;
+    uint64_t incremental_frames = 0;
+    uint64_t incremental_tiles = 0;
+    uint64_t full_composes = 0;
+    size_t cache_bytes = 0;
     int64_t last_compose_ns = 0;
     std::string last_fallback_reason;
 };
@@ -63,9 +75,13 @@ class LivePipeline {
     void Attach(RenderGraphStore* store, int32_t canvas_w, int32_t canvas_h);
     void set_browser(CefRefPtr<CefBrowser> browser) { browser_ = browser; }
     void set_template_id(std::string id) { template_id_ = std::move(id); }
+    void set_template_allowlist(std::vector<std::string> ids) {
+        template_allowlist_ = std::move(ids);
+    }
 
     PipelineMode mode() const { return mode_; }
     const PipelineStats& stats() const { return stats_; }
+    uint64_t ComposeLatencyPercentileUs(uint32_t percentile) const;
     bool enabled() const { return enabled_; }
     void set_enabled(bool on);
 
@@ -73,7 +89,12 @@ class LivePipeline {
     // buffer to FrameRing. When the pipeline is capturing or composing live
     // overlays, the paint is consumed here.
     PaintDisposition OnPaint(const uint8_t* bgra, int width, int height,
-                             uint64_t paint_seq);
+                             uint64_t paint_seq,
+                             std::span<const LayerDirtyRect> dirty_rects = {});
+
+    // Renderer-side acknowledgement that the isolated capture host is ready.
+    void OnCaptureReady(uint64_t request_seq);
+    void OnCaptureError(uint64_t request_seq);
 
     // Called once per pump tick before BeginFrame. Starts a capture pass when
     // a new supported graph snapshot is available and the cache is cold.
@@ -85,50 +106,85 @@ class LivePipeline {
     // true when a composed frame was written. On false the caller must use the
     // legacy monolith path.
     bool ComposeInto(uint8_t* dst, int32_t dst_w, int32_t dst_h);
+    bool ComposeIncrementalInto(uint8_t* dst, int32_t dst_w, int32_t dst_h);
 
     // True when the next FrameRing publish should come from ComposeInto rather
     // than from the raw OnPaint buffer.
     bool PrefersComposedOutput() const {
-        return mode_ == PipelineMode::Composing;
+        return mode_ == PipelineMode::Composing
+            || (mode_ == PipelineMode::Capturing && selective_capture_);
     }
 
     // True when the current graph has live_html layers that require a CEF
     // BeginFrame/OnPaint each tick before ComposeInto can run.
     bool NeedsLivePaint() const;
+    bool HasReusableLiveFrame() const {
+        return PrefersComposedOutput() && !live_layer_id_.empty()
+            && cache_.Has(live_layer_id_);
+    }
+    void RecordReusedLiveFrame() { ++stats_.reused_live_frames; }
 
   private:
     void BeginCapturePass();
+    void BeginSelectiveCapture(const ProtocolSnapshot& snap);
     void AdvanceCapture();
-    void RequestVisibilityFilter(const std::vector<std::string>& ids);
-    void ClearVisibilityFilter();
+    void RequestLayerCapture(const std::string& id);
+    void ClearCaptureMode();
+    void EnterFallback(std::string reason);
     bool GraphIsSupported(const ProtocolSnapshot& snap) const;
+    bool TemplateIsAllowed(const ProtocolSnapshot& snap) const;
     std::vector<std::string> CacheableLayerIds(const ProtocolSnapshot& snap) const;
     std::vector<std::string> LiveLayerIds(const ProtocolSnapshot& snap) const;
     void BuildMixInputFromCache(MixInput& out, const ProtocolSnapshot& snap) const;
+    bool ComposeInternal(uint8_t* dst, int32_t dst_w, int32_t dst_h,
+                         bool incremental);
+    std::vector<LayerRect> BuildDirtyRegions(
+        const ProtocolSnapshot& previous, const ProtocolSnapshot& current,
+        int32_t dst_w, int32_t dst_h) const;
 
     bool enabled_ = false;
     PipelineMode mode_ = PipelineMode::Disabled;
     RenderGraphStore* store_ = nullptr;
     CefRefPtr<CefBrowser> browser_;
     std::string template_id_ = "default";
+    std::vector<std::string> template_allowlist_;
     int32_t canvas_w_ = 0;
     int32_t canvas_h_ = 0;
 
     LayerBitmapCache cache_;
     LayeredCompositor compositor_;
     PipelineStats stats_;
+    static constexpr size_t kComposeLatencySamples = 512;
+    std::array<int64_t, kComposeLatencySamples> compose_latency_ns_{};
+    size_t compose_latency_count_ = 0;
+    size_t compose_latency_next_ = 0;
+    std::optional<ProtocolSnapshot> last_incremental_snapshot_;
+    std::vector<std::string> pending_content_dirty_ids_;
+    uint64_t live_update_generation_ = 0;
+    uint64_t last_composed_live_update_generation_ = 0;
+    int32_t last_incremental_width_ = 0;
+    int32_t last_incremental_height_ = 0;
 
     // Capture state machine.
     std::vector<std::string> capture_queue_;
     size_t capture_index_ = 0;
     uint64_t capture_waiting_seq_ = 0;
+    uint64_t capture_request_seq_ = 0;
+    uint32_t capture_wait_ticks_ = 0;
+    bool capture_awaiting_ready_ = false;
     bool capture_awaiting_paint_ = false;
+    bool capture_discard_next_paint_ = false;
+    bool preparing_live_capture_ = false;
+    bool selective_capture_ = false;
+    uint64_t capture_graph_revision_ = 0;
+    uint64_t capture_state_revision_ = 0;
     uint64_t last_seen_revision_ = 0;
+    uint64_t last_seen_state_revision_ = 0;
+    std::string live_layer_id_;
+    bool fallback_retry_on_state_ = true;
 
-    // Live overlay from the most recent live-only paint (full canvas, mostly
-    // transparent except the live layers).
-    std::vector<uint8_t> live_overlay_;
-    bool have_live_overlay_ = false;
+    static constexpr int32_t kCapturePadding = 32;
+    static constexpr uint32_t kCaptureTimeoutTicks = 100;
 };
 
 }  // namespace bg::compositor

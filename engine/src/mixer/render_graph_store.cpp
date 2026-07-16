@@ -7,16 +7,32 @@
 namespace bg {
 
 bool RenderGraphStore::Commit(ProtocolSnapshot snapshot) {
-    if (have_snapshot_ && snapshot.revision <= current_.revision) {
-        ++stats_.stale_dropped;
-        return false;
+    if (have_snapshot_) {
+        const bool older_graph =
+            snapshot.graph_revision < current_.graph_revision;
+        const bool stale_state =
+            snapshot.graph_revision == current_.graph_revision
+            && snapshot.state_revision <= current_.state_revision;
+        if (older_graph || stale_state) {
+            ++stats_.stale_dropped;
+            return false;
+        }
     }
     stats_.layer_count = snapshot.layers.size();
-    stats_.current_revision = snapshot.revision;
+    stats_.current_graph_revision = snapshot.graph_revision;
+    stats_.current_state_revision = snapshot.state_revision;
     current_ = std::move(snapshot);
     have_snapshot_ = true;
     ++stats_.accepted;
     return true;
+}
+
+void RenderGraphStore::Reset() {
+    current_ = {};
+    have_snapshot_ = false;
+    stats_.current_graph_revision = 0;
+    stats_.current_state_revision = 0;
+    stats_.layer_count = 0;
 }
 
 void RenderGraphStore::RecordMalformed(std::string detail) {

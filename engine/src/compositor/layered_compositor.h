@@ -17,6 +17,7 @@
 #include "synthetic_snapshot.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,11 @@ class LayeredCompositor {
     // `fallback_reasons` to telemetry.
     CompositeResult Composite(const SyntheticSnapshot& snapshot, int32_t canvas_w,
                               int32_t canvas_h, uint8_t* dst);
+
+    CompositeResult CompositeRegions(
+        const SyntheticSnapshot& snapshot, int32_t canvas_w,
+        int32_t canvas_h, uint8_t* dst,
+        std::span<const LayerRect> regions);
 
     // Read the underlying mixer for callers that already hold a MixInput.
     CpuLayerMixer& mixer() { return mixer_; }

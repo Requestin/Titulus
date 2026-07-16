@@ -135,13 +135,33 @@ Collector берёт host-wide lock, но не запускает, не оста
 affinity engine-процессов. Не запускайте второй DeckLink soak параллельно:
 на Ryzen 5 3600 все шесть physical cores уже заняты 3×2c packing.
 
-Research-only (default off; **Doc02 K2 STOP** — do not enable for production):
+Doc02 layered compositor (global default off; production allowlist only):
 
 ```bash
-# BG_LAYERED_COMPOSITOR=1 or --layered-compositor
+export BG_LAYERED_COMPOSITOR=1
+export BG_LAYERED_COMPOSITOR_ALLOWLIST=6104dc7e-45c4-48b1-a382-db3b3b34091f
+
 # Paired gate harness (expects doc04 channel setup + token):
-#   engine/research/p19/run_doc02_k2_gate.sh 1ch|3ch off|on [duration]
+engine/research/p19/run_doc02_k2_abba.sh 1ch 30
+engine/research/p19/run_doc02_k2_abba.sh 3ch 30
 ```
+
+Before accepting a channel, require startup `layered=on`, `allowlist=1` and
+periodic `layered_stats mode=composing capture_failures=0 fallback=0`.
+`capture_ready` must cover all eight canonical pixel sources and compose p95
+must stay ≤3 ms. DeckLink telemetry must have zero late/drop/flush/unlock.
+
+Immediate rollback:
+
+```bash
+export BG_LAYERED_COMPOSITOR=0
+unset BG_LAYERED_COMPOSITOR_ALLOWLIST
+# restart the affected run-channel/bg_engine process
+```
+
+Rollback has no migration or cache cleanup requirement. Flag-off restores the
+legacy monolith `OnPaint → FrameRing` path. Unsupported/non-allowlisted graphs
+also fall back automatically and must never produce approximate mixed output.
 
 ## 9. Blink research (bench)
 

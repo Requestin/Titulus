@@ -33,36 +33,18 @@ await import(bundleUrl);
 const mod = globalThis.window.BG ?? globalThis.BG;
 
 const analysis = mod.classifyRenderGraph(template);
-const layoutFromTemplate = (id) => {
-    const layer = (template.layers ?? []).find((l) => l.id === id);
-    if (!layer) return null;
-    const t = layer.transform ?? {};
-    const isMask = layer.type === 'mask';
-    return {
-        x: 0,
-        y: 0,
-        scale_x: t.scaleX ?? 1,
-        scale_y: t.scaleY ?? 1,
-        rotation_deg: t.rotation ?? 0,
-        anchor_x: t.anchorX ?? 0,
-        anchor_y: t.anchorY ?? 0,
-        source_w: Math.round(t.width ?? template.canvas.width),
-        source_h: Math.round(t.height ?? template.canvas.height),
-        opacity: layer.opacity ?? 1,
-        mask_mode: isMask ? (layer.maskMode === 'inverted' ? 'inverted' : 'normal') : 'none',
-        mask_rect: isMask ? {
-            x: Math.round(t.x ?? 0),
-            y: Math.round(t.y ?? 0),
-            w: Math.round(t.width ?? 0),
-            h: Math.round(t.height ?? 0),
-        } : undefined,
-    };
-};
+const timeline = mod.normalizeTimeline(template.timeline);
+const layouts = mod.buildProtocolFrameLayouts(
+    template,
+    analysis,
+    mod.sampleAt(timeline, 0),
+);
 
 const line = mod.encodeGraphSnapshot({
-    revision: 1,
+    graphRevision: 1,
+    stateRevision: 0,
     analysis,
-    resolveLayout: layoutFromTemplate,
+    resolveLayout: (id) => layouts[id] ?? null,
 });
 
 if (!line) {

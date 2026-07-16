@@ -81,12 +81,17 @@ clone устранён. Direct path не даёт устойчивого through
   file capabilities are incompatible with the CEF binary on this host.
   Evidence: `engine/research/results/p19/doc04-20260715/`; report:
   [`p19-04-scheduling.md`](../performance%20investigation/reports/p19-04-scheduling.md).
-- **Doc 02 (CPU layer compositor)** — **K2 STOP (closed).** Operator-aware
-  preflight (7/8 cacheable sources, 96.70% opportunity) justified a default-off
-  scalar render-graph POC (PR0–PR5). Paired DeckLink `test1` uplift failed
-  hard: **0.14× (1ch)** / **0.21× (3ch)** vs control (threshold fail &lt;1.2×).
-  `BG_LAYERED_COMPOSITOR` stays OFF; PR7–PR9 cancelled. Evidence:
-  `engine/research/results/p19/doc02-20260715/k2-gate/`; report:
+- **Doc 02 (CPU layer compositor)** — **audit-recovery K2 PASS.** Fresh review
+  found that the original STOP measured an unoptimized and revision-unstable
+  path. PR7 AVX2/worker-pool, PR8 dirty/cache/ownership and PR9 allowlist/soak
+  hardening are now implemented. Fresh ABBA: 1ch treatment **50.0 fps**;
+  3ch treatment **50.0 / 50.0 / 50.0**, worst paired uplift **1.5748×**,
+  late/drop/flush/unlock=0. Static parity SSIM **0.999062**; byte-exact
+  incremental/full goldens pass. Global default remains OFF; production opt-in
+  is template-id allowlist only. Evidence:
+  `engine/research/results/p19/doc02-20260715/k2-gate/audit-recovery-20260716.md`;
+  report:
   [`p19-02-layer-compositor.md`](../performance%20investigation/reports/p19-02-layer-compositor.md).
-- Затем G1 (1ch ≥50) → G2 (3ch ≥50) → G3 soak — критерии в doc 00 §13.
-  Doc02 no longer contributes an uplift path toward G1/G2.
+- Doc02 clears G1/G2 throughput for canonical `test1` and passed the recorded
+  15-minute 1ch (180 windows) and 60-minute 3ch
+  (720 windows/channel) stability soaks at 50.0 fps with zero delivery errors.

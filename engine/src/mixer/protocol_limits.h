@@ -14,7 +14,9 @@ namespace bg::protocol {
 inline constexpr size_t kMaxLayers = 64;
 inline constexpr size_t kMaxDirtyDomainsPerLayer = 4;
 inline constexpr size_t kMaxUnsupportedReasonsPerLayer = 8;
+inline constexpr size_t kMaxAffectedSourcesPerMask = kMaxLayers;
 inline constexpr size_t kMaxLayerIdBytes = 128;
+inline constexpr size_t kMaxTemplateIdBytes = 128;
 inline constexpr size_t kMaxSnapshotJsonBytes = 64 * 1024;
 inline constexpr int32_t kMaxLayerExtent = 8192;
 inline constexpr uint64_t kInitialRevision = 0;

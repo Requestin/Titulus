@@ -15,6 +15,7 @@
 
 #include "consumers/consumer.h"
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -31,7 +32,9 @@ class FrameRing {
     void Resize(int width, int height) {
         std::lock_guard<std::mutex> lock(mu_);
         const size_t bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
-        if (buffer_.size() != bytes) buffer_.assign(bytes, 0);
+        for (auto& buffer : buffers_) {
+            if (buffer.size() != bytes) buffer.assign(bytes, 0);
+        }
         width_  = width;
         height_ = height;
     }
@@ -44,11 +47,39 @@ class FrameRing {
         {
             std::lock_guard<std::mutex> lock(mu_);
             const size_t bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
-            std::memcpy(buffer_.data(), bgra, bytes);
+            const size_t target = 1 - published_index_;
+            std::memcpy(buffers_[target].data(), bgra, bytes);
+            published_index_ = target;
         }
         // Acquire/release fence via the atomic sequence bump; consumers compare
         // the sequence before/after reading to detect a torn read.
         seq_.store(++latest_seq_, std::memory_order_release);
+    }
+
+    // Producer side: write directly into the unpublished owned buffer and
+    // atomically swap it into the latest slot. A failed writer leaves the
+    // previously published frame untouched.
+    template <typename Write>
+    bool Produce(int width, int height, Write&& write) {
+        if (width != width_ || height != height_) Resize(width, height);
+        std::lock_guard<std::mutex> lock(mu_);
+        const size_t target = 1 - published_index_;
+        if (!write(buffers_[target].data())) return false;
+        published_index_ = target;
+        seq_.store(++latest_seq_, std::memory_order_release);
+        return true;
+    }
+
+    // Incrementally update the currently published owned buffer while holding
+    // the consumer lock. Intended for dirty-region composition that preserves
+    // clean pixels from the previous frame.
+    template <typename Write>
+    bool UpdateLatest(int width, int height, Write&& write) {
+        if (width != width_ || height != height_) Resize(width, height);
+        std::lock_guard<std::mutex> lock(mu_);
+        if (!write(buffers_[published_index_].data())) return false;
+        seq_.store(++latest_seq_, std::memory_order_release);
+        return true;
     }
 
     // Consumer side: deliver the latest frame to the visitor. Returns the frame
@@ -63,7 +94,7 @@ class FrameRing {
         // snapshot — but for "latest frame" delivery that's acceptable (the
         // next pump tick gets a clean copy). We still deliver the bytes we have.
         Frame f;
-        f.bgra   = buffer_.data();
+        f.bgra   = buffers_[published_index_].data();
         f.width  = width_;
         f.height = height_;
         f.seq    = before;
@@ -76,7 +107,8 @@ class FrameRing {
 
   private:
     std::mutex          mu_;
-    std::vector<uint8_t> buffer_;
+    std::array<std::vector<uint8_t>, 2> buffers_;
+    size_t              published_index_ = 0;
     int                 width_  = 0;
     int                 height_ = 0;
     uint64_t            latest_seq_ = 0;

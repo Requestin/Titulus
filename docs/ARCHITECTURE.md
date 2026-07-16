@@ -347,11 +347,23 @@ Build: `cd runtime && npm run build` → `backend/public/bg-runtime.js` (IIFE `w
 
 ### Research flag: `BG_LAYERED_COMPOSITOR` (Phase 19 Doc02)
 
-Optional default-**off** path that captures per-layer CEF snapshots and mixes
-them on CPU (`engine/src/compositor/`, `engine/src/mixer/`). Phase 19 Doc02
-**K2 STOP**: paired 3ch DeckLink `test1` uplift was ≪1.2×, so this path is
-**not** a production lever. Keep the flag unset/`0` unless explicitly
-researching a new capture/compose contract. Details:
+Optional default-**off** path that captures cacheable CEF source bitmaps and
+mixes affine/opacity/mask operators on CPU (`engine/src/compositor/`,
+`engine/src/mixer/`). Phase 19 Doc02 audit recovery passed K2: canonical
+3ch DeckLink `test1` reaches 50.0 fps on every channel (worst paired uplift
+1.5748×). Production use is allowlist-only:
+
+```bash
+BG_LAYERED_COMPOSITOR=1
+BG_LAYERED_COMPOSITOR_ALLOWLIST=<comma-separated-template-ids>
+```
+
+The bounded graph protocol carries `template_id`; non-allowlisted or unsupported
+graphs stay on whole-template monolith fallback. Empty allowlist is unrestricted
+research opt-in, not production approval. Live CEF dirty rectangles update the
+warm source crop; 64×64 output tiles are recomposed into the owned latest
+FrameRing buffer. The legacy path remains the global default and rollback.
+Details:
 `docs/performance investigation/reports/p19-02-layer-compositor.md`.
 
 ### Stats / SUMMARY

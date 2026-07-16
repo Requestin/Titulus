@@ -5,9 +5,11 @@
 #include "mixer/graph_message_parser.h"
 #include "mixer/render_graph_store.h"
 
+#include <charconv>
 #include <cstdio>
 #include <cstring>
 #include <utility>
+#include <vector>
 
 namespace bg {
 
@@ -28,7 +30,7 @@ bool EngineClient::GetScreenInfo(CefRefPtr<CefBrowser>, CefScreenInfo& info) {
 }
 
 void EngineClient::OnPaint(CefRefPtr<CefBrowser>, PaintElementType type,
-                           const RectList&, const void* buffer,
+                           const RectList& dirty_rects, const void* buffer,
                            int width, int height) {
     if (closing_.load(std::memory_order_acquire)) return;
     // Only the view surface, never popups (CasparCG html_producer.cpp:361).
@@ -37,9 +39,16 @@ void EngineClient::OnPaint(CefRefPtr<CefBrowser>, PaintElementType type,
     // Doc02 PR5: when the live pipeline is capturing or composing, it may
     // consume this paint instead of forwarding it to FrameRing.
     if (live_pipeline_) {
+        std::vector<compositor::LayerDirtyRect> regions;
+        regions.reserve(dirty_rects.size());
+        for (const auto& rect : dirty_rects) {
+            regions.push_back({
+                rect.x, rect.y, rect.width, rect.height,
+            });
+        }
         const uint64_t seq = 0;  // main.cpp stamps paint_seq; pipeline uses wall seq
         auto disposition = live_pipeline_->OnPaint(
-            static_cast<const uint8_t*>(buffer), width, height, seq);
+            static_cast<const uint8_t*>(buffer), width, height, seq, regions);
         using Disposition = compositor::PaintDisposition;
         switch (disposition) {
             case Disposition::ConsumedByCapture:
@@ -80,6 +89,16 @@ void EngineClient::OnBeforeClose(CefRefPtr<CefBrowser>) {
 
 void EngineClient::OnLoadingStateChange(CefRefPtr<CefBrowser>,
                                         bool isLoading, bool, bool) {
+    if (isLoading) {
+        // Graph revisions are scoped to one page instance. A reload restarts
+        // ChannelClient's counter, so retaining the previous store would mark
+        // every new snapshot stale and could keep old cached pixels on air.
+        if (graph_store_) graph_store_->Reset();
+        if (live_pipeline_ && live_pipeline_->enabled()) {
+            live_pipeline_->set_enabled(false);
+            live_pipeline_->set_enabled(true);
+        }
+    }
     // "Ready" here means the page finished its initial load; subsequent template
     // takes drive DOM mutation, not navigation.
     if (!isLoading && on_ready_) on_ready_(true);
@@ -98,6 +117,25 @@ bool EngineClient::OnConsoleMessage(CefRefPtr<CefBrowser>, cef_log_severity_t,
                                     const CefString& message, const CefString&,
                                     int) {
     const std::string msg = message.ToString();
+    constexpr std::string_view kCaptureReady = "BGCAPTURE_READY ";
+    constexpr std::string_view kCaptureError = "BGCAPTURE_ERROR ";
+    const auto capture_ack = [&](std::string_view prefix, bool ready) {
+        if (msg.rfind(prefix, 0) != 0) return false;
+        uint64_t seq = 0;
+        const std::string_view value(msg.data() + prefix.size(),
+                                     msg.size() - prefix.size());
+        const auto parsed =
+            std::from_chars(value.data(), value.data() + value.size(), seq);
+        if (parsed.ec == std::errc{} && parsed.ptr == value.data() + value.size()
+            && live_pipeline_) {
+            if (ready) live_pipeline_->OnCaptureReady(seq);
+            else live_pipeline_->OnCaptureError(seq);
+        }
+        return true;
+    };
+    if (capture_ack(kCaptureReady, true) || capture_ack(kCaptureError, false)) {
+        return true;
+    }
     // Only surface opt-in runtime stats lines (channel.html emits these when
     // ?stats=1). Everything else stays swallowed so the engine log is clean.
     if (msg.rfind("BGSTATS", 0) == 0) {

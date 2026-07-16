@@ -21,6 +21,7 @@ add_executable(layered_compositor_bench
   ../src/compositor/synthetic_snapshot.cpp
   ../src/compositor/layered_compositor.cpp
   ../src/mixer/cpu_layer_mixer.cpp
+  ../src/mixer/simd_blend.cpp
   ../src/mixer/affine_sampler.cpp
   ../src/mixer/mask_ops.cpp
   ../src/mixer/mixer_buffer_pool.cpp

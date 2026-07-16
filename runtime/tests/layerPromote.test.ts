@@ -218,6 +218,42 @@ test('propagates animated group transforms as props changes', () => {
   assert.deepEqual(report.groups.group.dirtyDomains, ['props_dirty']);
 });
 
+test('rejects non-positive animated group scale before live projection', () => {
+  const scene = template({
+    layers: [layer('image', 'image', {
+      src: '/image.png',
+      cornerRadius: 0,
+      fit: 'contain',
+      groupId: 'group',
+    })],
+    groups: [{
+      id: 'group',
+      name: 'group',
+      parentId: null,
+      visible: true,
+      locked: false,
+      transform,
+    }],
+    rootStack: [{ kind: 'group', id: 'group' }],
+    groupStacks: { group: [{ kind: 'layer', id: 'image' }] },
+    timeline: {
+      ...template().timeline,
+      trackDirectors: { group: 'main' },
+      keyframes: [{
+        id: 'kf0',
+        frame: 0,
+        layers: {},
+        groups: { group: { scaleX: 0 } },
+        easing: 'linear',
+      }],
+    },
+  });
+
+  const report = classifyRenderGraph(scene);
+  assert.equal(report.supported, false);
+  assert.deepEqual(report.groups.group.operatorSupport.reasons, ['non_positive_scale']);
+});
+
 test('marks unsupported 3D sources for whole-template fallback', () => {
   const scene = template({
     layers: [layer('image', 'image', {
