@@ -456,6 +456,55 @@ TEST(LivePipelineCanReuseLastVerifiedLiveBitmap) {
           "live reuse telemetry not recorded");
 }
 
+TEST(LivePipelineClearsLiveIdentityWhenReplacementGraphIsCacheOnly) {
+    bg::RenderGraphStore store;
+    bg::ProtocolSnapshot initial;
+    initial.graph_revision = 1;
+    bg::ProtocolLayerNode live;
+    live.id = "clock";
+    live.kind = bg::ProtocolNodeKind::LiveHtml;
+    live.source_w = 1;
+    live.source_h = 1;
+    initial.layers.push_back(live);
+    store.Commit(std::move(initial));
+
+    bg::compositor::LivePipeline pipe;
+    pipe.Attach(&store, 65, 65);
+    pipe.set_enabled(true);
+    pipe.OnTick();
+    pipe.OnCaptureReady(1);
+    std::vector<uint8_t> pixels(65 * 65 * 4, 0x44);
+    pipe.OnPaint(pixels.data(), 65, 65, 1);
+    StampCaptureMarker(pixels, 65, 1);
+    pipe.OnPaint(pixels.data(), 65, 65, 2);
+    CHECK(pipe.mode() == bg::compositor::PipelineMode::Composing,
+          "initial live capture failed");
+
+    bg::ProtocolSnapshot replacement;
+    replacement.graph_revision = 2;
+    bg::ProtocolLayerNode cached;
+    cached.id = "static";
+    cached.kind = bg::ProtocolNodeKind::CachedBitmap;
+    cached.source_w = 1;
+    cached.source_h = 1;
+    replacement.layers.push_back(cached);
+    store.Commit(std::move(replacement));
+    pipe.OnTick();
+    pipe.OnCaptureReady(2);
+    pipe.OnPaint(pixels.data(), 65, 65, 3);
+    StampCaptureMarker(pixels, 65, 2);
+    pipe.OnPaint(pixels.data(), 65, 65, 4);
+
+    CHECK(pipe.mode() == bg::compositor::PipelineMode::Composing,
+          "cache-only replacement capture failed");
+    CHECK(!pipe.NeedsLivePaint(), "cache-only graph still requests live paint");
+    CHECK(pipe.OnPaint(pixels.data(), 65, 65, 5)
+              == bg::compositor::PaintDisposition::ConsumedByCapture,
+          "cache-only paint disposition");
+    CHECK(pipe.mode() == bg::compositor::PipelineMode::Composing,
+          "stale live identity forced cache-only graph into fallback");
+}
+
 TEST(LivePipelineAppliesCefDirtyRectsToWarmLiveBitmap) {
     bg::RenderGraphStore store;
     bg::ProtocolSnapshot snapshot;
