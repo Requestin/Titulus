@@ -35,6 +35,7 @@ void EngineClient::OnPaint(CefRefPtr<CefBrowser>, PaintElementType type,
     if (closing_.load(std::memory_order_acquire)) return;
     // Only the view surface, never popups (CasparCG html_producer.cpp:361).
     if (type != PET_VIEW) return;
+    cef_paint_seq_.fetch_add(1, std::memory_order_release);
 
     // Doc02 PR5: when the live pipeline is capturing or composing, it may
     // consume this paint instead of forwarding it to FrameRing.

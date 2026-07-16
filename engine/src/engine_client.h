@@ -18,6 +18,7 @@
 #include "compositor/live_pipeline.h"
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 
 namespace bg {
@@ -82,6 +83,9 @@ class EngineClient : public CefClient,
 
     bool closing() const { return closing_.load(std::memory_order_acquire); }
     void set_closing()   { closing_.store(true, std::memory_order_release); }
+    uint64_t cef_paint_seq() const {
+        return cef_paint_seq_.load(std::memory_order_acquire);
+    }
 
     // Browser handle for the main pump. Set on OnAfterCreated, cleared on
     // OnBeforeClose; both run on the CEF UI thread, which IS the main thread
@@ -99,6 +103,7 @@ class EngineClient : public CefClient,
     RenderGraphStore* graph_store_ = nullptr;  // shadow only, never null-checked on hot path
     compositor::LivePipeline* live_pipeline_ = nullptr;
     std::atomic<bool> closing_{false};
+    std::atomic<uint64_t> cef_paint_seq_{0};
     CefRefPtr<CefBrowser> browser_;
 };
 

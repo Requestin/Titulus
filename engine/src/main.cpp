@@ -23,6 +23,7 @@
 #include "frame_ring.h"
 #include "message_pump.h"
 #include "mixer/render_graph_store.h"
+#include "paint_sequence_tracker.h"
 #include "compositor/live_pipeline.h"
 #include "stats.h"
 
@@ -383,6 +384,12 @@ int main(int argc, char** argv) {
     // to the capturer's RequestRefreshFrame and floods it into delivering
     // blank buffers (black flicker on air, Phase 10.5 regression).
     auto last_any_paint = std::chrono::steady_clock::now();
+    bg::PaintSequenceTracker cef_paint_tracker(client->cef_paint_seq());
+    const auto observe_cef_paint_activity = [&] {
+        if (cef_paint_tracker.Observe(client->cef_paint_seq())) {
+            last_any_paint = std::chrono::steady_clock::now();
+        }
+    };
 
     // Phase 11.2: consumers with a hardware clock (DeckLink genlock +
     // scheduled playback) drive the pump directly instead of the engine
@@ -456,9 +463,9 @@ int main(int argc, char** argv) {
                     std::this_thread::sleep_for(slice);
                 }
 
-                const bool reused_live_frame =
-                    TryPublishReusableLiveFrameAfterMiss(
-                        paint_seq.load(std::memory_order_acquire));
+                observe_cef_paint_activity();
+                TryPublishReusableLiveFrameAfterMiss(
+                    paint_seq.load(std::memory_order_acquire));
                 const uint64_t cur_seq = paint_seq.load(std::memory_order_acquire);
                 const bool got_new_paint = cur_seq != last_delivered_seq;
                 auto delivery_time = std::chrono::steady_clock::now();
@@ -479,7 +486,6 @@ int main(int argc, char** argv) {
                     stats.RecordFrame(interval_us, expected_us);
                     last_paint_time = delivery_time;
                     have_last_paint = true;
-                    if (!reused_live_frame) last_any_paint = delivery_time;
                 }
 
                 if (frame_log && frame_log->enabled()) {
@@ -602,6 +608,7 @@ int main(int argc, char** argv) {
         const int64_t sleep_us = pump.Tick(/*out_painted=*/false);
         uint64_t pump_active_us = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - pump_tick_t0).count();
+        observe_cef_paint_activity();
 
         // Deliver the latest painted frame to the consumer, but only when a new
         // OnPaint actually arrived (avoid double-counting / re-delivering).
@@ -631,7 +638,6 @@ int main(int argc, char** argv) {
             stats.RecordFrame(interval_us, expected_us);
             last_paint_time = delivery_time;
             have_last_paint = true;
-            last_any_paint = delivery_time;
         }
 
         // Paint watchdog: the channel.html damage beacon keeps OnPaint alive at
@@ -689,6 +695,7 @@ int main(int argc, char** argv) {
                 std::chrono::steady_clock::now() - slice_t0).count();
             remaining_us -= slice_us;
         }
+        observe_cef_paint_activity();
 
         // Re-sample paint_seq after the sleep window so paint_seq_delta
         // includes paints that landed during the remaining_us slices (the
@@ -722,7 +729,6 @@ int main(int argc, char** argv) {
             if (interval_us > 0) stats.RecordFrame(interval_us, expected_us);
             last_paint_time = delivery_time;
             have_last_paint = true;
-            if (!reused_live_frame) last_any_paint = delivery_time;
         }
 
         if (frame_log && frame_log->enabled()) {
