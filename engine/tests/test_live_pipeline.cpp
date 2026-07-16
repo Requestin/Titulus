@@ -8,6 +8,7 @@
 #include "../src/frame_ring.h"
 #include "../src/mixer/protocol_types.h"
 #include "../src/mixer/render_graph_store.h"
+#include "../src/paint_sequence_tracker.h"
 
 #include <cstdio>
 #include <cmath>
@@ -92,6 +93,13 @@ void StampCaptureMarkerTopRow(std::vector<uint8_t>& bgra, int width,
 }
 
 }  // namespace
+
+TEST(PaintSequenceTrackerOnlyReportsRealSequenceChanges) {
+    bg::PaintSequenceTracker tracker(10);
+    CHECK(!tracker.Observe(10), "unchanged sequence reported fresh activity");
+    CHECK(tracker.Observe(11), "new sequence did not report fresh activity");
+    CHECK(!tracker.Observe(11), "observed sequence reported twice");
+}
 
 TEST(LayerBitmapCacheStoresAndRetrieves) {
     bg::compositor::LayerBitmapCache cache;
