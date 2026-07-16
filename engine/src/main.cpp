@@ -202,6 +202,21 @@ bool TryPublishComposedFrame() {
     return true;
 }
 
+// Hold the last verified live bitmap when CEF misses a requested paint deadline.
+// This preserves output cadence, but deliberately does not count as fresh CEF
+// activity for the paint watchdog.
+bool TryPublishReusableLiveFrameAfterMiss(uint64_t observed_seq) {
+    if (!browser_ready.load(std::memory_order_acquire)
+        || observed_seq != last_delivered_seq
+        || !g_live_pipeline
+        || !g_live_pipeline->HasReusableLiveFrame()
+        || !TryPublishComposedFrame()) {
+        return false;
+    }
+    g_live_pipeline->RecordReusedLiveFrame();
+    return true;
+}
+
 void on_paint(const uint8_t* bgra, int width, int height) {
     // Doc02 PR5: when the live pipeline consumed a live-overlay paint, EngineClient
     // still forwards here with a null buffer as a "compose opportunity" signal.
@@ -441,13 +456,9 @@ int main(int argc, char** argv) {
                     std::this_thread::sleep_for(slice);
                 }
 
-                if (paint_seq.load(std::memory_order_acquire)
-                        == last_delivered_seq
-                    && g_live_pipeline
-                    && g_live_pipeline->HasReusableLiveFrame()
-                    && TryPublishComposedFrame()) {
-                    g_live_pipeline->RecordReusedLiveFrame();
-                }
+                const bool reused_live_frame =
+                    TryPublishReusableLiveFrameAfterMiss(
+                        paint_seq.load(std::memory_order_acquire));
                 const uint64_t cur_seq = paint_seq.load(std::memory_order_acquire);
                 const bool got_new_paint = cur_seq != last_delivered_seq;
                 auto delivery_time = std::chrono::steady_clock::now();
@@ -468,7 +479,7 @@ int main(int argc, char** argv) {
                     stats.RecordFrame(interval_us, expected_us);
                     last_paint_time = delivery_time;
                     have_last_paint = true;
-                    last_any_paint = delivery_time;
+                    if (!reused_live_frame) last_any_paint = delivery_time;
                 }
 
                 if (frame_log && frame_log->enabled()) {
@@ -682,14 +693,21 @@ int main(int argc, char** argv) {
         // Re-sample paint_seq after the sleep window so paint_seq_delta
         // includes paints that landed during the remaining_us slices (the
         // probe's whole point — did the second BeginFrame produce a second
-        // OnPaint within one field period?). Only under pipeline_probe do we
-        // also deliver a late paint here — the default path keeps the
-        // pre-Phase-18 behaviour (deliver on the next tick).
-        const uint64_t seq_after_sleep = paint_seq.load(std::memory_order_acquire);
+        // OnPaint within one field period?). The default path still defers a
+        // late fresh paint to the next tick, but publishes a verified hold-last
+        // frame when no CEF paint arrived at all.
+        uint64_t seq_after_sleep = paint_seq.load(std::memory_order_acquire);
         const int paint_seq_delta_final = static_cast<int>(
             seq_after_sleep >= seq_at_tick_start ? seq_after_sleep - seq_at_tick_start : 0);
-        if (pipeline_probe && browser_ready.load(std::memory_order_acquire) &&
-            seq_after_sleep != last_delivered_seq) {
+        const bool reused_live_frame =
+            !got_new_paint && !pipeline_probe
+            && TryPublishReusableLiveFrameAfterMiss(seq_after_sleep);
+        if (reused_live_frame) {
+            seq_after_sleep = paint_seq.load(std::memory_order_acquire);
+        }
+        if ((pipeline_probe || reused_live_frame)
+            && browser_ready.load(std::memory_order_acquire)
+            && seq_after_sleep != last_delivered_seq) {
             last_delivered_seq = seq_after_sleep;
             if (!cfg.decklink_direct_paint) {
                 ring.Latest([&](const bg::Frame& f) {
@@ -704,7 +722,7 @@ int main(int argc, char** argv) {
             if (interval_us > 0) stats.RecordFrame(interval_us, expected_us);
             last_paint_time = delivery_time;
             have_last_paint = true;
-            last_any_paint = delivery_time;
+            if (!reused_live_frame) last_any_paint = delivery_time;
         }
 
         if (frame_log && frame_log->enabled()) {
@@ -712,10 +730,11 @@ int main(int argc, char** argv) {
                 std::chrono::microseconds>(delivery_time - tick_start).count();
             const uint64_t wall_clock_us = std::chrono::duration_cast<
                 std::chrono::microseconds>(delivery_time.time_since_epoch()).count();
-            const bool delivered = got_new_paint ||
-                (pipeline_probe && seq_after_sleep != seq_at_tick_start);
+            const bool delivered = got_new_paint || reused_live_frame
+                || (pipeline_probe && seq_after_sleep != seq_at_tick_start);
             frame_log->RecordTick(wall_clock_us, interval_us,
-                                  pipeline_probe ? seq_after_sleep : cur_seq,
+                                  (pipeline_probe || reused_live_frame)
+                                      ? seq_after_sleep : cur_seq,
                                   pump_active_us, paint_latency_us,
                                   delivered ? 0 : 1,
                                   inflight_depth,

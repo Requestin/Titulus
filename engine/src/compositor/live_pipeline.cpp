@@ -40,7 +40,7 @@ bool CaptureMarkerMatches(const uint8_t* bgra, int width, int height,
         const uint8_t expected_r = static_cast<uint8_t>(value & 0xFF);
         const uint8_t expected_g = static_cast<uint8_t>((value >> 8) & 0xFF);
         const uint8_t expected_b = static_cast<uint8_t>((value >> 16) & 0xFF);
-        const uint8_t* pixel = bgra + (static_cast<size_t>(x) + width) * 4;
+        const uint8_t* pixel = bgra + static_cast<size_t>(x) * 4;
         return pixel[0] == expected_b && pixel[1] == expected_g
             && pixel[2] == expected_r && pixel[3] == 0xFF;
     };
