@@ -265,6 +265,7 @@ void LivePipeline::BeginCapturePass() {
     capture_graph_revision_ = snap->graph_revision;
     capture_state_revision_ = snap->state_revision;
     selective_capture_ = false;
+    live_layer_id_.clear();
     last_incremental_snapshot_.reset();
     pending_content_dirty_ids_.clear();
     capture_queue_ = CacheableLayerIds(*snap);
