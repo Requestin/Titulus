@@ -228,6 +228,48 @@ export class TemplateRenderer {
     this.startClockTicker();
   }
 
+  /**
+   * Editor / air-preview playback with Action runtime, starting from the given
+   * per-director local frames (scrub position). Cues at/before the start frame
+   * are not re-fired.
+   */
+  startDirectorPlayback(
+    template: Template,
+    variables: Record<string, string | number> = NO_VARS,
+    localFrames: Record<string, number> = {},
+    opts: { onFrame?: OnFrameFn; onAction?: OnActionFn; onWaitingChange?: OnWaitingChangeFn } = {},
+  ): void {
+    this.syncTemplate(template, variables);
+    this.onFrame = opts.onFrame ?? null;
+    this.onAction = opts.onAction ?? null;
+    this.onWaitingChange = opts.onWaitingChange ?? null;
+    this.lastWaitingReported = null;
+    this.playing = true;
+    this.lastFrameSampled = null;
+    this.useDirectorRuntime = true;
+    this.directorRuntimes = initDirectorRuntimes(template.timeline);
+    for (const d of template.timeline.directors) {
+      const rt = this.directorRuntimes[d.id];
+      if (!rt) continue;
+      const local = Math.max(0, Math.min(d.durationFrames, Math.round(localFrames[d.id] ?? rt.localFrame)));
+      rt.localFrame = local;
+      rt.lastLocalForActions = local;
+      rt.pauseRemaining = 0;
+      if (rt.direction !== 1 && rt.direction !== -1) rt.direction = 1;
+    }
+    this.directorLocalFrames = localFramesMap(this.directorRuntimes);
+    this.applyStateFromLocals(this.fixedTickRate);
+    this.emitWaitingChange();
+    if (this.mode === 'raf') this.startRaf();
+    this.startClockTicker();
+  }
+
+  /** Snapshot of per-director local frames (editor playhead sync). */
+  getDirectorLocals(): Record<string, number> {
+    if (this.directorRuntimes) return localFramesMap(this.directorRuntimes);
+    return { ...(this.directorLocalFrames ?? {}) };
+  }
+
   /** Stop timeline playback (freeze at the current frame). */
   stopTimeline(): void {
     this.playing = false;
@@ -280,6 +322,14 @@ export class TemplateRenderer {
   hasWaitingDirectors(): boolean {
     if (!this.directorRuntimes) return false;
     return Object.values(this.directorRuntimes).some((rt) => rt.state === 'stopAndWaitContinue');
+  }
+
+  /** True while any director is playing, pausing, or waiting for Continue. */
+  isDirectorPlaybackActive(): boolean {
+    if (!this.directorRuntimes) return false;
+    return Object.values(this.directorRuntimes).some(
+      (rt) => rt.state === 'play' || rt.state === 'pause' || rt.state === 'stopAndWaitContinue',
+    );
   }
 
   /**

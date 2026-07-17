@@ -26,7 +26,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Play, Pause, Square, Plus, Trash2, Activity, ListTree, GripVertical, ChevronRight, ChevronDown, SkipBack, Folder } from 'lucide-react';
+import { Play, Pause, Square, Plus, Trash2, Activity, ListTree, GripVertical, ChevronRight, ChevronDown, SkipBack, Folder, ChevronsRight } from 'lucide-react';
 import { ANIMATABLE_PROPS, getEasing, isUpdateDirectorName, type AnimatableProp, type EasingType } from '@runtime';
 import { useEditor, type Target } from '../store';
 import {
@@ -171,10 +171,12 @@ export function TimelinePanel() {
   const select = useEditor((s) => s.select);
   const playheads = useEditor((s) => s.playheads);
   const playing = useEditor((s) => s.playing);
+  const waitingContinue = useEditor((s) => s.waitingContinue);
   const activeDirectorId = useEditor((s) => s.activeDirectorId);
   const setPlayhead = useEditor((s) => s.setPlayhead);
   const setGlobalPlayhead = useEditor((s) => s.setGlobalPlayhead);
   const setPlaying = useEditor((s) => s.setPlaying);
+  const requestContinue = useEditor((s) => s.requestContinue);
   const setActiveDirector = useEditor((s) => s.setActiveDirector);
   const addDirector = useEditor((s) => s.addDirector);
   const updateDirector = useEditor((s) => s.updateDirector);
@@ -365,6 +367,20 @@ export function TimelinePanel() {
           title={playing ? 'Pause' : 'Play'}
         >
           {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+        </button>
+        <button
+          type="button"
+          onClick={() => requestContinue()}
+          disabled={!waitingContinue}
+          className={cn(
+            'grid h-7 w-7 place-items-center rounded-md',
+            waitingContinue
+              ? 'text-primary hover:bg-primary/15'
+              : 'cursor-not-allowed text-ink-faint opacity-40',
+          )}
+          title="Continue (resume stop and wait)"
+        >
+          <ChevronsRight className="h-4 w-4" />
         </button>
         <button
           onClick={stopPlayback}

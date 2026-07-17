@@ -6,9 +6,9 @@
 // transform on pointer-up (so a drag is a single history step).
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
+import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform, type OnActionFn } from '@runtime';
 import { useEditor } from './store';
-import { effectiveTransform, advanceDirectorRel, directorRelToLocal } from './effectiveValues';
+import { effectiveTransform } from './effectiveValues';
 import { primaryDirectorForTarget } from './timelineTracks';
 import { groupCanvasAabb, groupPivotCanvasPoint, layerCanvasAabb } from './groupBounds';
 import { axisCrosshairSize, mapLayerPointToCanvas, pivotCanvasPoint } from './pivot';
@@ -84,9 +84,11 @@ export function CanvasArea() {
   const gridSize = useEditor((s) => s.gridSize);
   const playheads = useEditor((s) => s.playheads);
   const playing = useEditor((s) => s.playing);
+  const continueRequestId = useEditor((s) => s.continueRequestId);
   const setPlayheads = useEditor((s) => s.setPlayheads);
   const setDirectorRel = useEditor((s) => s.setDirectorRel);
   const setPlaying = useEditor((s) => s.setPlaying);
+  const setWaitingContinue = useEditor((s) => s.setWaitingContinue);
   const select = useEditor((s) => s.select);
   const setActiveDirector = useEditor((s) => s.setActiveDirector);
   const updateTransform = useEditor((s) => s.updateTransform);
@@ -95,6 +97,11 @@ export function CanvasArea() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<TemplateRenderer | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const playOptsRef = useRef<{
+    onFrame?: () => void;
+    onAction?: OnActionFn;
+    onWaitingChange?: (waiting: boolean) => void;
+  } | null>(null);
   const [overlay, setOverlay] = useState<SelectionOverlay | null>(null);
 
   useLayoutEffect(() => {
@@ -258,9 +265,16 @@ export function CanvasArea() {
   useLayoutEffect(() => {
     const r = rendererRef.current;
     if (!r || !template) return;
-    r.syncTemplate(template, resolveVariableMap(template));
+    const vars = resolveVariableMap(template);
+    r.syncTemplate(template, vars);
     r.resize(cw * zoom, ch * zoom);
-    r.seekDirectorLocals(useEditor.getState().playheads);
+    const st = useEditor.getState();
+    if (st.playing) {
+      const opts = playOptsRef.current ?? {};
+      r.startDirectorPlayback(template, vars, st.playheads, opts);
+    } else {
+      r.seekDirectorLocals(st.playheads);
+    }
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template, zoom, cw, ch]);
@@ -279,60 +293,64 @@ export function CanvasArea() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playheads, playing]);
 
-  // Playback: advance each director independently (loop/swing via directorRelToLocal).
+  // Playback: Action-aware director runtime (same path as Control air).
   useEffect(() => {
-    if (!playing) return;
     const r = rendererRef.current;
     const t = useEditor.getState().template;
     if (!r || !t) return;
-    const fps = t.timeline.fps || 50;
 
-    const startPlayheads = { ...useEditor.getState().playheads };
-    let rel = { ...useEditor.getState().directorRel };
-    for (const d of t.timeline.directors) {
-      rel[d.id] = startPlayheads[d.id] ?? 0;
+    if (!playing) {
+      r.stopTimeline();
+      const locals = r.getDirectorLocals();
+      if (Object.keys(locals).length > 0) {
+        setPlayheads(locals);
+        for (const [id, frame] of Object.entries(locals)) setDirectorRel(id, frame);
+      }
+      setWaitingContinue(false);
+      r.seekDirectorLocals(useEditor.getState().playheads);
+      recomputeBox();
+      return;
     }
-    r.seekDirectorLocals(startPlayheads);
 
-    let last: number | null = null;
-    let raf = 0;
-    const loop = (now: number) => {
-      if (last === null) {
-        last = now;
-        raf = requestAnimationFrame(loop);
-        return;
-      }
-      const delta = ((now - last) / 1000) * fps;
-      last = now;
-      if (delta <= 0) {
-        raf = requestAnimationFrame(loop);
-        return;
-      }
-      const nextPlayheads: Record<string, number> = {};
-      let allDone = true;
-      for (const d of t.timeline.directors) {
-        const curRel = rel[d.id] ?? 0;
-        const adv = advanceDirectorRel(d, curRel, delta);
-        rel[d.id] = adv.rel;
-        nextPlayheads[d.id] = directorRelToLocal(d, adv.rel);
-        if (!adv.done || d.loop) allDone = false;
-      }
-      if (allDone) {
-        setPlayheads(nextPlayheads);
-        for (const d of t.timeline.directors) setDirectorRel(d.id, rel[d.id] ?? 0);
-        setPlaying(false);
-        return;
-      }
-      r.seekDirectorLocals(nextPlayheads);
-      setPlayheads(nextPlayheads);
-      for (const d of t.timeline.directors) {
-        setDirectorRel(d.id, rel[d.id] ?? 0);
-      }
-      raf = requestAnimationFrame(loop);
+    const opts = {
+      onFrame: () => {
+        const locals = r.getDirectorLocals();
+        setPlayheads(locals);
+        for (const [id, frame] of Object.entries(locals)) setDirectorRel(id, frame);
+        recomputeBox();
+        if (!r.isDirectorPlaybackActive()) {
+          setPlaying(false);
+          setWaitingContinue(false);
+        }
+      },
+      onAction: ((info) => {
+        if (info.item.command === 'tag' && info.item.parameterTag === 'endScene') {
+          setPlaying(false);
+          setWaitingContinue(false);
+        }
+      }) satisfies OnActionFn,
+      onWaitingChange: (waiting: boolean) => {
+        setWaitingContinue(waiting);
+      },
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, setPlayheads, setDirectorRel, setPlaying]);
+    playOptsRef.current = opts;
+
+    r.startDirectorPlayback(
+      t,
+      resolveVariableMap(t),
+      useEditor.getState().playheads,
+      opts,
+    );
+  }, [playing, setPlayheads, setDirectorRel, setPlaying, setWaitingContinue]);
+
+  // Continue button: resume stopAndWaitContinue (transport must already be playing).
+  useEffect(() => {
+    if (continueRequestId === 0) return;
+    const r = rendererRef.current;
+    if (!r || !useEditor.getState().playing) return;
+    r.continueWaitingDirectors();
+    setWaitingContinue(r.hasWaitingDirectors());
+  }, [continueRequestId, setWaitingContinue]);
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (!template) return;

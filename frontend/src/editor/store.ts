@@ -190,6 +190,9 @@ interface EditorState {
   /** Per-director elapsed rel time for loop/swing playback (transient). */
   directorRel: Record<string, number>;
   playing: boolean;
+  waitingContinue: boolean;
+  /** Bumped by requestContinue so CanvasArea can resume stopAndWaitContinue. */
+  continueRequestId: number;
   activeDirectorId: string;
   setPlayhead: (directorId: string, frame: number) => void;
   setPlayheads: (playheads: Record<string, number>) => void;
@@ -197,6 +200,8 @@ interface EditorState {
   setGlobalPlayhead: (frame: number) => void;
   setDirectorRel: (directorId: string, rel: number) => void;
   setPlaying: (playing: boolean) => void;
+  setWaitingContinue: (waiting: boolean) => void;
+  requestContinue: () => void;
   setActiveDirector: (id: string) => void;
   setTimelineMeta: (partial: { fps?: number; durationFrames?: number; playbackMode?: 'bounded' | 'infinite' }) => void;
   addDirector: () => void;
@@ -288,6 +293,8 @@ export const useEditor = create<EditorState>()(
       playheads: {},
       directorRel: {},
       playing: false,
+      waitingContinue: false,
+      continueRequestId: 0,
       activeDirectorId: 'default',
       selectedActionCueId: null,
 
@@ -305,6 +312,7 @@ export const useEditor = create<EditorState>()(
           playheads: initPlayheads(normalized.timeline.directors),
           directorRel: initPlayheads(normalized.timeline.directors),
           playing: false,
+          waitingContinue: false,
           activeDirectorId: normalized.timeline.directors[0]?.id ?? 'default',
           selectedActionCueId: null,
         });
@@ -593,15 +601,17 @@ export const useEditor = create<EditorState>()(
       setDirectorRel: (directorId, rel) =>
         set((s) => ({ directorRel: { ...s.directorRel, [directorId]: Math.max(0, rel) } })),
       setPlaying: (playing) => set((s) => {
-        if (!playing) return { playing: false };
+        if (!playing) return { playing: false, waitingContinue: false };
         const t = get().template;
         const directorRel = { ...s.directorRel };
         for (const d of t?.timeline.directors ?? []) {
           directorRel[d.id] = s.playheads[d.id] ?? 0;
         }
-        return { playing: true, directorRel };
+        return { playing: true, directorRel, waitingContinue: false };
       }),
-      setActiveDirector: (id) => set({ activeDirectorId: id, playing: false }),
+      setWaitingContinue: (waiting) => set({ waitingContinue: waiting }),
+      requestContinue: () => set((s) => ({ continueRequestId: s.continueRequestId + 1 })),
+      setActiveDirector: (id) => set({ activeDirectorId: id, playing: false, waitingContinue: false }),
 
       setTimelineMeta: (partial) => get().patch((t) => { Object.assign(t.timeline, partial); }),
 
