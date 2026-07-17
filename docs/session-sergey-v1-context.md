@@ -1,7 +1,7 @@
 # Ветка `sergey-v1` — контекст и changelog
 
 > Сводка работы Sergey + агент Cursor на ветке `sergey-v1`.  
-> Обновлено: **14 июля 2026**.
+> Обновлено: **17 июля 2026**.
 
 ---
 
@@ -43,6 +43,76 @@
 | `ddb0186` | 10 июл | `docs(sergey-v1): fix commit hash in session context` |
 | `d60b80a` | 14 июл | `add text parameters` (text transform + drop shadow + login logo) |
 | `4075a3c` | 14 июл | `add crawl` (Crawl layer + collapsible props + Multitext/TextFile) |
+| `fdfe6e9` | 17 июл | `feat(timeline): Action cues + Update-flow on sergey-v1` |
+| `9fbbd07` | 17 июл | `fix(control): make timeline Actions work on air` |
+| `1dafb0b` | 17 июл | `fix(editor): honor stop/wait Actions + Continue button` |
+| `730bc45` | 17 июл | `fix(editor): ignore endScene; Stop freezes playhead in place` |
+| `937587b` | 17 июл | `add actions, continue,update` (perf + classic playback gate + session context) |
+
+---
+
+## 17 июля 2026 — Actions + Continue + Update-flow
+
+Крупный пакет: timeline **Action cues**, Continue/wait, Update director + Update-flow на Control, правки editor/air playback и производительности. ТЗ: `docs/tz-timeline-actions-draft.md`.
+
+### Модель Actions (schema / runtime)
+
+- Cue + items (вместо legacy flat `startDirector|stopDirector|setTag`).
+- Commands: `startDirector`, `stopDirector`, `stopDirectorAndWaitContinue`, `pauseDirector`, `tag`.
+- Tags: `endScene` | `updateData`.
+- Защищённый director **Update** (`ensureUpdateDirector`, seed cue `updateData`); armed = tracks + ≥2 keyframes.
+- Runtime: `runtime/src/directorRuntime.ts` — per-director play/stop/pause/wait; `TemplateRenderer` исполняет cues при playthrough.
+- Schema: `runtime/src/schema.ts`, `shared/template.schema.json`.
+
+### Control / air
+
+- WS: `continue`, renderer → `endScene` / `waitingContinue`.
+- On-air: `waitingContinue` в snapshot; Continue только когда waiting.
+- Update-flow: Control UPDATE → `startUpdateFlow` → переменные apply на tag `updateData`.
+- UI: Take / Continue / Clear в rundown/templates; poll `/api/onair` заменён на **WS push** `{ type: 'onAir', onAir }` (без 500ms poll).
+- Корень бага «Actions не на эфире»: устаревший `backend/public/bg-runtime.js` — после runtime всегда `cd runtime && npm run build`.
+
+### Editor
+
+- Action lane на timeline (+A/−A), Properties для cue/items.
+- Continue в transport при `waitingContinue`.
+- **endScene в editor игнорируется** (air-only); Stop замораживает последний кадр (без чёрного экрана от seek).
+- Play: host rAF; при наличии реальных Actions — Action runtime; иначе — classic fractional seek.
+
+### Производительность / плавность (важно)
+
+**Проблема:** пустой Update + seed `updateData` заставлял **каждый** take идти через Action runtime → дёрганье в editor и на DeckLink.
+
+**Fix:**
+- `timelineNeedsDirectorRuntime()` — Action path только если есть start/stop/wait/pause, `endScene`, или **armed** Update. Dormant Update **не** форсит тяжёлый путь.
+- Classic `playTimeline`: `frame++` + `sampleAt` (как до Actions).
+- `sampleAtDirectorLocals` пропускает directors без tracks.
+- Editor: throttle UI playheads ~15 Hz; atomic `setPlayheads` (+ `directorRel`); rAF accumulator вместо `Math.round`.
+- После правок runtime: **обязательно** `npm run build` + restart engine/channel.
+
+### Ключевые файлы (17 июля)
+
+| Area | Path |
+|---|---|
+| ТЗ | `docs/tz-timeline-actions-draft.md` |
+| Schema / gate | `runtime/src/schema.ts` (`timelineNeedsDirectorRuntime`) |
+| Director SM | `runtime/src/directorRuntime.ts` |
+| Renderer | `runtime/src/domRenderer.ts` |
+| Air client | `runtime/src/channelClient.ts` |
+| Timeline sample | `runtime/src/timeline.ts` |
+| Editor play | `frontend/src/editor/CanvasArea.tsx`, `store.ts` |
+| Timeline UI | `frontend/src/editor/panels/TimelinePanel.tsx`, `PropertiesPanel.tsx` |
+| Control | `frontend/src/control/RundownTab.tsx`, `pages/ControlPage.tsx`, `core/controlWs.ts` |
+| Backend | `backend/src/onair.js`, `backend/src/routes/ws.js` |
+
+### Проверка (Actions)
+
+- [ ] Шаблон **без** Action-команд: Play в editor и TAKE на DeckLink — плавно (classic path)
+- [ ] `stopDirectorAndWaitContinue` → Continue в editor и Control
+- [ ] Tag `endScene` на air → clear; в editor — play не гасит canvas
+- [ ] Stop mid-play — кадр застывает, не чёрный экран
+- [ ] Armed Update + Control UPDATE → Update-flow на `updateData`
+- [ ] После `cd runtime && npm run build` — Actions на channel.html/engine
 
 ---
 
@@ -868,9 +938,12 @@ Stepper ↑↓, `extraActions` для rotation.
 | Store | `frontend/src/editor/store.ts` |
 | Factories | `frontend/src/editor/factories.ts` |
 | Timeline | `frontend/src/editor/panels/TimelinePanel.tsx`, `timelineTracks.ts` |
-| Timeline runtime | `runtime/src/timeline.ts`, `shared/template.schema.json` |
+| Timeline runtime | `runtime/src/timeline.ts`, `directorRuntime.ts`, `shared/template.schema.json` |
+| Actions / Update | `docs/tz-timeline-actions-draft.md`, `runtime/src/schema.ts` (`timelineNeedsDirectorRuntime`) |
 | UI forms | `frontend/src/components/ui/form.tsx` |
 | Control / Rundowns | `frontend/src/control/RundownTab.tsx`, `frontend/src/pages/ControlPage.tsx` |
+| Control WS | `frontend/src/core/controlWs.ts` (onAir push) |
+| On-air / WS hub | `backend/src/onair.js`, `backend/src/routes/ws.js` |
 | Control Variables | `frontend/src/control/ControlVariablesPanel.tsx` |
 | DataElements | `backend/src/dataElementsDb.js`, `backend/src/routes/dataElements.js` |
 | Templates EDITOR + PLAY | `frontend/src/pages/TemplatesPage.tsx`, `frontend/src/control/TemplatesTab.tsx` |
@@ -914,6 +987,8 @@ git push -u origin sergey-v1
 - [ ] Text: Text transformation (X/AA/Aa/aa) + Drop shadow Color/X/Y/Blur
 - [ ] Crawl: Ticker/Carousel, Pause(frame), Parse/Use File, Align rules, shadow live
 - [ ] Login: логотип 560px над формой; форма по центру
+- [ ] Actions: без команд — classic smooth path; wait/Continue; endScene air-only; Stop freeze
+- [ ] После runtime-правок: `cd runtime && npm run build` + restart channel/engine
 
 **Data:**
 - [ ] `ls -la /var/lib/titulus/` — `app.db`, `uploads/`

@@ -560,6 +560,35 @@ export function isUpdateDirectorArmed(timeline: Timeline): boolean {
   return kfCount >= 2;
 }
 
+/**
+ * Whether air/editor must run the per-director Action state machine.
+ *
+ * Dormant Update (autostart=false, unarmed, only seed updateData cue) must NOT
+ * force this — otherwise every take pays Action-runtime cost and looks jerky
+ * on SDI even when the operator never used Actions.
+ */
+export function timelineNeedsDirectorRuntime(timeline: Timeline): boolean {
+  const updateArmed = isUpdateDirectorArmed(timeline);
+  for (const cue of timeline.actions) {
+    for (const item of cue.items) {
+      if (!item.command) continue;
+      if (
+        item.command === 'startDirector'
+        || item.command === 'stopDirector'
+        || item.command === 'stopDirectorAndWaitContinue'
+        || item.command === 'pauseDirector'
+      ) {
+        return true;
+      }
+      if (item.command === 'tag') {
+        if (item.parameterTag === 'endScene') return true;
+        if (item.parameterTag === 'updateData' && updateArmed) return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function createDefaultTimeline(): Timeline {
   const defaultDirector: TimelineDirector = {
     id: 'default',

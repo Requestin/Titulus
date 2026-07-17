@@ -22,6 +22,8 @@ export class OnAirManager {
     this.dao = onAirDao(db);
     // channelId -> Set<WebSocket>  (renderer clients)
     this.renderers = new Map();
+    // Control-panel WS clients (receive on-air snapshot pushes).
+    this.controls = new Set();
     // In-memory mirror of on_air for /api/onair without a DB hit per request.
     this.state = this.dao.all(); // { channelId: [command,...] }
   }
@@ -45,6 +47,23 @@ export class OnAirManager {
     if (!set) return;
     set.delete(ws);
     if (set.size === 0) this.renderers.delete(channelId);
+  }
+
+  /** Register a control-panel WS; push current on-air snapshot immediately. */
+  registerControl(ws) {
+    this.controls.add(ws);
+    this.safeSend(ws, { type: 'onAir', onAir: this.onAirTemplateIds() });
+  }
+
+  unregisterControl(ws) {
+    this.controls.delete(ws);
+  }
+
+  /** Push compact on-air snapshot to all control clients (no HTTP poll). */
+  notifyControls() {
+    if (this.controls.size === 0) return;
+    const payload = JSON.stringify({ type: 'onAir', onAir: this.onAirTemplateIds() });
+    for (const ws of this.controls) this.safeSendRaw(ws, payload);
   }
 
   // -------------------------------------------------------------------------
@@ -73,6 +92,7 @@ export class OnAirManager {
     this.state[cmd.channelId] = this.state[cmd.channelId].filter((c) => c.templateId !== cmd.templateId);
     this.state[cmd.channelId].push(next);
     this.fanout(cmd.channelId, next);
+    this.notifyControls();
   }
 
   applyUpdate(cmd) {
@@ -99,6 +119,7 @@ export class OnAirManager {
       ...(next.slotId ? { slotId: next.slotId } : {}),
       ...(cmd.template ? { template: cmd.template } : {}),
     });
+    this.notifyControls();
   }
 
   applyContinue(cmd) {
@@ -123,6 +144,7 @@ export class OnAirManager {
       for (const templateId of active) {
         this.fanout(cmd.channelId, { type: 'clear', templateId, channelId: cmd.channelId });
       }
+      this.notifyControls();
       return;
     }
     this.dao.remove(cmd.channelId, cmd.templateId);
@@ -131,6 +153,7 @@ export class OnAirManager {
       if (this.state[cmd.channelId].length === 0) delete this.state[cmd.channelId];
     }
     this.fanout(cmd.channelId, cmd);
+    this.notifyControls();
   }
 
   /** Public snapshot for /api/onair: { channelId: [{ templateId, slotId?, waitingContinue? }, ...] }. */
@@ -152,8 +175,10 @@ export class OnAirManager {
     if (!arr) return;
     const cmd = arr.find((c) => c.templateId === templateId);
     if (!cmd) return;
+    const prev = !!cmd.waitingContinue;
     if (waiting) cmd.waitingContinue = true;
     else delete cmd.waitingContinue;
+    if (prev !== !!waiting) this.notifyControls();
   }
 
   // -------------------------------------------------------------------------

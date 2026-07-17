@@ -49,22 +49,10 @@ export function ControlPage() {
     })();
   }, []);
 
-  // Poll on-air so End scene / waitingContinue from the renderer update Control UI.
+  // Live on-air from control WS pushes (waitingContinue / endScene / take / clear).
   useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const air = await api.onair.get();
-        if (!cancelled) setOnAir(air);
-      } catch {
-        // ignore transient poll errors
-      }
-    };
-    const id = window.setInterval(tick, 500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
+    const subscribe = useControlWs.getState().subscribeOnAir;
+    return subscribe((air) => setOnAir(air));
   }, []);
 
   useEffect(() => {

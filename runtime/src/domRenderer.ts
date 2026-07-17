@@ -21,7 +21,7 @@
 import type {
   Template, Layer, LayerGroup, AnimatableValues,
 } from './schema.js';
-import { applyTextTransform, resolveBinding, isUpdateDirectorName } from './schema.js';
+import { applyTextTransform, resolveBinding, isUpdateDirectorName, timelineNeedsDirectorRuntime } from './schema.js';
 import {
   applyTextStyleToEl,
   crawlAlignActive,
@@ -206,6 +206,10 @@ export class TemplateRenderer {
    * Play the timeline from the current frame. In 'fixed' mode the caller must
    * drive tick(); in 'raf' mode we start a requestAnimationFrame loop that maps
    * wall-clock -> frames at the template fps.
+   *
+   * Uses classic global-frame playback unless the timeline actually needs the
+   * Action director state machine (start/stop/wait/endScene/armed Update).
+   * Dormant Update alone does not enable Action runtime.
    */
   playTimeline(
     template: Template,
@@ -219,49 +223,81 @@ export class TemplateRenderer {
     this.lastWaitingReported = null;
     this.playing = true;
     this.lastFrameSampled = null;
-    this.useDirectorRuntime = true;
-    this.directorRuntimes = initDirectorRuntimes(template.timeline);
-    this.directorLocalFrames = localFramesMap(this.directorRuntimes);
-    this.applyStateFromLocals(this.fixedTickRate);
-    this.emitWaitingChange();
+    this.frame = 0;
+
+    if (timelineNeedsDirectorRuntime(template.timeline)) {
+      this.useDirectorRuntime = true;
+      this.directorRuntimes = initDirectorRuntimes(template.timeline);
+      this.directorLocalFrames = localFramesMap(this.directorRuntimes);
+      this.applyStateFromLocals(this.fixedTickRate);
+      this.emitWaitingChange();
+    } else {
+      this.useDirectorRuntime = false;
+      this.directorRuntimes = null;
+      this.directorLocalFrames = null;
+      this.applyState(0, this.fixedTickRate);
+    }
+
     if (this.mode === 'raf') this.startRaf();
     this.startClockTicker();
   }
 
   /**
-   * Editor / air-preview playback with Action runtime, starting from the given
-   * per-director local frames (scrub position). Cues at/before the start frame
-   * are not re-fired.
+   * Editor preview: arm Action runtime from current scrub without syncTemplate / rAF.
+   * Host drives advanceEditorPlayback() from its own rAF loop.
+   * No-op (returns false) when the timeline does not need Action runtime — host
+   * should use classic seekDirectorLocals playback instead.
    */
-  startDirectorPlayback(
-    template: Template,
-    variables: Record<string, string | number> = NO_VARS,
+  beginEditorPlayback(
     localFrames: Record<string, number> = {},
-    opts: { onFrame?: OnFrameFn; onAction?: OnActionFn; onWaitingChange?: OnWaitingChangeFn } = {},
-  ): void {
-    this.syncTemplate(template, variables);
-    this.onFrame = opts.onFrame ?? null;
-    this.onAction = opts.onAction ?? null;
+    opts: { onWaitingChange?: OnWaitingChangeFn } = {},
+  ): boolean {
+    if (!this.template) return false;
+    if (!timelineNeedsDirectorRuntime(this.template.timeline)) return false;
+
+    this.onFrame = null;
+    this.onAction = null; // editor ignores endScene / updateData tags
     this.onWaitingChange = opts.onWaitingChange ?? null;
     this.lastWaitingReported = null;
     this.playing = true;
-    this.lastFrameSampled = null;
     this.useDirectorRuntime = true;
-    this.directorRuntimes = initDirectorRuntimes(template.timeline);
-    for (const d of template.timeline.directors) {
+    this.directorRuntimes = initDirectorRuntimes(this.template.timeline);
+    for (const d of this.template.timeline.directors) {
       const rt = this.directorRuntimes[d.id];
       if (!rt) continue;
-      const local = Math.max(0, Math.min(d.durationFrames, Math.round(localFrames[d.id] ?? rt.localFrame)));
+      const local = Math.max(0, Math.min(d.durationFrames, Math.round(localFrames[d.id] ?? 0)));
       rt.localFrame = local;
       rt.lastLocalForActions = local;
       rt.pauseRemaining = 0;
-      if (rt.direction !== 1 && rt.direction !== -1) rt.direction = 1;
+      rt.direction = 1;
     }
     this.directorLocalFrames = localFramesMap(this.directorRuntimes);
     this.applyStateFromLocals(this.fixedTickRate);
     this.emitWaitingChange();
-    if (this.mode === 'raf') this.startRaf();
-    this.startClockTicker();
+    return true;
+  }
+
+  /** Advance Action runtime N frames and paint (editor host clock). */
+  advanceEditorPlayback(steps: number): void {
+    if (!this.playing || !this.useDirectorRuntime || !this.directorRuntimes) return;
+    this.advanceDirectorRuntimes(Math.max(0, Math.round(steps)));
+    this.directorLocalFrames = localFramesMap(this.directorRuntimes);
+    this.applyStateFromLocals(this.fixedTickRate);
+  }
+
+  /**
+   * End editor Action playback without re-painting (DOM already shows last frame).
+   * Preserves directorLocalFrames for the next scrub/seek.
+   */
+  endEditorPlayback(): Record<string, number> {
+    const locals = this.getDirectorLocals();
+    this.playing = false;
+    this.useDirectorRuntime = false;
+    this.directorRuntimes = null;
+    this.onWaitingChange = null;
+    this.lastWaitingReported = null;
+    this.directorLocalFrames = { ...locals };
+    return locals;
   }
 
   /** Snapshot of per-director local frames (editor playhead sync). */
@@ -278,13 +314,14 @@ export class TemplateRenderer {
   }
 
   /** Resume all directors in `stopAndWaitContinue` (Control Continue). */
-  continueWaitingDirectors(): void {
+  continueWaitingDirectors(opts: { resumeRaf?: boolean } = {}): void {
     if (!this.directorRuntimes) return;
     for (const rt of Object.values(this.directorRuntimes)) {
       if (rt.state === 'stopAndWaitContinue') rt.state = 'play';
     }
     this.emitWaitingChange();
-    if (!this.playing) {
+    const resumeRaf = opts.resumeRaf !== false;
+    if (resumeRaf && !this.playing) {
       this.playing = true;
       if (this.mode === 'raf') this.startRaf();
     }
@@ -293,9 +330,14 @@ export class TemplateRenderer {
   /**
    * Control Update-flow: queue replace-all variables for the Update data tag,
    * then start the protected Update director from frame 0.
+   * Escalates classic playback to Action runtime when needed.
    */
   startUpdateFlow(variables: Record<string, string | number> = NO_VARS): void {
-    if (!this.template || !this.directorRuntimes) return;
+    if (!this.template) return;
+    if (!this.directorRuntimes) {
+      this.ensureDirectorRuntimeFromClassic();
+    }
+    if (!this.directorRuntimes) return;
     this.pendingUpdateVariables = { ...variables };
     const update = this.template.timeline.directors.find((d) => isUpdateDirectorName(d.name));
     if (!update) return;
@@ -310,6 +352,24 @@ export class TemplateRenderer {
       this.playing = true;
       if (this.mode === 'raf') this.startRaf();
     }
+  }
+
+  /** Promote classic global-frame play to Action director runtime (Update-flow / Continue). */
+  private ensureDirectorRuntimeFromClassic(): void {
+    if (!this.template || this.directorRuntimes) return;
+    this.useDirectorRuntime = true;
+    this.directorRuntimes = initDirectorRuntimes(this.template.timeline);
+    const global = this.frame;
+    for (const d of this.template.timeline.directors) {
+      const rt = this.directorRuntimes[d.id];
+      if (!rt) continue;
+      if (rt.state === 'play') {
+        const local = Math.max(0, Math.min(d.durationFrames, global - d.offsetFrames));
+        rt.localFrame = local;
+        rt.lastLocalForActions = local;
+      }
+    }
+    this.directorLocalFrames = localFramesMap(this.directorRuntimes);
   }
 
   /** Consume pending Update variables (replace-all) at the Update data tag. */
@@ -1449,13 +1509,18 @@ export class TemplateRenderer {
   private startRaf(): void {
     this.stopRaf();
     this.rafLastWall = null;
+    let frameCarry = 0;
     const loop = (wall: number) => {
       if (!this.playing) return;
       if (this.rafLastWall !== null && this.template) {
         const fps = this.template.timeline.fps;
         const dt = wall - this.rafLastWall; // ms
-        const frames = Math.round((dt / 1000) * fps);
+        // Accumulator avoids Math.round jitter (double/skip frames → jerky SDI/preview).
+        frameCarry += (dt / 1000) * fps;
+        let frames = Math.floor(frameCarry);
         if (frames > 0) {
+          frameCarry -= frames;
+          if (frames > 8) frames = 8;
           if (this.useDirectorRuntime && this.directorRuntimes) {
             this.advanceDirectorRuntimes(frames);
             this.directorLocalFrames = localFramesMap(this.directorRuntimes);

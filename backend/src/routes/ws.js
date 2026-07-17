@@ -117,6 +117,10 @@ export function wsRouter(onAir, auth) {
       return;
     }
 
+    onAir.registerControl(ws);
+    ws.on('close', () => onAir.unregisterControl(ws));
+    ws.on('error', () => onAir.unregisterControl(ws));
+
     ws.on('message', (raw) => {
       const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw ?? '');
       if (Buffer.byteLength(text, 'utf8') > MAX_WS_CONTROL_BYTES) {

@@ -582,7 +582,8 @@ export const useEditor = create<EditorState>()(
           playheads: { ...s.playheads, [directorId]: Math.max(0, Math.round(frame)) },
           directorRel: { ...s.directorRel, [directorId]: Math.max(0, Math.round(frame)) },
         })),
-      setPlayheads: (playheads) => set({ playheads }),
+      // One atomic write for playheads + directorRel (Play loop must not N× setDirectorRel).
+      setPlayheads: (playheads) => set({ playheads, directorRel: { ...playheads } }),
       setGlobalPlayhead: (frame) => {
         const t = get().template;
         if (!t) return;

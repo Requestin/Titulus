@@ -6,7 +6,7 @@
 // transform on pointer-up (so a drag is a single history step).
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
+import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, advanceDirectorRel, directorRelToLocal, timelineNeedsDirectorRuntime, isUpdateDirectorName, type Transform } from '@runtime';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
 import { primaryDirectorForTarget } from './timelineTracks';
@@ -86,7 +86,6 @@ export function CanvasArea() {
   const playing = useEditor((s) => s.playing);
   const continueRequestId = useEditor((s) => s.continueRequestId);
   const setPlayheads = useEditor((s) => s.setPlayheads);
-  const setDirectorRel = useEditor((s) => s.setDirectorRel);
   const setPlaying = useEditor((s) => s.setPlaying);
   const setWaitingContinue = useEditor((s) => s.setWaitingContinue);
   const select = useEditor((s) => s.select);
@@ -98,10 +97,15 @@ export function CanvasArea() {
   const rendererRef = useRef<TemplateRenderer | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const playOptsRef = useRef<{
-    onFrame?: () => void;
     onWaitingChange?: (waiting: boolean) => void;
   } | null>(null);
+  /**
+   * After Play→Stop (or natural end), keep the last painted DOM frame.
+   * Scrub-seek only resumes once the user moves the playhead while already stopped.
+   */
   const wasPlayingRef = useRef(false);
+  /** Set before post-Play setPlayheads so the follow-up scrub effect does not re-paint. */
+  const suppressScrubRef = useRef(false);
   const [overlay, setOverlay] = useState<SelectionOverlay | null>(null);
 
   useLayoutEffect(() => {
@@ -269,9 +273,8 @@ export function CanvasArea() {
     r.syncTemplate(template, vars);
     r.resize(cw * zoom, ch * zoom);
     const st = useEditor.getState();
-    if (st.playing) {
-      const opts = playOptsRef.current ?? {};
-      r.startDirectorPlayback(template, vars, st.playheads, opts);
+    if (st.playing && timelineNeedsDirectorRuntime(template.timeline)) {
+      r.beginEditorPlayback(st.playheads, playOptsRef.current ?? {});
     } else {
       r.seekDirectorLocals(st.playheads);
     }
@@ -284,73 +287,138 @@ export function CanvasArea() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection]);
 
-  // Scrub: seek when the playhead changes and we're not actively playing.
+  // Scrub while stopped. After Play→Stop, skip seek so the canvas stays frozen
+  // (pre-Actions behavior). User scrub afterward seeks normally.
   useLayoutEffect(() => {
     const r = rendererRef.current;
-    if (!r || playing) return;
+    if (!r) return;
+    if (playing) {
+      wasPlayingRef.current = true;
+      return;
+    }
+    if (wasPlayingRef.current || suppressScrubRef.current) {
+      wasPlayingRef.current = false;
+      suppressScrubRef.current = false;
+      return;
+    }
     r.seekDirectorLocals(playheads);
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playheads, playing]);
 
-  // Playback: Action-aware director runtime (same path as Control air).
-  // Editor ignores Tag endScene (air-only). Stop freezes playhead in place.
+  // Playback: classic fractional seek when no Actions; Action runtime otherwise.
+  // Canvas paints every host frame; Zustand playheads throttled (~15 Hz).
   useEffect(() => {
+    if (!playing) return;
     const r = rendererRef.current;
     const t = useEditor.getState().template;
     if (!r || !t) return;
 
-    if (!playing) {
-      // Only freeze when leaving an active preview (not on initial mount).
-      if (wasPlayingRef.current) {
-        const locals = r.getDirectorLocals();
-        const heads = Object.keys(locals).length > 0
-          ? locals
-          : { ...useEditor.getState().playheads };
-        r.stopTimeline();
-        setPlayheads(heads);
-        for (const [id, frame] of Object.entries(heads)) setDirectorRel(id, frame);
-        setWaitingContinue(false);
-        r.seekDirectorLocals(heads);
-        recomputeBox();
-      }
-      wasPlayingRef.current = false;
-      return;
+    const fps = t.timeline.fps || 50;
+    const UI_HZ = 15;
+    const uiMinMs = 1000 / UI_HZ;
+    const onWaitingChange = (waiting: boolean) => setWaitingContinue(waiting);
+    playOptsRef.current = { onWaitingChange };
+    wasPlayingRef.current = true;
+
+    const useActions = r.beginEditorPlayback(useEditor.getState().playheads, { onWaitingChange });
+
+    let last: number | null = null;
+    let lastUiWall = 0;
+    let raf = 0;
+    let frameCarry = 0;
+
+    // Classic path: per-director rel (pre-Actions), fractional advance — smooth.
+    const rel: Record<string, number> = { ...useEditor.getState().directorRel };
+    for (const d of t.timeline.directors) {
+      rel[d.id] = useEditor.getState().playheads[d.id] ?? 0;
     }
 
-    wasPlayingRef.current = true;
-    const opts = {
-      onFrame: () => {
+    const flushHeads = (force: boolean, now: number, heads: Record<string, number>) => {
+      if (!force && now - lastUiWall < uiMinMs) return;
+      lastUiWall = now;
+      setPlayheads(heads);
+    };
+
+    const loop = (now: number) => {
+      if (last === null) {
+        last = now;
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      const dt = now - last;
+      last = now;
+      frameCarry += (dt / 1000) * fps;
+      let steps = Math.floor(frameCarry);
+      if (steps <= 0) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      frameCarry -= steps;
+      if (steps > 8) steps = 8;
+
+      if (useActions) {
+        r.advanceEditorPlayback(steps);
         const locals = r.getDirectorLocals();
-        setPlayheads(locals);
-        for (const [id, frame] of Object.entries(locals)) setDirectorRel(id, frame);
-        recomputeBox();
-        // Natural end (all directors stopped, nothing waiting): freeze transport.
+        flushHeads(false, now, locals);
         if (!r.isDirectorPlaybackActive()) {
+          suppressScrubRef.current = true;
+          flushHeads(true, now, locals);
           setPlaying(false);
           setWaitingContinue(false);
+          return;
         }
-      },
-      onWaitingChange: (waiting: boolean) => {
-        setWaitingContinue(waiting);
-      },
+      } else {
+        const nextPlayheads: Record<string, number> = {};
+        let allDone = true;
+        for (const d of t.timeline.directors) {
+          // Dormant Update / non-autostart: hold scrub, do not drive transport.
+          if (!d.autostart || isUpdateDirectorName(d.name)) {
+            nextPlayheads[d.id] = rel[d.id] ?? 0;
+            continue;
+          }
+          const curRel = rel[d.id] ?? 0;
+          const adv = advanceDirectorRel(d, curRel, steps);
+          rel[d.id] = adv.rel;
+          nextPlayheads[d.id] = directorRelToLocal(d, adv.rel);
+          if (!adv.done || d.loop) allDone = false;
+        }
+        r.seekDirectorLocals(nextPlayheads);
+        flushHeads(false, now, nextPlayheads);
+        if (allDone) {
+          suppressScrubRef.current = true;
+          flushHeads(true, now, nextPlayheads);
+          setPlaying(false);
+          return;
+        }
+      }
+      raf = requestAnimationFrame(loop);
     };
-    playOptsRef.current = opts;
+    raf = requestAnimationFrame(loop);
 
-    r.startDirectorPlayback(
-      t,
-      resolveVariableMap(t),
-      useEditor.getState().playheads,
-      opts,
-    );
-  }, [playing, setPlayheads, setDirectorRel, setPlaying, setWaitingContinue]);
+    return () => {
+      cancelAnimationFrame(raf);
+      suppressScrubRef.current = true;
+      if (useActions) {
+        setPlayheads(r.getDirectorLocals());
+        r.endEditorPlayback();
+      } else {
+        const heads: Record<string, number> = {};
+        for (const d of t.timeline.directors) {
+          heads[d.id] = directorRelToLocal(d, rel[d.id] ?? 0);
+        }
+        setPlayheads(heads);
+      }
+      setWaitingContinue(false);
+    };
+  }, [playing, setPlayheads, setPlaying, setWaitingContinue]);
 
-  // Continue button: resume stopAndWaitContinue (transport must already be playing).
+  // Continue: resume wait without restarting transport / re-seeking.
   useEffect(() => {
     if (continueRequestId === 0) return;
     const r = rendererRef.current;
     if (!r || !useEditor.getState().playing) return;
-    r.continueWaitingDirectors();
+    r.continueWaitingDirectors({ resumeRaf: false });
     setWaitingContinue(r.hasWaitingDirectors());
   }, [continueRequestId, setWaitingContinue]);
 

@@ -361,8 +361,8 @@ export function sampleAt(
 }
 
 /**
- * Sample with independent local playheads per director (editor preview).
- * Each entry in `localFrames` is the director-local frame index (0..duration).
+ * Sample with independent local playheads per director (Action runtime / editor).
+ * Directors with no compiled tracks are skipped (dormant Update costs ~0).
  */
 export function sampleAtDirectorLocals(
   norm: NormalizedTimeline,
@@ -373,6 +373,11 @@ export function sampleAtDirectorLocals(
   const mergedGroups: Record<string, AnimatableValues> = {};
 
   for (const d of norm.directorList) {
+    const compiled = norm.directors[d.id];
+    if (!compiled || compiled.targetIds.length === 0) {
+      perDirector[d.id] = { layers: {}, groups: {}, active: false };
+      continue;
+    }
     const local = Math.max(0, Math.round(localFrames[d.id] ?? 0));
     const ds = sampleDirectorAtLocal(norm, d.id, local);
     perDirector[d.id] = ds;
