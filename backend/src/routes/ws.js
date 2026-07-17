@@ -175,6 +175,18 @@ export function wsRouter(onAir, auth) {
         } catch {
           // ignore
         }
+        return;
+      }
+      if (
+        msg.type === 'waitingContinue'
+        && typeof msg.templateId === 'string'
+        && SAFE_ID_RE.test(msg.templateId)
+      ) {
+        try {
+          onAir.setWaitingContinue(channelId, msg.templateId, !!msg.waiting);
+        } catch {
+          // ignore
+        }
       }
     });
     ws.on('close', () => onAir.unregisterRenderer(channelId, ws));

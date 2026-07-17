@@ -72,6 +72,9 @@ export type OnActionFn = (info: {
   localFrame: number;
 }) => void;
 
+/** Fired when stopAndWaitContinue presence changes (Control Continue enablement). */
+export type OnWaitingChangeFn = (waiting: boolean) => void;
+
 interface LayerNode {
   el: HTMLElement;
   /** child element for text/clock content (so we can update text without re-layout). */
@@ -140,6 +143,8 @@ export class TemplateRenderer {
   private rafLastWall: number | null = null;
   private onFrame: OnFrameFn | null = null;
   private onAction: OnActionFn | null = null;
+  private onWaitingChange: OnWaitingChangeFn | null = null;
+  private lastWaitingReported: boolean | null = null;
   private clockTimer: number | null = null;
   /** Air playback: per-director Action runtime (start/stop/pause/continue). */
   private directorRuntimes: Record<string, DirectorRuntime> | null = null;
@@ -205,17 +210,20 @@ export class TemplateRenderer {
   playTimeline(
     template: Template,
     variables: Record<string, string | number> = NO_VARS,
-    opts: { onFrame?: OnFrameFn; onAction?: OnActionFn } = {},
+    opts: { onFrame?: OnFrameFn; onAction?: OnActionFn; onWaitingChange?: OnWaitingChangeFn } = {},
   ): void {
     this.syncTemplate(template, variables);
     this.onFrame = opts.onFrame ?? null;
     this.onAction = opts.onAction ?? null;
+    this.onWaitingChange = opts.onWaitingChange ?? null;
+    this.lastWaitingReported = null;
     this.playing = true;
     this.lastFrameSampled = null;
     this.useDirectorRuntime = true;
     this.directorRuntimes = initDirectorRuntimes(template.timeline);
     this.directorLocalFrames = localFramesMap(this.directorRuntimes);
     this.applyStateFromLocals(this.fixedTickRate);
+    this.emitWaitingChange();
     if (this.mode === 'raf') this.startRaf();
     this.startClockTicker();
   }
@@ -233,6 +241,7 @@ export class TemplateRenderer {
     for (const rt of Object.values(this.directorRuntimes)) {
       if (rt.state === 'stopAndWaitContinue') rt.state = 'play';
     }
+    this.emitWaitingChange();
     if (!this.playing) {
       this.playing = true;
       if (this.mode === 'raf') this.startRaf();
@@ -761,6 +770,14 @@ export class TemplateRenderer {
         }
       }
     }
+    this.emitWaitingChange();
+  }
+
+  private emitWaitingChange(): void {
+    const waiting = this.hasWaitingDirectors();
+    if (this.lastWaitingReported === waiting) return;
+    this.lastWaitingReported = waiting;
+    this.onWaitingChange?.(waiting);
   }
 
   private runFiredActions(fired: FiredAction[]): void {
@@ -773,9 +790,10 @@ export class TemplateRenderer {
       const cmd = item.command;
       if (!cmd) continue;
 
+      // Parameter defaults to the cue's host director (intuitive for stop/pause/wait).
+      const targetId = item.parameterDirectorId ?? f.directorId;
+
       if (cmd === 'startDirector') {
-        const targetId = item.parameterDirectorId;
-        if (!targetId) continue;
         const trt = this.directorRuntimes[targetId];
         if (trt && trt.state === 'stop') {
           trt.state = 'play';
@@ -785,22 +803,16 @@ export class TemplateRenderer {
         continue;
       }
       if (cmd === 'stopDirector') {
-        const targetId = item.parameterDirectorId;
-        if (!targetId) continue;
         const trt = this.directorRuntimes[targetId];
         if (trt) trt.state = 'stop';
         continue;
       }
       if (cmd === 'stopDirectorAndWaitContinue') {
-        const targetId = item.parameterDirectorId;
-        if (!targetId) continue;
         const trt = this.directorRuntimes[targetId];
         if (trt) trt.state = 'stopAndWaitContinue';
         continue;
       }
       if (cmd === 'pauseDirector') {
-        const targetId = item.parameterDirectorId;
-        if (!targetId) continue;
         const trt = this.directorRuntimes[targetId];
         if (trt) {
           trt.state = 'pause';

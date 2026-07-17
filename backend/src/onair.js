@@ -65,12 +65,14 @@ export class OnAirManager {
 
   applyTake(cmd) {
     if (!cmd.templateId || !cmd.template) return;
-    this.dao.set(cmd, { bringToFront: true }); // persist with z-order bump
+    const next = { ...cmd };
+    delete next.waitingContinue;
+    this.dao.set(next, { bringToFront: true }); // persist with z-order bump
     if (!this.state[cmd.channelId]) this.state[cmd.channelId] = [];
     // Replace any existing take of the same templateId.
     this.state[cmd.channelId] = this.state[cmd.channelId].filter((c) => c.templateId !== cmd.templateId);
-    this.state[cmd.channelId].push(cmd);
-    this.fanout(cmd.channelId, cmd);
+    this.state[cmd.channelId].push(next);
+    this.fanout(cmd.channelId, next);
   }
 
   applyUpdate(cmd) {
@@ -131,16 +133,27 @@ export class OnAirManager {
     this.fanout(cmd.channelId, cmd);
   }
 
-  /** Public snapshot for /api/onair: { channelId: [{ templateId, slotId? }, ...] }. */
+  /** Public snapshot for /api/onair: { channelId: [{ templateId, slotId?, waitingContinue? }, ...] }. */
   onAirTemplateIds() {
     const out = {};
     for (const [ch, cmds] of Object.entries(this.state)) {
       out[ch] = cmds.map((c) => ({
         templateId: c.templateId,
         ...(c.slotId ? { slotId: c.slotId } : {}),
+        ...(c.waitingContinue ? { waitingContinue: true } : {}),
       }));
     }
     return out;
+  }
+
+  /** Renderer reports stopAndWaitContinue presence for Control Continue enablement. */
+  setWaitingContinue(channelId, templateId, waiting) {
+    const arr = this.state[channelId];
+    if (!arr) return;
+    const cmd = arr.find((c) => c.templateId === templateId);
+    if (!cmd) return;
+    if (waiting) cmd.waitingContinue = true;
+    else delete cmd.waitingContinue;
   }
 
   // -------------------------------------------------------------------------

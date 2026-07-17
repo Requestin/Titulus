@@ -112,6 +112,9 @@ export function RundownTab({
   const ownerByTemplate = new Map(
     channelEntries.filter((e) => e.slotId).map((e) => [e.templateId, e.slotId!] as const),
   );
+  const waitingByTemplate = new Map(
+    channelEntries.map((e) => [e.templateId, !!e.waitingContinue] as const),
+  );
   const activeLiveSet = new Set(
     (active?.slots ?? [])
       .filter((s) => ownerByTemplate.get(s.templateId) === s.slotId)
@@ -790,6 +793,7 @@ export function RundownTab({
                   {active.slots.map((slot, idx) => {
                     const focused = idx === focusIdx;
                     const live = activeLiveSet.has(slot.slotId);
+                    const waitingContinue = live && !!waitingByTemplate.get(slot.templateId);
                     const missing = slotMissing(slot);
                     return (
                       <SortableSlotRow
@@ -798,6 +802,7 @@ export function RundownTab({
                         displayName={slotDisplayName(slot)}
                         focused={focused}
                         live={live}
+                        waitingContinue={waitingContinue}
                         missing={missing}
                         selected={varsSelection.kind === 'slot' && varsSelection.slotId === slot.slotId}
                         onFocus={() => { setFocusIdx(idx); void selectSlot(slot); }}
@@ -1095,6 +1100,7 @@ function SortableSlotRow({
   displayName,
   focused,
   live,
+  waitingContinue,
   missing,
   selected,
   onFocus,
@@ -1107,6 +1113,7 @@ function SortableSlotRow({
   displayName: string;
   focused: boolean;
   live: boolean;
+  waitingContinue: boolean;
   missing: boolean;
   selected: boolean;
   onFocus: () => void;
@@ -1171,11 +1178,11 @@ function SortableSlotRow({
             type="button"
             title="Continue"
             aria-label="Continue"
-            disabled={!live}
+            disabled={!waitingContinue}
             className={cn(
               'grid h-8 w-8 place-items-center rounded-md border',
-              live
-                ? 'border-border text-ink hover:bg-surface-2'
+              waitingContinue
+                ? 'border-primary/50 bg-primary/15 text-primary hover:bg-primary/25'
                 : 'cursor-not-allowed border-border text-ink-faint opacity-40',
             )}
             onClick={onContinue}

@@ -170,7 +170,7 @@ export interface ValidationError {
 }
 
 /** On-air snapshot: channelId -> templateIds currently on air. */
-export type OnAirEntry = { templateId: string; slotId?: string };
+export type OnAirEntry = { templateId: string; slotId?: string; waitingContinue?: boolean };
 export type OnAirSnapshot = Record<string, OnAirEntry[]>;
 
 export class ApiError extends Error {

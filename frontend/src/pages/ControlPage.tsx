@@ -49,6 +49,24 @@ export function ControlPage() {
     })();
   }, []);
 
+  // Poll on-air so End scene / waitingContinue from the renderer update Control UI.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const air = await api.onair.get();
+        if (!cancelled) setOnAir(air);
+      } catch {
+        // ignore transient poll errors
+      }
+    };
+    const id = window.setInterval(tick, 500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
   useEffect(() => {
     if (!channelId) {
       setRundowns([]);

@@ -209,6 +209,18 @@ export class ChannelClient {
           this.opts.onUpdateData?.(id);
         }
       },
+      onWaitingChange: (waiting) => {
+        try {
+          this.ws?.send(JSON.stringify({
+            type: 'waitingContinue',
+            templateId: id,
+            channelId: this.opts.channelId,
+            waiting,
+          }));
+        } catch {
+          // ignore
+        }
+      },
     });
     this.opts.onActiveCount?.(this.active.size);
   }
