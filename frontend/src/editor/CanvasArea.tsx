@@ -6,7 +6,7 @@
 // transform on pointer-up (so a drag is a single history step).
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform, type OnActionFn } from '@runtime';
+import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
 import { primaryDirectorForTarget } from './timelineTracks';
@@ -99,9 +99,9 @@ export function CanvasArea() {
   const dragRef = useRef<DragState | null>(null);
   const playOptsRef = useRef<{
     onFrame?: () => void;
-    onAction?: OnActionFn;
     onWaitingChange?: (waiting: boolean) => void;
   } | null>(null);
+  const wasPlayingRef = useRef(false);
   const [overlay, setOverlay] = useState<SelectionOverlay | null>(null);
 
   useLayoutEffect(() => {
@@ -294,41 +294,43 @@ export function CanvasArea() {
   }, [playheads, playing]);
 
   // Playback: Action-aware director runtime (same path as Control air).
+  // Editor ignores Tag endScene (air-only). Stop freezes playhead in place.
   useEffect(() => {
     const r = rendererRef.current;
     const t = useEditor.getState().template;
     if (!r || !t) return;
 
     if (!playing) {
-      r.stopTimeline();
-      const locals = r.getDirectorLocals();
-      if (Object.keys(locals).length > 0) {
-        setPlayheads(locals);
-        for (const [id, frame] of Object.entries(locals)) setDirectorRel(id, frame);
+      // Only freeze when leaving an active preview (not on initial mount).
+      if (wasPlayingRef.current) {
+        const locals = r.getDirectorLocals();
+        const heads = Object.keys(locals).length > 0
+          ? locals
+          : { ...useEditor.getState().playheads };
+        r.stopTimeline();
+        setPlayheads(heads);
+        for (const [id, frame] of Object.entries(heads)) setDirectorRel(id, frame);
+        setWaitingContinue(false);
+        r.seekDirectorLocals(heads);
+        recomputeBox();
       }
-      setWaitingContinue(false);
-      r.seekDirectorLocals(useEditor.getState().playheads);
-      recomputeBox();
+      wasPlayingRef.current = false;
       return;
     }
 
+    wasPlayingRef.current = true;
     const opts = {
       onFrame: () => {
         const locals = r.getDirectorLocals();
         setPlayheads(locals);
         for (const [id, frame] of Object.entries(locals)) setDirectorRel(id, frame);
         recomputeBox();
+        // Natural end (all directors stopped, nothing waiting): freeze transport.
         if (!r.isDirectorPlaybackActive()) {
           setPlaying(false);
           setWaitingContinue(false);
         }
       },
-      onAction: ((info) => {
-        if (info.item.command === 'tag' && info.item.parameterTag === 'endScene') {
-          setPlaying(false);
-          setWaitingContinue(false);
-        }
-      }) satisfies OnActionFn,
       onWaitingChange: (waiting: boolean) => {
         setWaitingContinue(waiting);
       },
