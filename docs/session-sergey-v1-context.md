@@ -47,7 +47,7 @@
 | `9fbbd07` | 17 июл | `fix(control): make timeline Actions work on air` |
 | `1dafb0b` | 17 июл | `fix(editor): honor stop/wait Actions + Continue button` |
 | `730bc45` | 17 июл | `fix(editor): ignore endScene; Stop freezes playhead in place` |
-| `937587b` | 17 июл | `add actions, continue,update` (perf + classic playback gate + session context) |
+| `58c381e` | 17 июл | `add actions, continue,update` (perf + classic playback gate + session context) |
 
 ---
 
