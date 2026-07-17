@@ -6,12 +6,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Trash2, Loader2, LayoutTemplate, Copy, Radio, X } from 'lucide-react';
-import { createDefaultTemplate } from '@runtime';
+import { createDefaultTemplate, isUpdateDirectorArmed } from '@runtime';
 import {
   api,
   type Channel,
   type TemplateSummary,
   type TemplateRecord,
+  type OnAirSnapshot,
 } from '@/core/api';
 import { createId } from '@/core/id';
 import { Button } from '@/components/ui/Button';
@@ -245,7 +246,7 @@ function PlayTemplates() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [channelId, setChannelId] = useState<string>('');
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
-  const [onAir, setOnAir] = useState<Record<string, string[]>>({});
+  const [onAir, setOnAir] = useState<OnAirSnapshot>({});
   const [loaded, setLoaded] = useState(false);
 
   const status = useControlWs((s) => s.status);
@@ -272,7 +273,8 @@ function PlayTemplates() {
     })();
   }, []);
 
-  const live = onAir[channelId] ?? [];
+  const liveEntries = onAir[channelId] ?? [];
+  const liveIds = liveEntries.map((e) => e.templateId);
   const monitorChannelId = channelId || 'default';
   const browserSourceUrl = channelId ? `${location.origin}/channel.html?channel=${channelId}` : '';
 
@@ -285,9 +287,21 @@ function PlayTemplates() {
       toast.error(crawlFileErrorMessage(err));
       return;
     }
+    const alreadyLive = liveIds.includes(rec.id);
+    if (alreadyLive) {
+      if (isUpdateDirectorArmed(template.timeline)) {
+        const ok = send({ type: 'update', channelId, templateId: rec.id, template, variables: values });
+        if (!ok) toast.error('Control WebSocket not connected');
+        return;
+      }
+      send({ type: 'clear', channelId, templateId: rec.id });
+    }
     const ok = send({ type: 'take', channelId, templateId: rec.id, template, variables: values });
     if (!ok) { toast.error('Control WebSocket not connected'); return; }
-    setOnAir((prev) => ({ ...prev, [channelId]: Array.from(new Set([...(prev[channelId] ?? []), rec.id])) }));
+    setOnAir((prev) => {
+      const cur = (prev[channelId] ?? []).filter((e) => e.templateId !== rec.id);
+      return { ...prev, [channelId]: [...cur, { templateId: rec.id }] };
+    });
   }
   function update(templateId: string, values: Record<string, string | number>) {
     if (!channelId) return;
@@ -296,7 +310,10 @@ function PlayTemplates() {
   function clear(templateId: string) {
     if (!channelId) return;
     send({ type: 'clear', channelId, templateId });
-    setOnAir((prev) => ({ ...prev, [channelId]: (prev[channelId] ?? []).filter((x) => x !== templateId) }));
+    setOnAir((prev) => ({
+      ...prev,
+      [channelId]: (prev[channelId] ?? []).filter((x) => x.templateId !== templateId),
+    }));
   }
   function clearAll() {
     if (!channelId) return;
@@ -326,7 +343,7 @@ function PlayTemplates() {
         <WsBadge status={status} />
         <div className="ml-auto flex items-center gap-2">
           <BrowserSourceUrl url={browserSourceUrl} />
-          <Button variant="danger" size="sm" onClick={clearAll} disabled={live.length === 0}>
+          <Button variant="danger" size="sm" onClick={clearAll} disabled={liveIds.length === 0}>
             <Trash2 className="h-4 w-4" aria-hidden /> Clear all
           </Button>
         </div>
@@ -334,17 +351,17 @@ function PlayTemplates() {
 
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_380px]">
         <div className="min-w-0 border-r border-border">
-          <TemplatesTab templates={templates} live={live} onTake={take} onUpdate={update} onClear={clear} />
+          <TemplatesTab templates={templates} live={liveIds} onTake={take} onUpdate={update} onClear={clear} />
         </div>
         <div className="flex min-h-0 flex-col gap-4 overflow-auto p-4">
           {monitorChannelId && <ProgramMonitor channelId={monitorChannelId} />}
           <div>
-            <h3 className="mb-2 text-[12px] font-semibold text-ink-muted">On air ({live.length})</h3>
-            {live.length === 0 ? (
+            <h3 className="mb-2 text-[12px] font-semibold text-ink-muted">On air ({liveIds.length})</h3>
+            {liveIds.length === 0 ? (
               <p className="text-[12px] text-ink-faint">Nothing on air.</p>
             ) : (
               <ul className="space-y-1">
-                {live.map((tid) => (
+                {liveIds.map((tid) => (
                   <li key={tid} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
                     <span className="min-w-0 flex-1 truncate text-[13px]">
                       {templates.find((t) => t.id === tid)?.name ?? tid}

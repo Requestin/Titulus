@@ -25,11 +25,12 @@ export type WsStatus = 'connecting' | 'connected' | 'disconnected';
 
 /** A take/update/clear message on /ws/renderer (mirrors §7.4). */
 export interface ChannelMessage {
-  type: 'take' | 'update' | 'clear';
+  type: 'take' | 'update' | 'clear' | 'continue';
   templateId: string;
   template?: Template;      // present on 'take'
   variables?: Record<string, string | number>;
   channelId?: string;
+  slotId?: string;
 }
 
 export interface ChannelClientOptions {
@@ -52,6 +53,10 @@ export interface ChannelClientOptions {
    * surface RenderStats. Only fires for the most recently ticked renderer.
    */
   onFrame?: OnFrameFn;
+  /** Template reached Tag End scene — host should clear + mark Pending. */
+  onEndScene?: (templateId: string) => void;
+  /** Tag Update data — apply pending variables (Update-flow). */
+  onUpdateData?: (templateId: string) => void;
 }
 
 interface ActiveTemplate {
@@ -164,6 +169,7 @@ export class ChannelClient {
       case 'take':  this.onTake(msg); break;
       case 'update':this.onUpdate(msg); break;
       case 'clear': this.onClear(msg); break;
+      case 'continue': this.onContinue(msg); break;
     }
   }
 
@@ -182,18 +188,42 @@ export class ChannelClient {
     if (prev) { prev.renderer.destroy(); this.active.delete(id); }
     const renderer = new TemplateRenderer(this.opts.stage, this.rendererOpts());
     this.active.set(id, { renderer });
-    renderer.playTimeline(msg.template, msg.variables ?? {},
-      this.opts.onFrame ? { onFrame: this.opts.onFrame } : {});
+    renderer.playTimeline(msg.template, msg.variables ?? {}, {
+      ...(this.opts.onFrame ? { onFrame: this.opts.onFrame } : {}),
+      onAction: (info) => {
+        if (info.item.command !== 'tag') return;
+        if (info.item.parameterTag === 'endScene') {
+          this.onClear({ type: 'clear', templateId: id });
+          this.opts.onEndScene?.(id);
+          try {
+            this.ws?.send(JSON.stringify({ type: 'endScene', templateId: id, channelId: this.opts.channelId }));
+          } catch {
+            // ignore
+          }
+        } else if (info.item.parameterTag === 'updateData') {
+          const pending = renderer.takePendingUpdateVariables();
+          if (pending) {
+            const tpl = renderer.getTemplate();
+            if (tpl) renderer.syncTemplate(tpl, pending);
+          }
+          this.opts.onUpdateData?.(id);
+        }
+      },
+    });
     this.opts.onActiveCount?.(this.active.size);
   }
 
   private onUpdate(msg: ChannelMessage): void {
     const a = this.active.get(msg.templateId);
     if (!a) return;
-    // Live variable change: re-sync the same template with new variables without
-    // restarting the timeline (keeps the current playhead).
-    const tpl = a.renderer.getTemplate();
-    if (tpl) a.renderer.syncTemplate(tpl, msg.variables ?? {});
+    // Update-flow: start Update director; variables apply at Update data tag (replace-all).
+    a.renderer.startUpdateFlow(msg.variables ?? {});
+  }
+
+  private onContinue(msg: ChannelMessage): void {
+    const a = this.active.get(msg.templateId);
+    if (!a) return;
+    a.renderer.continueWaitingDirectors();
   }
 
   private onClear(msg: ChannelMessage): void {

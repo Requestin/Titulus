@@ -5,7 +5,11 @@
 
 import { useState } from 'react';
 import { Braces, Link2, Unlink } from 'lucide-react';
-import type { Layer, Template, Variable, VariableBinding, BlendMode, TextTransformMode } from '@runtime';
+import type {
+  Layer, Template, Variable, VariableBinding, BlendMode, TextTransformMode,
+  TimelineActionCommand, TimelineActionDirection, TimelineActionTag,
+} from '@runtime';
+import { isUpdateDirectorName } from '@runtime';
 import { useEditor } from '../store';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
 import {
@@ -26,20 +30,204 @@ import { cn } from '@/lib/cn';
 
 const BLEND_MODES: BlendMode[] = ['normal', 'multiply', 'screen', 'add', 'overlay', 'darken', 'lighten'];
 
+const COMMAND_OPTIONS: { value: TimelineActionCommand | ''; label: string }[] = [
+  { value: '', label: '(none)' },
+  { value: 'startDirector', label: 'Start director' },
+  { value: 'stopDirector', label: 'Stop director' },
+  { value: 'stopDirectorAndWaitContinue', label: 'Stop director and wait continue' },
+  { value: 'pauseDirector', label: 'Pause director' },
+  { value: 'tag', label: 'Tag' },
+];
+
+const DIRECTION_OPTIONS: TimelineActionDirection[] = ['both', 'normal', 'reverse'];
+
 export function PropertiesPanel() {
   const template = useEditor((s) => s.template);
   const selection = useEditor((s) => s.selection);
+  const selectedActionCueId = useEditor((s) => s.selectedActionCueId);
   const updateLayer = useEditor((s) => s.updateLayer);
   const setLayerOpacity = useEditor((s) => s.setLayerOpacity);
   const updateTransform = useEditor((s) => s.updateTransform);
   const playheads = useEditor((s) => s.playheads);
   const setLayerGroup = useEditor((s) => s.setLayerGroup);
   const patch = useEditor((s) => s.patch);
+  const updateActionCue = useEditor((s) => s.updateActionCue);
+  const updateActionItem = useEditor((s) => s.updateActionItem);
+  const addActionItem = useEditor((s) => s.addActionItem);
+  const removeActionItem = useEditor((s) => s.removeActionItem);
 
-  if (!template || !selection) {
+  if (!template) {
     return (
       <div className="grid h-full place-items-center p-6 text-center text-[13px] text-ink-faint">
         Select a layer to edit its properties.
+      </div>
+    );
+  }
+
+  if (selectedActionCueId) {
+    const cue = template.timeline.actions.find((a) => a.id === selectedActionCueId);
+    if (!cue) {
+      return (
+        <div className="grid h-full place-items-center p-6 text-center text-[13px] text-ink-faint">
+          Action not found.
+        </div>
+      );
+    }
+    const hostDir = template.timeline.directors.find((d) => d.id === cue.directorId);
+    const onUpdate = hostDir ? isUpdateDirectorName(hostDir.name) : false;
+    const directors = template.timeline.directors;
+
+    return (
+      <div className="overflow-auto p-1">
+        <Section title="Action">
+          <PropertyField label="Name">
+            <Input
+              value={cue.name}
+              placeholder="Optional label"
+              onChange={(e) => updateActionCue(cue.id, { name: e.target.value })}
+            />
+          </PropertyField>
+          <PropertyField label="Frame">
+            <NumberInput
+              value={cue.frame}
+              min={0}
+              step={1}
+              onChange={(v) => updateActionCue(cue.id, { frame: Math.round(v) })}
+            />
+          </PropertyField>
+          <p className="px-3 pb-2 text-[11px] text-ink-faint">
+            Director: {hostDir?.name ?? cue.directorId}
+          </p>
+        </Section>
+
+        {cue.items.map((item, idx) => {
+          const isPause = item.command === 'pauseDirector';
+          const isTag = item.command === 'tag';
+          const isDirectorCmd = item.command === 'startDirector'
+            || item.command === 'stopDirector'
+            || item.command === 'stopDirectorAndWaitContinue'
+            || item.command === 'pauseDirector';
+          return (
+            <div key={item.id} className="mx-2 mb-3 rounded-md border border-border bg-surface-2/40 p-2">
+              <div className="mb-2 flex items-center justify-between px-1">
+                <span className="text-[11px] font-semibold text-ink-muted">Command {idx + 1}</span>
+                {cue.items.length > 1 && (
+                  <button
+                    type="button"
+                    className="text-[11px] text-ink-faint hover:text-danger"
+                    onClick={() => removeActionItem(cue.id, item.id)}
+                  >
+                    -Action
+                  </button>
+                )}
+              </div>
+              <PropertyField label="Command">
+                <Select
+                  value={item.command ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value as TimelineActionCommand | '';
+                    const command = v === '' ? null : v;
+                    const patchItem: Partial<typeof item> = { command };
+                    if (command === 'tag') {
+                      patchItem.parameterTag = onUpdate ? 'updateData' : 'endScene';
+                    }
+                    if (command === 'startDirector') {
+                      patchItem.parameterDirectorId = directors[0]?.id ?? cue.directorId;
+                    }
+                    if (
+                      command === 'stopDirector'
+                      || command === 'stopDirectorAndWaitContinue'
+                      || command === 'pauseDirector'
+                    ) {
+                      patchItem.parameterDirectorId = cue.directorId;
+                    }
+                    if (command === 'pauseDirector') patchItem.lengthFrames = item.lengthFrames || 0;
+                    updateActionItem(cue.id, item.id, patchItem);
+                  }}
+                >
+                  {COMMAND_OPTIONS.map((o) => (
+                    <option key={o.label} value={o.value}>{o.label}</option>
+                  ))}
+                </Select>
+              </PropertyField>
+              {isDirectorCmd && (
+                <PropertyField label="Parameter">
+                  <Select
+                    value={item.parameterDirectorId ?? ''}
+                    onChange={(e) => updateActionItem(cue.id, item.id, { parameterDirectorId: e.target.value || null })}
+                  >
+                    {directors.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </Select>
+                </PropertyField>
+              )}
+              {isTag && (
+                <PropertyField label="Parameter">
+                  <Select
+                    value={item.parameterTag ?? ''}
+                    onChange={(e) => {
+                      const tag = (e.target.value || null) as TimelineActionTag | null;
+                      updateActionItem(cue.id, item.id, { parameterTag: tag });
+                    }}
+                  >
+                    {onUpdate ? (
+                      <option value="updateData">Update data</option>
+                    ) : (
+                      <option value="endScene">End scene</option>
+                    )}
+                  </Select>
+                </PropertyField>
+              )}
+              <PropertyField label="Length">
+                <NumberInput
+                  value={item.lengthFrames}
+                  min={0}
+                  step={1}
+                  disabled={!isPause}
+                  onChange={(v) => updateActionItem(cue.id, item.id, { lengthFrames: Math.max(0, Math.round(v)) })}
+                />
+              </PropertyField>
+              <PropertyField label="Direction">
+                <div className="flex gap-1">
+                  {DIRECTION_OPTIONS.map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      className={cn(
+                        'rounded-md border px-2 py-1 text-[11px] capitalize',
+                        item.direction === d
+                          ? 'border-primary bg-primary/20 text-ink'
+                          : 'border-border text-ink-muted hover:bg-surface',
+                      )}
+                      onClick={() => updateActionItem(cue.id, item.id, { direction: d })}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </PropertyField>
+            </div>
+          );
+        })}
+
+        <div className="px-3 pb-4">
+          <button
+            type="button"
+            className="w-full rounded-md border border-border px-2 py-1.5 text-[12px] text-ink-muted hover:bg-surface-2 hover:text-ink"
+            onClick={() => addActionItem(cue.id)}
+          >
+            +Action
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!selection) {
+    return (
+      <div className="grid h-full place-items-center p-6 text-center text-[13px] text-ink-faint">
+        Select a layer or action to edit its properties.
       </div>
     );
   }

@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Radio } from 'lucide-react';
-import { api, type Channel, type TemplateSummary, type Rundown } from '@/core/api';
+import { api, type Channel, type TemplateSummary, type Rundown, type OnAirSnapshot } from '@/core/api';
 import { useControlWs } from '@/core/controlWs';
 import { toast } from '@/core/toast';
 import { Select } from '@/components/ui/form';
@@ -23,7 +23,7 @@ export function ControlPage() {
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [rundowns, setRundowns] = useState<Rundown[]>([]);
   const [controlDataLoaded, setControlDataLoaded] = useState(false);
-  const [onAir, setOnAir] = useState<Record<string, string[]>>({});
+  const [onAir, setOnAir] = useState<OnAirSnapshot>({});
 
   const status = useControlWs((s) => s.status);
   const connect = useControlWs((s) => s.connect);

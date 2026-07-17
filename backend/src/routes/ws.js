@@ -2,7 +2,7 @@
 //
 // WebSocket hubs + on-air REST (DEVELOPMENT_PROMPT §7.4).
 //
-//   /ws/control    control panel -> backend: {type:'take'|'update'|'clear', ...}
+//   /ws/control    control panel -> backend: {type:'take'|'update'|'clear'|'continue', ...}
 //                  forwarded to OnAirManager (state + persist + fan-out).
 //   /ws/renderer   engine registers by ?channel=<id>; on connect the manager
 //                  replays all current takes for that channel (state recovery).
@@ -33,7 +33,7 @@ function normalizeControlMessage(msg) {
   if (typeof type !== 'string') {
     return { ok: false, code: 'TYPE_REQUIRED', message: 'type is required' };
   }
-  if (!['take', 'update', 'clear'].includes(type)) {
+  if (!['take', 'update', 'clear', 'continue'].includes(type)) {
     return { ok: false, code: 'UNKNOWN_TYPE', message: `unsupported command type: ${type}` };
   }
   if (typeof channelId !== 'string' || !SAFE_ID_RE.test(channelId)) {
@@ -54,6 +54,14 @@ function normalizeControlMessage(msg) {
     if (variables !== undefined && !isPlainObject(variables)) {
       return { ok: false, code: 'INVALID_VARIABLES', message: 'variables must be an object' };
     }
+    if (template !== undefined && !isPlainObject(template)) {
+      return { ok: false, code: 'INVALID_TEMPLATE', message: 'template must be an object when provided' };
+    }
+  }
+  if (type === 'continue') {
+    if (typeof templateId !== 'string' || !SAFE_ID_RE.test(templateId)) {
+      return { ok: false, code: 'INVALID_TEMPLATE_ID', message: 'templateId is required for continue' };
+    }
   }
   if (type === 'clear' && templateId !== undefined) {
     if (typeof templateId !== 'string' || !SAFE_ID_RE.test(templateId)) {
@@ -68,6 +76,7 @@ function normalizeControlMessage(msg) {
       templateId,
       template,
       variables,
+      slotId: typeof msg.slotId === 'string' ? msg.slotId : undefined,
     },
   };
 }
@@ -150,7 +159,24 @@ export function wsRouter(onAir, auth) {
     const requested = (req.query.channel || 'default').toString();
     const channelId = SAFE_ID_RE.test(requested) ? requested : 'default';
     onAir.registerRenderer(channelId, ws);
-    // The runtime auto-reconnects on its own; we only clean up bookkeeping.
+    // Renderer may report End scene so Control/on-air persistence stay in sync.
+    ws.on('message', (raw) => {
+      const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw ?? '');
+      let msg;
+      try {
+        msg = JSON.parse(text);
+      } catch {
+        return;
+      }
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'endScene' && typeof msg.templateId === 'string' && SAFE_ID_RE.test(msg.templateId)) {
+        try {
+          onAir.handleControlCommand({ type: 'clear', channelId, templateId: msg.templateId });
+        } catch {
+          // ignore
+        }
+      }
+    });
     ws.on('close', () => onAir.unregisterRenderer(channelId, ws));
     ws.on('error', () => onAir.unregisterRenderer(channelId, ws));
   });

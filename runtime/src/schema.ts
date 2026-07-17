@@ -304,19 +304,56 @@ export interface TimelineDirector {
   swing: boolean;   // ping-pong: reverse on each loop iteration
 }
 
-export type TimelineActionCommand = 'startDirector' | 'stopDirector' | 'setTag';
-export type TimelineActionTag = 'Stop' | 'End scene';
-export const TIMELINE_ACTION_TAGS: TimelineActionTag[] = ['Stop', 'End scene'];
+export type TimelineActionCommand =
+  | 'startDirector'
+  | 'stopDirector'
+  | 'stopDirectorAndWaitContinue'
+  | 'pauseDirector'
+  | 'tag';
 
-/** A cue point that fires a command when the playhead crosses its frame. */
-export interface TimelineAction {
+export type TimelineActionDirection = 'both' | 'normal' | 'reverse';
+
+/** Tag parameters for command `tag`. */
+export type TimelineActionTag = 'endScene' | 'updateData';
+
+export const TIMELINE_ACTION_COMMANDS: TimelineActionCommand[] = [
+  'startDirector',
+  'stopDirector',
+  'stopDirectorAndWaitContinue',
+  'pauseDirector',
+  'tag',
+];
+
+export const TIMELINE_ACTION_DIRECTIONS: TimelineActionDirection[] = ['both', 'normal', 'reverse'];
+export const TIMELINE_ACTION_TAGS: TimelineActionTag[] = ['endScene', 'updateData'];
+
+/** Reserved director name for Update-flow (case-insensitive match). */
+export const UPDATE_DIRECTOR_NAME = 'Update';
+
+/** One command inside a timeline action cue (marker). */
+export interface TimelineActionItem {
+  id: string;
+  command: TimelineActionCommand | null;
+  parameterDirectorId?: string | null;
+  parameterTag?: TimelineActionTag | null;
+  lengthFrames: number;
+  direction: TimelineActionDirection;
+}
+
+/**
+ * One visual marker on a director timeline at `frame`.
+ * May contain N command items executed in array order when the playhead crosses.
+ */
+export interface TimelineActionCue {
   id: string;
   directorId: string;
   frame: number;
-  command: TimelineActionCommand;
-  targetDirectorId: string | null;  // for start/stop director
-  tag: TimelineActionTag | null;    // for setTag
+  name: string;
+  items: TimelineActionItem[];
 }
+
+/** @deprecated Use TimelineActionCue — kept as alias during editor migration. */
+export type TimelineAction = TimelineActionCue;
 
 export type PlaybackMode = 'bounded' | 'infinite';
 
@@ -334,7 +371,7 @@ export interface Timeline {
   /** Optional display order of track keys per director (see timelineTrackKey). */
   trackOrder?: Record<string, string[]>;
   keyframes: TimelineKeyframe[];
-  actions: TimelineAction[];
+  actions: TimelineActionCue[];
 }
 
 /** Stable key for one animated property track in the editor / trackDirectors map. */
@@ -407,9 +444,120 @@ export function createDefaultTransform(x = 100, y = 100): Transform {
     perspective: 1000,
     scaleX: 1,
     scaleY: 1,
-    anchorX: 0.5,
-    anchorY: 0.5,
+    anchorX: 0,
+    anchorY: 0,
   };
+}
+
+export function isUpdateDirectorName(name: string): boolean {
+  return name.trim().toLowerCase() === UPDATE_DIRECTOR_NAME.toLowerCase();
+}
+
+export function createUpdateDirector(id?: string): TimelineDirector {
+  return {
+    id: id ?? randomUUID(),
+    name: UPDATE_DIRECTOR_NAME,
+    durationFrames: 100,
+    offsetFrames: 0,
+    autostart: false,
+    loop: false,
+    swing: false,
+  };
+}
+
+export function createDefaultActionItem(partial?: Partial<TimelineActionItem>): TimelineActionItem {
+  return {
+    id: partial?.id ?? randomUUID(),
+    command: partial?.command ?? null,
+    parameterDirectorId: partial?.parameterDirectorId ?? null,
+    parameterTag: partial?.parameterTag ?? null,
+    lengthFrames: partial?.lengthFrames ?? 0,
+    direction: partial?.direction ?? 'both',
+  };
+}
+
+export function createUpdateDataCue(directorId: string, durationFrames = 100): TimelineActionCue {
+  const mid = Math.max(0, Math.floor(durationFrames / 2));
+  return {
+    id: randomUUID(),
+    directorId,
+    frame: mid,
+    name: '',
+    items: [
+      createDefaultActionItem({
+        command: 'tag',
+        parameterTag: 'updateData',
+        direction: 'both',
+      }),
+    ],
+  };
+}
+
+/** Ensure template has protected Update director + single Update data tag cue. Mutates timeline. */
+export function ensureUpdateDirector(timeline: Timeline): void {
+  let update = timeline.directors.find((d) => isUpdateDirectorName(d.name));
+  if (!update) {
+    update = createUpdateDirector();
+    timeline.directors.push(update);
+  } else {
+    update.name = UPDATE_DIRECTOR_NAME;
+  }
+
+  const updateDataCues = timeline.actions.filter((cue) =>
+    cue.items.some((it) => it.command === 'tag' && it.parameterTag === 'updateData'),
+  );
+  const onUpdate = updateDataCues.filter((c) => c.directorId === update!.id);
+  const offUpdate = updateDataCues.filter((c) => c.directorId !== update!.id);
+
+  // Drop illegal Update data tags outside Update director.
+  if (offUpdate.length > 0) {
+    const drop = new Set(offUpdate.map((c) => c.id));
+    timeline.actions = timeline.actions.filter((c) => !drop.has(c.id));
+  }
+
+  if (onUpdate.length === 0) {
+    timeline.actions.push(createUpdateDataCue(update.id, update.durationFrames));
+  } else if (onUpdate.length > 1) {
+    // Keep first; strip updateData from the rest (or remove empty cues).
+    for (let i = 1; i < onUpdate.length; i++) {
+      const cue = onUpdate[i]!;
+      cue.items = cue.items.filter((it) => !(it.command === 'tag' && it.parameterTag === 'updateData'));
+      if (cue.items.length === 0) {
+        timeline.actions = timeline.actions.filter((c) => c.id !== cue.id);
+      }
+    }
+  }
+}
+
+/** Armed Update = ≥1 track assigned to Update AND ≥2 keyframes on those tracks. */
+export function isUpdateDirectorArmed(timeline: Timeline): boolean {
+  const update = timeline.directors.find((d) => isUpdateDirectorName(d.name));
+  if (!update) return false;
+  const tracks = Object.entries(timeline.trackDirectors).filter(([, did]) => did === update.id);
+  if (tracks.length === 0) return false;
+
+  let kfCount = 0;
+  for (const [key] of tracks) {
+    const parts = key.split(':');
+    if (parts.length >= 3 && (parts[0] === 'layer' || parts[0] === 'group')) {
+      const kind = parts[0];
+      const id = parts[1]!;
+      const prop = parts.slice(2).join(':');
+      for (const kf of timeline.keyframes) {
+        const bag = (kind === 'layer' ? kf.layers : kf.groups)[id] as Record<string, unknown> | undefined;
+        if (bag && bag[prop] !== undefined) kfCount += 1;
+      }
+    } else {
+      // Legacy target-id key: count any animated props on that target.
+      for (const kf of timeline.keyframes) {
+        const layerBag = kf.layers[key];
+        if (layerBag) kfCount += Object.keys(layerBag).length;
+        const groupBag = kf.groups[key];
+        if (groupBag) kfCount += Object.keys(groupBag).length;
+      }
+    }
+  }
+  return kfCount >= 2;
 }
 
 export function createDefaultTimeline(): Timeline {
@@ -422,15 +570,17 @@ export function createDefaultTimeline(): Timeline {
     loop: false,
     swing: false,
   };
-  return {
+  const update = createUpdateDirector();
+  const timeline: Timeline = {
     fps: 50,
     durationFrames: 500,
     playbackMode: 'bounded',
-    directors: [defaultDirector],
+    directors: [defaultDirector, update],
     trackDirectors: {},
     keyframes: [],
-    actions: [],
+    actions: [createUpdateDataCue(update.id, update.durationFrames)],
   };
+  return timeline;
 }
 
 export function createDefaultTemplate(): Template {

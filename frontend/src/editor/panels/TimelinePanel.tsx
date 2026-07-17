@@ -27,7 +27,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Play, Pause, Square, Plus, Trash2, Activity, ListTree, GripVertical, ChevronRight, ChevronDown, SkipBack, Folder } from 'lucide-react';
-import { ANIMATABLE_PROPS, getEasing, type AnimatableProp, type EasingType } from '@runtime';
+import { ANIMATABLE_PROPS, getEasing, isUpdateDirectorName, type AnimatableProp, type EasingType } from '@runtime';
 import { useEditor, type Target } from '../store';
 import {
   collectDirectorTree,
@@ -44,6 +44,7 @@ const EASINGS: EasingType[] = ['linear', 'power2.in', 'power2.out', 'power2.inOu
 const HEADER_W = 168;
 const LANE_H = 26;
 const DIRECTOR_HDR_H = 24;
+const ACTION_LANE_H = 22;
 /** Sticky track-name column sits above scrolling keyframe graphics. */
 const TRACK_HEADER_Z = 'z-[30]';
 const TRACK_HEADER_BG = 'bg-surface';
@@ -183,6 +184,11 @@ export function TimelinePanel() {
   const deletePoint = useEditor((s) => s.deletePoint);
   const moveTrackToDirector = useEditor((s) => s.moveTrackToDirector);
   const reorderTracks = useEditor((s) => s.reorderTracks);
+  const selectedActionCueId = useEditor((s) => s.selectedActionCueId);
+  const selectActionCue = useEditor((s) => s.selectActionCue);
+  const addActionCueAtPlayhead = useEditor((s) => s.addActionCueAtPlayhead);
+  const removeSelectedActionCue = useEditor((s) => s.removeSelectedActionCue);
+  const moveActionCue = useEditor((s) => s.moveActionCue);
 
   const [view, setView] = useState<'dope' | 'curve'>('dope');
   const [pxPerFrame, setPxPerFrame] = useState(6);
@@ -407,7 +413,7 @@ export function TimelinePanel() {
         </div>
       )}
 
-      {/* Keyframe / director actions */}
+      {/* Keyframe / Action toolbar */}
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2">
         <button
           type="button"
@@ -435,7 +441,7 @@ export function TimelinePanel() {
           type="button"
           disabled={selectedKf === null}
           onClick={handleDeleteKeyframe}
-          title="Delete keyframe"
+          title="Delete keyframe (-K)"
           className={cn(
             'rounded-md px-1.5 py-1',
             selectedKf === null
@@ -444,6 +450,28 @@ export function TimelinePanel() {
           )}
         >
           <KbdBadge className={selectedKf !== null ? 'hover:border-danger hover:text-danger' : undefined}>-K</KbdBadge>
+        </button>
+        <button
+          type="button"
+          onClick={() => { setSelectedKf(null); addActionCueAtPlayhead(); }}
+          title="Add action at playhead (+A)"
+          className="rounded-md px-1.5 py-1 text-ink-muted hover:bg-surface-2 hover:text-ink"
+        >
+          <KbdBadge>+A</KbdBadge>
+        </button>
+        <button
+          type="button"
+          disabled={selectedActionCueId === null}
+          onClick={removeSelectedActionCue}
+          title="Delete selected action cue (-A)"
+          className={cn(
+            'rounded-md px-1.5 py-1',
+            selectedActionCueId === null
+              ? 'cursor-not-allowed opacity-40'
+              : 'text-ink-muted hover:bg-surface-2 hover:text-danger',
+          )}
+        >
+          <KbdBadge className={selectedActionCueId !== null ? 'hover:border-danger hover:text-danger' : undefined}>-A</KbdBadge>
         </button>
       </div>
 
@@ -476,6 +504,7 @@ export function TimelinePanel() {
                   const sectionPlayhead = playheads[directorId] ?? 0;
                   const isActiveDir = activeDirectorId === directorId;
                   const isCollapsed = collapsedDirectors.has(directorId);
+                  const isUpdateDir = isUpdateDirectorName(d.name);
 
                   return (
                     <DirectorSection
@@ -484,23 +513,48 @@ export function TimelinePanel() {
                       dropActive={dragIntent?.type === 'director' && dragIntent.directorId === directorId}
                     >
                       <div className="flex">
-                        <DirectorHeader
-                          name={d.name}
-                          selected={isActiveDir}
-                          collapsed={isCollapsed}
-                          onToggleCollapse={() => toggleDirectorCollapse(directorId)}
-                          onSelect={() => setActiveDirector(directorId)}
-                          onRemove={() => removeDirector(directorId)}
-                        />
+                        <div
+                          className={cn('sticky left-0 shrink-0', TRACK_HEADER_Z)}
+                          style={{ width: HEADER_W }}
+                        >
+                          <DirectorHeader
+                            name={d.name}
+                            selected={isActiveDir}
+                            collapsed={isCollapsed}
+                            canRemove={!isUpdateDir}
+                            onToggleCollapse={() => toggleDirectorCollapse(directorId)}
+                            onSelect={() => setActiveDirector(directorId)}
+                            onRemove={() => removeDirector(directorId)}
+                          />
+                          <div
+                            className={cn(
+                              'flex items-center border-b border-r border-border/40 px-2 text-[10px] font-semibold uppercase tracking-wide text-ink-faint',
+                              DIRECTOR_HEADER_BG,
+                              TRACK_HEADER_SHADOW,
+                            )}
+                            style={{ height: ACTION_LANE_H }}
+                          >
+                            Actions
+                          </div>
+                        </div>
                         <div className="relative z-0 shrink-0" style={{ width: timelineWidth }}>
                           <DirectorRuler
                             dur={sectionDur}
                             pxPerFrame={pxPerFrame}
                             onScrub={(e, el) => scrubDirector(directorId, sectionDur, e, el)}
                           />
+                          <ActionLane
+                            cues={template.timeline.actions.filter((a) => a.directorId === directorId)}
+                            pxPerFrame={pxPerFrame}
+                            dur={sectionDur}
+                            selectedId={selectedActionCueId}
+                            onSelect={(id) => { setSelectedKf(null); selectActionCue(id); }}
+                            onMove={moveActionCue}
+                            frameFromEvent={(e, el) => frameFromContentX(e.clientX, el, sectionDur)}
+                          />
                           <div
                             className="pointer-events-none absolute top-0 z-sticky w-px bg-live"
-                            style={{ left: frameToX(sectionPlayhead), height: DIRECTOR_HDR_H }}
+                            style={{ left: frameToX(sectionPlayhead), height: DIRECTOR_HDR_H + ACTION_LANE_H }}
                           >
                             <div className="pointer-events-auto absolute -left-1 top-0 h-2 w-2 rounded-sm bg-live" />
                           </div>
@@ -765,12 +819,71 @@ function GlobalPlayheadRow({
   );
 }
 
+function ActionLane({
+  cues, pxPerFrame, dur, selectedId, onSelect, onMove, frameFromEvent,
+}: {
+  cues: { id: string; frame: number; name: string; items: unknown[] }[];
+  pxPerFrame: number;
+  dur: number;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onMove: (id: string, frame: number) => void;
+  frameFromEvent: (e: ReactPointerEvent, laneEl: Element) => number;
+}) {
+  const [drag, setDrag] = useState<{ id: string; cur: number } | null>(null);
+
+  return (
+    <div
+      className="relative border-b border-border/60 bg-surface/40"
+      style={{ height: ACTION_LANE_H, width: Math.max(1, dur) * pxPerFrame + 40 }}
+    >
+      {cues.map((cue) => {
+        const frame = drag?.id === cue.id ? drag.cur : cue.frame;
+        const selected = selectedId === cue.id;
+        return (
+          <div
+            key={cue.id}
+            data-action="1"
+            title={cue.name.trim() ? cue.name : `Action @ ${cue.frame} (${cue.items.length})`}
+            className={cn(
+              'absolute top-1/2 z-10 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-sm border',
+              selected
+                ? 'border-live bg-live shadow-[0_0_0_2px_rgba(248,113,113,0.35)]'
+                : 'border-amber-400/80 bg-amber-500/80 hover:bg-amber-400',
+            )}
+            style={{ left: frame * pxPerFrame }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              onSelect(cue.id);
+              setDrag({ id: cue.id, cur: cue.frame });
+            }}
+            onPointerMove={(e) => {
+              if (!drag || drag.id !== cue.id || e.buttons !== 1) return;
+              const lane = e.currentTarget.parentElement;
+              if (!lane) return;
+              setDrag({ id: cue.id, cur: frameFromEvent(e, lane) });
+            }}
+            onPointerUp={(e) => {
+              if (!drag || drag.id !== cue.id) return;
+              const lane = e.currentTarget.parentElement;
+              if (lane) onMove(cue.id, frameFromEvent(e, lane));
+              setDrag(null);
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function DirectorHeader({
-  name, selected, collapsed, onToggleCollapse, onSelect, onRemove,
+  name, selected, collapsed, canRemove = true, onToggleCollapse, onSelect, onRemove,
 }: {
   name: string;
   selected: boolean;
   collapsed: boolean;
+  canRemove?: boolean;
   onToggleCollapse: () => void;
   onSelect: () => void;
   onRemove: () => void;
@@ -779,10 +892,8 @@ function DirectorHeader({
     <div
       style={{ width: HEADER_W, height: DIRECTOR_HDR_H }}
       className={cn(
-        'group sticky left-0 flex shrink-0 items-center gap-0.5 border-r border-border/60 pl-1 pr-2 text-[11px] font-semibold',
-        TRACK_HEADER_Z,
+        'group flex shrink-0 items-center gap-0.5 border-r border-border/60 pl-1 pr-2 text-[11px] font-semibold',
         DIRECTOR_HEADER_BG,
-        TRACK_HEADER_SHADOW,
         selected ? 'text-ink ring-1 ring-inset ring-primary/25' : 'text-ink-muted',
       )}
     >
@@ -798,14 +909,20 @@ function DirectorHeader({
         <DirectorIcon />
         <span className="truncate">{name}</span>
       </button>
-      <button
-        type="button"
-        title="Remove director"
-        onClick={(e) => { e.stopPropagation(); onRemove(); }}
-        className="grid h-5 w-5 shrink-0 place-items-center rounded text-ink-faint opacity-0 hover:bg-surface hover:text-danger group-hover:opacity-100"
-      >
-        <Trash2 className="h-3 w-3" />
-      </button>
+      {canRemove ? (
+        <button
+          type="button"
+          title="Remove director"
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="grid h-5 w-5 shrink-0 place-items-center rounded text-ink-faint opacity-0 hover:bg-surface hover:text-danger group-hover:opacity-100"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      ) : (
+        <span className="px-1 text-[9px] font-normal uppercase tracking-wide text-ink-faint" title="Protected director">
+          lock
+        </span>
+      )}
     </div>
   );
 }

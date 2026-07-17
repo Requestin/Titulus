@@ -99,9 +99,11 @@ export function recomputeCrawlDirectorDuration(template: Template, layer: CrawlL
 
 export function removeCrawlDirector(template: Template, directorId: string): void {
   template.timeline.directors = template.timeline.directors.filter((d) => d.id !== directorId);
-  template.timeline.actions = template.timeline.actions.filter(
-    (a) => a.directorId !== directorId && a.targetDirectorId !== directorId,
-  );
+  template.timeline.actions = template.timeline.actions.filter((a) => {
+    if (a.directorId === directorId) return false;
+    a.items = a.items.filter((it) => it.parameterDirectorId !== directorId);
+    return a.items.length > 0;
+  });
   if (template.timeline.trackOrder) delete template.timeline.trackOrder[directorId];
   for (const [key, did] of Object.entries(template.timeline.trackDirectors)) {
     if (did === directorId) delete template.timeline.trackDirectors[key];

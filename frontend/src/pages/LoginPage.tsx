@@ -33,9 +33,9 @@ export function LoginPage({
         <img
           src="/titulus-logo.png"
           alt="Titulus"
-          width={560}
-          height={560}
-          className="pointer-events-none absolute bottom-full left-1/2 mb-5 h-auto w-[min(560px,90vw)] -translate-x-1/2 select-none"
+          width={1680}
+          height={1680}
+          className="pointer-events-none absolute bottom-full left-1/2 mb-5 h-auto w-[min(1680px,90vw)] -translate-x-1/2 select-none"
           draggable={false}
         />
         <form onSubmit={submit} className="w-full space-y-4 rounded-xl border border-border bg-surface p-5">

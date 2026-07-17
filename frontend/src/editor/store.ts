@@ -10,11 +10,15 @@ import { temporal } from 'zundo';
 import type {
   Template, Layer, LayerType, Variable, Transform, RootStackEntry,
   TimelineDirector, TimelineKeyframe, AnimatableProp, EasingType,
+  TimelineActionCue, TimelineActionItem,
 } from '@runtime';
 import {
   ANIMATABLE_PROPS,
   createDefaultTransform,
+  createDefaultActionItem,
+  ensureUpdateDirector,
   estimateCrawlDurationFrames,
+  isUpdateDirectorName,
   normalizeTemplateTextStyles,
   resolveTrackDirector,
   splitCrawlLines,
@@ -27,6 +31,17 @@ import { trackKey, type TimelineTrack } from './timelineTracks';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
 export type Target = { kind: 'layer' | 'group'; id: string };
+
+function migrateLoadedTemplate(t: Template): Template {
+  const next = structuredClone(t);
+  // Drop legacy flat actions (pre-cue schema).
+  next.timeline.actions = (next.timeline.actions as unknown[]).filter(
+    (a): a is TimelineActionCue =>
+      !!a && typeof a === 'object' && Array.isArray((a as TimelineActionCue).items) && (a as TimelineActionCue).items.length > 0,
+  );
+  ensureUpdateDirector(next.timeline);
+  return next;
+}
 
 function baseValue(t: Template, target: Target, prop: AnimatableProp): number {
   if (prop === 'crawlProgress') return 0;
@@ -197,6 +212,16 @@ interface EditorState {
   removeTrack: (target: Target, prop: AnimatableProp) => void;
   setKeyframeEasing: (frame: number, easing: EasingType) => void;
   addTrackAtPlayhead: (target: Target, prop: AnimatableProp) => void;
+
+  selectedActionCueId: string | null;
+  selectActionCue: (id: string | null) => void;
+  addActionCueAtPlayhead: () => void;
+  removeSelectedActionCue: () => void;
+  moveActionCue: (id: string, frame: number) => void;
+  updateActionCue: (id: string, partial: Partial<Pick<TimelineActionCue, 'name' | 'frame'>>) => void;
+  addActionItem: (cueId: string) => void;
+  removeActionItem: (cueId: string, itemId: string) => void;
+  updateActionItem: (cueId: string, itemId: string, partial: Partial<TimelineActionItem>) => void;
 }
 
 function purgeTimelineTargets(t: Template, ids: string[]): void {
@@ -264,9 +289,10 @@ export const useEditor = create<EditorState>()(
       directorRel: {},
       playing: false,
       activeDirectorId: 'default',
+      selectedActionCueId: null,
 
       load: (t) => {
-        const normalized = clone(t);
+        const normalized = migrateLoadedTemplate(t);
         normalizeTemplateTextStyles(normalized);
         for (const g of normalized.groups) {
           g.transform.width = 0;
@@ -279,12 +305,13 @@ export const useEditor = create<EditorState>()(
           playheads: initPlayheads(normalized.timeline.directors),
           directorRel: initPlayheads(normalized.timeline.directors),
           playing: false,
-          activeDirectorId: t.timeline.directors[0]?.id ?? 'default',
+          activeDirectorId: normalized.timeline.directors[0]?.id ?? 'default',
+          selectedActionCueId: null,
         });
         useEditor.temporal.getState().clear();
       },
       markSaved: () => set({ dirty: false }),
-      select: (sel) => set({ selection: sel }),
+      select: (sel) => set({ selection: sel, selectedActionCueId: null }),
       setZoom: (z) => set({ zoom: Math.min(2, Math.max(0.1, z)) }),
       toggleGridSnap: () => set((s) => ({ gridSnap: !s.gridSnap })),
 
@@ -602,7 +629,12 @@ export const useEditor = create<EditorState>()(
       updateDirector: (id, partial) =>
         get().patch((t) => {
           const d = t.timeline.directors.find((x) => x.id === id);
-          if (d) Object.assign(d, partial);
+          if (!d) return;
+          if (isUpdateDirectorName(d.name) && partial.name !== undefined && !isUpdateDirectorName(partial.name)) {
+            return; // Update director cannot be renamed
+          }
+          Object.assign(d, partial);
+          if (isUpdateDirectorName(d.name)) d.name = 'Update';
           if (partial.offsetFrames !== undefined || partial.durationFrames !== undefined) {
             for (const layer of t.layers) {
               if (layer.type === 'crawl' && layer.crawlDirectorId === id) {
@@ -617,6 +649,7 @@ export const useEditor = create<EditorState>()(
         if (!t0) return;
         const treeDirector = t0.timeline.directors.find((d) => d.id === id);
         if (!treeDirector) return;
+        if (isUpdateDirectorName(treeDirector.name)) return;
 
         get().patch((t) => {
           const tracksToRemove: TimelineTrack[] = [];
@@ -650,7 +683,11 @@ export const useEditor = create<EditorState>()(
             if (t.timeline.trackDirectors[k] === id) delete t.timeline.trackDirectors[k];
           }
           if (t.timeline.trackOrder) delete t.timeline.trackOrder[id];
-          t.timeline.actions = t.timeline.actions.filter((a) => a.directorId !== id);
+          t.timeline.actions = t.timeline.actions.filter((a) => {
+            if (a.directorId === id) return false;
+            a.items = a.items.filter((it) => it.parameterDirectorId !== id);
+            return a.items.length > 0;
+          });
         });
 
         const next = get().template?.timeline.directors[0]?.id;
@@ -659,10 +696,12 @@ export const useEditor = create<EditorState>()(
           const directorRel = { ...s.directorRel };
           delete playheads[id];
           delete directorRel[id];
+          const still = get().template?.timeline.actions.some((a) => a.id === s.selectedActionCueId);
           return {
             activeDirectorId: s.activeDirectorId === id ? (next ?? 'default') : s.activeDirectorId,
             playheads,
             directorRel,
+            selectedActionCueId: still ? s.selectedActionCueId : null,
           };
         });
       },
@@ -671,6 +710,146 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => {
           assignTrackDirector(t, track, directorId);
           appendTrackOrder(t, directorId, trackKey(track.target, track.prop));
+        }),
+
+      selectActionCue: (id) => set({ selectedActionCueId: id, selection: id ? null : get().selection }),
+
+      addActionCueAtPlayhead: () => {
+        const st = get();
+        const t0 = st.template;
+        if (!t0) return;
+        const directorId = st.activeDirectorId;
+        const dir = t0.timeline.directors.find((d) => d.id === directorId);
+        if (!dir) return;
+        const frame = Math.max(0, Math.min(dir.durationFrames, Math.round(st.playheads[directorId] ?? 0)));
+        const existing = t0.timeline.actions.find((a) => a.directorId === directorId && a.frame === frame);
+        if (existing) {
+          get().patch((t) => {
+            const cue = t.timeline.actions.find((a) => a.id === existing.id);
+            if (!cue) return;
+            const firstDir = t.timeline.directors[0]?.id ?? directorId;
+            cue.items.push(createDefaultActionItem({
+              command: null,
+              parameterDirectorId: firstDir,
+              parameterTag: isUpdateDirectorName(dir.name) ? 'updateData' : 'endScene',
+            }));
+          });
+          set({ selectedActionCueId: existing.id, selection: null });
+          return;
+        }
+        const cueId = createId();
+        const firstDir = t0.timeline.directors[0]?.id ?? directorId;
+        get().patch((t) => {
+          t.timeline.actions.push({
+            id: cueId,
+            directorId,
+            frame,
+            name: '',
+            items: [
+              createDefaultActionItem({
+                command: null,
+                parameterDirectorId: firstDir,
+                parameterTag: isUpdateDirectorName(dir.name) ? 'updateData' : 'endScene',
+              }),
+            ],
+          });
+          t.timeline.actions.sort((a, b) => a.frame - b.frame || a.id.localeCompare(b.id));
+        });
+        set({ selectedActionCueId: cueId, selection: null });
+      },
+
+      removeSelectedActionCue: () => {
+        const id = get().selectedActionCueId;
+        if (!id) return;
+        get().patch((t) => {
+          t.timeline.actions = t.timeline.actions.filter((a) => a.id !== id);
+        });
+        set({ selectedActionCueId: null });
+      },
+
+      moveActionCue: (id, frame) => {
+        let selectId: string | null = id;
+        get().patch((t) => {
+          const cue = t.timeline.actions.find((a) => a.id === id);
+          if (!cue) return;
+          const dir = t.timeline.directors.find((d) => d.id === cue.directorId);
+          const max = dir?.durationFrames ?? t.timeline.durationFrames;
+          const nextFrame = Math.max(0, Math.min(max, Math.round(frame)));
+          const other = t.timeline.actions.find(
+            (a) => a.id !== id && a.directorId === cue.directorId && a.frame === nextFrame,
+          );
+          if (other) {
+            other.items.push(...cue.items);
+            t.timeline.actions = t.timeline.actions.filter((a) => a.id !== id);
+            selectId = other.id;
+          } else {
+            cue.frame = nextFrame;
+          }
+          t.timeline.actions.sort((a, b) => a.frame - b.frame || a.id.localeCompare(b.id));
+        });
+        set({ selectedActionCueId: selectId });
+      },
+
+      updateActionCue: (id, partial) =>
+        get().patch((t) => {
+          const cue = t.timeline.actions.find((a) => a.id === id);
+          if (!cue) return;
+          if (partial.name !== undefined) cue.name = partial.name;
+          if (partial.frame !== undefined) {
+            const dir = t.timeline.directors.find((d) => d.id === cue.directorId);
+            const max = dir?.durationFrames ?? t.timeline.durationFrames;
+            cue.frame = Math.max(0, Math.min(max, Math.round(partial.frame)));
+          }
+        }),
+
+      addActionItem: (cueId) =>
+        get().patch((t) => {
+          const cue = t.timeline.actions.find((a) => a.id === cueId);
+          if (!cue) return;
+          const dir = t.timeline.directors.find((d) => d.id === cue.directorId);
+          const firstDir = t.timeline.directors[0]?.id ?? cue.directorId;
+          cue.items.push(createDefaultActionItem({
+            command: null,
+            parameterDirectorId: firstDir,
+            parameterTag: dir && isUpdateDirectorName(dir.name) ? 'updateData' : 'endScene',
+          }));
+        }),
+
+      removeActionItem: (cueId, itemId) =>
+        get().patch((t) => {
+          const cue = t.timeline.actions.find((a) => a.id === cueId);
+          if (!cue || cue.items.length <= 1) return;
+          cue.items = cue.items.filter((it) => it.id !== itemId);
+        }),
+
+      updateActionItem: (cueId, itemId, partial) =>
+        get().patch((t) => {
+          const cue = t.timeline.actions.find((a) => a.id === cueId);
+          if (!cue) return;
+          const item = cue.items.find((it) => it.id === itemId);
+          if (!item) return;
+          Object.assign(item, partial);
+          // Tag restrictions: Update director only updateData; others only endScene
+          const dir = t.timeline.directors.find((d) => d.id === cue.directorId);
+          if (item.command === 'tag' && dir) {
+            if (isUpdateDirectorName(dir.name)) {
+              if (item.parameterTag === 'endScene') item.parameterTag = 'updateData';
+            } else if (item.parameterTag === 'updateData') {
+              item.parameterTag = 'endScene';
+            }
+          }
+          // Enforce single updateData on template
+          if (item.command === 'tag' && item.parameterTag === 'updateData') {
+            for (const other of t.timeline.actions) {
+              for (const it of other.items) {
+                if (it.id === itemId) continue;
+                if (it.command === 'tag' && it.parameterTag === 'updateData') {
+                  it.parameterTag = null;
+                  it.command = null;
+                }
+              }
+            }
+          }
         }),
 
       reorderTracks: (directorId, trackKeys) =>

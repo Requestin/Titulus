@@ -9,6 +9,7 @@ export * from './transform.js';
 export * from './groupBounds.js';
 export * from './stackOrder.js';
 export * from './timeline.js';
+export * from './directorRuntime.js';
 export * from './clock.js';
 export * from './fonts.js';
 export * from './stats.js';

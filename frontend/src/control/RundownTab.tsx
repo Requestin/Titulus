@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   Plus, FileUp, FileDown, Copy, Trash2, Pencil, GripVertical, X,
+  ArrowRight, ChevronsRight, Square,
 } from 'lucide-react';
 import {
   DndContext, PointerSensor, closestCenter, useSensor, useSensors, useDroppable, useDraggable,
@@ -25,6 +26,7 @@ import { cn } from '@/lib/cn';
 import { toast } from '@/core/toast';
 import { createId } from '@/core/id';
 import { crawlFileErrorMessage, templateForTake } from '@/core/crawlFile';
+import { isUpdateDirectorArmed } from '@runtime';
 import { ProgramMonitor } from '@/control/ProgramMonitor';
 import {
   ControlVariablesPanel,
@@ -34,11 +36,12 @@ import {
 } from '@/control/ControlVariablesPanel';
 
 type SendControl = (cmd: {
-  type: 'take' | 'update' | 'clear';
+  type: 'take' | 'update' | 'clear' | 'continue';
   channelId: string;
   templateId?: string;
   template?: unknown;
   variables?: Record<string, string | number>;
+  slotId?: string;
 }) => boolean;
 
 type SidebarMode = 'rundowns' | 'templates' | 'dataElements';
@@ -104,8 +107,16 @@ export function RundownTab({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   const active = useMemo(() => rundowns.find((r) => r.id === activeId) ?? null, [rundowns, activeId]);
-  const channelLiveSet = new Set(onAir[channelId] ?? []);
-  const activeLiveSet = new Set((active?.slots ?? []).filter((s) => channelLiveSet.has(s.slotId)).map((s) => s.slotId));
+  const channelEntries = onAir[channelId] ?? [];
+  const channelLiveTemplateIds = new Set(channelEntries.map((e) => e.templateId));
+  const ownerByTemplate = new Map(
+    channelEntries.filter((e) => e.slotId).map((e) => [e.templateId, e.slotId!] as const),
+  );
+  const activeLiveSet = new Set(
+    (active?.slots ?? [])
+      .filter((s) => ownerByTemplate.get(s.templateId) === s.slotId)
+      .map((s) => s.slotId),
+  );
   const deById = useMemo(() => new Map(dataElements.map((d) => [d.id, d])), [dataElements]);
   const templatesSorted = useMemo(
     () => [...templates].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
@@ -278,7 +289,7 @@ export function RundownTab({
     return templates.find((t) => t.id === slot.templateId)?.name ?? slot.name;
   }
 
-  function patchOnAir(nextChannelId: string, updater: (cur: string[]) => string[]) {
+  function patchOnAir(nextChannelId: string, updater: (cur: OnAirSnapshot[string]) => OnAirSnapshot[string]) {
     setOnAir((prev) => ({ ...prev, [nextChannelId]: updater(prev[nextChannelId] ?? []) }));
   }
 
@@ -309,26 +320,65 @@ export function RundownTab({
       toast.error(crawlFileErrorMessage(err));
       return;
     }
+    const variables = buildPayload(slot, template.variables);
+    const alreadyLive = channelLiveTemplateIds.has(slot.templateId);
+
+    if (alreadyLive) {
+      if (isUpdateDirectorArmed(template.timeline)) {
+        const ok = send({
+          type: 'update',
+          channelId,
+          templateId: slot.templateId,
+          template,
+          variables,
+          slotId: slot.slotId,
+        });
+        if (!ok) return toast.error('Control socket disconnected');
+        patchOnAir(channelId, (cur) => cur.map((e) => (
+          e.templateId === slot.templateId ? { templateId: slot.templateId, slotId: slot.slotId } : e
+        )));
+        return;
+      }
+      const cleared = send({ type: 'clear', channelId, templateId: slot.templateId, slotId: slot.slotId });
+      if (!cleared) return toast.error('Control socket disconnected');
+    }
+
     const ok = send({
       type: 'take',
       channelId,
-      templateId: slot.slotId,
+      templateId: slot.templateId,
       template,
-      variables: buildPayload(slot, template.variables),
+      variables,
+      slotId: slot.slotId,
     });
     if (!ok) return toast.error('Control socket disconnected');
-    patchOnAir(channelId, (cur) => Array.from(new Set([...cur, slot.slotId])));
+    patchOnAir(channelId, (cur) => {
+      const without = cur.filter((e) => e.templateId !== slot.templateId);
+      return [...without, { templateId: slot.templateId, slotId: slot.slotId }];
+    });
   }
 
   function clearSlot(slotId: string) {
-    const ok = send({ type: 'clear', channelId, templateId: slotId });
+    const slot = active?.slots.find((s) => s.slotId === slotId);
+    const templateId = slot?.templateId ?? slotId;
+    const ok = send({ type: 'clear', channelId, templateId, slotId });
     if (!ok) return toast.error('Control socket disconnected');
-    patchOnAir(channelId, (cur) => cur.filter((id) => id !== slotId));
+    patchOnAir(channelId, (cur) => cur.filter((e) => e.templateId !== templateId));
+  }
+
+  function continueSlot(slotId: string) {
+    if (!activeLiveSet.has(slotId)) return;
+    const slot = active?.slots.find((s) => s.slotId === slotId);
+    const templateId = slot?.templateId ?? slotId;
+    const ok = send({ type: 'continue', channelId, templateId, slotId });
+    if (!ok) toast.error('Control socket disconnected');
   }
 
   async function updateLive(slotId: string, vars: Record<string, string | number>) {
     if (!activeLiveSet.has(slotId)) return;
-    const ok = send({ type: 'update', channelId, templateId: slotId, variables: vars });
+    const slot = active?.slots.find((s) => s.slotId === slotId);
+    const templateId = slot?.templateId ?? slotId;
+    const ok = send({ type: 'update', channelId, templateId, variables: vars, slotId });
     if (!ok) toast.error('Control socket disconnected');
   }
 
@@ -752,10 +802,9 @@ export function RundownTab({
                         selected={varsSelection.kind === 'slot' && varsSelection.slotId === slot.slotId}
                         onFocus={() => { setFocusIdx(idx); void selectSlot(slot); }}
                         onRemove={() => patchActive((r) => ({ ...r, slots: r.slots.filter((s) => s.slotId !== slot.slotId) }))}
-                        onTakeOrClear={() => {
-                          if (live) clearSlot(slot.slotId);
-                          else if (!missing) void takeAt(idx);
-                        }}
+                        onTake={() => { if (!missing) void takeAt(idx); }}
+                        onContinue={() => continueSlot(slot.slotId)}
+                        onClear={() => clearSlot(slot.slotId)}
                       />
                     );
                   })}
@@ -780,15 +829,23 @@ export function RundownTab({
             <p className="text-[12px] text-ink-faint">Nothing on air.</p>
           ) : (
             <ul className="space-y-1">
-              {monitorLive.map((tid) => {
-                const slot = active?.slots.find((s) => s.slotId === tid);
+              {monitorLive.map((entry) => {
+                const tid = entry.templateId;
+                const slot = entry.slotId
+                  ? active?.slots.find((s) => s.slotId === entry.slotId)
+                  : active?.slots.find((s) => s.templateId === tid && ownerByTemplate.get(tid) === s.slotId);
                 const label = slot
                   ? (slotMissing(slot) ? 'NOT FOUND IN DB' : slotDisplayName(slot))
                   : (templates.find((t) => t.id === tid)?.name ?? tid);
                 return (
-                  <li key={tid} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
+                  <li key={`${tid}:${entry.slotId ?? ''}`} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
                     <span className={cn('min-w-0 flex-1 truncate text-[13px]', slot && slotMissing(slot) && 'font-semibold text-live')}>{label}</span>
-                    <button type="button" onClick={() => clearSlot(tid)} className="text-ink-faint hover:text-danger" aria-label="Clear">
+                    <button
+                      type="button"
+                      onClick={() => clearSlot(entry.slotId ?? tid)}
+                      className="text-ink-faint hover:text-danger"
+                      aria-label="Clear"
+                    >
                       <X className="h-4 w-4" />
                     </button>
                   </li>
@@ -1042,7 +1099,9 @@ function SortableSlotRow({
   selected,
   onFocus,
   onRemove,
-  onTakeOrClear,
+  onTake,
+  onContinue,
+  onClear,
 }: {
   slot: RundownSlot;
   displayName: string;
@@ -1052,7 +1111,9 @@ function SortableSlotRow({
   selected: boolean;
   onFocus: () => void;
   onRemove: () => void;
-  onTakeOrClear: () => void;
+  onTake: () => void;
+  onContinue: () => void;
+  onClear: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `slot:${slot.slotId}` });
   return (
@@ -1088,9 +1149,55 @@ function SortableSlotRow({
           {live ? 'ON AIR' : focused ? 'NEXT' : 'PENDING'}
         </span>
         <button type="button" className="text-ink-faint hover:text-danger" onClick={onRemove}><Trash2 className="h-3.5 w-3.5" /></button>
-        <Button size="sm" variant={live ? 'neutral' : 'danger'} disabled={!live && missing} onClick={onTakeOrClear}>
-          {live ? 'CLEAR' : 'TAKE'}
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            title="Take"
+            aria-label="Take"
+            disabled={!live && missing}
+            className={cn(
+              'grid h-8 w-8 place-items-center rounded-md border',
+              missing && !live
+                ? 'cursor-not-allowed border-border text-ink-faint opacity-40'
+                : live
+                  ? 'border-border text-ink hover:bg-surface-2'
+                  : 'border-primary/50 bg-primary/15 text-primary hover:bg-primary/25',
+            )}
+            onClick={onTake}
+          >
+            <ArrowRight className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            title="Continue"
+            aria-label="Continue"
+            disabled={!live}
+            className={cn(
+              'grid h-8 w-8 place-items-center rounded-md border',
+              live
+                ? 'border-border text-ink hover:bg-surface-2'
+                : 'cursor-not-allowed border-border text-ink-faint opacity-40',
+            )}
+            onClick={onContinue}
+          >
+            <ChevronsRight className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            title="Clear"
+            aria-label="Clear"
+            disabled={!live}
+            className={cn(
+              'grid h-8 w-8 place-items-center rounded-md border',
+              live
+                ? 'border-border text-ink hover:bg-surface-2 hover:text-danger'
+                : 'cursor-not-allowed border-border text-ink-faint opacity-40',
+            )}
+            onClick={onClear}
+          >
+            <Square className="h-3.5 w-3.5 fill-current" />
+          </button>
+        </div>
       </div>
     </div>
   );

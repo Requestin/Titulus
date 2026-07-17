@@ -58,6 +58,7 @@ export class OnAirManager {
       case 'take':   return this.applyTake(cmd);
       case 'update': return this.applyUpdate(cmd);
       case 'clear':  return this.applyClear(cmd);
+      case 'continue': return this.applyContinue(cmd);
       default:       return;
     }
   }
@@ -74,18 +75,39 @@ export class OnAirManager {
 
   applyUpdate(cmd) {
     if (!cmd.templateId) return;
-    // Update mutates variables live: persist only the variables delta is not
-    // enough — re-stitch the stored take command with new variables and persist.
     const stored = this.dao.get(cmd.channelId, cmd.templateId);
     if (!stored) return; // update for something not on air -> ignore
-    const next = { ...stored, variables: { ...(stored.variables || {}), ...(cmd.variables || {}) } };
-    this.dao.set(next, { bringToFront: false });
+    // Replace-all variables; optional slot ownership transfer for rundown UI.
+    const next = {
+      ...stored,
+      variables: cmd.variables && typeof cmd.variables === 'object' ? cmd.variables : (stored.variables || {}),
+      ...(cmd.template ? { template: cmd.template } : {}),
+      ...(cmd.slotId !== undefined ? { slotId: cmd.slotId } : {}),
+    };
+    this.dao.set(next, { bringToFront: true });
     const arr = this.state[cmd.channelId] || [];
     const idx = arr.findIndex((c) => c.templateId === cmd.templateId);
     if (idx >= 0) arr[idx] = next; else arr.push(next);
     this.state[cmd.channelId] = arr;
-    // Fan out the update message as-is (the runtime's onUpdate handles live var).
-    this.fanout(cmd.channelId, cmd);
+    this.fanout(cmd.channelId, {
+      type: 'update',
+      templateId: cmd.templateId,
+      channelId: cmd.channelId,
+      variables: next.variables,
+      ...(next.slotId ? { slotId: next.slotId } : {}),
+      ...(cmd.template ? { template: cmd.template } : {}),
+    });
+  }
+
+  applyContinue(cmd) {
+    if (!cmd.templateId) return;
+    // Continue does not mutate persisted on-air; only resume waiting directors.
+    this.fanout(cmd.channelId, {
+      type: 'continue',
+      templateId: cmd.templateId,
+      channelId: cmd.channelId,
+      ...(cmd.slotId ? { slotId: cmd.slotId } : {}),
+    });
   }
 
   applyClear(cmd) {
@@ -109,11 +131,14 @@ export class OnAirManager {
     this.fanout(cmd.channelId, cmd);
   }
 
-  /** Public snapshot for /api/onair: { channelId: [templateId,...] }. */
+  /** Public snapshot for /api/onair: { channelId: [{ templateId, slotId? }, ...] }. */
   onAirTemplateIds() {
     const out = {};
     for (const [ch, cmds] of Object.entries(this.state)) {
-      out[ch] = cmds.map((c) => c.templateId);
+      out[ch] = cmds.map((c) => ({
+        templateId: c.templateId,
+        ...(c.slotId ? { slotId: c.slotId } : {}),
+      }));
     }
     return out;
   }

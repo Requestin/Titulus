@@ -405,35 +405,78 @@
         "swing": { "type": "boolean" }
       }
     },
-    "action": {
+    "actionItem": {
       "type": "object",
-      "required": ["id", "directorId", "frame", "command"],
+      "required": ["id", "command", "lengthFrames", "direction"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
-        "directorId": { "type": "string" },
-        "frame": { "type": "integer", "minimum": 0 },
-        "command": { "type": "string", "enum": ["startDirector", "stopDirector", "setTag"] },
-        "targetDirectorId": { "type": ["string", "null"] },
-        "tag": { "type": ["string", "null"], "enum": ["Stop", "End scene", null] }
+        "command": {
+          "type": ["string", "null"],
+          "enum": [
+            "startDirector",
+            "stopDirector",
+            "stopDirectorAndWaitContinue",
+            "pauseDirector",
+            "tag",
+            null
+          ]
+        },
+        "parameterDirectorId": { "type": ["string", "null"] },
+        "parameterTag": {
+          "type": ["string", "null"],
+          "enum": ["endScene", "updateData", null]
+        },
+        "lengthFrames": { "type": "integer", "minimum": 0 },
+        "direction": { "type": "string", "enum": ["both", "normal", "reverse"] }
       },
       "allOf": [
         {
-          "if": { "properties": { "command": { "enum": ["startDirector", "stopDirector"] } } },
-          "then": {
-            "required": ["targetDirectorId"],
+          "if": {
             "properties": {
-              "targetDirectorId": { "type": "string", "minLength": 1 }
+              "command": {
+                "enum": [
+                  "startDirector",
+                  "stopDirector",
+                  "stopDirectorAndWaitContinue",
+                  "pauseDirector"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": ["parameterDirectorId"],
+            "properties": {
+              "parameterDirectorId": { "type": "string", "minLength": 1 }
             }
           }
         },
         {
-          "if": { "properties": { "command": { "const": "setTag" } } },
+          "if": { "properties": { "command": { "const": "tag" } } },
           "then": {
-            "required": ["tag"]
+            "required": ["parameterTag"],
+            "properties": {
+              "parameterTag": { "type": "string", "enum": ["endScene", "updateData"] }
+            }
           }
         }
       ]
+    },
+    "action": {
+      "type": "object",
+      "required": ["id", "directorId", "frame", "name", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "directorId": { "type": "string", "minLength": 1 },
+        "frame": { "type": "integer", "minimum": 0 },
+        "name": { "type": "string" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/actionItem" }
+        }
+      }
     },
     "timeline": {
       "type": "object",

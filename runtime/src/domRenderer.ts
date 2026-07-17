@@ -21,7 +21,7 @@
 import type {
   Template, Layer, LayerGroup, AnimatableValues,
 } from './schema.js';
-import { applyTextTransform, resolveBinding } from './schema.js';
+import { applyTextTransform, resolveBinding, isUpdateDirectorName } from './schema.js';
 import {
   applyTextStyleToEl,
   crawlAlignActive,
@@ -38,10 +38,21 @@ import {
   maskNeedsProjection, projectMaskOutline, projectedMaskClip, maskGeometryKey,
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
-import { normalizeTimeline, sampleAt, sampleAtDirectorLocals, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
+import { normalizeTimeline, sampleAt, sampleAtDirectorLocals, type NormalizedTimeline, type TimelineSample } from './timeline.js';
 import { formatClock } from './clock.js';
 import { ensureFonts, collectFonts } from './fonts.js';
 import { type RenderStats, emptyRenderStats, snapshotStats } from './stats.js';
+import {
+  initDirectorRuntimes,
+  advanceDirectorLocal,
+  tickPause,
+  localFramesMap,
+  collectFiredItems,
+  type DirectorRuntime,
+  type DirectorPlayState,
+  type FiredAction,
+} from './directorRuntime.js';
+import type { TimelineActionCue, TimelineActionItem } from './schema.js';
 
 export interface TemplateRendererOptions {
   /** fixed: caller drives tick(fixedTickRate); raf: internal rAF loop. */
@@ -52,6 +63,14 @@ export interface TemplateRendererOptions {
 
 /** Per-frame callback during timeline playback (e.g. for stats). */
 export type OnFrameFn = (info: { frame: number; fps: number; stats?: RenderStats }) => void;
+
+/** Fired when a timeline action item executes (tags / host signals). */
+export type OnActionFn = (info: {
+  cue: TimelineActionCue;
+  item: TimelineActionItem;
+  directorId: string;
+  localFrame: number;
+}) => void;
 
 interface LayerNode {
   el: HTMLElement;
@@ -120,7 +139,13 @@ export class TemplateRenderer {
   private rafId: number | null = null;
   private rafLastWall: number | null = null;
   private onFrame: OnFrameFn | null = null;
+  private onAction: OnActionFn | null = null;
   private clockTimer: number | null = null;
+  /** Air playback: per-director Action runtime (start/stop/pause/continue). */
+  private directorRuntimes: Record<string, DirectorRuntime> | null = null;
+  private useDirectorRuntime = false;
+  /** Variables to apply at the next Update data tag (replace-all). */
+  private pendingUpdateVariables: Record<string, string | number> | null = null;
 
   constructor(stage: HTMLElement, opts: TemplateRendererOptions = {}) {
     this.stage = stage;
@@ -180,12 +205,17 @@ export class TemplateRenderer {
   playTimeline(
     template: Template,
     variables: Record<string, string | number> = NO_VARS,
-    opts: { onFrame?: OnFrameFn } = {},
+    opts: { onFrame?: OnFrameFn; onAction?: OnActionFn } = {},
   ): void {
     this.syncTemplate(template, variables);
     this.onFrame = opts.onFrame ?? null;
+    this.onAction = opts.onAction ?? null;
     this.playing = true;
     this.lastFrameSampled = null;
+    this.useDirectorRuntime = true;
+    this.directorRuntimes = initDirectorRuntimes(template.timeline);
+    this.directorLocalFrames = localFramesMap(this.directorRuntimes);
+    this.applyStateFromLocals(this.fixedTickRate);
     if (this.mode === 'raf') this.startRaf();
     this.startClockTicker();
   }
@@ -197,6 +227,52 @@ export class TemplateRenderer {
     this.stopClockTicker();
   }
 
+  /** Resume all directors in `stopAndWaitContinue` (Control Continue). */
+  continueWaitingDirectors(): void {
+    if (!this.directorRuntimes) return;
+    for (const rt of Object.values(this.directorRuntimes)) {
+      if (rt.state === 'stopAndWaitContinue') rt.state = 'play';
+    }
+    if (!this.playing) {
+      this.playing = true;
+      if (this.mode === 'raf') this.startRaf();
+    }
+  }
+
+  /**
+   * Control Update-flow: queue replace-all variables for the Update data tag,
+   * then start the protected Update director from frame 0.
+   */
+  startUpdateFlow(variables: Record<string, string | number> = NO_VARS): void {
+    if (!this.template || !this.directorRuntimes) return;
+    this.pendingUpdateVariables = { ...variables };
+    const update = this.template.timeline.directors.find((d) => isUpdateDirectorName(d.name));
+    if (!update) return;
+    const rt = this.directorRuntimes[update.id];
+    if (!rt) return;
+    rt.state = 'play';
+    rt.localFrame = 0;
+    rt.direction = 1;
+    rt.pauseRemaining = 0;
+    rt.lastLocalForActions = null;
+    if (!this.playing) {
+      this.playing = true;
+      if (this.mode === 'raf') this.startRaf();
+    }
+  }
+
+  /** Consume pending Update variables (replace-all) at the Update data tag. */
+  takePendingUpdateVariables(): Record<string, string | number> | null {
+    const v = this.pendingUpdateVariables;
+    this.pendingUpdateVariables = null;
+    return v;
+  }
+
+  hasWaitingDirectors(): boolean {
+    if (!this.directorRuntimes) return false;
+    return Object.values(this.directorRuntimes).some((rt) => rt.state === 'stopAndWaitContinue');
+  }
+
   /**
    * Seek to an absolute frame and apply state, without playing (editor scrub /
    * preview). Does not fire cue actions (scrubbing is not a linear playthrough).
@@ -205,6 +281,8 @@ export class TemplateRenderer {
     this.frame = Math.max(0, Math.round(frame));
     this.directorLocalFrames = null;
     this.lastFrameSampled = null;
+    this.useDirectorRuntime = false;
+    this.directorRuntimes = null;
     this.applyState(this.frame);
   }
 
@@ -215,6 +293,8 @@ export class TemplateRenderer {
   seekDirectorLocals(localFrames: Record<string, number>): void {
     this.directorLocalFrames = { ...localFrames };
     this.lastFrameSampled = null;
+    this.useDirectorRuntime = false;
+    this.directorRuntimes = null;
     this.applyStateFromLocals();
   }
 
@@ -229,8 +309,14 @@ export class TemplateRenderer {
    */
   tick(): void {
     if (!this.playing || this.mode !== 'fixed') return;
-    this.frame += 1;
-    this.applyState(this.frame, this.fixedTickRate);
+    if (this.useDirectorRuntime && this.directorRuntimes) {
+      this.advanceDirectorRuntimes(1);
+      this.directorLocalFrames = localFramesMap(this.directorRuntimes);
+      this.applyStateFromLocals(this.fixedTickRate);
+    } else {
+      this.frame += 1;
+      this.applyState(this.frame, this.fixedTickRate);
+    }
   }
 
   /** Resize the canvas (editor zoom / output size). Re-applies the root transform. */
@@ -577,8 +663,9 @@ export class TemplateRenderer {
 
     if (this.lastFrameSampled !== null && frame > this.lastFrameSampled) {
       for (const d of this.norm.directorList) {
-        const acts = actionsCrossed(this.norm, d.id, this.lastFrameSampled, frame);
-        this.runActions(acts);
+        const cues = this.norm.actions[d.id] ?? [];
+        const fired = collectFiredItems(cues, this.lastFrameSampled, frame, 1);
+        this.runFiredActions(fired);
       }
     }
     this.lastFrameSampled = frame;
@@ -649,14 +736,83 @@ export class TemplateRenderer {
     this.stats.styleWrites += 1;
   }
 
-  private runActions(acts: import('./schema.js').TimelineAction[]): void {
-    // Actions (startDirector/stopDirector/setTag) are runtime signals to the
-    // host (e.g. 'End scene' -> clear). For the renderer itself, startDirector/
-    // stopDirector would toggle a director's active window — out of scope for the
-    // MVP renderer loop (directors are time-windowed by offset/duration), so we
-    // expose them via an optional hook (onFrame host can inspect). setTag 'Stop'
-    // could halt playback; left to the host for now.
-    void acts;
+  private advanceDirectorRuntimes(steps: number): void {
+    if (!this.template || !this.directorRuntimes || !this.norm) return;
+    for (let s = 0; s < steps; s++) {
+      this.frame += 1;
+      for (const d of this.template.timeline.directors) {
+        const rt = this.directorRuntimes[d.id];
+        if (!rt) continue;
+        tickPause(rt);
+        if (rt.state !== 'play') continue;
+        const prev = rt.localFrame;
+        const moving = rt.direction;
+        advanceDirectorLocal(d, rt);
+        const stateAfter = rt.state as DirectorPlayState;
+        const cues = this.norm.actions[d.id] ?? [];
+        const fired = collectFiredItems(cues, rt.lastLocalForActions ?? prev, rt.localFrame, moving);
+        rt.lastLocalForActions = rt.localFrame;
+        this.runFiredActions(fired);
+        if (isUpdateDirectorName(d.name) && stateAfter === 'stop') {
+          // TZ: after Update finishes, park playhead at start of Update.
+          rt.localFrame = 0;
+          rt.direction = 1;
+          rt.lastLocalForActions = null;
+        }
+      }
+    }
+  }
+
+  private runFiredActions(fired: FiredAction[]): void {
+    if (!this.directorRuntimes) {
+      for (const f of fired) this.onAction?.(f);
+      return;
+    }
+    for (const f of fired) {
+      const { item } = f;
+      const cmd = item.command;
+      if (!cmd) continue;
+
+      if (cmd === 'startDirector') {
+        const targetId = item.parameterDirectorId;
+        if (!targetId) continue;
+        const trt = this.directorRuntimes[targetId];
+        if (trt && trt.state === 'stop') {
+          trt.state = 'play';
+          trt.localFrame = 0;
+          trt.lastLocalForActions = null;
+        }
+        continue;
+      }
+      if (cmd === 'stopDirector') {
+        const targetId = item.parameterDirectorId;
+        if (!targetId) continue;
+        const trt = this.directorRuntimes[targetId];
+        if (trt) trt.state = 'stop';
+        continue;
+      }
+      if (cmd === 'stopDirectorAndWaitContinue') {
+        const targetId = item.parameterDirectorId;
+        if (!targetId) continue;
+        const trt = this.directorRuntimes[targetId];
+        if (trt) trt.state = 'stopAndWaitContinue';
+        continue;
+      }
+      if (cmd === 'pauseDirector') {
+        const targetId = item.parameterDirectorId;
+        if (!targetId) continue;
+        const trt = this.directorRuntimes[targetId];
+        if (trt) {
+          trt.state = 'pause';
+          trt.pauseRemaining = Math.max(0, item.lengthFrames);
+          if (trt.pauseRemaining === 0) trt.state = 'play';
+        }
+        continue;
+      }
+      if (cmd === 'tag') {
+        this.onAction?.(f);
+      }
+    }
   }
 
   private applyLayerState(
@@ -1238,8 +1394,14 @@ export class TemplateRenderer {
         const dt = wall - this.rafLastWall; // ms
         const frames = Math.round((dt / 1000) * fps);
         if (frames > 0) {
-          this.frame += frames;
-          this.applyState(this.frame);
+          if (this.useDirectorRuntime && this.directorRuntimes) {
+            this.advanceDirectorRuntimes(frames);
+            this.directorLocalFrames = localFramesMap(this.directorRuntimes);
+            this.applyStateFromLocals();
+          } else {
+            this.frame += frames;
+            this.applyState(this.frame);
+          }
         }
       }
       this.rafLastWall = wall;
