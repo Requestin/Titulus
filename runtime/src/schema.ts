@@ -561,14 +561,13 @@ export function isUpdateDirectorArmed(timeline: Timeline): boolean {
 }
 
 /**
- * Whether air/editor must run the per-director Action state machine.
+ * Whether air/editor must run the per-director Action state machine from TAKE.
  *
- * Dormant Update (autostart=false, unarmed, only seed updateData cue) must NOT
- * force this — otherwise every take pays Action-runtime cost and looks jerky
- * on SDI even when the operator never used Actions.
+ * Tags do not alter director state: classic playback can dispatch endScene,
+ * while Update promotes to director runtime only when UPDATE arrives. Keeping
+ * both off this gate avoids charging every TAKE for dormant action machinery.
  */
 export function timelineNeedsDirectorRuntime(timeline: Timeline): boolean {
-  const updateArmed = isUpdateDirectorArmed(timeline);
   for (const cue of timeline.actions) {
     for (const item of cue.items) {
       if (!item.command) continue;
@@ -579,10 +578,6 @@ export function timelineNeedsDirectorRuntime(timeline: Timeline): boolean {
         || item.command === 'pauseDirector'
       ) {
         return true;
-      }
-      if (item.command === 'tag') {
-        if (item.parameterTag === 'endScene') return true;
-        if (item.parameterTag === 'updateData' && updateArmed) return true;
       }
     }
   }

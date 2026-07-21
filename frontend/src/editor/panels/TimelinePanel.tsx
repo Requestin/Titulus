@@ -511,6 +511,7 @@ export function TimelinePanel() {
                   pxPerFrame={pxPerFrame}
                   timelineWidth={timelineWidth}
                   playhead={globalPlayhead}
+                  smooth={playing}
                   onScrub={(e, el) => scrubGlobal(maxDur, e, el)}
                 />
                 {directorTree.map(({ directorId, tracks }) => {
@@ -569,7 +570,10 @@ export function TimelinePanel() {
                             frameFromEvent={(e, el) => frameFromContentX(e.clientX, el, sectionDur)}
                           />
                           <div
-                            className="pointer-events-none absolute top-0 z-sticky w-px bg-live"
+                            className={cn(
+                              'pointer-events-none absolute top-0 z-sticky w-px bg-live',
+                              playing && 'transition-[left] duration-[70ms] ease-linear',
+                            )}
                             style={{ left: frameToX(sectionPlayhead), height: DIRECTOR_HDR_H + ACTION_LANE_H }}
                           >
                             <div className="pointer-events-auto absolute -left-1 top-0 h-2 w-2 rounded-sm bg-live" />
@@ -796,12 +800,14 @@ function GlobalPlayheadRow({
   pxPerFrame,
   timelineWidth,
   playhead,
+  smooth,
   onScrub,
 }: {
   maxDur: number;
   pxPerFrame: number;
   timelineWidth: number;
   playhead: number;
+  smooth: boolean;
   onScrub: (e: ReactPointerEvent, el: Element) => void;
 }) {
   return (
@@ -825,7 +831,10 @@ function GlobalPlayheadRow({
           className="bg-surface-2/60"
         />
         <div
-          className="pointer-events-none absolute top-0 z-sticky w-0.5 bg-white/95"
+          className={cn(
+            'pointer-events-none absolute top-0 z-sticky w-0.5 bg-white/95',
+            smooth && 'transition-[left] duration-[70ms] ease-linear',
+          )}
           style={{ left: playhead * pxPerFrame, height: DIRECTOR_HDR_H }}
         >
           <div className="pointer-events-auto absolute -left-1 top-0 h-2 w-2 rounded-sm bg-white shadow-[0_0_4px_rgba(255,255,255,0.6)]" />

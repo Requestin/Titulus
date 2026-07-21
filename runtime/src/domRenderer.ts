@@ -38,7 +38,14 @@ import {
   maskNeedsProjection, projectMaskOutline, projectedMaskClip, maskGeometryKey,
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
-import { normalizeTimeline, sampleAt, sampleAtDirectorLocals, type NormalizedTimeline, type TimelineSample } from './timeline.js';
+import {
+  directorLocalFrame,
+  normalizeTimeline,
+  sampleAt,
+  sampleAtDirectorLocals,
+  type NormalizedTimeline,
+  type TimelineSample,
+} from './timeline.js';
 import { formatClock } from './clock.js';
 import { ensureFonts, collectFonts } from './fonts.js';
 import { type RenderStats, emptyRenderStats, snapshotStats } from './stats.js';
@@ -277,12 +284,35 @@ export class TemplateRenderer {
     return true;
   }
 
-  /** Advance Action runtime N frames and paint (editor host clock). */
-  advanceEditorPlayback(steps: number): void {
+  /** Advance Action runtime N frames; caller may defer paint for interpolation. */
+  advanceEditorPlayback(steps: number, paint = true): void {
     if (!this.playing || !this.useDirectorRuntime || !this.directorRuntimes) return;
     this.advanceDirectorRuntimes(Math.max(0, Math.round(steps)));
     this.directorLocalFrames = localFramesMap(this.directorRuntimes);
+    if (paint) this.applyStateFromLocals(this.fixedTickRate);
+  }
+
+  /**
+   * Paint a fractional frame between discrete Action ticks for smooth browser
+   * preview. Runtime state and cue crossing remain integer/frame-accurate.
+   */
+  renderDirectorPlaybackFraction(fraction: number): Record<string, number> {
+    if (!this.template || !this.directorRuntimes) return this.getDirectorLocals();
+    const amount = Math.max(0, Math.min(0.999, fraction));
+    const visualFrames: Record<string, number> = {};
+    for (const d of this.template.timeline.directors) {
+      const rt = this.directorRuntimes[d.id];
+      if (!rt) continue;
+      const visual = rt.state === 'play'
+        ? rt.localFrame + rt.direction * amount
+        : rt.localFrame;
+      visualFrames[d.id] = Math.max(0, Math.min(d.durationFrames, visual));
+    }
+    const canonicalFrames = this.directorLocalFrames;
+    this.directorLocalFrames = visualFrames;
     this.applyStateFromLocals(this.fixedTickRate);
+    this.directorLocalFrames = canonicalFrames;
+    return visualFrames;
   }
 
   /**
@@ -783,8 +813,12 @@ export class TemplateRenderer {
     if (this.lastFrameSampled !== null && frame > this.lastFrameSampled) {
       for (const d of this.norm.directorList) {
         const cues = this.norm.actions[d.id] ?? [];
-        const fired = collectFiredItems(cues, this.lastFrameSampled, frame, 1);
-        this.runFiredActions(fired);
+        if (cues.length === 0) continue;
+        const currentLocal = directorLocalFrame(d, frame);
+        if (currentLocal === null) continue;
+        const previousLocal = directorLocalFrame(d, this.lastFrameSampled);
+        const fired = collectFiredItems(cues, previousLocal, currentLocal, 1);
+        if (fired.length > 0) this.runFiredActions(fired);
       }
     }
     this.lastFrameSampled = frame;
@@ -871,7 +905,7 @@ export class TemplateRenderer {
         const cues = this.norm.actions[d.id] ?? [];
         const fired = collectFiredItems(cues, rt.lastLocalForActions ?? prev, rt.localFrame, moving);
         rt.lastLocalForActions = rt.localFrame;
-        this.runFiredActions(fired);
+        if (fired.length > 0) this.runFiredActions(fired);
         if (isUpdateDirectorName(d.name) && stateAfter === 'stop') {
           // TZ: after Update finishes, park playhead at start of Update.
           rt.localFrame = 0;
@@ -880,7 +914,6 @@ export class TemplateRenderer {
         }
       }
     }
-    this.emitWaitingChange();
   }
 
   private emitWaitingChange(): void {
@@ -895,6 +928,7 @@ export class TemplateRenderer {
       for (const f of fired) this.onAction?.(f);
       return;
     }
+    let waitingMayHaveChanged = false;
     for (const f of fired) {
       const { item } = f;
       const cmd = item.command;
@@ -914,17 +948,24 @@ export class TemplateRenderer {
       }
       if (cmd === 'stopDirector') {
         const trt = this.directorRuntimes[targetId];
-        if (trt) trt.state = 'stop';
+        if (trt) {
+          waitingMayHaveChanged ||= trt.state === 'stopAndWaitContinue';
+          trt.state = 'stop';
+        }
         continue;
       }
       if (cmd === 'stopDirectorAndWaitContinue') {
         const trt = this.directorRuntimes[targetId];
-        if (trt) trt.state = 'stopAndWaitContinue';
+        if (trt) {
+          waitingMayHaveChanged = true;
+          trt.state = 'stopAndWaitContinue';
+        }
         continue;
       }
       if (cmd === 'pauseDirector') {
         const trt = this.directorRuntimes[targetId];
         if (trt) {
+          waitingMayHaveChanged ||= trt.state === 'stopAndWaitContinue';
           trt.state = 'pause';
           trt.pauseRemaining = Math.max(0, item.lengthFrames);
           if (trt.pauseRemaining === 0) trt.state = 'play';
@@ -935,6 +976,7 @@ export class TemplateRenderer {
         this.onAction?.(f);
       }
     }
+    if (waitingMayHaveChanged) this.emitWaitingChange();
   }
 
   private applyLayerState(
@@ -1515,20 +1557,23 @@ export class TemplateRenderer {
       if (this.rafLastWall !== null && this.template) {
         const fps = this.template.timeline.fps;
         const dt = wall - this.rafLastWall; // ms
-        // Accumulator avoids Math.round jitter (double/skip frames → jerky SDI/preview).
-        frameCarry += (dt / 1000) * fps;
-        let frames = Math.floor(frameCarry);
+        // Actions advance on exact integer frames; visual sampling follows the
+        // display rAF with a fractional carry (smooth on 60/120 Hz monitors).
+        frameCarry += Math.min(8, (dt / 1000) * fps);
+        const frames = Math.floor(frameCarry);
         if (frames > 0) {
           frameCarry -= frames;
-          if (frames > 8) frames = 8;
           if (this.useDirectorRuntime && this.directorRuntimes) {
             this.advanceDirectorRuntimes(frames);
             this.directorLocalFrames = localFramesMap(this.directorRuntimes);
-            this.applyStateFromLocals();
           } else {
             this.frame += frames;
-            this.applyState(this.frame);
           }
+        }
+        if (this.useDirectorRuntime && this.directorRuntimes) {
+          this.renderDirectorPlaybackFraction(frameCarry);
+        } else {
+          this.applyState(this.frame + frameCarry);
         }
       }
       this.rafLastWall = wall;

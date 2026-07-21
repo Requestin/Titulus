@@ -348,26 +348,26 @@ export function CanvasArea() {
       }
       const dt = now - last;
       last = now;
-      frameCarry += (dt / 1000) * fps;
-      let steps = Math.floor(frameCarry);
-      if (steps <= 0) {
-        raf = requestAnimationFrame(loop);
-        return;
-      }
-      frameCarry -= steps;
-      if (steps > 8) steps = 8;
+      const deltaFrames = Math.min(8, (dt / 1000) * fps);
 
       if (useActions) {
-        r.advanceEditorPlayback(steps);
-        const locals = r.getDirectorLocals();
-        flushHeads(false, now, locals);
-        if (!r.isDirectorPlaybackActive()) {
-          suppressScrubRef.current = true;
-          flushHeads(true, now, locals);
-          setPlaying(false);
-          setWaitingContinue(false);
-          return;
+        frameCarry += deltaFrames;
+        const steps = Math.floor(frameCarry);
+        if (steps > 0) {
+          frameCarry -= steps;
+          r.advanceEditorPlayback(steps, false);
+          if (!r.isDirectorPlaybackActive()) {
+            const locals = r.renderDirectorPlaybackFraction(0);
+            suppressScrubRef.current = true;
+            flushHeads(true, now, locals);
+            setPlaying(false);
+            setWaitingContinue(false);
+            return;
+          }
         }
+        // Actions fire only on integer frames; visual interpolation follows rAF.
+        const visualHeads = r.renderDirectorPlaybackFraction(frameCarry);
+        flushHeads(false, now, visualHeads);
       } else {
         const nextPlayheads: Record<string, number> = {};
         let allDone = true;
@@ -378,7 +378,7 @@ export function CanvasArea() {
             continue;
           }
           const curRel = rel[d.id] ?? 0;
-          const adv = advanceDirectorRel(d, curRel, steps);
+          const adv = advanceDirectorRel(d, curRel, deltaFrames);
           rel[d.id] = adv.rel;
           nextPlayheads[d.id] = directorRelToLocal(d, adv.rel);
           if (!adv.done || d.loop) allDone = false;

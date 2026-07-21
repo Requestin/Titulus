@@ -378,7 +378,9 @@ export function sampleAtDirectorLocals(
       perDirector[d.id] = { layers: {}, groups: {}, active: false };
       continue;
     }
-    const local = Math.max(0, Math.round(localFrames[d.id] ?? 0));
+    // Keep fractional local frames in browser/editor previews. Action crossing
+    // remains integer-driven; interpolation may follow the display refresh rate.
+    const local = Math.max(0, Math.min(d.durationFrames, localFrames[d.id] ?? 0));
     const ds = sampleDirectorAtLocal(norm, d.id, local);
     perDirector[d.id] = ds;
     for (const [tid, vals] of Object.entries(ds.layers)) {

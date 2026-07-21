@@ -1,7 +1,7 @@
 # Ветка `sergey-v1` — контекст и changelog
 
 > Сводка работы Sergey + агент Cursor на ветке `sergey-v1`.  
-> Обновлено: **17 июля 2026**.
+> Обновлено: **21 июля 2026**.
 
 ---
 
@@ -48,6 +48,64 @@
 | `1dafb0b` | 17 июл | `fix(editor): honor stop/wait Actions + Continue button` |
 | `730bc45` | 17 июл | `fix(editor): ignore endScene; Stop freezes playhead in place` |
 | `58c381e` | 17 июл | `add actions, continue,update` (perf + classic playback gate + session context) |
+| *(HEAD)* | 21 июл | `fix perfomance issue` (SDI smooth + web/editor fractional playback) |
+
+---
+
+## 21 июля 2026 — Performance / плавность playback (SDI + web)
+
+После Actions на SDI и в editor/web были рывки. **SDI исправлен первым**, затем доведена плавность editor + `channel.html` (web engine preview).
+
+### Симптомы
+
+- DeckLink: подтормаживания на простых сценах (до fix).
+- Editor + web renderer: playhead и preview «дёргаются», SDI после fix — идеально плавный.
+- Ожидание: dormant Update / пустые Actions **не должны** менять hot path.
+
+### Корневые причины
+
+1. **`playTimeline` всегда включал Action runtime** из‑за seed `updateData` на Update director → каждый TAKE шёл через тяжёлый per-director state machine вместо `frame++` + `sampleAt`.
+2. **Editor:** Zustand playheads на каждом кадре + throttle 15 Hz → playhead рывками; canvas рисовался только **целыми** 50-fps кадрами через 60 Hz rAF.
+3. **Web rAF:** integer-only advance — между тиками картинка не двигалась; `sampleAtDirectorLocals` делал `Math.round()` и **убивал** дробную интерполяцию.
+4. **`endScene` tag** ошибочно форсил director runtime на SDI (исправлено: tags не включают SM с TAKE).
+5. **`collectFiredItems`** — полный перебор cues каждый кадр → заменён бинарным поиском по отсортированным cues.
+
+### Fix (итоговый)
+
+| Область | Решение |
+|---|---|
+| SDI / air TAKE | `timelineNeedsDirectorRuntime()` — SM только для start/stop/wait/pause; **tags (endScene/updateData) не включают** runtime с TAKE |
+| Classic playback | `playTimeline` → `frame++` + `sampleAt`; Update-flow эскалирует SM только при Control UPDATE |
+| Action cues | `collectFiredItems` — binary search; classic path — cue check по director local frame |
+| Editor canvas | Дробный playhead: `renderDirectorPlaybackFraction()`; Actions на integer frames, paint на rAF |
+| Web rAF | После integer tick — paint `frame + frameCarry` (fractional); director path — `renderDirectorPlaybackFraction` |
+| Sampling | `sampleAtDirectorLocals` — **без** `Math.round`, clamp 0..duration |
+| Editor UI | Playhead CSS transition при Play (~70 ms); store playheads throttle ~15 Hz (не 50 React/sec) |
+| Dormant Update | Directors без tracks пропускаются в sample; Update без autostart не крутит transport в classic Play |
+
+### Ключевые файлы (21 июля)
+
+| Area | Path |
+|---|---|
+| Runtime gate | `runtime/src/schema.ts` (`timelineNeedsDirectorRuntime`) |
+| Cue scan | `runtime/src/directorRuntime.ts` (`collectFiredItems`) |
+| Playback / rAF | `runtime/src/domRenderer.ts` (`renderDirectorPlaybackFraction`, `startRaf`) |
+| Fractional sample | `runtime/src/timeline.ts` (`sampleAtDirectorLocals`) |
+| Editor play | `frontend/src/editor/CanvasArea.tsx` |
+| Playhead UI | `frontend/src/editor/panels/TimelinePanel.tsx` |
+
+### Deploy / verify
+
+```bash
+cd runtime && npm run build   # → backend/public/bg-runtime.js (gitignored)
+# restart bg_engine / refresh channel.html + hard refresh editor (Ctrl+Shift+R)
+```
+
+- [ ] SDI: простые сцены без Actions — плавно, как до timeline Actions
+- [ ] Editor Play: preview без рывков; playhead движется равномерно
+- [ ] Web `channel.html?preview=1` — такая же плавность, как editor
+- [ ] Сцены **с** stop/wait/endScene — Actions работают; SDI не деградирует
+- [ ] После `npm run build` в runtime — свежий `bg-runtime.js` на engine
 
 ---
 
@@ -83,8 +141,8 @@
 
 **Проблема:** пустой Update + seed `updateData` заставлял **каждый** take идти через Action runtime → дёрганье в editor и на DeckLink.
 
-**Fix:**
-- `timelineNeedsDirectorRuntime()` — Action path только если есть start/stop/wait/pause, `endScene`, или **armed** Update. Dormant Update **не** форсит тяжёлый путь.
+**Fix (17 июл, уточнено 21 июл — см. §21 июля):**
+- `timelineNeedsDirectorRuntime()` — Action SM только для start/stop/wait/pause; **tags (endScene/updateData) не включают** runtime с TAKE. Dormant Update **не** форсит тяжёлый path.
 - Classic `playTimeline`: `frame++` + `sampleAt` (как до Actions).
 - `sampleAtDirectorLocals` пропускает directors без tracks.
 - Editor: throttle UI playheads ~15 Hz; atomic `setPlayheads` (+ `directorRel`); rAF accumulator вместо `Math.round`.
@@ -988,6 +1046,7 @@ git push -u origin sergey-v1
 - [ ] Crawl: Ticker/Carousel, Pause(frame), Parse/Use File, Align rules, shadow live
 - [ ] Login: логотип 560px над формой; форма по центру
 - [ ] Actions: без команд — classic smooth path; wait/Continue; endScene air-only; Stop freeze
+- [ ] SDI + editor + web preview — плавность без рывков (см. §21 июля)
 - [ ] После runtime-правок: `cd runtime && npm run build` + restart channel/engine
 
 **Data:**

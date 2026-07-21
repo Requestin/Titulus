@@ -97,6 +97,28 @@ export type FiredAction = {
   localFrame: number;
 };
 
+function lowerBoundCue(cues: TimelineActionCue[], frame: number): number {
+  let lo = 0;
+  let hi = cues.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (cues[mid]!.frame < frame) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function upperBoundCue(cues: TimelineActionCue[], frame: number): number {
+  let lo = 0;
+  let hi = cues.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (cues[mid]!.frame <= frame) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 /** Collect items that should fire for crossed cues given movement direction. */
 export function collectFiredItems(
   cues: TimelineActionCue[],
@@ -105,13 +127,17 @@ export function collectFiredItems(
   moving: 1 | -1,
 ): FiredAction[] {
   const fired: FiredAction[] = [];
-  for (const cue of cues) {
-    const crossed = prevLocal === null
-      ? cue.frame <= curLocal
-      : (moving === 1
-        ? prevLocal < cue.frame && cue.frame <= curLocal
-        : curLocal <= cue.frame && cue.frame < prevLocal);
-    if (!crossed) continue;
+  if (cues.length === 0) return fired;
+
+  const start = prevLocal === null
+    ? 0
+    : (moving === 1 ? upperBoundCue(cues, prevLocal) : lowerBoundCue(cues, curLocal));
+  const end = prevLocal === null
+    ? upperBoundCue(cues, curLocal)
+    : (moving === 1 ? upperBoundCue(cues, curLocal) : lowerBoundCue(cues, prevLocal));
+
+  for (let i = start; i < end; i++) {
+    const cue = cues[i]!;
     for (const item of cue.items) {
       if (!item.command) continue;
       if (!directionAllows(item.direction, moving)) continue;
