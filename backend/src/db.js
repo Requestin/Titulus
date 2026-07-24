@@ -23,6 +23,15 @@ CREATE TABLE IF NOT EXISTS templates (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Unreal / ZeroDensity-style template catalog (Blueprint forms), separate from HTML templates.
+CREATE TABLE IF NOT EXISTS ue_templates (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  data       TEXT NOT NULL,            -- JSON UeTemplateData
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS channels (
   id           TEXT PRIMARY KEY,
   name         TEXT NOT NULL,
@@ -31,6 +40,13 @@ CREATE TABLE IF NOT EXISTS channels (
   display_mode TEXT NOT NULL DEFAULT 'HD1080i50',
   keyer_mode   TEXT NOT NULL DEFAULT 'external', -- external|internal|fill_only
   stream_url   TEXT NOT NULL DEFAULT '',
+  render_backend TEXT NOT NULL DEFAULT 'html',  -- html|unreal
+  unreal_endpoint TEXT NOT NULL DEFAULT '',
+  unreal_ndi_source TEXT NOT NULL DEFAULT '',
+  vs_input_device INTEGER NOT NULL DEFAULT -1,
+  vs_bg_file   TEXT NOT NULL DEFAULT '',
+  vs_cam_file  TEXT NOT NULL DEFAULT '',
+  unreal_pad   TEXT NOT NULL DEFAULT '[]',      -- JSON UnrealAction[]
   created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -168,9 +184,40 @@ export function openDb(dbPath) {
   db.exec(SCHEMA);
   ensureOnAirOrderIndex(db);
   ensureMediaAssetColumns(db);
+  ensureChannelVsColumns(db);
+  ensureUeTemplatesTable(db);
   ensureLicenseRow(db);
   ensureAuthBootstrap(db);
   return db;
+}
+
+/** @param {Database} db */
+function ensureUeTemplatesTable(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ue_templates (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      data       TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+}
+
+/** @param {Database} db */
+function ensureChannelVsColumns(db) {
+  const cols = db.prepare(`PRAGMA table_info(channels)`).all();
+  const names = new Set(cols.map((c) => c.name));
+  const add = (name, ddl) => {
+    if (!names.has(name)) db.exec(`ALTER TABLE channels ADD COLUMN ${ddl}`);
+  };
+  add('render_backend', `render_backend TEXT NOT NULL DEFAULT 'html'`);
+  add('unreal_endpoint', `unreal_endpoint TEXT NOT NULL DEFAULT ''`);
+  add('unreal_ndi_source', `unreal_ndi_source TEXT NOT NULL DEFAULT ''`);
+  add('vs_input_device', `vs_input_device INTEGER NOT NULL DEFAULT -1`);
+  add('vs_bg_file', `vs_bg_file TEXT NOT NULL DEFAULT ''`);
+  add('vs_cam_file', `vs_cam_file TEXT NOT NULL DEFAULT ''`);
+  add('unreal_pad', `unreal_pad TEXT NOT NULL DEFAULT '[]'`);
 }
 
 /** @param {Database} db */
@@ -264,31 +311,123 @@ export const templatesDao = (db) => ({
 });
 
 // ---------------------------------------------------------------------------
+// ue_templates (Unreal Blueprint catalog — ZeroDensity-style)
+// ---------------------------------------------------------------------------
+
+function parseUeTemplateData(raw) {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return { schemaVersion: 1, rcObjectPath: '', takeIn: null, takeOut: null, actions: [], variables: [] };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export const ueTemplatesDao = (db) => ({
+  all() {
+    return db.prepare('SELECT id, name, created_at, updated_at FROM ue_templates ORDER BY updated_at DESC').all();
+  },
+  get(id) {
+    const row = db.prepare('SELECT * FROM ue_templates WHERE id = ?').get(id);
+    if (!row) return null;
+    return { ...row, data: parseUeTemplateData(row.data) };
+  },
+  create({ id, name, data }) {
+    db.prepare('INSERT INTO ue_templates (id, name, data) VALUES (?, ?, ?)').run(
+      id, name, JSON.stringify(data ?? {}),
+    );
+    return this.get(id);
+  },
+  update(id, { name, data }) {
+    const cur = db.prepare('SELECT * FROM ue_templates WHERE id = ?').get(id);
+    if (!cur) return null;
+    const next = {
+      name: name ?? cur.name,
+      data: data !== undefined ? JSON.stringify(data) : cur.data,
+    };
+    db.prepare(
+      `UPDATE ue_templates SET name = ?, data = ?, updated_at = datetime('now') WHERE id = ?`,
+    ).run(next.name, next.data, id);
+    return this.get(id);
+  },
+  remove(id) {
+    return db.prepare('DELETE FROM ue_templates WHERE id = ?').run(id).changes > 0;
+  },
+});
+
+// ---------------------------------------------------------------------------
 // channels
 // ---------------------------------------------------------------------------
 
 const MAX_CHANNELS = 8;
 
+const CHANNEL_VS_DEFAULTS = {
+  render_backend: 'html',
+  unreal_endpoint: '',
+  unreal_ndi_source: '',
+  vs_input_device: -1,
+  vs_bg_file: '',
+  vs_cam_file: '',
+  unreal_pad: '[]',
+};
+
+function parseUnrealPad(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function mapChannelRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    render_backend: row.render_backend ?? 'html',
+    unreal_endpoint: row.unreal_endpoint ?? '',
+    unreal_ndi_source: row.unreal_ndi_source ?? '',
+    vs_input_device: row.vs_input_device ?? -1,
+    vs_bg_file: row.vs_bg_file ?? '',
+    vs_cam_file: row.vs_cam_file ?? '',
+    unreal_pad: parseUnrealPad(row.unreal_pad),
+  };
+}
+
 export const channelsDao = (db) => ({
   MAX: MAX_CHANNELS,
   all() {
-    return db.prepare('SELECT * FROM channels ORDER BY created_at ASC').all();
+    return db.prepare('SELECT * FROM channels ORDER BY created_at ASC').all().map(mapChannelRow);
   },
   get(id) {
-    return db.prepare('SELECT * FROM channels WHERE id = ?').get(id) ?? null;
+    return mapChannelRow(db.prepare('SELECT * FROM channels WHERE id = ?').get(id) ?? null);
   },
   count() {
     return db.prepare('SELECT COUNT(*) AS n FROM channels').get().n;
   },
-  create({ id, name, output_mode, device_index, display_mode, keyer_mode, stream_url }) {
+  create({
+    id, name, output_mode, device_index, display_mode, keyer_mode, stream_url,
+    render_backend, unreal_endpoint, unreal_ndi_source, vs_input_device,
+    vs_bg_file, vs_cam_file, unreal_pad,
+  }) {
     if (this.count() >= MAX_CHANNELS) {
       const err = new Error(`max ${MAX_CHANNELS} channels reached`);
       err.code = 'MAX_CHANNELS';
       throw err;
     }
+    const padJson = Array.isArray(unreal_pad) ? JSON.stringify(unreal_pad) : (unreal_pad ?? CHANNEL_VS_DEFAULTS.unreal_pad);
     db.prepare(
-      `INSERT INTO channels (id, name, output_mode, device_index, display_mode, keyer_mode, stream_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO channels (
+         id, name, output_mode, device_index, display_mode, keyer_mode, stream_url,
+         render_backend, unreal_endpoint, unreal_ndi_source, vs_input_device,
+         vs_bg_file, vs_cam_file, unreal_pad
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id, name,
       output_mode ?? 'browser',
@@ -296,12 +435,22 @@ export const channelsDao = (db) => ({
       display_mode ?? 'HD1080i50',
       keyer_mode ?? 'external',
       stream_url ?? '',
+      render_backend ?? CHANNEL_VS_DEFAULTS.render_backend,
+      unreal_endpoint ?? '',
+      unreal_ndi_source ?? '',
+      vs_input_device ?? -1,
+      vs_bg_file ?? '',
+      vs_cam_file ?? '',
+      padJson,
     );
     return this.get(id);
   },
   update(id, patch) {
     const cur = this.get(id);
     if (!cur) return null;
+    const nextPad = patch.unreal_pad !== undefined
+      ? (Array.isArray(patch.unreal_pad) ? JSON.stringify(patch.unreal_pad) : String(patch.unreal_pad))
+      : JSON.stringify(cur.unreal_pad ?? []);
     const next = {
       name: patch.name ?? cur.name,
       output_mode: patch.output_mode ?? cur.output_mode,
@@ -309,10 +458,25 @@ export const channelsDao = (db) => ({
       display_mode: patch.display_mode ?? cur.display_mode,
       keyer_mode: patch.keyer_mode ?? cur.keyer_mode,
       stream_url: patch.stream_url ?? cur.stream_url,
+      render_backend: patch.render_backend ?? cur.render_backend,
+      unreal_endpoint: patch.unreal_endpoint ?? cur.unreal_endpoint,
+      unreal_ndi_source: patch.unreal_ndi_source ?? cur.unreal_ndi_source,
+      vs_input_device: patch.vs_input_device ?? cur.vs_input_device,
+      vs_bg_file: patch.vs_bg_file ?? cur.vs_bg_file,
+      vs_cam_file: patch.vs_cam_file ?? cur.vs_cam_file,
+      unreal_pad: nextPad,
     };
     db.prepare(
-      `UPDATE channels SET name=?, output_mode=?, device_index=?, display_mode=?, keyer_mode=?, stream_url=? WHERE id=?`,
-    ).run(next.name, next.output_mode, next.device_index, next.display_mode, next.keyer_mode, next.stream_url, id);
+      `UPDATE channels SET
+         name=?, output_mode=?, device_index=?, display_mode=?, keyer_mode=?, stream_url=?,
+         render_backend=?, unreal_endpoint=?, unreal_ndi_source=?, vs_input_device=?,
+         vs_bg_file=?, vs_cam_file=?, unreal_pad=?
+       WHERE id=?`,
+    ).run(
+      next.name, next.output_mode, next.device_index, next.display_mode, next.keyer_mode, next.stream_url,
+      next.render_backend, next.unreal_endpoint, next.unreal_ndi_source, next.vs_input_device,
+      next.vs_bg_file, next.vs_cam_file, next.unreal_pad, id,
+    );
     return this.get(id);
   },
   remove(id) {
@@ -374,9 +538,12 @@ function normalizeRundownSlots(input) {
     const dataElementId = typeof raw.dataElementId === 'string' && raw.dataElementId.trim()
       ? raw.dataElementId.trim()
       : null;
+    const kind = raw.kind === 'ue' ? 'ue' : 'html';
+    if (raw.kind && raw.kind !== kind) changed = true;
     const slot = {
       slotId,
       templateId,
+      kind,
       name: name || `Slot ${i + 1}`,
       vars,
       ...(dataElementId ? { dataElementId } : {}),

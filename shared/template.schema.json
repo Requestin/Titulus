@@ -248,6 +248,8 @@
         "src": { "$ref": "#/$defs/stringOrBinding" },
         "fit": { "type": "string", "enum": ["stretch", "contain", "cover"] },
         "loop": { "type": "boolean" },
+        "endBehavior": { "type": "string", "enum": ["lastFrame", "empty"] },
+        "durationFrames": { "type": "integer", "minimum": 1 },
         "mode": { "type": "string", "enum": ["clock", "countup", "countdown"] },
         "format": { "type": "string" },
         "startTime": { "type": "number" },
@@ -298,7 +300,9 @@
             "properties": {
               "src": { "$ref": "#/$defs/stringOrBinding" },
               "loop": { "type": "boolean" },
-              "fit": { "type": "string", "enum": ["stretch", "contain", "cover"] }
+              "fit": { "type": "string", "enum": ["stretch", "contain", "cover"] },
+              "endBehavior": { "type": "string", "enum": ["lastFrame", "empty"] },
+              "durationFrames": { "type": "integer", "minimum": 1 }
             }
           }
         },
@@ -388,7 +392,8 @@
         "scaleX": { "type": "number" },
         "scaleY": { "type": "number" },
         "opacity": { "type": "number" },
-        "crawlProgress": { "type": "number", "minimum": 0, "maximum": 1 }
+        "crawlProgress": { "type": "number", "minimum": 0, "maximum": 1 },
+        "videoProgress": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     },
     "director": {

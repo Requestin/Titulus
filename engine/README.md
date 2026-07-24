@@ -29,7 +29,8 @@ depends on HW/genlock host execution):
 | `consumers/pipe_consumer.*`, `consumers/preview_writer.*` | ✅ |
 | `consumers/decklink_consumer.*` | ✅ code-complete (HW validation deferred) |
 | `consumers/ffmpeg_consumer.*` | ✅ done (raw BGRA -> ffmpeg stream child) |
-| `run-engines.sh`, `run-channel.sh`, `systemd/bg-engine@.service` | ✅ |
+| `bg_vs_engine` (`src/vs/*`) Unreal VS compositor | ✅ foundation — see `docs/unreal-vs-mode.md` |
+| `run-engines.sh`, `run-channel.sh`, `run-vs-channel.sh`, `systemd/bg-engine@.service` | ✅ |
 | `collect-decklink-evidence.sh` (Phase 6.4 handoff) | ✅ |
 
 ## CLI (target, per §9.5)

@@ -13,6 +13,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   api,
+  ApiError,
   type DataElement,
   type OnAirSnapshot,
   type Rundown,
@@ -283,12 +284,14 @@ export function RundownTab({
   }, [cache]);
 
   function slotMissing(slot: RundownSlot): boolean {
+    if (slot.kind === 'ue') return false; // resolved via /api/ue-templates at TAKE time
     const tplMissing = !templates.some((t) => t.id === slot.templateId);
     const deMissing = Boolean(slot.dataElementId) && !deById.has(slot.dataElementId!);
     return tplMissing || deMissing;
   }
 
   function slotDisplayName(slot: RundownSlot): string {
+    if (slot.kind === 'ue') return `UE · ${slot.name}`;
     return templates.find((t) => t.id === slot.templateId)?.name ?? slot.name;
   }
 
@@ -306,6 +309,18 @@ export function RundownTab({
     if (!active) return;
     const slot = active.slots[index];
     if (!slot) return;
+
+    // Unreal Blueprint template: Remote Control Take In (not CEF WS take).
+    if (slot.kind === 'ue') {
+      try {
+        await api.ueTemplates.play(slot.templateId, { channelId, mode: 'takeIn' });
+        toast.success(`UE Take In: ${slot.name}`);
+      } catch (e) {
+        toast.error(e instanceof ApiError ? e.message : (e as Error).message);
+      }
+      return;
+    }
+
     if (slotMissing(slot)) {
       toast.error('NOT FOUND IN DB — cannot TAKE');
       return;
@@ -363,6 +378,12 @@ export function RundownTab({
 
   function clearSlot(slotId: string) {
     const slot = active?.slots.find((s) => s.slotId === slotId);
+    if (slot?.kind === 'ue') {
+      void api.ueTemplates.play(slot.templateId, { channelId, mode: 'takeOut' })
+        .then(() => toast.success(`UE Take Out: ${slot.name}`))
+        .catch((e) => toast.error(e instanceof ApiError ? e.message : (e as Error).message));
+      return;
+    }
     const templateId = slot?.templateId ?? slotId;
     const ok = send({ type: 'clear', channelId, templateId, slotId });
     if (!ok) return toast.error('Control socket disconnected');

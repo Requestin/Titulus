@@ -4,7 +4,7 @@
 //   GET    /api/channels        list
 //   POST   /api/channels        create (max 8 enforced by the DAO)
 //   GET    /api/channels/:id    get
-//   PUT    /api/channels/:id    update (output_mode/device/display_mode/keyer/stream_url)
+//   PUT    /api/channels/:id    update (output_mode/device/display_mode/keyer/stream_url + VS fields)
 //   DELETE /api/channels/:id    delete
 
 import { Router } from 'express';
@@ -13,6 +13,23 @@ import { channelsDao } from '../db.js';
 
 const VALID_OUTPUT_MODES = new Set(['browser', 'obs_vmix', 'decklink', 'stream']);
 const VALID_KEYER_MODES = new Set(['external', 'internal', 'fill_only']);
+const VALID_RENDER_BACKENDS = new Set(['html', 'unreal']);
+
+function validateUnrealPad(pad) {
+  if (pad === undefined) return [];
+  if (!Array.isArray(pad)) return ['unreal_pad must be an array'];
+  const errs = [];
+  for (let i = 0; i < pad.length; i++) {
+    const a = pad[i];
+    if (!a || typeof a !== 'object') {
+      errs.push(`unreal_pad[${i}] must be an object`);
+      continue;
+    }
+    if (typeof a.id !== 'string' || !a.id.trim()) errs.push(`unreal_pad[${i}].id required`);
+    if (typeof a.label !== 'string' || !a.label.trim()) errs.push(`unreal_pad[${i}].label required`);
+  }
+  return errs;
+}
 
 function validateChannelBody(body, { partial = false } = {}) {
   const errs = [];
@@ -26,9 +43,29 @@ function validateChannelBody(body, { partial = false } = {}) {
       errs.push(`keyer_mode must be one of external|internal|fill_only`);
     }
   }
+  if (!partial || body.render_backend !== undefined) {
+    if (body.render_backend !== undefined && !VALID_RENDER_BACKENDS.has(body.render_backend)) {
+      errs.push(`render_backend must be one of html|unreal`);
+    }
+  }
   if (body.device_index !== undefined && !Number.isInteger(body.device_index)) {
     errs.push('device_index must be an integer (-1 = none)');
   }
+  if (body.vs_input_device !== undefined && !Number.isInteger(body.vs_input_device)) {
+    errs.push('vs_input_device must be an integer (-1 = file/stub)');
+  }
+  if (body.unreal_endpoint !== undefined && typeof body.unreal_endpoint !== 'string') {
+    errs.push('unreal_endpoint must be a string');
+  }
+  if (!partial && body.render_backend === 'unreal') {
+    // unreal_endpoint is recommended but optional so video ingest can be tested first.
+  }
+  if (partial && body.render_backend === 'unreal' && body.unreal_endpoint !== undefined) {
+    if (typeof body.unreal_endpoint !== 'string') {
+      errs.push('unreal_endpoint must be a string');
+    }
+  }
+  errs.push(...validateUnrealPad(body.unreal_pad));
   return errs;
 }
 
@@ -56,6 +93,13 @@ export function channelsRouter(db) {
         display_mode: body.display_mode,
         keyer_mode: body.keyer_mode,
         stream_url: body.stream_url,
+        render_backend: body.render_backend,
+        unreal_endpoint: body.unreal_endpoint,
+        unreal_ndi_source: body.unreal_ndi_source,
+        vs_input_device: body.vs_input_device,
+        vs_bg_file: body.vs_bg_file,
+        vs_cam_file: body.vs_cam_file,
+        unreal_pad: body.unreal_pad,
       });
       res.status(201).json(created);
     } catch (e) {

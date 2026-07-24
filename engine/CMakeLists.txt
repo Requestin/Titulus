@@ -143,3 +143,66 @@ COPY_FILES(bg_engine "${CEF_BINARY_FILES}" "${CEF_BINARY_DIR}" "${CMAKE_BINARY_D
 COPY_FILES(bg_engine "${CEF_RESOURCE_FILES}" "${CEF_RESOURCE_DIR}" "${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}")
 # Linux CEF dist ships a chrome-sandbox helper needing setuid; set it up.
 SET_LINUX_SUID_PERMISSIONS(bg_engine "${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}/chrome-sandbox")
+
+# -----------------------------------------------------------------------------
+# bg_vs_engine — Unreal / Virtual Studio compositor (no CEF).
+# Docs: docs/unreal-vs-mode.md, docs/GPU_GATE_unreal_vs.md
+# -----------------------------------------------------------------------------
+set(BG_VS_SOURCES
+  src/vs/main_vs.cpp
+  src/vs/config_vs.cpp
+  src/vs/file_producer.cpp
+  src/vs/decklink_input_producer.cpp
+  src/vs/ndi_producer.cpp
+  src/vs/chroma_keyer.cpp
+  src/vs/compositor.cpp
+  src/config.cpp
+  src/stats.cpp
+  src/consumers/ffmpeg_consumer.cpp
+)
+
+add_executable(bg_vs_engine ${BG_VS_SOURCES})
+target_include_directories(bg_vs_engine PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+)
+target_compile_features(bg_vs_engine PRIVATE cxx_std_20)
+target_compile_options(bg_vs_engine PRIVATE
+  -Wall -Wextra -Wno-unused-parameter
+  -Wno-missing-field-initializers
+)
+find_package(Threads REQUIRED)
+target_link_libraries(bg_vs_engine PRIVATE Threads::Threads)
+
+if(BG_ENABLE_DECKLINK AND DECKLINK_SDK_INCLUDE AND EXISTS "${DECKLINK_SDK_INCLUDE}/DeckLinkAPI.h")
+  message(STATUS "bg_vs_engine: DeckLink IN/OUT ENABLED (SDK: ${DECKLINK_SDK_INCLUDE})")
+  target_sources(bg_vs_engine PRIVATE
+    src/consumers/decklink_consumer.cpp
+    src/consumers/decklink_consumer.h)
+  target_include_directories(bg_vs_engine PRIVATE "${DECKLINK_SDK_INCLUDE}")
+  target_link_libraries(bg_vs_engine PRIVATE dl)
+  target_compile_definitions(bg_vs_engine PRIVATE BG_ENABLE_DECKLINK=1)
+else()
+  message(STATUS "bg_vs_engine: DeckLink disabled (stubs for cam/out)")
+endif()
+
+option(BG_ENABLE_NDI "Build NDI producer for bg_vs_engine (requires NDI SDK)" OFF)
+set(NDI_SDK_INCLUDE "" CACHE PATH "Path to NDI SDK include (Processing.NDI.Lib.h)")
+if(BG_ENABLE_NDI AND NDI_SDK_INCLUDE AND EXISTS "${NDI_SDK_INCLUDE}/Processing.NDI.Lib.h")
+  message(STATUS "bg_vs_engine: NDI producer ENABLED")
+  target_include_directories(bg_vs_engine PRIVATE "${NDI_SDK_INCLUDE}")
+  target_compile_definitions(bg_vs_engine PRIVATE BG_ENABLE_NDI=1)
+  # Link libndi if present next to includes or via NDI_SDK_LIB.
+  set(NDI_SDK_LIB "" CACHE PATH "Path to libndi.so")
+  if(NDI_SDK_LIB)
+    target_link_libraries(bg_vs_engine PRIVATE "${NDI_SDK_LIB}")
+  else()
+    target_link_libraries(bg_vs_engine PRIVATE ndi)
+  endif()
+else()
+  message(STATUS "bg_vs_engine: NDI disabled (file/stub Unreal ingest)")
+endif()
+
+set_target_properties(bg_vs_engine PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}"
+)

@@ -2,8 +2,9 @@
 //
 // Operator control panel — channel-scoped Rundowns + Templates/DataElements
 // sidebar. Template TAKE/UPDATE/CLEAR for free templates lives under Templates → PLAY.
+// Unreal channels also show UE Templates playout (ZeroDensity-style).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Radio } from 'lucide-react';
 import { api, type Channel, type TemplateSummary, type Rundown, type OnAirSnapshot } from '@/core/api';
@@ -11,6 +12,7 @@ import { useControlWs } from '@/core/controlWs';
 import { toast } from '@/core/toast';
 import { Select } from '@/components/ui/form';
 import { RundownTab } from '@/control/RundownTab';
+import { UePlayoutPanel } from '@/control/UePlayoutPanel';
 import {
   BrowserSourceUrl,
   WsBadge,
@@ -24,10 +26,20 @@ export function ControlPage() {
   const [rundowns, setRundowns] = useState<Rundown[]>([]);
   const [controlDataLoaded, setControlDataLoaded] = useState(false);
   const [onAir, setOnAir] = useState<OnAirSnapshot>({});
+  const [activeRundownId, setActiveRundownId] = useState<string | null>(null);
 
   const status = useControlWs((s) => s.status);
   const connect = useControlWs((s) => s.connect);
   const send = useControlWs((s) => s.send);
+
+  const selectedChannel = useMemo(
+    () => channels.find((c) => c.id === channelId),
+    [channels, channelId],
+  );
+  const activeRundown = useMemo(
+    () => rundowns.find((r) => r.id === activeRundownId) ?? rundowns[0] ?? null,
+    [rundowns, activeRundownId],
+  );
 
   useEffect(() => { connect(); }, [connect]);
 
@@ -49,7 +61,6 @@ export function ControlPage() {
     })();
   }, []);
 
-  // Live on-air from control WS pushes (waitingContinue / endScene / take / clear).
   useEffect(() => {
     const subscribe = useControlWs.getState().subscribeOnAir;
     return subscribe((air) => setOnAir(air));
@@ -58,13 +69,18 @@ export function ControlPage() {
   useEffect(() => {
     if (!channelId) {
       setRundowns([]);
+      setActiveRundownId(null);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
         const rd = await api.rundowns.list({ channelId });
-        if (!cancelled) setRundowns(rd.map(normalizeRundown));
+        if (!cancelled) {
+          const normalized = rd.map(normalizeRundown);
+          setRundowns(normalized);
+          setActiveRundownId(normalized[0]?.id ?? null);
+        }
       } catch (e) {
         if (!cancelled) toast.error(`Failed to load rundowns: ${(e as Error).message}`);
       }
@@ -96,13 +112,30 @@ export function ControlPage() {
           className="w-48"
           disabled={!channels.length}
         >
-          {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {channels.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}{c.render_backend === 'unreal' ? ' · UE' : ''}
+            </option>
+          ))}
         </Select>
         <WsBadge status={status} />
         <div className="ml-auto flex items-center gap-2">
-          <BrowserSourceUrl url={browserSourceUrl} />
+          {selectedChannel?.render_backend !== 'unreal' && (
+            <BrowserSourceUrl url={browserSourceUrl} />
+          )}
         </div>
       </div>
+
+      {selectedChannel?.render_backend === 'unreal' && (
+        <UePlayoutPanel
+          channel={selectedChannel}
+          activeRundown={activeRundown}
+          onRundownUpdated={(rd) => {
+            setRundowns((prev) => prev.map((r) => (r.id === rd.id ? normalizeRundown(rd) : r)));
+            setActiveRundownId(rd.id);
+          }}
+        />
+      )}
 
       <div className="min-h-0 flex-1">
         {channelId ? (

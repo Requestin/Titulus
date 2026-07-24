@@ -44,7 +44,7 @@ function migrateLoadedTemplate(t: Template): Template {
 }
 
 function baseValue(t: Template, target: Target, prop: AnimatableProp): number {
-  if (prop === 'crawlProgress') return 0;
+  if (prop === 'crawlProgress' || prop === 'videoProgress') return 0;
   if (target.kind === 'layer') {
     const l = t.layers.find((x) => x.id === target.id);
     if (!l) return 0;

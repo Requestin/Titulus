@@ -138,7 +138,7 @@ UFF (`bmdUpperFieldFirst`). Titulus: тот же подход — weave в deckl
 | `modules/image/`, `modules/flash/`, `modules/bluefish/` | Image via DOM `<img>`; flash deprecated; bluefish Windows-only |
 | `accelerator/` (vulkan/d3d GPU mixer) | CPU-only principle §0.2.1; composition в DOM/CEF |
 | `protocol/` (AMCP) | Наш WS protocol |
-| `modules/decklink/producer/` (capture/input) | MVP = output only; input future |
+| `modules/decklink/producer/` (capture/input) | Now in `bg_vs_engine` (`src/vs/decklink_input_producer.cpp`) — not part of CEF `bg_engine` |
 | `modules/decklink/consumer/v210_strategies.cpp` | 10-bit post-MVP |
 | `modules/decklink/consumer/vanc*` | Ancillary data (OP47/SCTE-104) — future |
 | `core/mixer/` native C++ | DOM compositor = наш mixer; не нужен native |

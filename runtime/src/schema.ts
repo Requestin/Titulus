@@ -169,11 +169,21 @@ export interface ImageLayer extends BaseLayer {
   fit: ImageFit;
 }
 
+/** What the renderer shows after a non-looping clip finishes. */
+export type VideoEndBehavior = 'lastFrame' | 'empty';
+
 export interface VideoLayer extends BaseLayer {
   type: 'video';
   src: string | VariableBinding;
   loop: boolean;
   fit: ImageFit;
+  /**
+   * After the timeline clip window ends (non-loop): keep last frame or hide.
+   * Soft-default `lastFrame` for older templates.
+   */
+  endBehavior?: VideoEndBehavior;
+  /** Source duration in timeline frames (template fps). Used for clip bar length. */
+  durationFrames?: number;
 }
 
 /**
@@ -263,6 +273,8 @@ export const ANIMATABLE_PROPS = [
   'opacity',
   /** Crawl scroll progress 0..1 (dedicated Crawl director track). */
   'crawlProgress',
+  /** Video clip progress 0..1 over source duration (default-director clip track). */
+  'videoProgress',
 ] as const;
 export type AnimatableProp = (typeof ANIMATABLE_PROPS)[number];
 export type AnimatableValues = Partial<Record<AnimatableProp, number>>;
@@ -713,6 +725,11 @@ export function normalizeTemplateTextStyles(template: Template): void {
     }
     if (layer.type === 'crawl') {
       layer.crawl = normalizeCrawlProps(layer.crawl);
+    }
+    if (layer.type === 'video') {
+      if (layer.endBehavior !== 'lastFrame' && layer.endBehavior !== 'empty') {
+        layer.endBehavior = 'lastFrame';
+      }
     }
   }
 }

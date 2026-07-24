@@ -13,7 +13,8 @@ export function MediaSourcePicker({
 }: {
   type: 'image' | 'video';
   src: string;
-  onSelect: (url: string) => void;
+  /** Receives the full asset so callers can use duration/fps metadata. */
+  onSelect: (asset: MediaAsset) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -27,7 +28,7 @@ export function MediaSourcePicker({
         type={type}
         open={open}
         onClose={() => setOpen(false)}
-        onSelect={(asset: MediaAsset) => onSelect(asset.url)}
+        onSelect={(asset: MediaAsset) => onSelect(asset)}
       />
     </>
   );

@@ -260,17 +260,28 @@ export class MediaLibrary {
 
   /**
    * Scan folder for files not yet in DB; convert unsupported formats.
+   * Also repair missing/corrupt posters for existing video assets.
    */
   async refresh(assetsDao, type) {
     const dir = this.typeDir(type);
     const entries = readdirSync(dir, { withFileTypes: true });
     const imported = [];
+    let repaired = 0;
+
+    if (type === 'video') {
+      repaired = await this._repairMissingPosters(assetsDao);
+    }
 
     for (const ent of entries) {
       if (!ent.isFile()) continue;
       const filename = ent.name;
       const ext = extname(filename).toLowerCase();
       const relativePath = `${this.folderForType(type)}/${filename}`;
+
+      // Skip poster JPEGs generated alongside videos.
+      if (type === 'video' && (filename.includes('_poster') || ext === '.jpg' || ext === '.jpeg')) {
+        continue;
+      }
 
       if (assetsDao.getByRelativePath(relativePath)) continue;
 
@@ -346,7 +357,49 @@ export class MediaLibrary {
       }
     }
 
-    return imported;
+    return { imported, repaired };
+  }
+
+  /**
+   * Regenerate poster_path when missing or file deleted on disk.
+   * Covers legacy assets whose posters were lost after TITULUS_DATA / folder moves.
+   */
+  async _repairMissingPosters(assetsDao) {
+    const list = typeof assetsDao.list === 'function'
+      ? assetsDao.list({ type: 'video' })
+      : [];
+    let repaired = 0;
+    for (const asset of list) {
+      if (asset.status === 'processing') continue;
+      const videoPath = join(this.uploadsDir, asset.relativePath);
+      if (!existsSync(videoPath)) continue;
+
+      const posterOk = asset.posterPath
+        && existsSync(join(this.uploadsDir, asset.posterPath));
+      if (posterOk) continue;
+
+      const base = basename(asset.filename, extname(asset.filename));
+      const dir = this.typeDir('video');
+      const posterName = await this._makePoster(videoPath, dir, base, { overwrite: true });
+      if (!posterName) continue;
+      assetsDao.update(asset.id, { posterPath: `${VIDEO_FOLDER}/${posterName}` });
+      repaired += 1;
+    }
+    return repaired;
+  }
+
+  async regeneratePoster(assetsDao, id) {
+    const asset = assetsDao.get(id);
+    if (!asset || asset.type !== 'video') return null;
+    const videoPath = join(this.uploadsDir, asset.relativePath);
+    if (!existsSync(videoPath)) {
+      throw Object.assign(new Error('video file missing on disk'), { code: 'FILE_MISSING' });
+    }
+    const base = basename(asset.filename, extname(asset.filename));
+    const dir = this.typeDir('video');
+    const posterName = await this._makePoster(videoPath, dir, base, { overwrite: true });
+    if (!posterName) return null;
+    return assetsDao.update(id, { posterPath: `${VIDEO_FOLDER}/${posterName}` });
   }
 
   _waitForJob(jobId, timeoutMs = 12 * 60 * 1000) {
@@ -402,8 +455,10 @@ export class MediaLibrary {
     });
   }
 
-  async _makePoster(videoPath, dir, base) {
-    const posterName = uniqueFilename(dir, `${base}_poster`, '.jpg');
+  async _makePoster(videoPath, dir, base, { overwrite = false } = {}) {
+    const posterName = overwrite
+      ? `${base}_poster.jpg`
+      : uniqueFilename(dir, `${base}_poster`, '.jpg');
     const posterPath = join(dir, posterName);
     return new Promise((resolvePromise) => {
       const ff = spawn('ffmpeg', [

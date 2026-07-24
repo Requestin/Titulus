@@ -286,6 +286,30 @@ function samplePropTrack(entries: CompiledTrackEntry[], localFrame: number): num
   return lerp(a.value, b.value, a.easing(rawT));
 }
 
+/**
+ * First/last keyframe frames for a layer property track (director-local).
+ * Used by video clip scheduling (start/end window).
+ */
+export function getLayerPropTrackRange(
+  norm: NormalizedTimeline,
+  layerId: string,
+  prop: AnimatableProp,
+): { directorId: string; start: number; end: number } | null {
+  for (const d of norm.directorList) {
+    const compiled = norm.directors[d.id];
+    const track = compiled?.tracks.get(layerId);
+    if (!track?.isLayer) continue;
+    const entries = track.props.get(prop);
+    if (!entries || entries.length === 0) continue;
+    return {
+      directorId: d.id,
+      start: entries[0]!.frame,
+      end: entries[entries.length - 1]!.frame,
+    };
+  }
+  return null;
+}
+
 /** Interpolate all animated properties for one target (independent per prop). */
 function sampleTargetTrack(
   track: CompiledTargetTracks,

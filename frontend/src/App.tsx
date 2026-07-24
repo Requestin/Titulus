@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell } from '@/components/AppShell';
 import { TemplatesPage } from '@/pages/TemplatesPage';
+import { UeTemplatesPage } from '@/pages/UeTemplatesPage';
 import { EditorPage } from '@/pages/EditorPage';
 import { ControlPage } from '@/pages/ControlPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -75,6 +76,7 @@ export function App() {
         <Route element={user ? <AppShell user={user} onLogout={logout} /> : <Navigate to="/login" replace />}>
           <Route path="/" element={<Navigate to="/templates" replace />} />
           <Route path="/templates" element={<TemplatesPage />} />
+          <Route path="/ue-templates" element={<UeTemplatesPage />} />
           <Route path="/editor/:id" element={<EditorPage />} />
           <Route path="/control" element={<ControlPage />} />
           <Route path="/settings" element={user?.role === 'admin' ? <SettingsPage /> : <Navigate to="/control" replace />} />

@@ -175,6 +175,16 @@ Single-channel manual run:
   --stream-url="srt://127.0.0.1:9999?mode=caller"
 ```
 
+### Unreal / Virtual Studio (ZeroDensity-style)
+
+See `docs/unreal-vs-mode.md` and `docs/GPU_GATE_unreal_vs.md`.
+
+1. Settings → channel → **Render backend = Unreal** → NDI / camera IN / DeckLink OUT  
+2. Nav → **UE Templates** → Blueprint TakeIn/TakeOut  
+3. Control on that channel → UE panel TAKE or add to rundown (`kind: ue`)  
+4. Smoke without HW: `./bench/run-vs-bench.sh 5 chroma`  
+5. Build: `cmake --build build --target bg_vs_engine`
+
 ## 8. Smoke checks
 
 ### 8.1 Template validation

@@ -1,7 +1,7 @@
 # Ветка `sergey-v1` — контекст и changelog
 
 > Сводка работы Sergey + агент Cursor на ветке `sergey-v1`.  
-> Обновлено: **21 июля 2026**.
+> Обновлено: **24 июля 2026**.
 
 ---
 
@@ -48,7 +48,101 @@
 | `1dafb0b` | 17 июл | `fix(editor): honor stop/wait Actions + Continue button` |
 | `730bc45` | 17 июл | `fix(editor): ignore endScene; Stop freezes playhead in place` |
 | `58c381e` | 17 июл | `add actions, continue,update` (perf + classic playback gate + session context) |
-| *(HEAD)* | 21 июл | `fix perfomance issue` (SDI smooth + web/editor fractional playback) |
+| `05b4fe0` | 21 июл | `fix perfomance issue` (SDI smooth + web/editor fractional playback) |
+| *(HEAD)* | 24 июл | `video on timeline, UE path` |
+
+---
+
+## 24 июля 2026 — Video on timeline + Unreal VS path + nav collapse
+
+Крупный пакет: клипы видео на таймлайне (editor + runtime), ремонт постеров MAM, сворачиваемая навигация, foundation Unreal / Virtual Studio (`bg_vs_engine` + UE Templates).
+
+### A) Editor / timeline UX
+
+| # | Изменение |
+|---|---|
+| 1 | Сворачивание директора скрывает и **Actions**, и треки (раньше Actions всегда были видны) |
+| 2 | Директор **Update** при открытии шаблона свёрнут по умолчанию |
+| 3 | Левая панель (Templates / UE Templates / Control / Settings): кнопка collapse → только иконки; состояние в `localStorage` `titulus.nav.collapsed.<userId>` |
+
+### B) Video clip on timeline
+
+При выборе видео из мини-MAM:
+
+- Клип кладётся на директор **default** как трек `videoProgress` (0→1), длина = длительность файла в frames шаблона (`durationSec * timeline.fps`).
+- Клип-бар двигается целиком (без trim); трек можно перенести на другой директор (существующий DnD).
+- **Loop** по умолчанию `false`; при `loop=true` — иконка ∞ на треке (бар всё равно = натуральная длина).
+- Параметр **At the end**: `lastFrame` \| `empty` (при Loop UI disabled).
+- Schema: `VideoLayer.endBehavior`, `VideoLayer.durationFrames`; animatable `videoProgress`.
+
+**Файлы:** `frontend/src/editor/videoTimeline.ts`, `TimelinePanel.tsx` (`VideoClipLane`), `PropertiesPanel.tsx`, `factories.ts`, `shared/template.schema.json`, `runtime/src/schema.ts`.
+
+### C) Video playback runtime (scrub vs Play) + perf
+
+Требования: без Play клип не играет; scrub показывает кадр playhead; Play + playhead дошёл до start → воспроизведение.
+
+1. Первый подход (seek каждый paint) дал **1–2 fps** в editor и на SDI — HTML/CEF seek = worst-case decode.
+2. **Итог:** hybrid в `domRenderer.syncVideoClipPlayback`:
+   - **Scrub / stop** → `pause` + seek к кадру playhead
+   - **Transport playing** → native `play()` free-run; resync только при jump playhead (>2.5f) или drift >150ms
+3. `beginEditorPlayback` теперь **всегда** ставит `playing=true` (и classic path); cleanup classic вызывает `endEditorPlayback()` (pause videos).
+4. `getLayerPropTrackRange()` в `timeline.ts` — окно клипа из compiled track.
+
+**Deploy:** `cd runtime && npm run build` + restart channel/engine.
+
+### D) MAM posters (пропавшие табнейлы)
+
+- Постеры: `$TITULUS_DATA/uploads/Video/<name>_poster.jpg`, поле `media_assets.poster_path`.
+- **Причина пропажи:** `refresh` пропускал уже существующие DB rows → missing/corrupt poster не чинился.
+- **Fix:** `MediaLibrary.refresh` → `_repairMissingPosters`; `POST /api/media/:id/regenerate-poster`; Refresh в UI показывает `repaired N poster(s)`.
+- Skip `*_poster.jpg` при scan Video folder (не удалять как unsupported).
+
+### E) Unreal / Virtual Studio path (`bg_vs_engine`)
+
+ZeroDensity-aligned split: HTML channels без изменений; VS = отдельный render backend.
+
+| ZD | Titulus |
+|---|---|
+| Engine / Channel I/O | Settings channel `render_backend=unreal` |
+| Form / Blueprint template | **UE Templates** `/ue-templates` |
+| Rundown playout | Control slots `kind: 'ue'` + `UePlayoutPanel` |
+| RealityKeyer + SDI | `bg_vs_engine` chroma + DeckLink OUT |
+
+**GPU Gate:** `docs/GPU_GATE_unreal_vs.md` — APPROVED **только** для Unreal VS profile; HTML/`bg_engine` остаётся CPU-only.
+
+**Engine:** новый target `bg_vs_engine` (`engine/src/vs/*`): producers (file / NDI / DeckLink IN), chroma keyer, compositor, consumers (null/pipe/decklink). Supervisor: `run-vs-channel.sh`, `run-engines.sh` ветвит по `render_backend`.
+
+**Backend:** `ue_templates` + channel fields (`render_backend`, `unreal_endpoint`, `unreal_ndi_source`, camera DeckLink in); routes `/api/ue-templates`, `/api/unreal/*` (Remote Control proxy).
+
+**Frontend:** nav UE Templates, `UeTemplatesPage`, Settings Unreal fields, Control UE playout.
+
+**Docs:** `docs/unreal-vs-mode.md`, RUNBOOK notes, `bench/run-vs-bench.sh`.
+
+### Ключевые файлы (24 июля)
+
+| Area | Path |
+|---|---|
+| Video clip helpers | `frontend/src/editor/videoTimeline.ts` |
+| Timeline UI | `frontend/src/editor/panels/TimelinePanel.tsx` |
+| Video props / MAM select | `frontend/src/editor/panels/PropertiesPanel.tsx`, `media/MediaSourcePicker.tsx` |
+| Video runtime | `runtime/src/domRenderer.ts` (`syncVideoClipPlayback`) |
+| Track range | `runtime/src/timeline.ts` (`getLayerPropTrackRange`) |
+| Schema | `runtime/src/schema.ts`, `shared/template.schema.json` |
+| Poster repair | `backend/src/mediaLibrary.js`, `backend/src/routes/media.js` |
+| Nav collapse | `frontend/src/components/AppShell.tsx` |
+| VS engine | `engine/src/vs/*`, `engine/run-vs-channel.sh`, `engine/CMakeLists.txt` |
+| UE API / UI | `backend/src/routes/ueTemplates.js`, `unreal.js`, `frontend/src/pages/UeTemplatesPage.tsx`, `control/UePlayoutPanel.tsx` |
+| Gate / ops | `docs/GPU_GATE_unreal_vs.md`, `docs/unreal-vs-mode.md` |
+
+### Чеклист (24 июля)
+
+- [ ] Add video → Choose file → клип на default, save template OK (AJV)
+- [ ] Без Play клип стоит; scrub = кадр playhead; Play с start клипа = плавное воспроизведение (editor + SDI)
+- [ ] Loop ∞ на треке; At the end lastFrame/empty; clip move без trim
+- [ ] Update director collapsed; Actions скрываются со director
+- [ ] Nav collapse переживает reload (per user)
+- [ ] MAM Refresh чинит missing posters
+- [ ] Settings Unreal channel + `run-engines.sh` → `bg_vs_engine`; UE Templates TAKE smoke
 
 ---
 
@@ -1006,8 +1100,13 @@ Stepper ↑↓, `extraActions` для rotation.
 | DataElements | `backend/src/dataElementsDb.js`, `backend/src/routes/dataElements.js` |
 | Templates EDITOR + PLAY | `frontend/src/pages/TemplatesPage.tsx`, `frontend/src/control/TemplatesTab.tsx` |
 | Control shared UI | `frontend/src/control/controlShared.tsx` |
-| App shell | `frontend/src/components/AppShell.tsx` |
+| App shell | `frontend/src/components/AppShell.tsx` (nav collapse per-user) |
 | Variables | `frontend/src/editor/panels/VariablesPanel.tsx` |
+| Video clip timeline | `frontend/src/editor/videoTimeline.ts`, `TimelinePanel.tsx` (`VideoClipLane`) |
+| Video runtime | `runtime/src/domRenderer.ts` (`syncVideoClipPlayback`) |
+| MAM posters | `backend/src/mediaLibrary.js` (`_repairMissingPosters`) |
+| Unreal VS | `engine/src/vs/*`, `docs/unreal-vs-mode.md`, `docs/GPU_GATE_unreal_vs.md` |
+| UE Templates | `frontend/src/pages/UeTemplatesPage.tsx`, `backend/src/routes/ueTemplates.js` |
 
 ---
 
@@ -1022,6 +1121,7 @@ git push -u origin sergey-v1
 
 - Hard refresh редактора: `Ctrl+Shift+R`.
 - Тесты backend: `TITULUS_DATA=/tmp/... node src/index.js`.
+- VS engine: `cmake --build engine/build --target bg_vs_engine`; см. `docs/unreal-vs-mode.md`.
 
 ---
 
@@ -1032,6 +1132,7 @@ git push -u origin sergey-v1
 - [ ] `/control` — channel-scoped rundowns; sidebar Rundowns/Templates/DataElements; Variables; no auto-create rundown
 - [ ] DataElements в `$TITULUS_DATA/app.db-dataelements`; cascade при delete template
 - [ ] Control sidebar resize (правый край); DE trash / Shift+click / Delete + confirm (Enter)
+- [ ] `/ue-templates` + Unreal channel Settings; Control UE playout / rundown `kind:ue`
 
 **Editor:**
 - [ ] Ctrl/Cmd+drag копирует слой/группу в дереве
@@ -1047,6 +1148,10 @@ git push -u origin sergey-v1
 - [ ] Login: логотип 560px над формой; форма по центру
 - [ ] Actions: без команд — classic smooth path; wait/Continue; endScene air-only; Stop freeze
 - [ ] SDI + editor + web preview — плавность без рывков (см. §21 июля)
+- [ ] Video clip on timeline: place/move/∞/At the end; scrub frame-accurate; Play free-run (не seek/frame)
+- [ ] Update collapsed by default; Actions collapse with director
+- [ ] Nav icon-only collapse persists per user
+- [ ] MAM Refresh repairs missing video posters
 - [ ] После runtime-правок: `cd runtime && npm run build` + restart channel/engine
 
 **Data:**
@@ -1057,11 +1162,12 @@ git push -u origin sergey-v1
 
 ## Следующие шаги
 
-1. PR `sergey-v1` → `main` (merge commit): media library + timeline v2 + timeline bugfixes.
-2. Ручная проверка timeline (чеклисты v2 + bugfixes выше).
+1. PR `sergey-v1` → `main` (merge commit): media library + timeline v2 + video clips + Unreal VS foundation.
+2. Ручная проверка timeline (чеклисты v2 + bugfixes + video clip §24 июля).
 3. Проверить axis center + groups на шаблонах с вложенностью и rotation.
 4. DeckLink `EnableVideoOutput` — валидация на железе.
 5. Drag группы на canvas (сейчас только layers).
+6. Unreal VS: HW validation chroma + NDI + Remote Control TAKE; GPU key path if CPU chroma insufficient.
 
 ---
 

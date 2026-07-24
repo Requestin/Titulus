@@ -19,8 +19,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_CHANNEL="${ROOT}/engine/run-channel.sh"
+RUN_VS_CHANNEL="${ROOT}/engine/run-vs-channel.sh"
 BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:3001}"
 ENGINE_BIN="${ENGINE_BIN:-${ROOT}/engine/build/Release/bg_engine}"
+VS_BIN="${VS_BIN:-${ROOT}/engine/build/Release/bg_vs_engine}"
 CACHE_ROOT="${CACHE_ROOT:-/tmp/titulus-engines}"
 API_TOKEN="${TITULUS_API_TOKEN:-}"
 DRY_RUN=0
@@ -36,15 +38,15 @@ Options:
   --help       Show this help
 
 Fetches channels from: \${BACKEND_URL}/api/channels
-Maps output_mode -> consumer:
-  browser / obs_vmix  -> null (CEF renders; browser/OBS uses channel.html URL)
-  decklink            -> decklink (--device-index, --display-mode, --keyer)
-  stream              -> stream (--stream-url)
+Maps render_backend + output_mode:
+  html   + browser/obs_vmix/decklink/stream -> run-channel.sh (bg_engine)
+  unreal + …                              -> run-vs-channel.sh (bg_vs_engine)
+See docs/unreal-vs-mode.md
 
-Supervisor (run-channel.sh): exit 42 -> 6s restart; crash -> 3s backoff.
+Supervisor (run-channel.sh / run-vs-channel.sh): exit 42 -> 6s restart; crash -> 3s backoff.
 CPU affinity: 2 dedicated physical cores per channel (taskset).
 
-Environment: BACKEND_URL, ENGINE_BIN, CACHE_ROOT, TITULUS_API_TOKEN,
+Environment: BACKEND_URL, ENGINE_BIN, VS_BIN, CACHE_ROOT, TITULUS_API_TOKEN,
              TITULUS_API_USER, TITULUS_API_PASSWORD
 EOF
 }
@@ -123,8 +125,13 @@ while IFS= read -r line; do
   core_end=$((core + cores_per_channel - 1))
   cores="${core_start}-${core_end}"
 
-  args=(
-    "$RUN_CHANNEL"
+  render_backend="${render_backend:-html}"
+  vs_input_device="${vs_input_device:--1}"
+  vs_cam_file="${vs_cam_file:-}"
+  vs_bg_file="${vs_bg_file:-}"
+  unreal_ndi_source="${unreal_ndi_source:-}"
+
+  args_common=(
     --id="$ch_id"
     --name="$ch_name"
     --output-mode="$output_mode"
@@ -134,12 +141,31 @@ while IFS= read -r line; do
     --stream-url="$stream_url"
     --cores="$cores"
   )
+
+  if [[ "$render_backend" == "unreal" ]]; then
+    launcher="$RUN_VS_CHANNEL"
+    args=(
+      "$launcher"
+      "${args_common[@]}"
+      --vs-input-device="$vs_input_device"
+      --cam-file="$vs_cam_file"
+      --bg-file="$vs_bg_file"
+      --ndi-source="$unreal_ndi_source"
+    )
+  else
+    launcher="$RUN_CHANNEL"
+    args=(
+      "$launcher"
+      "${args_common[@]}"
+    )
+  fi
+
   if [[ "$DRY_RUN" -eq 1 ]]; then
     args+=(--dry-run)
-    DRY_RUN=1 BACKEND_URL="$BACKEND_URL" ENGINE_BIN="$ENGINE_BIN" CACHE_ROOT="$CACHE_ROOT" "${args[@]}"
+    DRY_RUN=1 BACKEND_URL="$BACKEND_URL" ENGINE_BIN="$ENGINE_BIN" VS_BIN="$VS_BIN" CACHE_ROOT="$CACHE_ROOT" "${args[@]}"
   else
-    echo "[run-engines] launching ${ch_name} on cores ${cores} (mode=${output_mode})"
-    BACKEND_URL="$BACKEND_URL" ENGINE_BIN="$ENGINE_BIN" CACHE_ROOT="$CACHE_ROOT" \
+    echo "[run-engines] launching ${ch_name} on cores ${cores:--} (backend=${render_backend} mode=${output_mode})"
+    BACKEND_URL="$BACKEND_URL" ENGINE_BIN="$ENGINE_BIN" VS_BIN="$VS_BIN" CACHE_ROOT="$CACHE_ROOT" \
       "${args[@]}" &
   fi
   core=$((core + cores_per_channel))
@@ -151,10 +177,15 @@ for c in channels:
         f'ch_id={shlex.quote(c[\"id\"])}',
         f'ch_name={shlex.quote(c[\"name\"])}',
         f'output_mode={shlex.quote(c[\"output_mode\"])}',
+        f'render_backend={shlex.quote(c.get(\"render_backend\", \"html\"))}',
         f'device_index={c.get(\"device_index\", -1)}',
         f'display_mode={shlex.quote(c.get(\"display_mode\", \"HD1080i50\"))}',
         f'keyer_mode={shlex.quote(c.get(\"keyer_mode\", \"external\"))}',
         f'stream_url={shlex.quote(c.get(\"stream_url\", \"\"))}',
+        f'vs_input_device={c.get(\"vs_input_device\", -1)}',
+        f'vs_cam_file={shlex.quote(c.get(\"vs_cam_file\", \"\"))}',
+        f'vs_bg_file={shlex.quote(c.get(\"vs_bg_file\", \"\"))}',
+        f'unreal_ndi_source={shlex.quote(c.get(\"unreal_ndi_source\", \"\"))}',
     ])
     print(line)
 " <<<"$JSON")

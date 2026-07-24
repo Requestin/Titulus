@@ -105,8 +105,9 @@ export function createLayer(type: LayerType, name: string, crawlDirectorId?: str
         ...base, type: 'video',
         transform: createEditorTransform(480, 270),
         src: '',
-        loop: true,
+        loop: false,
         fit: 'cover',
+        endBehavior: 'lastFrame',
       };
     case 'clock':
       return {

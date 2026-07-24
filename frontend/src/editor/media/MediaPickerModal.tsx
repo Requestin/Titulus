@@ -323,7 +323,9 @@ export function MediaPickerModal({
 
   async function handleRefresh() {
     const res = await api.media.refresh(type);
-    toast.success(`Imported ${res.count} file(s)`);
+    const parts = [`Imported ${res.count} file(s)`];
+    if (res.repaired) parts.push(`repaired ${res.repaired} poster(s)`);
+    toast.success(parts.join(', '));
     await loadFiles();
   }
 

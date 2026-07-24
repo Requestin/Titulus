@@ -179,10 +179,29 @@ export function mediaRouter(library, uploadsDir) {
     const type = req.query.type === 'image' || req.query.type === 'video' ? req.query.type : null;
     if (!type) return apiError(res, 400, 'TYPE_REQUIRED', 'query type=image|video required');
     try {
-      const imported = await library.refresh(assets(db), type);
-      res.json({ imported, count: imported.length });
+      const result = await library.refresh(assets(db), type);
+      const imported = Array.isArray(result) ? result : (result.imported ?? []);
+      const repaired = Array.isArray(result) ? 0 : (result.repaired ?? 0);
+      res.json({ imported, count: imported.length, repaired });
     } catch (e) {
       return apiError(res, 500, 'REFRESH_FAILED', e.message || 'refresh failed');
+    }
+  });
+
+  /** Force-regenerate poster for one video asset. */
+  router.post('/:id/regenerate-poster', async (req, res) => {
+    const db = req.app.locals.db;
+    const asset = assets(db).get(req.params.id);
+    if (!asset) return apiError(res, 404, 'ASSET_NOT_FOUND', 'asset not found');
+    if (asset.type !== 'video') {
+      return apiError(res, 400, 'NOT_VIDEO', 'poster regeneration is only for video');
+    }
+    try {
+      const updated = await library.regeneratePoster(assets(db), req.params.id);
+      if (!updated) return apiError(res, 422, 'POSTER_FAILED', 'could not generate poster');
+      res.json(updated);
+    } catch (e) {
+      return apiError(res, 500, 'POSTER_FAILED', e.message || 'poster regeneration failed');
     }
   });
 

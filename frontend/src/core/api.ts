@@ -19,6 +19,18 @@ export interface TemplateRecord extends TemplateSummary {
 
 export type OutputMode = 'browser' | 'obs_vmix' | 'decklink' | 'stream';
 export type KeyerMode = 'external' | 'internal' | 'fill_only';
+export type RenderBackend = 'html' | 'unreal';
+
+export interface UnrealAction {
+  id: string;
+  label: string;
+  sortOrder?: number;
+  rcObjectPath?: string;
+  rcFunctionName?: string;
+  rcParameters?: Record<string, unknown>;
+  rcPropertyPath?: string;
+  rcPropertyValue?: unknown;
+}
 
 export interface Channel {
   id: string;
@@ -28,12 +40,21 @@ export interface Channel {
   display_mode: string;
   keyer_mode: KeyerMode;
   stream_url: string;
+  render_backend: RenderBackend;
+  unreal_endpoint: string;
+  unreal_ndi_source: string;
+  vs_input_device: number;
+  vs_bg_file: string;
+  vs_cam_file: string;
+  unreal_pad: UnrealAction[];
   created_at: string;
 }
 
 export interface RundownSlot {
   slotId: string;
   templateId: string;
+  /** html = Titulus HTML template; ue = Unreal Blueprint template */
+  kind?: 'html' | 'ue';
   name: string;
   vars: Record<string, string | number>;
   /** Optional link to a DataElement this slot was created from. */
@@ -42,6 +63,34 @@ export interface RundownSlot {
   id?: string;
   label?: string;
   variables?: Record<string, string | number>;
+}
+
+export interface UeTemplateAction {
+  id: string;
+  label: string;
+  rcFunctionName?: string;
+  rcParameters?: Record<string, unknown>;
+}
+
+export interface UeTemplateData {
+  schemaVersion?: number;
+  description?: string;
+  rcObjectPath: string;
+  takeIn?: { functionName: string; parameters?: Record<string, unknown> } | null;
+  takeOut?: { functionName: string; parameters?: Record<string, unknown> } | null;
+  actions?: UeTemplateAction[];
+  variables?: Array<{ id: string; name: string; defaultValue?: string | number }>;
+}
+
+export interface UeTemplateSummary {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UeTemplateRecord extends UeTemplateSummary {
+  data: UeTemplateData;
 }
 
 export interface DataElement {
@@ -264,6 +313,23 @@ export const api = {
         body: JSON.stringify(data),
       }),
   },
+  ueTemplates: {
+    list: () => req<UeTemplateSummary[]>('/api/ue-templates'),
+    get: (id: string) => req<UeTemplateRecord>(`/api/ue-templates/${id}`),
+    create: (body: { name: string; data?: UeTemplateData }) =>
+      req<UeTemplateRecord>('/api/ue-templates', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, patch: { name?: string; data?: UeTemplateData }) =>
+      req<UeTemplateRecord>(`/api/ue-templates/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    remove: (id: string) => req<{ ok: true }>(`/api/ue-templates/${id}`, { method: 'DELETE' }),
+    play: (
+      id: string,
+      body: { channelId: string; mode?: 'takeIn' | 'takeOut' | 'action'; actionId?: string; dryRun?: boolean },
+    ) =>
+      req<{ ok: boolean; dryRun?: boolean; mode?: string; result?: unknown }>(
+        `/api/ue-templates/${id}/play${body.dryRun ? '?dryRun=1' : ''}`,
+        { method: 'POST', body: JSON.stringify(body) },
+      ),
+  },
   channels: {
     list: () => req<Channel[]>('/api/channels'),
     get: (id: string) => req<Channel>(`/api/channels/${id}`),
@@ -350,7 +416,9 @@ export const api = {
       req<MediaAsset>(`/api/media/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
     remove: (id: string) => req<{ ok: true }>(`/api/media/${id}`, { method: 'DELETE' }),
     refresh: (type: 'image' | 'video') =>
-      req<{ imported: MediaAsset[]; count: number }>(`/api/media/refresh?type=${type}`, { method: 'POST' }),
+      req<{ imported: MediaAsset[]; count: number; repaired?: number }>(`/api/media/refresh?type=${type}`, { method: 'POST' }),
+    regeneratePoster: (id: string) =>
+      req<MediaAsset>(`/api/media/${id}/regenerate-poster`, { method: 'POST' }),
     import: (file: File, opts?: { displayName?: string; tagIds?: string[] }) => {
       const fd = new FormData();
       fd.append('file', file);
@@ -366,6 +434,22 @@ export const api = {
   },
   onair: {
     get: () => req<OnAirSnapshot>('/api/onair'),
+  },
+  unreal: {
+    actions: (channelId: string) =>
+      req<{ channelId: string; render_backend: RenderBackend; unreal_endpoint: string; actions: UnrealAction[] }>(
+        `/api/unreal/${channelId}/actions`,
+      ),
+    putActions: (channelId: string, actions: UnrealAction[]) =>
+      req<{ channelId: string; actions: UnrealAction[] }>(`/api/unreal/${channelId}/actions`, {
+        method: 'PUT',
+        body: JSON.stringify({ actions }),
+      }),
+    invoke: (channelId: string, actionId: string, opts?: { dryRun?: boolean }) =>
+      req<{ ok: boolean; label?: string; dryRun?: boolean; result?: unknown }>(
+        `/api/unreal/${channelId}/actions/${actionId}/invoke${opts?.dryRun ? '?dryRun=1' : ''}`,
+        { method: 'POST', body: JSON.stringify({}) },
+      ),
   },
   license: {
     get: () => req<LicenseState>('/api/license'),

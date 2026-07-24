@@ -40,6 +40,7 @@ import {
 import type { RootStackEntry } from './schema.js';
 import {
   directorLocalFrame,
+  getLayerPropTrackRange,
   normalizeTimeline,
   sampleAt,
   sampleAtDirectorLocals,
@@ -97,6 +98,8 @@ interface LayerNode {
   /** Tracks last Content string used to build crawlLines (Parse invalidation). */
   crawlContentKey?: string;
   crawlLoopEpoch?: number;
+  /** Last director-local frame used for video transport sync. */
+  videoLastLocal?: number;
 }
 
 interface GroupNode {
@@ -260,13 +263,23 @@ export class TemplateRenderer {
     opts: { onWaitingChange?: OnWaitingChangeFn } = {},
   ): boolean {
     if (!this.template) return false;
-    if (!timelineNeedsDirectorRuntime(this.template.timeline)) return false;
+    // Arm transport for both Action and classic host loops (video free-run).
+    this.playing = true;
+
+    if (!timelineNeedsDirectorRuntime(this.template.timeline)) {
+      this.onWaitingChange = opts.onWaitingChange ?? null;
+      this.lastWaitingReported = null;
+      this.useDirectorRuntime = false;
+      this.directorRuntimes = null;
+      this.directorLocalFrames = { ...localFrames };
+      this.applyStateFromLocals(this.fixedTickRate);
+      return false;
+    }
 
     this.onFrame = null;
     this.onAction = null; // editor ignores endScene / updateData tags
     this.onWaitingChange = opts.onWaitingChange ?? null;
     this.lastWaitingReported = null;
-    this.playing = true;
     this.useDirectorRuntime = true;
     this.directorRuntimes = initDirectorRuntimes(this.template.timeline);
     for (const d of this.template.timeline.directors) {
@@ -327,6 +340,12 @@ export class TemplateRenderer {
     this.onWaitingChange = null;
     this.lastWaitingReported = null;
     this.directorLocalFrames = { ...locals };
+    // Stop HTML media free-run; keep current decoded frame on screen.
+    for (const node of this.layerEls.values()) {
+      if (node.layer.type !== 'video' || !node.contentEl) continue;
+      const vid = node.contentEl as HTMLVideoElement;
+      if (!vid.paused) vid.pause();
+    }
     return locals;
   }
 
@@ -1280,14 +1299,147 @@ export class TemplateRenderer {
         const vid = node.contentEl as HTMLVideoElement;
         const src = String(resolveBinding(layer.src, v));
         const changed = this.setText(vid, cache, 'src', src);
-        if (changed) {
-          vid.loop = layer.loop;
-          if (layer.loop) vid.play().catch(() => {});
-        }
         this.setStyle(vid, cache, 'objectFit', layer.fit);
+        this.syncVideoClipPlayback(layer, node, vid, cache, changed);
         break;
       }
     }
+  }
+
+  /**
+   * Drive HTMLVideoElement from the videoProgress clip window.
+   *
+   * Perf-critical: do NOT seek every paint frame (kills CEF/browser to ~1–2fps).
+   * - Scrub / paused: pause + seek to playhead frame
+   * - Transport playing: native play() free-run, resync only on jump / large drift
+   */
+  private syncVideoClipPlayback(
+    layer: Extract<Layer, { type: 'video' }>,
+    node: LayerNode,
+    vid: HTMLVideoElement,
+    cache: Record<string, string>,
+    srcChanged: boolean,
+  ): void {
+    const fps = this.template?.timeline.fps || this.fixedTickRate || 50;
+    const endBehavior = layer.endBehavior === 'empty' ? 'empty' : 'lastFrame';
+    const range = this.norm
+      ? getLayerPropTrackRange(this.norm, layer.id, 'videoProgress')
+      : null;
+    /** Resync only when HTML clock drifts this far from timeline (seconds). */
+    const DRIFT_SEC = 0.15;
+    /** Treat playhead move larger than this as a scrub jump (frames). */
+    const JUMP_FRAMES = 2.5;
+
+    const show = (visible: boolean) => {
+      this.setStyle(vid, cache, 'visibility', visible ? 'visible' : 'hidden');
+    };
+
+    const seekSec = (sec: number, force = false) => {
+      if (vid.readyState < 1) {
+        if (!vid.dataset.titulusSeekHook) {
+          vid.dataset.titulusSeekHook = '1';
+          vid.addEventListener('loadeddata', () => {
+            delete vid.dataset.titulusSeekHook;
+            this.applyCurrentState();
+          }, { once: true });
+        }
+        return;
+      }
+      const mediaDur = Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : undefined;
+      const t = mediaDur !== undefined
+        ? Math.max(0, Math.min(sec, Math.max(0, mediaDur - 0.001)))
+        : Math.max(0, sec);
+      if (!Number.isFinite(t)) return;
+      if (force || Math.abs((vid.currentTime || 0) - t) > 0.04) {
+        try { vid.currentTime = t; } catch { /* ignore seek races */ }
+      }
+    };
+
+    const targetFromElapsed = (elapsedSec: number, mediaDurSec: number, loop: boolean): number => {
+      if (loop) return mediaDurSec > 0 ? elapsedSec % mediaDurSec : 0;
+      return Math.min(Math.max(0, elapsedSec), Math.max(0, mediaDurSec - 0.001));
+    };
+
+    if (srcChanged) {
+      node.videoLastLocal = undefined;
+      if (!vid.paused) vid.pause();
+    }
+
+    // Legacy / no clip track
+    if (!range) {
+      vid.loop = layer.loop;
+      if (this.playing && layer.loop) {
+        show(true);
+        if (vid.paused) vid.play().catch(() => {});
+      } else {
+        if (!vid.paused) vid.pause();
+        seekSec(0);
+        show(Boolean(String(resolveBinding(layer.src, this.variables))));
+      }
+      return;
+    }
+
+    let local: number;
+    if (this.directorLocalFrames && range.directorId in this.directorLocalFrames) {
+      local = this.directorLocalFrames[range.directorId] ?? 0;
+    } else if (this.norm) {
+      const dir = this.norm.directorList.find((d) => d.id === range.directorId);
+      local = dir ? (directorLocalFrame(dir, this.frame) ?? 0) : 0;
+    } else {
+      local = this.frame;
+    }
+
+    const clipDurFrames = Math.max(1, range.end - range.start);
+    const mediaDurSec = (layer.durationFrames && layer.durationFrames > 0)
+      ? layer.durationFrames / fps
+      : (Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : clipDurFrames / fps);
+
+    const prev = node.videoLastLocal;
+    const jumped = prev === undefined || Math.abs(local - prev) > JUMP_FRAMES;
+    node.videoLastLocal = local;
+
+    if (local < range.start) {
+      if (!vid.paused) vid.pause();
+      vid.loop = false;
+      if (jumped || srcChanged) seekSec(0);
+      show(false);
+      return;
+    }
+
+    const elapsedSec = (local - range.start) / fps;
+    const inClipWindow = local <= range.end;
+
+    if (inClipWindow || layer.loop) {
+      const target = targetFromElapsed(elapsedSec, mediaDurSec, layer.loop);
+      show(true);
+      vid.loop = layer.loop;
+
+      if (!this.playing) {
+        // Scrub / paused preview: freeze on the playhead frame.
+        if (!vid.paused) vid.pause();
+        seekSec(target);
+        return;
+      }
+
+      // Transport playing: let the decoder free-run; resync only when needed.
+      const drift = Math.abs((vid.currentTime || 0) - target);
+      const needResync = jumped || srcChanged || vid.paused || drift > DRIFT_SEC;
+      if (needResync) {
+        seekSec(target, jumped || srcChanged);
+        if (vid.paused) vid.play().catch(() => {});
+      }
+      return;
+    }
+
+    // After clip, non-loop
+    if (!vid.paused) vid.pause();
+    vid.loop = false;
+    if (endBehavior === 'empty') {
+      show(false);
+      return;
+    }
+    seekSec(Math.max(0, mediaDurSec - 0.001));
+    show(true);
   }
 
   private paintCrawl(

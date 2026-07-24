@@ -22,6 +22,7 @@ import {
   computeGroupBbox,
 } from '../groupBounds';
 import { MediaSourcePicker } from '../media/MediaSourcePicker';
+import { placeVideoClipOnTimeline } from '../videoTimeline';
 import { CrawlTypeSections } from '../CrawlProperties';
 import { PropertyField, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
 import type { NumberInputExtraAction } from '@/components/ui/form';
@@ -659,7 +660,29 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
           <MediaSourcePicker
             type={layer.type}
             src={typeof layer.src === 'string' ? layer.src : ''}
-            onSelect={(url) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.src = url; })}
+            onSelect={(asset) => {
+              if (layer.type === 'image') {
+                updateLayer(layer.id, (l) => { if (l.type === 'image') l.src = asset.url; });
+                return;
+              }
+              useEditor.getState().patch((t) => {
+                const vl = t.layers.find((l) => l.id === layer.id);
+                if (!vl || vl.type !== 'video') return;
+                vl.src = asset.url;
+                const fps = t.timeline.fps || 50;
+                const durationFrames = Math.max(
+                  1,
+                  Math.round(
+                    asset.durationSec && asset.durationSec > 0
+                      ? asset.durationSec * fps
+                      : (asset.durationFrames && asset.durationFrames > 0
+                        ? asset.durationFrames * (fps / Math.max(1, asset.fps || fps))
+                        : fps * 5),
+                  ),
+                );
+                placeVideoClipOnTimeline(t, vl, durationFrames);
+              });
+            }}
           />
           <PropertyField label="Fit">
             <Select value={layer.fit} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.fit = e.target.value as 'stretch' | 'contain' | 'cover'; })}>
@@ -674,7 +697,21 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             </PropertyField>
           )}
           {layer.type === 'video' && (
-            <Checkbox label="Loop" checked={layer.loop} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'video') l.loop = v; })} />
+            <>
+              <Checkbox label="Loop" checked={layer.loop} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'video') l.loop = v; })} />
+              <PropertyField label="At the end">
+                <Select
+                  value={layer.endBehavior ?? 'lastFrame'}
+                  disabled={layer.loop}
+                  onChange={(e) => updateLayer(layer.id, (l) => {
+                    if (l.type === 'video') l.endBehavior = e.target.value as 'lastFrame' | 'empty';
+                  })}
+                >
+                  <option value="lastFrame">last frame</option>
+                  <option value="empty">empty</option>
+                </Select>
+              </PropertyField>
+            </>
           )}
         </Section>
       );

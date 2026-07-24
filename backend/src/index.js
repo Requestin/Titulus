@@ -31,6 +31,8 @@ import { uploadsRouter } from './routes/uploads.js';
 import { mediaRouter } from './routes/media.js';
 import { filesRouter } from './routes/files.js';
 import { licenseRouter } from './routes/license.js';
+import { unrealRouter } from './routes/unreal.js';
+import { ueTemplatesRouter } from './routes/ueTemplates.js';
 import { wsRouter } from './routes/ws.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -108,6 +110,9 @@ app.use('/api/billing', billingRouter(db, auth));
 app.use('/api/audit', auth.requireAuth, auth.requireRole('admin'), auditRouter(audit));
 app.use('/api/templates', auth.requireAuth, templatesRouter(db, dataElementsDb));
 app.use('/api/channels', auth.requireAuth, auth.requireRole('admin'), channelsRouter(db));
+// Unreal pad invoke: operators need it on Control; pad CRUD still admin via channels PUT.
+app.use('/api/unreal', auth.requireAuth, unrealRouter(db));
+app.use('/api/ue-templates', auth.requireAuth, ueTemplatesRouter(db));
 app.use('/api/rundowns', auth.requireAuth, rundownsRouter(db));
 app.use('/api/data-elements', auth.requireAuth, dataElementsRouter(dataElementsDb));
 app.use('/api/uploads', auth.requireAuth, uploadsCors, uploadsRouter(media, UPLOADS_DIR));

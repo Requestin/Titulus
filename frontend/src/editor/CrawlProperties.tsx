@@ -271,7 +271,7 @@ export function CrawlTypeSections({
           <MediaSourcePicker
             type="image"
             src={crawl.separatorImage}
-            onSelect={(url) => mutateCrawl((c) => { c.separatorImage = url; })}
+            onSelect={(asset) => mutateCrawl((c) => { c.separatorImage = asset.url; })}
           />
         )}
 

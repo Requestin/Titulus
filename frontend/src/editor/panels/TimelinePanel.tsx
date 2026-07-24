@@ -2,7 +2,7 @@
 //
 // Timeline editor: director tree, dope sheet, curve view, per-director playheads.
 
-import { useRef, useState, useLayoutEffect, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useRef, useState, useLayoutEffect, useEffect, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   DndContext,
@@ -26,7 +26,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Play, Pause, Square, Plus, Trash2, Activity, ListTree, GripVertical, ChevronRight, ChevronDown, SkipBack, Folder, ChevronsRight } from 'lucide-react';
+import { Play, Pause, Square, Plus, Trash2, Activity, ListTree, GripVertical, ChevronRight, ChevronDown, SkipBack, Folder, ChevronsRight, Infinity as InfinityIcon } from 'lucide-react';
 import { ANIMATABLE_PROPS, getEasing, isUpdateDirectorName, type AnimatableProp, type EasingType } from '@runtime';
 import { useEditor, type Target } from '../store';
 import {
@@ -37,6 +37,7 @@ import {
   directorForTrack,
   type TimelineTrack,
 } from '../timelineTracks';
+import { getVideoClipWindow, moveVideoClip } from '../videoTimeline';
 import { Select, NumberInput, Checkbox } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 
@@ -204,8 +205,24 @@ export function TimelinePanel() {
   const [draggingTrackLabel, setDraggingTrackLabel] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const addTrackBtnRef = useRef<HTMLButtonElement>(null);
+  const seededTemplateId = useRef<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  useLayoutEffect(() => {
+    if (!addOpen || !addTrackBtnRef.current) return;
+    const r = addTrackBtnRef.current.getBoundingClientRect();
+    setAddMenuPos({ left: r.left, top: r.top });
+  }, [addOpen]);
+
+  // Update director starts collapsed when a template is opened / created.
+  useEffect(() => {
+    if (!template) return;
+    if (seededTemplateId.current === template.id) return;
+    seededTemplateId.current = template.id;
+    const update = template.timeline.directors.find((d) => isUpdateDirectorName(d.name));
+    setCollapsedDirectors(update ? new Set([update.id]) : new Set());
+  }, [template]);
 
   if (!template) return null;
 
@@ -227,14 +244,8 @@ export function TimelinePanel() {
       }))
     : [];
   const untrackedProps = ANIMATABLE_PROPS.filter(
-    (p) => p !== 'crawlProgress' && !selectedTrackedProps.includes(p),
+    (p) => p !== 'crawlProgress' && p !== 'videoProgress' && !selectedTrackedProps.includes(p),
   );
-
-  useLayoutEffect(() => {
-    if (!addOpen || !addTrackBtnRef.current) return;
-    const r = addTrackBtnRef.current.getBoundingClientRect();
-    setAddMenuPos({ left: r.left, top: r.top });
-  }, [addOpen]);
 
   const activeTrackResolved = activeTrack && allTracks.some((t) => trackKey(t.target, t.prop) === trackKey(activeTrack.target, activeTrack.prop))
     ? activeTrack
@@ -543,16 +554,18 @@ export function TimelinePanel() {
                             onSelect={() => setActiveDirector(directorId)}
                             onRemove={() => removeDirector(directorId)}
                           />
-                          <div
-                            className={cn(
-                              'flex items-center border-b border-r border-border/40 px-2 text-[10px] font-semibold uppercase tracking-wide text-ink-faint',
-                              DIRECTOR_HEADER_BG,
-                              TRACK_HEADER_SHADOW,
-                            )}
-                            style={{ height: ACTION_LANE_H }}
-                          >
-                            Actions
-                          </div>
+                          {!isCollapsed && (
+                            <div
+                              className={cn(
+                                'flex items-center border-b border-r border-border/40 px-2 text-[10px] font-semibold uppercase tracking-wide text-ink-faint',
+                                DIRECTOR_HEADER_BG,
+                                TRACK_HEADER_SHADOW,
+                              )}
+                              style={{ height: ACTION_LANE_H }}
+                            >
+                              Actions
+                            </div>
+                          )}
                         </div>
                         <div className="relative z-0 shrink-0" style={{ width: timelineWidth }}>
                           <DirectorRuler
@@ -560,21 +573,26 @@ export function TimelinePanel() {
                             pxPerFrame={pxPerFrame}
                             onScrub={(e, el) => scrubDirector(directorId, sectionDur, e, el)}
                           />
-                          <ActionLane
-                            cues={template.timeline.actions.filter((a) => a.directorId === directorId)}
-                            pxPerFrame={pxPerFrame}
-                            dur={sectionDur}
-                            selectedId={selectedActionCueId}
-                            onSelect={(id) => { setSelectedKf(null); selectActionCue(id); }}
-                            onMove={moveActionCue}
-                            frameFromEvent={(e, el) => frameFromContentX(e.clientX, el, sectionDur)}
-                          />
+                          {!isCollapsed && (
+                            <ActionLane
+                              cues={template.timeline.actions.filter((a) => a.directorId === directorId)}
+                              pxPerFrame={pxPerFrame}
+                              dur={sectionDur}
+                              selectedId={selectedActionCueId}
+                              onSelect={(id) => { setSelectedKf(null); selectActionCue(id); }}
+                              onMove={moveActionCue}
+                              frameFromEvent={(e, el) => frameFromContentX(e.clientX, el, sectionDur)}
+                            />
+                          )}
                           <div
                             className={cn(
                               'pointer-events-none absolute top-0 z-sticky w-px bg-live',
                               playing && 'transition-[left] duration-[70ms] ease-linear',
                             )}
-                            style={{ left: frameToX(sectionPlayhead), height: DIRECTOR_HDR_H + ACTION_LANE_H }}
+                            style={{
+                              left: frameToX(sectionPlayhead),
+                              height: isCollapsed ? DIRECTOR_HDR_H : DIRECTOR_HDR_H + ACTION_LANE_H,
+                            }}
                           >
                             <div className="pointer-events-auto absolute -left-1 top-0 h-2 w-2 rounded-sm bg-live" />
                           </div>
@@ -583,12 +601,24 @@ export function TimelinePanel() {
 
                       {!isCollapsed && (
                         <>
-                        {tracks.map((track) => (
+                        {tracks.map((track) => {
+                          const isVideoClip = track.prop === 'videoProgress' && track.target.kind === 'layer';
+                          const videoLayer = isVideoClip
+                            ? template.layers.find((l) => l.id === track.target.id && l.type === 'video')
+                            : null;
+                          const loop = videoLayer?.type === 'video' ? videoLayer.loop : false;
+                          const label = isVideoClip
+                            ? targetLabel(template, track.target)
+                            : `${targetLabel(template, track.target)} · ${trackPropLabel(track.prop)}`;
+                          return (
                           <SortableTrackRow
                             key={trackKey(track.target, track.prop)}
                             track={track}
                             trackId={trackKey(track.target, track.prop)}
-                            label={`${targetLabel(template, track.target)} · ${trackPropLabel(track.prop)}`}
+                            label={label}
+                            labelExtra={loop ? (
+                              <InfinityIcon className="h-3.5 w-3.5 shrink-0 text-primary" aria-label="Loop" />
+                            ) : null}
                             isActive={!!activeTrackResolved && trackKey(activeTrackResolved.target, activeTrackResolved.prop) === trackKey(track.target, track.prop)}
                             dropBefore={dragIntent?.type === 'before' && dragIntent.trackId === trackKey(track.target, track.prop)}
                             dropAfter={dragIntent?.type === 'after' && dragIntent.trackId === trackKey(track.target, track.prop)}
@@ -596,20 +626,30 @@ export function TimelinePanel() {
                             onRemove={() => handleRemoveTrack(track)}
                             timelineWidth={timelineWidth}
                             lane={
-                              <DopeLane
-                                target={track.target}
-                                prop={track.prop}
-                                directorId={directorId}
-                                pxPerFrame={pxPerFrame}
-                                dur={sectionDur}
-                                frameFromEvent={(e, el) => frameFromContentX(e.clientX, el, sectionDur)}
-                                selectedKf={selectedKf}
-                                onSelectKeyframe={setSelectedKf}
-                                onClearSelection={() => setSelectedKf(null)}
-                              />
+                              isVideoClip ? (
+                                <VideoClipLane
+                                  layerId={track.target.id}
+                                  pxPerFrame={pxPerFrame}
+                                  dur={sectionDur}
+                                  loop={loop}
+                                />
+                              ) : (
+                                <DopeLane
+                                  target={track.target}
+                                  prop={track.prop}
+                                  directorId={directorId}
+                                  pxPerFrame={pxPerFrame}
+                                  dur={sectionDur}
+                                  frameFromEvent={(e, el) => frameFromContentX(e.clientX, el, sectionDur)}
+                                  selectedKf={selectedKf}
+                                  onSelectKeyframe={setSelectedKf}
+                                  onClearSelection={() => setSelectedKf(null)}
+                                />
+                              )
                             }
                           />
-                        ))}
+                          );
+                        })}
 
                         {tracks.length === 0 && (
                           <DirectorDropLane timelineWidth={timelineWidth} />
@@ -986,11 +1026,12 @@ function DirectorRuler({
 }
 
 function SortableTrackRow({
-  trackId, label, isActive, dropBefore, dropAfter, onSelect, onRemove, timelineWidth, lane,
+  trackId, label, labelExtra, isActive, dropBefore, dropAfter, onSelect, onRemove, timelineWidth, lane,
 }: {
   track: TimelineTrack;
   trackId: string;
   label: string;
+  labelExtra?: ReactNode;
   isActive: boolean;
   dropBefore?: boolean;
   dropAfter?: boolean;
@@ -1028,8 +1069,9 @@ function SortableTrackRow({
         >
           <GripVertical className="h-3.5 w-3.5" />
         </button>
-        <button type="button" onClick={onSelect} className="min-w-0 flex-1 truncate text-left text-[12px] tabular-nums">
-          {label}
+        <button type="button" onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-1 truncate text-left text-[12px] tabular-nums">
+          <span className="truncate">{label}</span>
+          {labelExtra}
         </button>
         <button
           type="button"
@@ -1054,6 +1096,64 @@ function keyframePointsFor(target: Target, prop: AnimatableProp): Point[] {
     if (bag && bag[prop] !== undefined) out.push({ frame: k.frame, value: bag[prop] as number, easing: k.easing });
   }
   return out.sort((a, b) => a.frame - b.frame);
+}
+
+/** Fixed-duration video clip bar: move as a unit, no trim handles. */
+function VideoClipLane({
+  layerId, pxPerFrame, dur, loop,
+}: {
+  layerId: string;
+  pxPerFrame: number;
+  dur: number;
+  loop: boolean;
+}) {
+  const template = useEditor((s) => s.template);
+  const patch = useEditor((s) => s.patch);
+  const [drag, setDrag] = useState<{ fromX: number; curDelta: number } | null>(null);
+
+  const win = template ? getVideoClipWindow(template, layerId) : null;
+  const laneW = Math.max(dur * pxPerFrame + 24, 100);
+  if (!win) {
+    return <div className="relative z-0 border-b border-border/40" style={{ height: LANE_H, width: laneW }} />;
+  }
+
+  const start = drag ? Math.max(0, win.start + drag.curDelta) : win.start;
+  const widthFrames = win.end - win.start;
+  const left = start * pxPerFrame;
+  const width = Math.max(4, widthFrames * pxPerFrame);
+
+  return (
+    <div
+      className="relative z-0 overflow-hidden border-b border-border/40"
+      style={{ height: LANE_H, width: laneW }}
+    >
+      <div
+        className="absolute top-1 z-[1] flex h-[18px] cursor-grab items-center gap-1 rounded-sm border border-primary/50 bg-primary/35 px-1.5 active:cursor-grabbing"
+        style={{ left, width }}
+        title={loop ? 'Video clip (loop) — drag to retime' : 'Video clip — drag to retime'}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          e.currentTarget.setPointerCapture(e.pointerId);
+          setDrag({ fromX: e.clientX, curDelta: 0 });
+        }}
+        onPointerMove={(e) => {
+          if (!drag) return;
+          setDrag({ ...drag, curDelta: Math.round((e.clientX - drag.fromX) / pxPerFrame) });
+        }}
+        onPointerUp={() => {
+          if (drag && drag.curDelta !== 0) {
+            patch((t) => { moveVideoClip(t, layerId, drag.curDelta); });
+          }
+          setDrag(null);
+        }}
+      >
+        {loop && <InfinityIcon className="h-3 w-3 shrink-0 text-primary-ink/90" aria-hidden />}
+        <span className="truncate text-[10px] font-medium tabular-nums text-ink">
+          {widthFrames}f
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function DopeLane({

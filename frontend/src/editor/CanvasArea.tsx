@@ -408,6 +408,8 @@ export function CanvasArea() {
           heads[d.id] = directorRelToLocal(d, rel[d.id] ?? 0);
         }
         setPlayheads(heads);
+        // Disarm transport so video free-run stops (classic path).
+        r.endEditorPlayback();
       }
       setWaitingContinue(false);
     };

@@ -12,6 +12,7 @@ import {
   type Channel,
   type KeyerMode,
   type OutputMode,
+  type RenderBackend,
   type LicenseState,
   type Entitlements,
   type AuditEvent,
@@ -26,6 +27,11 @@ const OUTPUT_MODES: { value: OutputMode; label: string }[] = [
   { value: 'obs_vmix', label: 'OBS / vMix (browser source URL)' },
   { value: 'decklink', label: 'DeckLink SDI Fill+Key' },
   { value: 'stream', label: 'Stream (SRT / RTMP)' },
+];
+
+const RENDER_BACKENDS: { value: RenderBackend; label: string }[] = [
+  { value: 'html', label: 'HTML graphics (bg_engine)' },
+  { value: 'unreal', label: 'Unreal engine channel (bg_vs_engine)' },
 ];
 
 const KEYER_MODES: { value: KeyerMode; label: string }[] = [
@@ -47,7 +53,32 @@ function emptyDraft(): Draft {
     display_mode: 'HD1080i50',
     keyer_mode: 'external',
     stream_url: '',
+    render_backend: 'html',
+    unreal_endpoint: '',
+    unreal_ndi_source: '',
+    vs_input_device: -1,
+    vs_bg_file: '',
+    vs_cam_file: '',
+    unreal_pad: [],
     isNew: true,
+  };
+}
+
+function channelPayload(draft: Draft) {
+  return {
+    name: draft.name.trim(),
+    output_mode: draft.output_mode,
+    device_index: draft.device_index,
+    display_mode: draft.display_mode,
+    keyer_mode: draft.keyer_mode,
+    stream_url: draft.stream_url,
+    render_backend: draft.render_backend,
+    unreal_endpoint: draft.unreal_endpoint,
+    unreal_ndi_source: draft.unreal_ndi_source,
+    vs_input_device: draft.vs_input_device,
+    vs_bg_file: draft.vs_bg_file,
+    vs_cam_file: draft.vs_cam_file,
+    unreal_pad: draft.unreal_pad ?? [],
   };
 }
 
@@ -141,28 +172,18 @@ export function SettingsPage() {
       toast.error('Stream output requires a stream URL');
       return;
     }
+    if (draft.render_backend === 'unreal' && draft.output_mode === 'decklink' && draft.device_index < 0) {
+      toast.error('Unreal + DeckLink output requires device index >= 0');
+      return;
+    }
     setSaving(true);
     try {
       if (draft.isNew) {
-        const created = await api.channels.create({
-          name: draft.name.trim(),
-          output_mode: draft.output_mode,
-          device_index: draft.device_index,
-          display_mode: draft.display_mode,
-          keyer_mode: draft.keyer_mode,
-          stream_url: draft.stream_url,
-        });
+        const created = await api.channels.create(channelPayload(draft));
         toast.success('Channel created');
         setSelectedId(created.id);
       } else {
-        await api.channels.update(draft.id, {
-          name: draft.name.trim(),
-          output_mode: draft.output_mode,
-          device_index: draft.device_index,
-          display_mode: draft.display_mode,
-          keyer_mode: draft.keyer_mode,
-          stream_url: draft.stream_url,
-        });
+        await api.channels.update(draft.id, channelPayload(draft));
         toast.success('Channel saved');
       }
       await load();
@@ -294,6 +315,16 @@ export function SettingsPage() {
               <Field label="Name">
                 <Input value={draft.name} onChange={(e) => patch('name', e.target.value)} />
               </Field>
+              <Field label="Render backend">
+                <Select
+                  value={draft.render_backend ?? 'html'}
+                  onChange={(e) => patch('render_backend', e.target.value as RenderBackend)}
+                >
+                  {RENDER_BACKENDS.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </Select>
+              </Field>
               <Field label="Output">
                 <Select value={draft.output_mode} onChange={(e) => patch('output_mode', e.target.value as OutputMode)}>
                   {OUTPUT_MODES.map((m) => (
@@ -301,6 +332,63 @@ export function SettingsPage() {
                   ))}
                 </Select>
               </Field>
+
+              {(draft.render_backend ?? 'html') === 'unreal' && (
+                <div className="space-y-3 rounded-md border border-border/80 bg-bg/40 p-3">
+                  <p className="text-[12px] text-ink-muted">
+                    ZeroDensity-style: this channel is the <strong className="font-medium text-ink">UE engine / I/O</strong>.
+                    Blueprint playout lives in <code className="text-ink">UE Templates</code>, then rundown.
+                    Engine: <code className="text-ink">bg_vs_engine</code>.
+                  </p>
+                  <Field label="Unreal Remote Control URL">
+                    <Input
+                      value={draft.unreal_endpoint}
+                      placeholder="http://127.0.0.1:30010"
+                      onChange={(e) => patch('unreal_endpoint', e.target.value)}
+                    />
+                  </Field>
+                  <p className="text-[11px] text-ink-muted">
+                    Needed for TAKE of UE Templates. Optional for first video smoke (NDI/stub → keyer → BMD).
+                  </p>
+                  <Field label="NDI source (Unreal output)">
+                    <Input
+                      value={draft.unreal_ndi_source}
+                      placeholder="UE5-Studio"
+                      onChange={(e) => patch('unreal_ndi_source', e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Camera DeckLink input #">
+                    <Input
+                      type="number"
+                      min={-1}
+                      value={draft.vs_input_device}
+                      onChange={(e) => patch('vs_input_device', parseInt(e.target.value, 10))}
+                    />
+                  </Field>
+                  <p className="text-[11px] text-ink-muted">
+                    −1 = synthetic green-screen stub (no camera card). Output device is below under DeckLink.
+                  </p>
+                  <details className="rounded border border-border/60 p-2 text-[12px]">
+                    <summary className="cursor-pointer text-ink-muted">Advanced stubs (no NDI / no camera HW)</summary>
+                    <div className="mt-2 space-y-2">
+                      <Field label="BG file (raw BGRA)">
+                        <Input
+                          value={draft.vs_bg_file}
+                          placeholder="/tmp/vs-bg.bgra"
+                          onChange={(e) => patch('vs_bg_file', e.target.value)}
+                        />
+                      </Field>
+                      <Field label="Camera file (raw BGRA)">
+                        <Input
+                          value={draft.vs_cam_file}
+                          placeholder="/tmp/vs-cam.bgra"
+                          onChange={(e) => patch('vs_cam_file', e.target.value)}
+                        />
+                      </Field>
+                    </div>
+                  </details>
+                </div>
+              )}
 
               {(draft.output_mode === 'browser' || draft.output_mode === 'obs_vmix') && (
                 <p className="text-[12px] text-ink-muted">
@@ -311,7 +399,7 @@ export function SettingsPage() {
 
               {draft.output_mode === 'decklink' && (
                 <>
-                  <Field label="Device #">
+                  <Field label="Device # (output)">
                     <Input
                       type="number"
                       min={0}
@@ -324,13 +412,14 @@ export function SettingsPage() {
                       {DISPLAY_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
                     </Select>
                   </Field>
-                  <Field label="Keyer">
+                  <Field label="Keyer (hardware Fill+Key)">
                     <Select value={draft.keyer_mode} onChange={(e) => patch('keyer_mode', e.target.value as KeyerMode)}>
                       {KEYER_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                     </Select>
                   </Field>
                   <p className="text-[12px] text-warning">
                     DeckLink requires hardware + genlock for production validation (deferred on this dev host).
+                    Hardware Fill+Key is not chroma key — VS chroma lives in bg_vs_engine.
                   </p>
                 </>
               )}
