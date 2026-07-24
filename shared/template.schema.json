@@ -60,7 +60,8 @@
         "items": { "$ref": "#/$defs/stackEntry" }
       }
     },
-    "timeline": { "$ref": "#/$defs/timeline" }
+    "timeline": { "$ref": "#/$defs/timeline" },
+    "data": { "$ref": "#/$defs/templateData" }
   },
 
   "$defs": {
@@ -73,6 +74,202 @@
         "locale": { "type": "string", "description": "BCP-47 locale, e.g. en-US" },
         "safeTitle": { "type": "string", "description": "One-line title for generated catalogs." },
         "notes": { "type": "string" }
+      }
+    },
+    "templateData": {
+      "type": "object",
+      "required": ["version", "sources", "pipelines"],
+      "additionalProperties": false,
+      "description": "Designer-owned file→variable pipeline. Control does not pick rows.",
+      "properties": {
+        "version": { "type": "integer", "const": 1 },
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dataSource" },
+          "maxItems": 16
+        },
+        "pipelines": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dataPipeline" },
+          "maxItems": 16
+        },
+        "runOn": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["take", "update", "load", "refresh"] },
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "onError": { "type": "string", "enum": ["block", "keep", "clear"] }
+      }
+    },
+    "dataPathRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "literal" },
+            "value": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "variableId"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "variable" },
+            "variableId": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "dataSourceOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "encoding": { "type": "string", "enum": ["utf-8"] },
+        "skipEmpty": { "type": "boolean" },
+        "trim": { "type": "boolean" },
+        "commentPrefix": { "type": "string" },
+        "delimiter": { "type": "string", "minLength": 1 },
+        "hasHeader": { "type": "boolean" },
+        "columns": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "maxItems": 64
+        },
+        "kvSeparator": { "type": "string", "minLength": 1 },
+        "rootPath": { "type": "string" }
+      }
+    },
+    "dataSource": {
+      "type": "object",
+      "required": ["id", "type", "format"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "type": { "type": "string", "enum": ["textfile", "jsonfile", "inline"] },
+        "path": { "$ref": "#/$defs/dataPathRef" },
+        "content": { "type": "string" },
+        "format": { "type": "string", "enum": ["lines", "delimited", "kv", "json"] },
+        "options": { "$ref": "#/$defs/dataSourceOptions" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "enum": ["textfile", "jsonfile"] } } },
+          "then": { "required": ["path"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "inline" } } },
+          "then": { "required": ["content"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "jsonfile" } } },
+          "then": { "properties": { "format": { "const": "json" } } }
+        }
+      ]
+    },
+    "dataSelect": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string", "enum": ["first", "last", "index", "byKey", "match", "all"] },
+        "index": { "type": "integer", "minimum": 1 },
+        "key": { "type": "string", "minLength": 1 },
+        "value": { "type": "string" },
+        "pattern": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "index" } } },
+          "then": { "required": ["index"] }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "byKey" } } },
+          "then": { "required": ["key", "value"] }
+        },
+        {
+          "if": { "properties": { "mode": { "const": "match" } } },
+          "then": { "required": ["key", "pattern"] }
+        }
+      ]
+    },
+    "dataMapTarget": {
+      "type": "object",
+      "required": ["type", "variableId"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "variable" },
+        "variableId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "dataValueTransform": {
+      "type": "object",
+      "required": ["op"],
+      "additionalProperties": false,
+      "properties": {
+        "op": { "type": "string", "enum": ["trim", "prefix", "suffix", "replace"] },
+        "value": { "type": "string" },
+        "pattern": { "type": "string" },
+        "replacement": { "type": "string" },
+        "flags": { "type": "string" }
+      }
+    },
+    "dataMapEntry": {
+      "type": "object",
+      "required": ["from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "$ref": "#/$defs/dataMapTarget" },
+        "as": { "type": "string", "enum": ["text", "number", "image", "video", "multitext"] },
+        "transform": { "$ref": "#/$defs/dataValueTransform" }
+      }
+    },
+    "mediaResolvePolicy": {
+      "type": "object",
+      "required": ["strategy"],
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["assetId", "url", "path"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "onMiss": { "type": "string", "enum": ["keep", "clear", "block"] },
+        "fallbackUrl": { "type": "string" }
+      }
+    },
+    "dataPipeline": {
+      "type": "object",
+      "required": ["id", "sourceId", "select", "map"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "enabled": { "type": "boolean" },
+        "select": { "$ref": "#/$defs/dataSelect" },
+        "map": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dataMapEntry" },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "join": {
+          "type": "object",
+          "required": ["field"],
+          "additionalProperties": false,
+          "properties": {
+            "field": { "type": "string", "minLength": 1 },
+            "separator": { "type": "string" }
+          }
+        },
+        "mediaResolve": { "$ref": "#/$defs/mediaResolvePolicy" },
+        "onEmpty": { "type": "string", "enum": ["keep", "clear", "block"] }
       }
     },
     "blendMode": {
@@ -137,7 +334,15 @@
         "min": { "type": "number" },
         "max": { "type": "number" },
         "step": { "type": "number", "exclusiveMinimum": 0 },
-        "placeholder": { "type": "string" }
+        "placeholder": { "type": "string" },
+        "drivenBy": {
+          "type": "string",
+          "description": "Pipeline id that owns this variable (template.data.pipelines[].id)."
+        },
+        "exposed": {
+          "type": "boolean",
+          "description": "If false, never show in Control. Driven vars default hidden unless true."
+        }
       },
       "allOf": [
         {

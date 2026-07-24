@@ -26,7 +26,8 @@ import { Input, Select } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { toast } from '@/core/toast';
 import { createId } from '@/core/id';
-import { crawlFileErrorMessage, templateForTake } from '@/core/crawlFile';
+import { crawlFileErrorMessage } from '@/core/crawlFile';
+import { prepareTemplateForAir, templateDataErrorMessage } from '@/core/prepareTemplateData';
 import { isUpdateDirectorArmed } from '@runtime';
 import { ProgramMonitor } from '@/control/ProgramMonitor';
 import {
@@ -331,14 +332,16 @@ export function RundownTab({
       return;
     }
     let template = tpl.data;
+    let variables = buildPayload(slot, template.variables);
     try {
-      template = await templateForTake(tpl.data);
+      const prepared = await prepareTemplateForAir(tpl.data, variables, 'take');
+      template = prepared.template;
+      variables = prepared.variables;
       setCache((prev) => ({ ...prev, [tpl.id]: { ...tpl, data: template } }));
     } catch (err) {
-      toast.error(crawlFileErrorMessage(err));
+      toast.error(templateDataErrorMessage(err) || crawlFileErrorMessage(err));
       return;
     }
-    const variables = buildPayload(slot, template.variables);
     const alreadyLive = channelLiveTemplateIds.has(slot.templateId);
 
     if (alreadyLive) {
@@ -402,8 +405,23 @@ export function RundownTab({
     if (!activeLiveSet.has(slotId)) return;
     const slot = active?.slots.find((s) => s.slotId === slotId);
     const templateId = slot?.templateId ?? slotId;
-    const ok = send({ type: 'update', channelId, templateId, variables: vars, slotId });
-    if (!ok) toast.error('Control socket disconnected');
+    try {
+      const tpl = await ensureTemplate(templateId);
+      const prepared = await prepareTemplateForAir(tpl.data, vars, 'update');
+      const ok = send({
+        type: 'update',
+        channelId,
+        templateId,
+        template: prepared.template,
+        variables: prepared.variables,
+        slotId,
+      });
+      if (!ok) toast.error('Control socket disconnected');
+    } catch (err) {
+      toast.error(templateDataErrorMessage(err));
+      const ok = send({ type: 'update', channelId, templateId, variables: vars, slotId });
+      if (!ok) toast.error('Control socket disconnected');
+    }
   }
 
   async function selectTemplate(t: TemplateSummary) {

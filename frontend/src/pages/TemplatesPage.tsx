@@ -19,7 +19,8 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/form';
 import { toast } from '@/core/toast';
 import { useControlWs } from '@/core/controlWs';
-import { crawlFileErrorMessage, templateForTake } from '@/core/crawlFile';
+import { crawlFileErrorMessage } from '@/core/crawlFile';
+import { prepareTemplateForAir, templateDataErrorMessage } from '@/core/prepareTemplateData';
 import { cn } from '@/lib/cn';
 import { ProgramMonitor } from '@/control/ProgramMonitor';
 import { TemplatesTab } from '@/control/TemplatesTab';
@@ -281,31 +282,47 @@ function PlayTemplates() {
   async function take(rec: TemplateRecord, values: Record<string, string | number>) {
     if (!channelId) { toast.error('Select a channel first'); return; }
     let template = rec.data;
+    let variables = values;
     try {
-      template = await templateForTake(rec.data);
+      const prepared = await prepareTemplateForAir(rec.data, values, 'take');
+      template = prepared.template;
+      variables = prepared.variables;
     } catch (err) {
-      toast.error(crawlFileErrorMessage(err));
+      toast.error(templateDataErrorMessage(err) || crawlFileErrorMessage(err));
       return;
     }
     const alreadyLive = liveIds.includes(rec.id);
     if (alreadyLive) {
       if (isUpdateDirectorArmed(template.timeline)) {
-        const ok = send({ type: 'update', channelId, templateId: rec.id, template, variables: values });
+        const ok = send({ type: 'update', channelId, templateId: rec.id, template, variables });
         if (!ok) toast.error('Control WebSocket not connected');
         return;
       }
       send({ type: 'clear', channelId, templateId: rec.id });
     }
-    const ok = send({ type: 'take', channelId, templateId: rec.id, template, variables: values });
+    const ok = send({ type: 'take', channelId, templateId: rec.id, template, variables });
     if (!ok) { toast.error('Control WebSocket not connected'); return; }
     setOnAir((prev) => {
       const cur = (prev[channelId] ?? []).filter((e) => e.templateId !== rec.id);
       return { ...prev, [channelId]: [...cur, { templateId: rec.id }] };
     });
   }
-  function update(templateId: string, values: Record<string, string | number>) {
+  async function update(templateId: string, values: Record<string, string | number>) {
     if (!channelId) return;
-    send({ type: 'update', channelId, templateId, variables: values });
+    try {
+      const rec = await api.templates.get(templateId);
+      const prepared = await prepareTemplateForAir(rec.data, values, 'update');
+      send({
+        type: 'update',
+        channelId,
+        templateId,
+        template: prepared.template,
+        variables: prepared.variables,
+      });
+    } catch (err) {
+      toast.error(templateDataErrorMessage(err));
+      send({ type: 'update', channelId, templateId, variables: values });
+    }
   }
   function clear(templateId: string) {
     if (!channelId) return;

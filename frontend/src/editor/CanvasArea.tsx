@@ -6,12 +6,17 @@
 // transform on pointer-up (so a drag is a single history step).
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, advanceDirectorRel, directorRelToLocal, timelineNeedsDirectorRuntime, isUpdateDirectorName, type Transform } from '@runtime';
+import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, advanceDirectorRel, directorRelToLocal, timelineNeedsDirectorRuntime, isUpdateDirectorName, runTemplateData, type Transform } from '@runtime';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
 import { primaryDirectorForTarget } from './timelineTracks';
 import { groupCanvasAabb, groupPivotCanvasPoint, layerCanvasAabb } from './groupBounds';
 import { axisCrosshairSize, mapLayerPointToCanvas, pivotCanvasPoint } from './pivot';
+import {
+  resolveMediaTokenForPipeline,
+  readTemplateDataFile,
+} from '@/core/prepareTemplateData';
+import { applyVideoClipPlan, planVideoClipsForVariables } from './videoTimeline';
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 type DragMode = 'move' | Handle;
@@ -269,16 +274,58 @@ export function CanvasArea() {
   useLayoutEffect(() => {
     const r = rendererRef.current;
     if (!r || !template) return;
-    const vars = resolveVariableMap(template);
-    r.syncTemplate(template, vars);
-    r.resize(cw * zoom, ch * zoom);
-    const st = useEditor.getState();
-    if (st.playing && timelineNeedsDirectorRuntime(template.timeline)) {
-      r.beginEditorPlayback(st.playheads, playOptsRef.current ?? {});
-    } else {
-      r.seekDirectorLocals(st.playheads);
-    }
-    recomputeBox();
+    let cancelled = false;
+
+    const sync = (vars: Record<string, string | number>) => {
+      if (cancelled || rendererRef.current !== r) return;
+      r.syncTemplate(template, vars);
+      r.resize(cw * zoom, ch * zoom);
+      const st = useEditor.getState();
+      if (st.playing && timelineNeedsDirectorRuntime(template.timeline)) {
+        r.beginEditorPlayback(st.playheads, playOptsRef.current ?? {});
+      } else {
+        r.seekDirectorLocals(st.playheads);
+      }
+      recomputeBox();
+    };
+
+    const ensureClips = async (vars: Record<string, string | number>) => {
+      try {
+        const plan = await planVideoClipsForVariables(template, vars);
+        if (cancelled || plan.length === 0) return;
+        useEditor.getState().patch((t) => {
+          applyVideoClipPlan(t, plan);
+        });
+      } catch {
+        // Duration lookup failures leave existing timeline as-is.
+      }
+    };
+
+    const base = resolveVariableMap(template);
+    sync(base);
+
+    void (async () => {
+      let vars = base;
+      if (template.data) {
+        try {
+          const result = await runTemplateData(template, {
+            trigger: 'load',
+            variables: base,
+            readFile: readTemplateDataFile,
+            resolveMedia: resolveMediaTokenForPipeline,
+          });
+          if (cancelled) return;
+          vars = resolveVariableMap(template, result.overrides);
+          sync(vars);
+        } catch {
+          // Preview keeps defaults on data errors; TAKE will surface them.
+        }
+      }
+      if (cancelled) return;
+      await ensureClips(vars);
+    })();
+
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template, zoom, cw, ch]);
 

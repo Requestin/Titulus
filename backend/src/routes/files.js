@@ -63,12 +63,12 @@ export function filesRouter() {
     }
 
     const ext = extname(abs).toLowerCase();
-    if (ext !== '.txt') {
+    if (ext !== '.txt' && ext !== '.json') {
       return apiError(
         res,
         415,
         'UNSUPPORTED_FORMAT',
-        'File format is not supported, supported only txt file',
+        'File format is not supported, supported only txt or json',
       );
     }
 
@@ -85,7 +85,7 @@ export function filesRouter() {
         res,
         415,
         'UNSUPPORTED_FORMAT',
-        'File format is not supported, supported only txt file',
+        'File format is not supported, supported only txt or json',
       );
     }
 

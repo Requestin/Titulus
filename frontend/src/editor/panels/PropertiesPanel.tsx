@@ -657,33 +657,48 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
     case 'video':
       return (
         <Section title={layer.type === 'image' ? 'Image' : 'Video'}>
-          <MediaSourcePicker
-            type={layer.type}
-            src={typeof layer.src === 'string' ? layer.src : ''}
-            onSelect={(asset) => {
-              if (layer.type === 'image') {
-                updateLayer(layer.id, (l) => { if (l.type === 'image') l.src = asset.url; });
-                return;
-              }
-              useEditor.getState().patch((t) => {
-                const vl = t.layers.find((l) => l.id === layer.id);
-                if (!vl || vl.type !== 'video') return;
-                vl.src = asset.url;
-                const fps = t.timeline.fps || 50;
-                const durationFrames = Math.max(
-                  1,
-                  Math.round(
-                    asset.durationSec && asset.durationSec > 0
-                      ? asset.durationSec * fps
-                      : (asset.durationFrames && asset.durationFrames > 0
-                        ? asset.durationFrames * (fps / Math.max(1, asset.fps || fps))
-                        : fps * 5),
-                  ),
-                );
-                placeVideoClipOnTimeline(t, vl, durationFrames);
-              });
-            }}
-          />
+          <PropertyField label="Source">
+            <BindableMediaSrc
+              layerType={layer.type}
+              value={layer.src}
+              variables={variables}
+              onChange={(v) => {
+                if (layer.type === 'image') {
+                  updateLayer(layer.id, (l) => { if (l.type === 'image') l.src = v; });
+                  return;
+                }
+                if (typeof v === 'object') {
+                  updateLayer(layer.id, (l) => { if (l.type === 'video') l.src = v; });
+                  return;
+                }
+                // Literal URL from picker — also place clip on timeline when possible via MediaSourcePicker path below.
+                updateLayer(layer.id, (l) => { if (l.type === 'video') l.src = v; });
+              }}
+              onSelectAsset={(asset) => {
+                if (layer.type === 'image') {
+                  updateLayer(layer.id, (l) => { if (l.type === 'image') l.src = asset.url; });
+                  return;
+                }
+                useEditor.getState().patch((t) => {
+                  const vl = t.layers.find((l) => l.id === layer.id);
+                  if (!vl || vl.type !== 'video') return;
+                  vl.src = asset.url;
+                  const fps = t.timeline.fps || 50;
+                  const durationFrames = Math.max(
+                    1,
+                    Math.round(
+                      asset.durationSec && asset.durationSec > 0
+                        ? asset.durationSec * fps
+                        : (asset.durationFrames && asset.durationFrames > 0
+                          ? asset.durationFrames * (fps / Math.max(1, asset.fps || fps))
+                          : fps * 5),
+                    ),
+                  );
+                  placeVideoClipOnTimeline(t, vl, durationFrames);
+                });
+              }}
+            />
+          </PropertyField>
           <PropertyField label="Fit">
             <Select value={layer.fit} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.fit = e.target.value as 'stretch' | 'contain' | 'cover'; })}>
               <option value="cover">cover</option>
@@ -875,6 +890,76 @@ function TextStyleSection({ layer, variables, updateLayer }: { layer: Extract<La
         />
       </div>
     </Section>
+  );
+}
+
+function BindableMediaSrc({
+  layerType,
+  value,
+  variables,
+  onChange,
+  onSelectAsset,
+}: {
+  layerType: 'image' | 'video';
+  value: string | VariableBinding;
+  variables: Variable[];
+  onChange: (v: string | VariableBinding) => void;
+  onSelectAsset: (asset: import('@/core/api').MediaAsset) => void;
+}) {
+  const isBound = typeof value === 'object' && value !== null;
+  const mediaVars = variables.filter((v) => v.type === layerType);
+  const bindCandidates = mediaVars.length > 0 ? mediaVars : variables;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-start gap-1.5">
+        {isBound ? (
+          <Select
+            className="flex-1"
+            value={value.variableId}
+            onChange={(e) => onChange({ type: 'variable', variableId: e.target.value })}
+          >
+            {bindCandidates.length === 0 && <option value="">No variables</option>}
+            {bindCandidates.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label || v.name} ({v.type})
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <div className="min-w-0 flex-1 space-y-2">
+            <MediaSourcePicker
+              type={layerType}
+              src={value}
+              onSelect={onSelectAsset}
+            />
+          </div>
+        )}
+        <button
+          type="button"
+          title={isBound ? 'Unbind variable' : 'Bind to variable'}
+          disabled={!isBound && bindCandidates.length === 0}
+          onClick={() => {
+            if (isBound) onChange('');
+            else if (bindCandidates[0]) {
+              onChange({ type: 'variable', variableId: bindCandidates[0].id });
+            }
+          }}
+          className={cn(
+            'grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border',
+            isBound ? 'border-primary text-primary' : 'text-ink-faint hover:text-ink disabled:opacity-40',
+          )}
+        >
+          <Braces className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+      {isBound && (
+        <p className="text-[11px] text-ink-faint">
+          Bound to variable. For Data pipeline use <code className="text-ink-muted">asset:&lt;uuid&gt;</code> in the file
+          (copy from MAM), not the display name.
+        </p>
+      )}
+    </div>
   );
 }
 

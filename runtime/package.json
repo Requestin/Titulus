@@ -10,7 +10,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "node build.mjs",
-    "test": "node test/crawl-smoke.mjs",
+    "test": "node test/crawl-smoke.mjs && node test/data-pipeline-smoke.mjs",
     "clean": "rm -rf dist ../backend/public/bg-runtime.js"
   },
   "devDependencies": {

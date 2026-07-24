@@ -184,6 +184,9 @@ interface EditorState {
   addVariable: () => void;
   updateVariable: (id: string, partial: Partial<Variable>) => void;
   removeVariable: (id: string) => void;
+  ensureTemplateData: () => void;
+  setTemplateData: (data: Template['data']) => void;
+  patchTemplateData: (mutator: (data: NonNullable<Template['data']>) => void) => void;
 
   // timeline + playback (playheads/playing/activeDirectorId are transient)
   playheads: Record<string, number>;
@@ -575,6 +578,40 @@ export const useEditor = create<EditorState>()(
 
       removeVariable: (id) =>
         get().patch((t) => { t.variables = t.variables.filter((v) => v.id !== id); }),
+
+      ensureTemplateData: () => {
+        get().patch((t) => {
+          if (!t.data) {
+            t.data = {
+              version: 1,
+              sources: [],
+              pipelines: [],
+              runOn: ['take', 'load'],
+              onError: 'block',
+            };
+          }
+        });
+      },
+
+      setTemplateData: (data) =>
+        get().patch((t) => {
+          if (data === undefined) delete t.data;
+          else t.data = data;
+        }),
+
+      patchTemplateData: (mutator) =>
+        get().patch((t) => {
+          if (!t.data) {
+            t.data = {
+              version: 1,
+              sources: [],
+              pipelines: [],
+              runOn: ['take', 'load'],
+              onError: 'block',
+            };
+          }
+          mutator(t.data);
+        }),
 
       // --- timeline + playback ---
       setPlayhead: (directorId, frame) =>

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { api, type MediaAsset, type MediaTag } from '@/core/api';
 import { toast } from '@/core/toast';
+import { copyTextToClipboard } from '@/control/controlShared';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
@@ -216,10 +217,37 @@ function AssetEditModal({
 
 export function AssetInfoPanel({ asset, tags = [] }: { asset: MediaAsset; tags?: MediaTag[] }) {
   const assetTags = tags.filter((t) => asset.tagIds.includes(t.id));
+  const assetToken = `asset:${asset.id}`;
 
   return (
     <div className="space-y-1.5 rounded border border-border bg-surface-2/50 p-3 text-[12px] text-ink-muted">
       <div className="font-medium text-ink">{asset.displayName}</div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px]">Data token:</span>
+        <code className="max-w-full truncate rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-ink">
+          {assetToken}
+        </code>
+        <button
+          type="button"
+          className="rounded border border-border px-1.5 py-0.5 text-[10px] text-ink-muted hover:bg-surface hover:text-ink"
+          title="Copy for textfile / Data pipeline (not display name)"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            void (async () => {
+              const ok = await copyTextToClipboard(assetToken);
+              if (!ok) {
+                toast.error('Failed to copy token');
+                return;
+              }
+              toast.success('token copied');
+            })();
+          }}
+        >
+          Copy
+        </button>
+      </div>
+      <div className="font-mono text-[10px] text-ink-faint break-all">id: {asset.id}</div>
       {asset.status === 'processing' && (
         <div className="text-warning">Converting…</div>
       )}

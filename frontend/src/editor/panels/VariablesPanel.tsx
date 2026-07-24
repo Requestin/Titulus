@@ -146,6 +146,39 @@ function VariableRow({ v }: { v: Variable }) {
         />
       </StackedField>
 
+      <StackedField
+        label="Data-driven"
+        hint="Filled by template Data pipeline. Hidden from Control unless Show in Control is on."
+      >
+        <div className="space-y-1.5">
+          <Input
+            value={v.drivenBy ?? ''}
+            onChange={(e) => {
+              const drivenBy = e.target.value.trim();
+              updateVariable(v.id, {
+                drivenBy: drivenBy || undefined,
+                exposed: drivenBy ? (v.exposed === true) : v.exposed,
+              });
+            }}
+            placeholder="pipeline id (e.g. main)"
+            className="font-mono text-[12px]"
+          />
+          <label className="flex items-center gap-2 text-[12px] text-ink-muted">
+            <input
+              type="checkbox"
+              checked={v.exposed !== false && !v.drivenBy ? true : v.exposed === true}
+              onChange={(e) => updateVariable(v.id, { exposed: e.target.checked })}
+            />
+            Show in Control
+            {v.drivenBy && v.exposed !== true && (
+              <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-ink-faint">
+                hidden
+              </span>
+            )}
+          </label>
+        </div>
+      </StackedField>
+
       <StackedField label="Value" hint="Default value.">
         <DefaultValueInput v={v} onChange={(dv) => updateVariable(v.id, { defaultValue: dv })} />
       </StackedField>
@@ -188,7 +221,7 @@ function DefaultValueInput({
         <input
           ref={fileRef}
           type="file"
-          accept={v.type === 'image' ? 'image/*' : v.type === 'video' ? 'video/*' : '.txt,text/plain'}
+          accept={v.type === 'image' ? 'image/*' : v.type === 'video' ? 'video/*' : '.txt,.json,text/plain,application/json'}
           className="hidden"
           onChange={async (e) => {
             const f = e.target.files?.[0];

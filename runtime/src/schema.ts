@@ -74,6 +74,115 @@ export interface Variable {
   max?: number;
   step?: number;
   placeholder?: string;
+  /**
+   * Pipeline id that owns this variable (`template.data.pipelines[].id`).
+   * Editor/Control should treat the value as derived when set.
+   */
+  drivenBy?: string;
+  /**
+   * When false, Control must not show this variable. Default true.
+   * Driven variables typically set `exposed: false`.
+   */
+  exposed?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Template data pipeline (file → parse → select → map → variables)
+// Declarative, designer-owned; Control does not pick rows.
+// ---------------------------------------------------------------------------
+
+/** How to locate a data file path. */
+export type DataPathRef =
+  | { type: 'literal'; value: string }
+  | { type: 'variable'; variableId: string };
+
+export type DataSourceType = 'textfile' | 'jsonfile' | 'inline';
+export type DataSourceFormat = 'lines' | 'delimited' | 'kv' | 'json';
+
+export interface DataSourceOptions {
+  encoding?: 'utf-8';
+  skipEmpty?: boolean;
+  trim?: boolean;
+  commentPrefix?: string;
+  delimiter?: string;
+  hasHeader?: boolean;
+  columns?: string[];
+  kvSeparator?: string;
+  /** JSON Pointer or dotted path to array/object root. Empty = whole document. */
+  rootPath?: string;
+}
+
+export interface DataSource {
+  id: string;
+  label?: string;
+  type: DataSourceType;
+  /** Required for textfile/jsonfile. */
+  path?: DataPathRef;
+  /** Required for inline. */
+  content?: string;
+  format: DataSourceFormat;
+  options?: DataSourceOptions;
+}
+
+export type DataSelect =
+  | { mode: 'first' }
+  | { mode: 'last' }
+  | { mode: 'index'; index: number }
+  | { mode: 'byKey'; key: string; value: string }
+  | { mode: 'match'; key: string; pattern: string }
+  | { mode: 'all' };
+
+export type DataMapAs = 'text' | 'number' | 'image' | 'video' | 'multitext';
+
+export type DataMapTarget = { type: 'variable'; variableId: string };
+
+export type DataValueTransform =
+  | { op: 'trim' }
+  | { op: 'prefix'; value: string }
+  | { op: 'suffix'; value: string }
+  | { op: 'replace'; pattern: string; replacement: string; flags?: string };
+
+export interface DataMapEntry {
+  from: string;
+  to: DataMapTarget;
+  as?: DataMapAs;
+  transform?: DataValueTransform;
+}
+
+export type MediaResolveStrategy = 'assetId' | 'url' | 'path';
+export type DataMissPolicy = 'keep' | 'clear' | 'block';
+
+export interface MediaResolvePolicy {
+  strategy: MediaResolveStrategy[];
+  onMiss?: DataMissPolicy;
+  fallbackUrl?: string;
+}
+
+export interface DataPipelineJoin {
+  field: string;
+  separator?: string;
+}
+
+export interface DataPipeline {
+  id: string;
+  sourceId: string;
+  enabled?: boolean;
+  select: DataSelect;
+  map: DataMapEntry[];
+  join?: DataPipelineJoin;
+  mediaResolve?: MediaResolvePolicy;
+  onEmpty?: DataMissPolicy;
+}
+
+export type DataRunTrigger = 'take' | 'update' | 'load' | 'refresh';
+export type DataOnError = 'block' | 'keep' | 'clear';
+
+export interface TemplateData {
+  version: 1;
+  sources: DataSource[];
+  pipelines: DataPipeline[];
+  runOn?: DataRunTrigger[];
+  onError?: DataOnError;
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +529,11 @@ export interface Template {
   metadata?: TemplateMetadata;
   canvas: Canvas;
   variables: Variable[];
+  /**
+   * Optional designer-owned data pipeline (file → variables).
+   * Absent = legacy template with no internal data binding.
+   */
+  data?: TemplateData;
   groups: LayerGroup[];
   layers: Layer[];
   rootStack: RootStackEntry[];

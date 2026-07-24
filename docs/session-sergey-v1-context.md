@@ -1104,6 +1104,7 @@ Stepper ↑↓, `extraActions` для rotation.
 | Variables | `frontend/src/editor/panels/VariablesPanel.tsx` |
 | Video clip timeline | `frontend/src/editor/videoTimeline.ts`, `TimelinePanel.tsx` (`VideoClipLane`) |
 | Video runtime | `runtime/src/domRenderer.ts` (`syncVideoClipPlayback`) |
+| Template Data pipeline | `runtime/src/dataPipeline.ts`, `frontend/src/core/prepareTemplateData.ts`, `frontend/src/editor/panels/DataPanel.tsx` |
 | MAM posters | `backend/src/mediaLibrary.js` (`_repairMissingPosters`) |
 | Unreal VS | `engine/src/vs/*`, `docs/unreal-vs-mode.md`, `docs/GPU_GATE_unreal_vs.md` |
 | UE Templates | `frontend/src/pages/UeTemplatesPage.tsx`, `backend/src/routes/ueTemplates.js` |
@@ -1162,12 +1163,13 @@ git push -u origin sergey-v1
 
 ## Следующие шаги
 
-1. PR `sergey-v1` → `main` (merge commit): media library + timeline v2 + video clips + Unreal VS foundation.
+1. PR `sergey-v1` → `main` (merge commit): media library + timeline v2 + video clips + Unreal VS + **Data pipeline**.
 2. Ручная проверка timeline (чеклисты v2 + bugfixes + video clip §24 июля).
-3. Проверить axis center + groups на шаблонах с вложенностью и rotation.
-4. DeckLink `EnableVideoOutput` — валидация на железе.
-5. Drag группы на canvas (сейчас только layers).
-6. Unreal VS: HW validation chroma + NDI + Remote Control TAKE; GPU key path if CPU chroma insufficient.
+3. Ручная проверка Data pipeline (parse file, media token, video clip from data).
+4. Проверить axis center + groups на шаблонах с вложенностью и rotation.
+5. DeckLink `EnableVideoOutput` — валидация на железе.
+6. Drag группы на canvas (сейчас только layers).
+7. Unreal VS: HW validation chroma + NDI + Remote Control TAKE; GPU key path if CPU chroma insufficient.
 
 ---
 
@@ -1176,3 +1178,60 @@ git push -u origin sergey-v1
 - Общение на русском.
 - Ветка `sergey-v1`, коммиты по запросу.
 - Короткие commit messages.
+
+---
+
+## 24 июля 2026 — Template Data pipeline (parse file)
+
+Designer-owned pipeline: файл → parse → select row → map → variables. Control **не** выбирает строку.
+
+### Контракт
+
+- `Template.data?: TemplateData` (`version: 1`, `sources[]`, `pipelines[]`, `runOn`, `onError`)
+- Variable: `drivenBy`, `exposed` (driven скрыты в Control, пока `exposed !== true`)
+- Media в файле: **`asset:<uuid>`** (или URL/`/uploads/…`), **не** displayName
+- Schema: `shared/template.schema.json` + `runtime/src/schema.ts`
+- Runtime: `runtime/src/dataPipeline.ts` — `runTemplateData`, parse lines/delimited/kv/json, select, map, mediaResolve
+- Smoke: `cd runtime && npm test` (crawl + data-pipeline)
+
+### Frontend wiring
+
+| Area | Path |
+|---|---|
+| Pre-TAKE helper | `frontend/src/core/prepareTemplateData.ts` (`prepareTemplateForAir`, readFile, resolveMedia) |
+| TAKE/UPDATE | `TemplatesPage.tsx`, `RundownTab.tsx` |
+| Control hide driven | `ControlVariablesPanel.tsx`, `VariableValues.tsx` + `isVariableExposed` |
+| Editor Data tab | `frontend/src/editor/panels/DataPanel.tsx` |
+| Variables driven/exposed | `VariablesPanel.tsx` |
+| Store | `ensureTemplateData` / `setTemplateData` / `patchTemplateData` |
+| Preview + video clips | `CanvasArea.tsx` |
+| Image/Video bind `{ }` | `PropertiesPanel.tsx` (`BindableMediaSrc`) |
+| MAM Copy token | `MediaPickerModal.tsx`, `MediaFileInfo.tsx` → toast **token copied** |
+| Inspector resize | `EditorPage.tsx` — правая панель 260–640px |
+| Columns input | DataPanel `ColumnsInput` — любое число столбцов, trailing comma OK |
+| `/api/files/read` | `.txt` + `.json` (`backend/src/routes/files.js`) |
+
+### Video через Data → timeline
+
+- После resolve video src создаётся/обновляется `videoProgress` clip (`ensureVideoClipsForVariables` / `planVideoClipsForVariables` в `videoTimeline.ts`).
+- Длительность из MAM; **start frame сохраняется**, если файл/индекс строки сменился.
+- То же на TAKE через `prepareTemplateForAir`.
+
+### UX Data (Editor)
+
+1. Variables → типы text/image/video (+ `drivenBy` / Show in Control).
+2. Data → Enable → source (textfile/inline) + format + columns.
+3. Pipeline → select (`first`/`index`/`byKey`/…) + map колонка → variable (`as: image|video|text`).
+4. Layer Image/Video → `{ }` bind к переменной.
+5. В `.txt`: `name|title|photo` с `asset:<uuid>` (Copy из MAM).
+
+### Чеклист
+
+- [ ] Data tab: source + pipeline + Preview pipeline
+- [ ] Columns: `a,b,c,d,…` без потери запятой
+- [ ] Control не показывает driven vars
+- [ ] Copy в MAM → toast «token copied» + clipboard
+- [ ] Image/Video `{ }` bind
+- [ ] Video из data → track на timeline; сдвиг start; смена row → start тот же
+- [ ] Inspector шириной тянется
+- [ ] TAKE с data file + media resolve

@@ -15,6 +15,7 @@ import { CanvasArea } from '@/editor/CanvasArea';
 import { LayersPanel } from '@/editor/panels/LayersPanel';
 import { PropertiesPanel } from '@/editor/panels/PropertiesPanel';
 import { VariablesPanel } from '@/editor/panels/VariablesPanel';
+import { DataPanel } from '@/editor/panels/DataPanel';
 import { TimelinePanel } from '@/editor/panels/TimelinePanel';
 
 export function EditorPage() {
@@ -24,11 +25,13 @@ export function EditorPage() {
   const dirty = useEditor((s) => s.dirty);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<'properties' | 'variables'>('properties');
+  const [tab, setTab] = useState<'properties' | 'variables' | 'data'>('properties');
   const [timelineHeight, setTimelineHeight] = useState(256);
+  const [inspectorWidth, setInspectorWidth] = useState(320);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const allowNavigationRef = useRef(false);
   const timelineResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const inspectorResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,6 +190,26 @@ export function EditorPage() {
     e.currentTarget.releasePointerCapture(e.pointerId);
   }
 
+  function beginInspectorResize(e: ReactPointerEvent<HTMLDivElement>) {
+    inspectorResizeRef.current = { startX: e.clientX, startWidth: inspectorWidth };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
+  function resizeInspector(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = inspectorResizeRef.current;
+    if (!drag) return;
+    // Dragging the left edge: move left → wider panel.
+    const next = drag.startWidth + (drag.startX - e.clientX);
+    setInspectorWidth(Math.min(640, Math.max(260, next)));
+  }
+
+  function endInspectorResize(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!inspectorResizeRef.current) return;
+    inspectorResizeRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }
+
   if (status === 'loading') {
     return <div className="grid h-full place-items-center text-sm text-ink-muted">Loading editor…</div>;
   }
@@ -224,9 +247,22 @@ export function EditorPage() {
           </div>
         </div>
 
-        <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-surface">
+        <aside
+          className="relative flex shrink-0 flex-col border-l border-border bg-surface"
+          style={{ width: inspectorWidth }}
+        >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize inspector"
+            className="absolute -left-1 top-0 bottom-0 z-sticky w-2 cursor-col-resize transition-colors hover:bg-primary/30"
+            onPointerDown={beginInspectorResize}
+            onPointerMove={resizeInspector}
+            onPointerUp={endInspectorResize}
+            onPointerCancel={endInspectorResize}
+          />
           <div className="flex shrink-0 border-b border-border">
-            {(['properties', 'variables'] as const).map((t) => (
+            {(['properties', 'variables', 'data'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -240,7 +276,7 @@ export function EditorPage() {
             ))}
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
-            {tab === 'properties' ? <PropertiesPanel /> : <VariablesPanel />}
+            {tab === 'properties' ? <PropertiesPanel /> : tab === 'variables' ? <VariablesPanel /> : <DataPanel />}
           </div>
         </aside>
       </div>

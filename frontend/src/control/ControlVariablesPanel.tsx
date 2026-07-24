@@ -5,6 +5,7 @@ import { Field, Input, NumberInput, ColorInput } from '@/components/ui/form';
 import { MediaUploadButton } from '@/editor/MediaUploadButton';
 import { api, type DataElement } from '@/core/api';
 import { toast } from '@/core/toast';
+import { exposedVariables } from '@/core/prepareTemplateData';
 import { cn } from '@/lib/cn';
 
 export type VarsSelection =
@@ -59,12 +60,13 @@ function VarsEditor({
   onChange: (id: string, v: string | number) => void;
   disabled?: boolean;
 }) {
-  if (variables.length === 0) {
-    return <p className="text-[12px] text-ink-faint">This template has no variables.</p>;
+  const visible = exposedVariables(variables);
+  if (visible.length === 0) {
+    return <p className="text-[12px] text-ink-faint">This template has no operator variables.</p>;
   }
   return (
     <div className="space-y-2">
-      {variables.map((v) => (
+      {visible.map((v) => (
         <Field key={v.id} label={v.label || v.name}>
           {v.type === 'number' ? (
             <NumberInput
@@ -89,7 +91,7 @@ function VarsEditor({
               />
               {!disabled && (
                 <MediaUploadButton
-                  accept={v.type === 'video' ? 'video/*' : v.type === 'textfile' ? '.txt,text/plain' : 'image/*'}
+                  accept={v.type === 'video' ? 'video/*' : v.type === 'textfile' ? '.txt,text/plain,.json,application/json' : 'image/*'}
                   onUploaded={(url) => onChange(v.id, url)}
                   label={v.type === 'video' ? 'Upload video' : v.type === 'textfile' ? 'Upload TextFile' : 'Upload image'}
                 />

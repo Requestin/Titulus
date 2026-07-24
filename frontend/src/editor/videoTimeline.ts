@@ -2,11 +2,14 @@
 // Place / move video clips on the default (or current) director via videoProgress tracks.
 
 import {
+  extractAssetId,
+  resolveBinding,
   timelineTrackKey,
   type Template,
   type TimelineKeyframe,
   type VideoLayer,
 } from '@runtime';
+import { api } from '@/core/api';
 import { createId } from '@/core/id';
 
 function kfAt(t: Template, frame: number): TimelineKeyframe {
@@ -130,4 +133,102 @@ export function moveVideoClip(
 
   placeVideoClipOnTimeline(template, layer, duration, { startFrame: nextStart, directorId });
   return true;
+}
+
+/** Resolve media duration in timeline frames (template fps). */
+export async function resolveVideoDurationFrames(
+  src: string,
+  timelineFps: number,
+  fallbackFrames?: number,
+): Promise<number> {
+  const fps = Math.max(1, timelineFps || 50);
+  const fallback = fallbackFrames && fallbackFrames > 0
+    ? Math.max(1, Math.round(fallbackFrames))
+    : Math.round(fps * 5);
+
+  const trimmed = src.trim();
+  if (!trimmed) return fallback;
+
+  try {
+    const id = extractAssetId(trimmed);
+    const asset = id
+      ? await api.media.get(id)
+      : await api.media.lookup(trimmed);
+    if (asset.type === 'video') {
+      if (asset.durationSec != null && asset.durationSec > 0) {
+        return Math.max(1, Math.round(asset.durationSec * fps));
+      }
+      if (asset.durationFrames != null && asset.durationFrames > 0) {
+        const srcFps = Math.max(1, asset.fps || fps);
+        return Math.max(1, Math.round(asset.durationFrames * (fps / srcFps)));
+      }
+    }
+  } catch {
+    // keep fallback
+  }
+  return fallback;
+}
+
+export function videoClipNeedsUpdate(
+  template: Template,
+  layer: VideoLayer,
+  durationFrames: number,
+): boolean {
+  const dur = Math.max(1, Math.round(durationFrames));
+  const win = getVideoClipWindow(template, layer.id);
+  if (!win) return true;
+  if (win.end - win.start !== dur) return true;
+  if (layer.durationFrames !== dur) return true;
+  return false;
+}
+
+export interface VideoClipPlanItem {
+  layerId: string;
+  durationFrames: number;
+}
+
+/**
+ * Build a plan of video layers that need a (re)placed clip for the resolved src.
+ * Start frame is preserved by placeVideoClipOnTimeline when applying.
+ */
+export async function planVideoClipsForVariables(
+  template: Template,
+  variables: Record<string, string | number>,
+): Promise<VideoClipPlanItem[]> {
+  const fps = template.timeline.fps || 50;
+  const plan: VideoClipPlanItem[] = [];
+  for (const layer of template.layers) {
+    if (layer.type !== 'video') continue;
+    const src = String(resolveBinding(layer.src, variables, '')).trim();
+    if (!src) continue;
+    const durationFrames = await resolveVideoDurationFrames(src, fps, layer.durationFrames);
+    if (!videoClipNeedsUpdate(template, layer, durationFrames)) continue;
+    plan.push({ layerId: layer.id, durationFrames });
+  }
+  return plan;
+}
+
+/** Apply a plan in-place. Keeps existing clip start when re-placing. */
+export function applyVideoClipPlan(template: Template, plan: VideoClipPlanItem[]): boolean {
+  if (plan.length === 0) return false;
+  let mutated = false;
+  for (const item of plan) {
+    const layer = template.layers.find((l) => l.id === item.layerId && l.type === 'video') as VideoLayer | undefined;
+    if (!layer) continue;
+    placeVideoClipOnTimeline(template, layer, item.durationFrames);
+    mutated = true;
+  }
+  return mutated;
+}
+
+/**
+ * Ensure every video layer with a resolved src has a movable videoProgress clip.
+ * Re-places when duration changes; keeps prior start frame.
+ */
+export async function ensureVideoClipsForVariables(
+  template: Template,
+  variables: Record<string, string | number>,
+): Promise<boolean> {
+  const plan = await planVideoClipsForVariables(template, variables);
+  return applyVideoClipPlan(template, plan);
 }
