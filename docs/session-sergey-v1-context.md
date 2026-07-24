@@ -49,7 +49,7 @@
 | `730bc45` | 17 июл | `fix(editor): ignore endScene; Stop freezes playhead in place` |
 | `58c381e` | 17 июл | `add actions, continue,update` (perf + classic playback gate + session context) |
 | `05b4fe0` | 21 июл | `fix perfomance issue` (SDI smooth + web/editor fractional playback) |
-| *(HEAD)* | 24 июл | `video on timeline, UE path` |
+| `ee6d30c` | 24 июл | `video on timeline, UE path` |
 
 ---
 
