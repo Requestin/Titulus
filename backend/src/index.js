@@ -24,6 +24,7 @@ import { authRouter } from './routes/auth.js';
 import { auditRouter } from './routes/audit.js';
 import { billingRouter } from './routes/billing.js';
 import { templatesRouter } from './routes/templates.js';
+import { templateFoldersRouter } from './routes/templateFolders.js';
 import { channelsRouter } from './routes/channels.js';
 import { rundownsRouter } from './routes/rundowns.js';
 import { dataElementsRouter } from './routes/dataElements.js';
@@ -109,6 +110,7 @@ app.use('/api/auth', authRouter(auth));
 app.use('/api/billing', billingRouter(db, auth));
 app.use('/api/audit', auth.requireAuth, auth.requireRole('admin'), auditRouter(audit));
 app.use('/api/templates', auth.requireAuth, templatesRouter(db, dataElementsDb));
+app.use('/api/template-folders', auth.requireAuth, templateFoldersRouter(db));
 app.use('/api/channels', auth.requireAuth, auth.requireRole('admin'), channelsRouter(db));
 // Unreal pad invoke: operators need it on Control; pad CRUD still admin via channels PUT.
 app.use('/api/unreal', auth.requireAuth, unrealRouter(db));

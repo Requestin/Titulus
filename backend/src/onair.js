@@ -100,12 +100,14 @@ export class OnAirManager {
     const stored = this.dao.get(cmd.channelId, cmd.templateId);
     if (!stored) return; // update for something not on air -> ignore
     // Replace-all variables; optional slot ownership transfer for rundown UI.
+    // Clear waitingContinue — renderer re-reports after Update flow starts/settles.
     const next = {
       ...stored,
       variables: cmd.variables && typeof cmd.variables === 'object' ? cmd.variables : (stored.variables || {}),
       ...(cmd.template ? { template: cmd.template } : {}),
       ...(cmd.slotId !== undefined ? { slotId: cmd.slotId } : {}),
     };
+    delete next.waitingContinue;
     this.dao.set(next, { bringToFront: true });
     const arr = this.state[cmd.channelId] || [];
     const idx = arr.findIndex((c) => c.templateId === cmd.templateId);

@@ -42,10 +42,14 @@ export function applyTransform(
 
   const parts: string[] = [];
   const usePerspective = !opts?.skipPerspective && t.perspective > 0
-    && (t.rotationX !== 0 || t.rotationY !== 0);
+    && (t.rotationX !== 0 || t.rotationY !== 0 || (t.z ?? 0) !== 0);
   if (usePerspective) {
     parts.push(`perspective(${t.perspective}px)`);
   }
+  // translateZ after perspective in the written list → applied after local
+  // rotates (CSS right-to-left), i.e. scene-depth push that separates planes.
+  const z = t.z ?? 0;
+  if (z !== 0) parts.push(`translateZ(${z}px)`);
   if (t.rotationX !== 0) parts.push(`rotateX(${t.rotationX}deg)`);
   if (t.rotationY !== 0) parts.push(`rotateY(${t.rotationY}deg)`);
   if (t.rotation !== 0) parts.push(`rotate(${t.rotation}deg)`);
@@ -82,13 +86,14 @@ export function anchorCompensatedUpdate(
 }
 
 /**
- * True when the transform uses real 2.5D tilt (rotationX/Y).
+ * True when the transform needs a shared 3D rendering context (preserve-3d).
  * Default `perspective: 1000` alone is NOT 3D — treating it as such forced
  * `preserve-3d` on every layer and broke CSS `scale()` under CEF CPU raster
  * (editor GPU path still looked fine; SDI/engine did not).
+ * Non-zero `z` also opts in so translateZ can separate siblings.
  */
 export function transformHas3D(t: Transform): boolean {
-  return t.rotationX !== 0 || t.rotationY !== 0;
+  return t.rotationX !== 0 || t.rotationY !== 0 || (t.z ?? 0) !== 0;
 }
 
 /** CSS blend-mode string for a layer. */

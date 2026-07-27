@@ -28,12 +28,15 @@ export type EasingType =
 /**
  * Anchor-aware 2D/3D transform. `x`,`y` are canvas pixels of the layer's
  * top-left (before the anchor offset); `anchorX/Y` are a 0..1 pivot inside the
- * layer box used for rotation/scale. `perspective` (px) enables 3D rotation
- * (rotationX/rotationY) — 0 disables 3D.
+ * layer box used for rotation/scale. `z` is CSS `translateZ` (px) for 2.5D
+ * depth separation. `perspective` (px) enables 3D rotation (rotationX/Y);
+ * 0 disables perspective on the element (parent may still provide it).
  */
 export interface Transform {
   x: number;
   y: number;
+  /** CSS translateZ in px — separates tilted planes in a preserve-3d scene. */
+  z: number;
   width: number;
   height: number;
   rotation: number;   // degrees, Z axis
@@ -376,7 +379,7 @@ export type LayerType = Layer['type'];
  * by id without a per-property field.
  */
 export const ANIMATABLE_PROPS = [
-  'x', 'y', 'width', 'height',
+  'x', 'y', 'z', 'width', 'height',
   'rotation', 'rotationX', 'rotationY', 'perspective',
   'scaleX', 'scaleY',
   'opacity',
@@ -562,6 +565,7 @@ export function createDefaultTransform(x = 100, y = 100): Transform {
   return {
     x,
     y,
+    z: 0,
     width: 300,
     height: 80,
     rotation: 0,
@@ -831,8 +835,25 @@ export function normalizeTextStyle(style: TextStyle): TextStyle {
   return next;
 }
 
+/** Soft-migrate Transform: fill missing `z` (pre-translateZ templates). */
+export function normalizeTransform(t: Transform): Transform {
+  if (typeof t.z === 'number' && Number.isFinite(t.z)) return t;
+  return { ...t, z: 0 };
+}
+
+/** Normalize transforms on a loaded template (in-place). */
+export function normalizeTemplateTransforms(template: Template): void {
+  for (const layer of template.layers) {
+    layer.transform = normalizeTransform(layer.transform);
+  }
+  for (const g of template.groups) {
+    g.transform = normalizeTransform(g.transform);
+  }
+}
+
 /** Normalize text/clock/crawl layer styles on a loaded template (in-place). */
 export function normalizeTemplateTextStyles(template: Template): void {
+  normalizeTemplateTransforms(template);
   for (const layer of template.layers) {
     if (layer.type === 'text' || layer.type === 'clock' || layer.type === 'crawl') {
       layer.style = normalizeTextStyle(layer.style);

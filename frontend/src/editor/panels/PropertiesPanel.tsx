@@ -428,6 +428,7 @@ function PositionSection({
     <Section title="Position">
       <LabeledNum label="X" value={t.x} resetValue={0} onChange={(v) => set({ x: v })} />
       <LabeledNum label="Y" value={t.y} resetValue={0} onChange={(v) => set({ y: v })} />
+      <LabeledNum label="Z" value={t.z ?? 0} resetValue={0} onChange={(v) => set({ z: v })} />
 
       <div className="pt-1">
         <h4 className="mb-2 text-[11px] font-semibold text-ink-faint">Rotation</h4>

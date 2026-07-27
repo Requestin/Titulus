@@ -24,7 +24,10 @@ export function dataElementsRouter(deDb) {
 
   router.get('/', (req, res) => {
     const sort = req.query.sort === 'name' ? 'name' : 'updated';
-    res.json(dao.all({ sort }));
+    const templateId = typeof req.query.templateId === 'string' ? req.query.templateId.trim() : '';
+    const all = dao.all({ sort });
+    if (!templateId) return res.json(all);
+    res.json(all.filter((de) => de.templateId === templateId));
   });
 
   router.post('/', (req, res) => {

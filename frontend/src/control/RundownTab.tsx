@@ -18,6 +18,7 @@ import {
   type OnAirSnapshot,
   type Rundown,
   type RundownSlot,
+  type TemplateFolder,
   type TemplateRecord,
   type TemplateSummary,
 } from '@/core/api';
@@ -47,6 +48,12 @@ type SendControl = (cmd: {
 }) => boolean;
 
 type SidebarMode = 'rundowns' | 'templates' | 'dataElements';
+const ALL_FOLDER = '__all__';
+const ALL_TEMPLATE = '__all__';
+
+function templateFolderIdOf(t: TemplateSummary): string | null {
+  return t.folderId ?? t.folder_id ?? null;
+}
 
 const LAST_RUNDOWN_KEY = (channelId: string) => `titulus.control.lastRundown.${channelId}`;
 const SIDEBAR_WIDTH_KEY = 'titulus.control.sidebarWidth';
@@ -84,6 +91,9 @@ export function RundownTab({
   send: SendControl;
 }) {
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('rundowns');
+  const [folders, setFolders] = useState<TemplateFolder[]>([]);
+  const [sidebarFolderId, setSidebarFolderId] = useState<string>(ALL_FOLDER);
+  const [sidebarTemplateId, setSidebarTemplateId] = useState<string>(ALL_TEMPLATE);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [focusIdx, setFocusIdx] = useState(0);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -123,10 +133,6 @@ export function RundownTab({
       .map((s) => s.slotId),
   );
   const deById = useMemo(() => new Map(dataElements.map((d) => [d.id, d])), [dataElements]);
-  const templatesSorted = useMemo(
-    () => [...templates].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
-    [templates],
-  );
 
   const reloadDataElements = useCallback(async (sort: 'updated' | 'name' = deSort) => {
     try {
@@ -139,6 +145,35 @@ export function RundownTab({
   useEffect(() => {
     void reloadDataElements(deSort);
   }, [reloadDataElements, deSort]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setFolders(await api.templateFolders.list());
+      } catch {
+        setFolders([]);
+      }
+    })();
+  }, []);
+
+  const templatesInFolder = useMemo(() => {
+    if (sidebarFolderId === ALL_FOLDER) return templates;
+    return templates.filter((t) => templateFolderIdOf(t) === sidebarFolderId);
+  }, [templates, sidebarFolderId]);
+
+  const templatesSorted = useMemo(
+    () => [...templatesInFolder].sort((a, b) => a.name.localeCompare(b.name)),
+    [templatesInFolder],
+  );
+
+  const filteredDataElements = useMemo(() => {
+    const allowedTpl = new Set(templatesInFolder.map((t) => t.id));
+    let list = dataElements.filter((de) => allowedTpl.has(de.templateId));
+    if (sidebarTemplateId !== ALL_TEMPLATE) {
+      list = list.filter((de) => de.templateId === sidebarTemplateId);
+    }
+    return list;
+  }, [dataElements, templatesInFolder, sidebarTemplateId]);
 
   // Restore last rundown when channel changes.
   useEffect(() => {
@@ -195,10 +230,20 @@ export function RundownTab({
     setDeSelectedIds(new Set());
     setDeAnchorId(null);
     setDeDeleteIds(null);
+    setSidebarFolderId(ALL_FOLDER);
+    setSidebarTemplateId(ALL_TEMPLATE);
     if (sidebarMode !== 'rundowns') {
       setVarsSelection({ kind: 'none' });
     }
   }, [sidebarMode]);
+
+  useEffect(() => {
+    // Keep template filter valid when folder changes.
+    if (sidebarTemplateId === ALL_TEMPLATE) return;
+    if (!templatesInFolder.some((t) => t.id === sidebarTemplateId)) {
+      setSidebarTemplateId(ALL_TEMPLATE);
+    }
+  }, [sidebarFolderId, templatesInFolder, sidebarTemplateId]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -291,9 +336,14 @@ export function RundownTab({
     return tplMissing || deMissing;
   }
 
-  function slotDisplayName(slot: RundownSlot): string {
-    if (slot.kind === 'ue') return `UE · ${slot.name}`;
-    return templates.find((t) => t.id === slot.templateId)?.name ?? slot.name;
+  function slotDisplayName(slot: RundownSlot): { primary: string; secondary: string | null } {
+    if (slot.kind === 'ue') return { primary: slot.name, secondary: 'UE' };
+    const tplName = templates.find((t) => t.id === slot.templateId)?.name ?? slot.templateId;
+    if (slot.dataElementId) {
+      const deName = deById.get(slot.dataElementId)?.name ?? slot.name;
+      return { primary: deName, secondary: tplName };
+    }
+    return { primary: '<template>', secondary: tplName };
   }
 
   function patchOnAir(nextChannelId: string, updater: (cur: OnAirSnapshot[string]) => OnAirSnapshot[string]) {
@@ -356,7 +406,9 @@ export function RundownTab({
         });
         if (!ok) return toast.error('Control socket disconnected');
         patchOnAir(channelId, (cur) => cur.map((e) => (
-          e.templateId === slot.templateId ? { templateId: slot.templateId, slotId: slot.slotId } : e
+          e.templateId === slot.templateId
+            ? { ...e, templateId: slot.templateId, slotId: slot.slotId, waitingContinue: false }
+            : e
         )));
         return;
       }
@@ -742,23 +794,63 @@ export function RundownTab({
           )}
 
           {sidebarMode === 'templates' && (
-            <div className="space-y-0.5">
-              {templatesSorted.map((t) => (
-                <DraggableTemplateRow
-                  key={t.id}
-                  template={t}
-                  selected={selectedSidebarId === t.id && varsSelection.kind === 'template'}
-                  onSelect={() => void selectTemplate(t)}
-                />
-              ))}
-              {templatesSorted.length === 0 && (
-                <p className="px-2 py-6 text-center text-[12px] text-ink-faint">No templates.</p>
-              )}
+            <div className="space-y-1.5 px-1 pt-1">
+              <Select
+                value={sidebarFolderId}
+                onChange={(e) => setSidebarFolderId(e.target.value)}
+                className="w-full"
+                aria-label="Template folder"
+              >
+                <option value={ALL_FOLDER}>&lt;All&gt;</option>
+                {folders.map((f) => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </Select>
+              <div className="space-y-0.5">
+                {templatesSorted.map((t) => (
+                  <DraggableTemplateRow
+                    key={t.id}
+                    template={t}
+                    selected={selectedSidebarId === t.id && varsSelection.kind === 'template'}
+                    onSelect={() => void selectTemplate(t)}
+                  />
+                ))}
+                {templatesSorted.length === 0 && (
+                  <p className="px-2 py-6 text-center text-[12px] text-ink-faint">No templates.</p>
+                )}
+              </div>
             </div>
           )}
 
           {sidebarMode === 'dataElements' && (
             <>
+              <div className="space-y-1.5 px-1 pt-1">
+                <Select
+                  value={sidebarFolderId}
+                  onChange={(e) => {
+                    setSidebarFolderId(e.target.value);
+                    setSidebarTemplateId(ALL_TEMPLATE);
+                  }}
+                  className="w-full"
+                  aria-label="Data element folder"
+                >
+                  <option value={ALL_FOLDER}>&lt;All&gt;</option>
+                  {folders.map((f) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </Select>
+                <Select
+                  value={sidebarTemplateId}
+                  onChange={(e) => setSidebarTemplateId(e.target.value)}
+                  className="w-full"
+                  aria-label="Data element template"
+                >
+                  <option value={ALL_TEMPLATE}>&lt;All templates&gt;</option>
+                  {templatesSorted.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </Select>
+              </div>
               <div className="mb-1 grid grid-cols-[1fr_72px_28px] gap-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-ink-faint">
                 <button
                   type="button"
@@ -777,7 +869,7 @@ export function RundownTab({
                 <span aria-hidden />
               </div>
               <div className="space-y-0.5">
-                {dataElements.map((de) => (
+                {filteredDataElements.map((de) => (
                   <DraggableDataElementRow
                     key={de.id}
                     dataElement={de}
@@ -787,7 +879,7 @@ export function RundownTab({
                     onDelete={() => requestDeleteDataElements([de.id])}
                   />
                 ))}
-                {dataElements.length === 0 && (
+                {filteredDataElements.length === 0 && (
                   <p className="px-2 py-6 text-center text-[12px] text-ink-faint">No data elements.</p>
                 )}
               </div>
@@ -879,11 +971,16 @@ export function RundownTab({
                   ? active?.slots.find((s) => s.slotId === entry.slotId)
                   : active?.slots.find((s) => s.templateId === tid && ownerByTemplate.get(tid) === s.slotId);
                 const label = slot
-                  ? (slotMissing(slot) ? 'NOT FOUND IN DB' : slotDisplayName(slot))
-                  : (templates.find((t) => t.id === tid)?.name ?? tid);
+                  ? (slotMissing(slot) ? { primary: 'NOT FOUND IN DB', secondary: null as string | null } : slotDisplayName(slot))
+                  : { primary: templates.find((t) => t.id === tid)?.name ?? tid, secondary: null as string | null };
                 return (
                   <li key={`${tid}:${entry.slotId ?? ''}`} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
-                    <span className={cn('min-w-0 flex-1 truncate text-[13px]', slot && slotMissing(slot) && 'font-semibold text-live')}>{label}</span>
+                    <span className={cn('min-w-0 flex-1', slot && slotMissing(slot) && 'font-semibold text-live')}>
+                      <span className="block truncate text-[13px] font-semibold">{label.primary}</span>
+                      {label.secondary && (
+                        <span className="block truncate text-[11px] text-ink-faint">{label.secondary}</span>
+                      )}
+                    </span>
                     <button
                       type="button"
                       onClick={() => clearSlot(entry.slotId ?? tid)}
@@ -1149,7 +1246,7 @@ function SortableSlotRow({
   onClear,
 }: {
   slot: RundownSlot;
-  displayName: string;
+  displayName: { primary: string; secondary: string | null };
   focused: boolean;
   live: boolean;
   waitingContinue: boolean;
@@ -1184,11 +1281,11 @@ function SortableSlotRow({
           <GripVertical className="h-3.5 w-3.5" aria-hidden />
         </button>
         <button type="button" className="min-w-0 flex-1 text-left" onClick={onFocus}>
-          <div className={cn('truncate text-sm font-medium', missing && 'text-live')}>
-            {missing ? 'NOT FOUND IN DB' : displayName}
+          <div className={cn('truncate text-sm font-semibold', missing && 'text-live')}>
+            {missing ? 'NOT FOUND IN DB' : displayName.primary}
           </div>
-          {!missing && slot.name !== displayName && (
-            <div className="truncate text-[11px] text-ink-faint">{slot.name}</div>
+          {!missing && displayName.secondary && (
+            <div className="truncate text-[11px] text-ink-faint">{displayName.secondary}</div>
           )}
         </button>
         <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', live ? 'bg-live text-primary-ink' : focused ? 'bg-primary/20 text-primary' : 'bg-surface-2 text-ink-muted')}>

@@ -132,8 +132,11 @@ function transformCorner(
   x *= t.scaleX;
   y *= t.scaleY;
 
+  // Match CSS order: translateZ applied after local rotates/scale.
+  z += t.z ?? 0;
+
   const persp = t.perspective > 0 ? t.perspective : 1000;
-  if (t.rotationX !== 0 || t.rotationY !== 0) {
+  if (t.rotationX !== 0 || t.rotationY !== 0 || (t.z ?? 0) !== 0) {
     const scale = persp / (persp - z);
     x *= scale;
     y *= scale;

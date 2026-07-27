@@ -1235,3 +1235,70 @@ Designer-owned pipeline: файл → parse → select row → map → variables
 - [ ] Video из data → track на timeline; сдвиг start; смена row → start тот же
 - [ ] Inspector шириной тянется
 - [ ] TAKE с data file + media resolve
+
+---
+
+## 27 июля 2026 — Template folders, translateZ (2.5D), UI polish, validation
+
+### Template folders (one-level)
+
+- Backend: `template_folders` + `templates.folder_id` (`backend/src/db.js`, migration `ensureTemplateFolders`)
+- REST: `backend/src/routes/templateFolders.js` → `/api/template-folders`
+- Templates REST: `folderId` на create/update/list (`?folderId=`, `__none__` = unfiled)
+- Frontend API: `api.templateFolders.*`, `folderId` на summaries
+- **Templates page:** левая колонка папок, `<All>`, `+` Create new folder, DnD шаблонов в папку (и на `<All>` — снять с папки)
+- Новый шаблон без папки при `<All>`; в выбранной папке — создаётся в ней
+- Сортировка: **Modified / Name** + кнопка направления (localStorage `titulus.templates.sortBy/sortDir`)
+- View toggle: icons / list; pencil rename слева от copy
+- **Control → Templates:** dropdown папок (default `<All>`)
+- **Control → DataElements:** dropdown папки + dropdown шаблонов → фильтр DE
+
+### translateZ (ось Z, 2.5D depth)
+
+- `Transform.z` (px) — CSS `translateZ`; schema + `ANIMATABLE_PROPS` + timeline track `translateZ`
+- `runtime/src/transform.ts`: `translateZ(z)` в цепочке; `transformHas3D` true при `z ≠ 0`
+- `normalizeTransform` / `normalizeTemplateTransforms` — legacy templates `z: 0`
+- UI: Properties → Position → **Z** (рядом с X/Y)
+- `maskGeometry.ts`: учёт Z в projected clip-path
+- **Пересборка runtime обязательна:** `cd runtime && npm run build` + restart backend
+
+### Rundown / Continue
+
+- Slot labels: DE → крупно имя DE, мелко template; direct template → `<template>` / имя
+- Continue после Update (2-й dataelement): `startUpdateFlow` re-emit waiting; `applyUpdate` clears `waitingContinue`; optimistic patch сохраняет поля on-air
+
+### Template validation (Save)
+
+- `/api/templates/validate` → **200** `{ valid, errors }` (не 422)
+- Подробные сообщения: `path: message` в toast + `console.warn`
+- `templateValidationErrorPayload` — summary в message для PUT
+- **Restart backend** после schema changes (иначе `z` rejected как unknown property)
+
+### Timeline UX
+
+- Zoom +/- центрируется на **global playhead** (`TimelinePanel.tsx`, `pendingScrollLeft` + `useLayoutEffect`)
+
+### Backend fix (dev-start)
+
+- Роут `templateFolders` был подключён без `templateFoldersDao` в `db.js` → backend crash; восстановлен DAO + migration
+
+### Файлы (ключевые)
+
+| Area | Path |
+|---|---|
+| Folders DAO | `backend/src/db.js` |
+| Folders routes | `backend/src/routes/templateFolders.js` |
+| Validation | `backend/src/templateValidation.js`, `frontend/src/pages/EditorPage.tsx` |
+| translateZ | `runtime/src/schema.ts`, `transform.ts`, `maskGeometry.ts`, `PropertiesPanel.tsx` |
+| Templates UI | `frontend/src/pages/TemplatesPage.tsx` |
+| Control filters | `frontend/src/control/RundownTab.tsx` |
+| Timeline zoom | `frontend/src/editor/panels/TimelinePanel.tsx` |
+
+### Чеклист
+
+- [ ] `./dev-start.sh` поднимается (backend healthy)
+- [ ] Templates: folders, DnD, sort, list/icons, rename
+- [ ] Control: folder filters Templates + DataElements
+- [ ] Editor: Z разносит tilted layers; Save старых шаблонов OK после backend restart
+- [ ] Continue после Update на 2-м dataelement
+- [ ] Timeline zoom in/out держит playhead в центре viewport

@@ -125,6 +125,7 @@ export function collectDirectorTree(template: Template): Array<{ directorId: str
 
 export function trackPropLabel(prop: AnimatableProp): string {
   const labels: Partial<Record<AnimatableProp, string>> = {
+    z: 'translateZ',
     rotation: 'rotationZ',
     rotationX: 'rotationX',
     rotationY: 'rotationY',

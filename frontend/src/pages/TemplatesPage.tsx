@@ -3,20 +3,24 @@
 // Templates hub: EDITOR (library + open editor) | PLAY (operator TAKE/UPDATE/CLEAR
 // for templates — formerly Control → Templates tab).
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Loader2, LayoutTemplate, Copy, Radio, X } from 'lucide-react';
+import {
+  Plus, Trash2, Loader2, LayoutTemplate, Copy, Radio, X, Pencil, Folder, List, LayoutGrid,
+  ArrowDownAZ, ArrowUpAZ, ArrowDownNarrowWide, ArrowUpNarrowWide,
+} from 'lucide-react';
 import { createDefaultTemplate, isUpdateDirectorArmed } from '@runtime';
 import {
   api,
   type Channel,
   type TemplateSummary,
   type TemplateRecord,
+  type TemplateFolder,
   type OnAirSnapshot,
 } from '@/core/api';
 import { createId } from '@/core/id';
 import { Button } from '@/components/ui/Button';
-import { Select } from '@/components/ui/form';
+import { Input, Select } from '@/components/ui/form';
 import { toast } from '@/core/toast';
 import { useControlWs } from '@/core/controlWs';
 import { crawlFileErrorMessage } from '@/core/crawlFile';
@@ -27,6 +31,33 @@ import { TemplatesTab } from '@/control/TemplatesTab';
 import { BrowserSourceUrl, WsBadge } from '@/control/controlShared';
 
 type TemplatesMode = 'editor' | 'play';
+type LibraryView = 'icons' | 'list';
+type LibrarySortBy = 'modified' | 'name';
+type LibrarySortDir = 'asc' | 'desc';
+const ALL_FOLDER = '__all__';
+const VIEW_KEY = 'titulus.templates.view';
+const SORT_BY_KEY = 'titulus.templates.sortBy';
+const SORT_DIR_KEY = 'titulus.templates.sortDir';
+
+function templateFolderId(t: TemplateSummary): string | null {
+  return t.folderId ?? t.folder_id ?? null;
+}
+
+function readSortBy(): LibrarySortBy {
+  try {
+    return localStorage.getItem(SORT_BY_KEY) === 'name' ? 'name' : 'modified';
+  } catch {
+    return 'modified';
+  }
+}
+
+function readSortDir(): LibrarySortDir {
+  try {
+    return localStorage.getItem(SORT_DIR_KEY) === 'asc' ? 'asc' : 'desc';
+  } catch {
+    return 'desc';
+  }
+}
 
 export function TemplatesPage() {
   const [mode, setMode] = useState<TemplatesMode>('editor');
@@ -80,13 +111,34 @@ function ModeToggle({ mode, onChange }: { mode: TemplatesMode; onChange: (m: Tem
 function EditorLibrary() {
   const nav = useNavigate();
   const [items, setItems] = useState<TemplateSummary[] | null>(null);
+  const [folders, setFolders] = useState<TemplateFolder[]>([]);
+  const [folderFilter, setFolderFilter] = useState<string>(ALL_FOLDER);
+  const [view, setView] = useState<LibraryView>(() => {
+    try {
+      return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'icons';
+    } catch {
+      return 'icons';
+    }
+  });
+  const [sortBy, setSortBy] = useState<LibrarySortBy>(readSortBy);
+  const [sortDir, setSortDir] = useState<LibrarySortDir>(readSortDir);
   const [creating, setCreating] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [folderModal, setFolderModal] = useState(false);
+  const [folderName, setFolderName] = useState('');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameVal, setRenameVal] = useState('');
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setItems(await api.templates.list());
+      const [tpls, flds] = await Promise.all([
+        api.templates.list(),
+        api.templateFolders.list(),
+      ]);
+      setItems(tpls);
+      setFolders(flds);
     } catch (e) {
       toast.error(`Failed to load templates: ${(e as Error).message}`);
       setItems([]);
@@ -97,10 +149,56 @@ function EditorLibrary() {
     void load();
   }, [load]);
 
+  const visible = useMemo(() => {
+    if (!items) return [];
+    const filtered = folderFilter === ALL_FOLDER
+      ? [...items]
+      : items.filter((t) => templateFolderId(t) === folderFilter);
+    const dir = sortDir === 'asc' ? 1 : -1;
+    filtered.sort((a, b) => {
+      if (sortBy === 'name') {
+        const cmp = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+        return cmp * dir;
+      }
+      const ta = Date.parse(a.updated_at) || 0;
+      const tb = Date.parse(b.updated_at) || 0;
+      if (ta !== tb) return (ta - tb) * dir;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) * dir;
+    });
+    return filtered;
+  }, [items, folderFilter, sortBy, sortDir]);
+
+  function setViewMode(next: LibraryView) {
+    setView(next);
+    try { localStorage.setItem(VIEW_KEY, next); } catch { /* ignore */ }
+  }
+
+  function setSortByMode(next: LibrarySortBy) {
+    setSortBy(next);
+    try { localStorage.setItem(SORT_BY_KEY, next); } catch { /* ignore */ }
+  }
+
+  function toggleSortDir() {
+    setSortDir((prev) => {
+      const next: LibrarySortDir = prev === 'asc' ? 'desc' : 'asc';
+      try { localStorage.setItem(SORT_DIR_KEY, next); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  const sortDirTitle = sortBy === 'name'
+    ? (sortDir === 'asc' ? 'Name A → Z' : 'Name Z → A')
+    : (sortDir === 'asc' ? 'Oldest first' : 'Newest first');
+
+  const SortDirIcon = sortBy === 'name'
+    ? (sortDir === 'asc' ? ArrowDownAZ : ArrowUpAZ)
+    : (sortDir === 'asc' ? ArrowUpNarrowWide : ArrowDownNarrowWide);
+
   async function create() {
     setCreating(true);
     try {
-      const rec = await api.templates.create('Untitled template', createDefaultTemplate());
+      const folderId = folderFilter !== ALL_FOLDER ? folderFilter : null;
+      const rec = await api.templates.create('Untitled template', createDefaultTemplate(), folderId);
       nav(`/editor/${rec.id}`);
     } catch (e) {
       toast.error(`Create failed: ${(e as Error).message}`);
@@ -117,7 +215,7 @@ function EditorLibrary() {
       const data = structuredClone(rec.data);
       data.id = createId();
       data.name = copyName;
-      const created = await api.templates.create(copyName, data);
+      const created = await api.templates.create(copyName, data, templateFolderId(rec));
       setItems((cur) => [...(cur ?? []), created]);
       toast.success(`Copied as "${copyName}"`);
     } catch (e) {
@@ -140,98 +238,217 @@ function EditorLibrary() {
     }
   }
 
-  return (
-    <div className="mx-auto max-w-5xl overflow-auto p-6">
-      <div className="mb-5 flex items-end justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold">Templates</h2>
-          <p className="text-[13px] text-ink-muted">
-            Design title graphics. The editor preview is the on-air render.
-          </p>
-        </div>
-        <Button variant="primary" onClick={create} disabled={creating}>
-          {creating ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Plus className="h-4 w-4" aria-hidden />}
-          New template
-        </Button>
-      </div>
+  async function createFolder() {
+    const name = folderName.trim();
+    if (!name) return;
+    try {
+      const f = await api.templateFolders.create(name);
+      setFolders((cur) => [...cur, f]);
+      setFolderModal(false);
+      setFolderName('');
+      setFolderFilter(f.id);
+      toast.success(`Folder "${f.name}" created`);
+    } catch (e) {
+      toast.error(`Create folder failed: ${(e as Error).message}`);
+    }
+  }
 
-      {items === null ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-[164px] animate-pulse rounded-lg border border-border bg-surface" />
-          ))}
-        </div>
-      ) : items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-surface/40 px-6 py-16 text-center">
-          <LayoutTemplate className="h-8 w-8 text-ink-faint" aria-hidden />
-          <div>
-            <p className="text-sm font-medium">No templates yet</p>
-            <p className="text-[13px] text-ink-muted">Create your first title graphic to start.</p>
-          </div>
-          <Button variant="primary" onClick={create} disabled={creating}>
+  async function moveToFolder(templateId: string, folderId: string | null) {
+    try {
+      const updated = await api.templates.update(templateId, { folderId });
+      setItems((cur) => (cur ?? []).map((t) => (t.id === templateId ? { ...t, ...updated } : t)));
+    } catch (e) {
+      toast.error(`Move failed: ${(e as Error).message}`);
+    }
+  }
+
+  async function commitRename(id: string) {
+    const name = renameVal.trim();
+    setRenamingId(null);
+    if (!name) return;
+    const cur = items?.find((t) => t.id === id);
+    if (!cur || cur.name === name) return;
+    try {
+      const updated = await api.templates.update(id, { name });
+      setItems((list) => (list ?? []).map((t) => (t.id === id ? { ...t, name: updated.name, updated_at: updated.updated_at } : t)));
+      toast.success('Renamed');
+    } catch (e) {
+      toast.error(`Rename failed: ${(e as Error).message}`);
+    }
+  }
+
+  return (
+    <div className="flex h-full min-h-0">
+      {/* Folders column */}
+      <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface">
+        <div className="flex items-center justify-between border-b border-border px-3 py-2">
+          <span className="text-[12px] font-semibold text-ink-muted">Folders</span>
+          <button
+            type="button"
+            title="Create new folder"
+            aria-label="Create new folder"
+            className="grid h-7 w-7 place-items-center rounded-md text-ink-muted hover:bg-surface-2 hover:text-ink"
+            onClick={() => { setFolderModal(true); setFolderName(''); }}
+          >
             <Plus className="h-4 w-4" aria-hidden />
-            New template
-          </Button>
+          </button>
         </div>
-      ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
-          {items.map((t) => (
-            <div
-              key={t.id}
-              className="group flex flex-col overflow-hidden rounded-lg border border-border bg-surface transition-colors hover:border-ink-faint"
-            >
-              <button
-                onClick={() => nav(`/editor/${t.id}`)}
-                className="grid aspect-video place-items-center bg-surface-2 text-ink-faint"
-                aria-label={`Open ${t.name}`}
-              >
-                <LayoutTemplate className="h-7 w-7" aria-hidden />
-              </button>
-              <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-                <button onClick={() => nav(`/editor/${t.id}`)} className="min-w-0 flex-1 text-left">
-                  <div className="truncate text-sm font-medium">{t.name}</div>
-                  <div className="truncate text-xs text-ink-faint">Updated {t.updated_at}</div>
-                </button>
-                <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button
-                    type="button"
-                    onClick={() => duplicate(t.id, t.name)}
-                    disabled={duplicatingId === t.id}
-                    aria-label={`Duplicate ${t.name}`}
-                    title="Duplicate template"
-                    className="grid h-7 w-7 place-items-center rounded text-ink-faint hover:bg-surface-2 hover:text-ink disabled:opacity-40"
-                  >
-                    {duplicatingId === t.id
-                      ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                      : <Copy className="h-4 w-4" aria-hidden />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPendingDelete({ id: t.id, name: t.name })}
-                    aria-label={`Delete ${t.name}`}
-                    title="Delete template"
-                    className="grid h-7 w-7 place-items-center rounded text-ink-faint hover:bg-surface-2 hover:text-danger"
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden />
-                  </button>
-                </div>
-              </div>
-            </div>
+        <div className="min-h-0 flex-1 overflow-auto p-1.5">
+          <FolderRow
+            label="<All>"
+            active={folderFilter === ALL_FOLDER}
+            onSelect={() => setFolderFilter(ALL_FOLDER)}
+            droppable
+            highlight={dragOverFolder === ALL_FOLDER}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOverFolder(ALL_FOLDER);
+            }}
+            onDragLeave={() => setDragOverFolder((cur) => (cur === ALL_FOLDER ? null : cur))}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOverFolder(null);
+              const id = e.dataTransfer.getData('text/template-id');
+              if (id) void moveToFolder(id, null);
+            }}
+          />
+          {folders.map((f) => (
+            <FolderRow
+              key={f.id}
+              label={f.name}
+              active={folderFilter === f.id}
+              highlight={dragOverFolder === f.id}
+              onSelect={() => setFolderFilter(f.id)}
+              droppable
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOverFolder(f.id);
+              }}
+              onDragLeave={() => setDragOverFolder((cur) => (cur === f.id ? null : cur))}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOverFolder(null);
+                const id = e.dataTransfer.getData('text/template-id');
+                if (id) void moveToFolder(id, f.id);
+              }}
+            />
           ))}
         </div>
-      )}
+      </aside>
+
+      {/* Templates */}
+      <div className="min-h-0 flex-1 overflow-auto p-6">
+        <div className="mb-5 flex items-end justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold">Templates</h2>
+            <p className="text-[13px] text-ink-muted">
+              Design title graphics. The editor preview is the on-air render.
+            </p>
+            <div className="mt-3 flex items-center gap-1.5">
+              <Select
+                value={sortBy}
+                onChange={(e) => setSortByMode(e.target.value as LibrarySortBy)}
+                className="h-9 w-[140px]"
+                aria-label="Sort templates by"
+              >
+                <option value="modified">Modified</option>
+                <option value="name">Name</option>
+              </Select>
+              <button
+                type="button"
+                title={sortDirTitle}
+                aria-label={`Sort direction: ${sortDirTitle}`}
+                className="grid h-9 w-9 place-items-center rounded-md border border-border text-ink-muted hover:bg-surface-2 hover:text-ink"
+                onClick={toggleSortDir}
+              >
+                <SortDirIcon className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              title={view === 'icons' ? 'List view' : 'Icons view'}
+              aria-label={view === 'icons' ? 'Switch to list view' : 'Switch to icons view'}
+              className="grid h-9 w-9 place-items-center rounded-md border border-border text-ink-muted hover:bg-surface-2 hover:text-ink"
+              onClick={() => setViewMode(view === 'icons' ? 'list' : 'icons')}
+            >
+              {view === 'icons'
+                ? <List className="h-4 w-4" aria-hidden />
+                : <LayoutGrid className="h-4 w-4" aria-hidden />}
+            </button>
+            <Button variant="primary" onClick={create} disabled={creating}>
+              {creating ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Plus className="h-4 w-4" aria-hidden />}
+              New template
+            </Button>
+          </div>
+        </div>
+
+        {items === null ? (
+          <div className={cn(view === 'icons' ? 'grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3' : 'space-y-2')}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className={cn('animate-pulse rounded-lg border border-border bg-surface', view === 'icons' ? 'h-[164px]' : 'h-12')} />
+            ))}
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-surface/40 px-6 py-16 text-center">
+            <LayoutTemplate className="h-8 w-8 text-ink-faint" aria-hidden />
+            <div>
+              <p className="text-sm font-medium">No templates here</p>
+              <p className="text-[13px] text-ink-muted">
+                {folderFilter === ALL_FOLDER ? 'Create your first title graphic to start.' : 'Drop a template into this folder or create a new one.'}
+              </p>
+            </div>
+            <Button variant="primary" onClick={create} disabled={creating}>
+              <Plus className="h-4 w-4" aria-hidden />
+              New template
+            </Button>
+          </div>
+        ) : view === 'icons' ? (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+            {visible.map((t) => (
+              <TemplateCard
+                key={t.id}
+                t={t}
+                renaming={renamingId === t.id}
+                renameVal={renameVal}
+                duplicating={duplicatingId === t.id}
+                onOpen={() => nav(`/editor/${t.id}`)}
+                onRenameStart={() => { setRenamingId(t.id); setRenameVal(t.name); }}
+                onRenameChange={setRenameVal}
+                onRenameCommit={() => { void commitRename(t.id); }}
+                onRenameCancel={() => setRenamingId(null)}
+                onDuplicate={() => void duplicate(t.id, t.name)}
+                onDelete={() => setPendingDelete({ id: t.id, name: t.name })}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {visible.map((t) => (
+              <TemplateListRow
+                key={t.id}
+                t={t}
+                renaming={renamingId === t.id}
+                renameVal={renameVal}
+                duplicating={duplicatingId === t.id}
+                onOpen={() => nav(`/editor/${t.id}`)}
+                onRenameStart={() => { setRenamingId(t.id); setRenameVal(t.name); }}
+                onRenameChange={setRenameVal}
+                onRenameCommit={() => { void commitRename(t.id); }}
+                onRenameCancel={() => setRenamingId(null)}
+                onDuplicate={() => void duplicate(t.id, t.name)}
+                onDelete={() => setPendingDelete({ id: t.id, name: t.name })}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {pendingDelete && (
         <div className="fixed inset-0 z-modal grid place-items-center bg-bg/70 px-4 backdrop-blur-sm">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delete-template-title"
-            className="w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-2xl"
-          >
-            <p id="delete-template-title" className="text-sm text-ink">
-              {`Delete "${pendingDelete.name}"? This cannot be undone.`}
-            </p>
+          <div role="dialog" aria-modal="true" className="w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-2xl">
+            <p className="text-sm text-ink">{`Delete "${pendingDelete.name}"? This cannot be undone.`}</p>
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="danger" onClick={() => { void confirmRemove(); }}>Delete</Button>
               <Button variant="neutral" onClick={() => setPendingDelete(null)}>Cancel</Button>
@@ -239,6 +456,222 @@ function EditorLibrary() {
           </div>
         </div>
       )}
+
+      {folderModal && (
+        <div className="fixed inset-0 z-modal grid place-items-center bg-bg/70 px-4 backdrop-blur-sm">
+          <div role="dialog" aria-modal="true" className="w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-2xl">
+            <h3 className="mb-3 text-sm font-semibold text-ink">Create new folder</h3>
+            <Input
+              autoFocus
+              value={folderName}
+              placeholder="Folder name"
+              onChange={(e) => setFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void createFolder();
+                if (e.key === 'Escape') setFolderModal(false);
+              }}
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="primary" onClick={() => { void createFolder(); }} disabled={!folderName.trim()}>Create</Button>
+              <Button variant="neutral" onClick={() => setFolderModal(false)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FolderRow({
+  label, active, highlight, onSelect, droppable, onDragOver, onDragLeave, onDrop,
+}: {
+  label: string;
+  active: boolean;
+  highlight?: boolean;
+  onSelect: () => void;
+  droppable: boolean;
+  onDragOver?: (e: DragEvent) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: DragEvent) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      onDragOver={droppable ? onDragOver : undefined}
+      onDragLeave={droppable ? onDragLeave : undefined}
+      onDrop={droppable ? onDrop : undefined}
+      className={cn(
+        'mb-0.5 flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors',
+        active ? 'bg-primary/15 text-primary' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
+        highlight && 'ring-1 ring-primary',
+      )}
+    >
+      <Folder className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span className="min-w-0 truncate">{label}</span>
+    </button>
+  );
+}
+
+function TemplateActions({
+  name, duplicating, onRenameStart, onDuplicate, onDelete,
+}: {
+  name: string;
+  duplicating: boolean;
+  onRenameStart: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onRenameStart(); }}
+        aria-label={`Rename ${name}`}
+        title="Rename"
+        className="grid h-7 w-7 place-items-center rounded text-ink-faint hover:bg-surface-2 hover:text-ink"
+      >
+        <Pencil className="h-4 w-4" aria-hidden />
+      </button>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+        disabled={duplicating}
+        aria-label={`Duplicate ${name}`}
+        title="Duplicate template"
+        className="grid h-7 w-7 place-items-center rounded text-ink-faint hover:bg-surface-2 hover:text-ink disabled:opacity-40"
+      >
+        {duplicating
+          ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          : <Copy className="h-4 w-4" aria-hidden />}
+      </button>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        aria-label={`Delete ${name}`}
+        title="Delete template"
+        className="grid h-7 w-7 place-items-center rounded text-ink-faint hover:bg-surface-2 hover:text-danger"
+      >
+        <Trash2 className="h-4 w-4" aria-hidden />
+      </button>
+    </div>
+  );
+}
+
+function TemplateCard({
+  t, renaming, renameVal, duplicating, onOpen, onRenameStart, onRenameChange, onRenameCommit, onRenameCancel, onDuplicate, onDelete,
+}: {
+  t: TemplateSummary;
+  renaming: boolean;
+  renameVal: string;
+  duplicating: boolean;
+  onOpen: () => void;
+  onRenameStart: () => void;
+  onRenameChange: (v: string) => void;
+  onRenameCommit: () => void;
+  onRenameCancel: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      draggable={!renaming}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/template-id', t.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      className="group flex flex-col overflow-hidden rounded-lg border border-border bg-surface transition-colors hover:border-ink-faint"
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        className="grid aspect-video place-items-center bg-surface-2 text-ink-faint"
+        aria-label={`Open ${t.name}`}
+      >
+        <LayoutTemplate className="h-7 w-7" aria-hidden />
+      </button>
+      <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+        {renaming ? (
+          <Input
+            autoFocus
+            value={renameVal}
+            className="h-8 flex-1"
+            onChange={(e) => onRenameChange(e.target.value)}
+            onBlur={onRenameCommit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onRenameCommit();
+              if (e.key === 'Escape') onRenameCancel();
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+            <div className="truncate text-sm font-medium">{t.name}</div>
+            <div className="truncate text-xs text-ink-faint">Updated {t.updated_at}</div>
+          </button>
+        )}
+        <TemplateActions
+          name={t.name}
+          duplicating={duplicating}
+          onRenameStart={onRenameStart}
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TemplateListRow({
+  t, renaming, renameVal, duplicating, onOpen, onRenameStart, onRenameChange, onRenameCommit, onRenameCancel, onDuplicate, onDelete,
+}: {
+  t: TemplateSummary;
+  renaming: boolean;
+  renameVal: string;
+  duplicating: boolean;
+  onOpen: () => void;
+  onRenameStart: () => void;
+  onRenameChange: (v: string) => void;
+  onRenameCommit: () => void;
+  onRenameCancel: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      draggable={!renaming}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/template-id', t.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      className="group flex items-center gap-3 rounded-md border border-border bg-surface px-3 py-2 hover:border-ink-faint"
+    >
+      <LayoutTemplate className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden />
+      {renaming ? (
+        <Input
+          autoFocus
+          value={renameVal}
+          className="h-8 flex-1"
+          onChange={(e) => onRenameChange(e.target.value)}
+          onBlur={onRenameCommit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onRenameCommit();
+            if (e.key === 'Escape') onRenameCancel();
+          }}
+        />
+      ) : (
+        <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+          <div className="truncate text-sm font-medium">{t.name}</div>
+        </button>
+      )}
+      <span className="hidden shrink-0 text-[11px] text-ink-faint sm:inline">{t.updated_at}</span>
+      <TemplateActions
+        name={t.name}
+        duplicating={duplicating}
+        onRenameStart={onRenameStart}
+        onDuplicate={onDuplicate}
+        onDelete={onDelete}
+      />
     </div>
   );
 }

@@ -401,6 +401,10 @@ export class TemplateRenderer {
       this.playing = true;
       if (this.mode === 'raf') this.startRaf();
     }
+    // Control may have cleared waitingContinue on Update; if another director is
+    // still in stopAndWaitContinue, re-emit so Continue stays/reactives for the new slot.
+    this.lastWaitingReported = null;
+    this.emitWaitingChange();
   }
 
   /** Promote classic global-frame play to Action director runtime (Update-flow / Continue). */

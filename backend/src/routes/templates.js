@@ -21,11 +21,12 @@ export function templatesRouter(db, dataElementsDb = null) {
   const router = Router();
 
   router.get('/', (req, res) => {
-    res.json(dao.all());
+    const folderId = typeof req.query.folderId === 'string' ? req.query.folderId : undefined;
+    res.json(dao.all({ folderId }));
   });
 
   router.post('/', (req, res) => {
-    const { name, data } = req.body ?? {};
+    const { name, data, folderId } = req.body ?? {};
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: { code: 'NAME_REQUIRED', message: 'name required' } });
     }
@@ -39,7 +40,12 @@ export function templatesRouter(db, dataElementsDb = null) {
       return res.status(422).json({ error: templateValidationErrorPayload(errors) });
     }
     const id = data.id || uuid();
-    const created = dao.create({ id, name, data });
+    const created = dao.create({
+      id,
+      name,
+      data,
+      folderId: typeof folderId === 'string' && folderId ? folderId : null,
+    });
     res.status(201).json(created);
   });
 
@@ -57,13 +63,9 @@ export function templatesRouter(db, dataElementsDb = null) {
       });
     }
     const { valid, errors } = validateTemplate(req.body);
-    if (valid) {
-      return res.status(200).json({ valid: true, errors: [] });
-    }
-    return res.status(422).json({
-      valid: false,
-      error: templateValidationErrorPayload(errors),
-    });
+    // Always 200 so the editor can read `errors` without treating validation
+    // failure as a transport/API exception.
+    return res.status(200).json({ valid, errors });
   });
 
   router.get('/:id', (req, res) => {
@@ -73,14 +75,18 @@ export function templatesRouter(db, dataElementsDb = null) {
   });
 
   router.put('/:id', (req, res) => {
-    const { name, data } = req.body ?? {};
+    const { name, data, folderId } = req.body ?? {};
     if (data !== undefined) {
       const { valid, errors } = validateTemplate(data);
       if (!valid) {
         return res.status(422).json({ error: templateValidationErrorPayload(errors) });
       }
     }
-    const updated = dao.update(req.params.id, { name, data });
+    const updated = dao.update(req.params.id, {
+      name,
+      data,
+      ...(folderId !== undefined ? { folderId: folderId || null } : {}),
+    });
     if (!updated) return res.status(404).json({ error: 'not found' });
     res.json(updated);
   });

@@ -302,6 +302,7 @@
       "properties": {
         "x": { "type": "number" },
         "y": { "type": "number" },
+        "z": { "type": "number", "description": "CSS translateZ in px (2.5D depth). Optional for legacy templates; default 0." },
         "width": { "type": "number" },
         "height": { "type": "number" },
         "rotation": { "type": "number" },
@@ -588,6 +589,7 @@
       "properties": {
         "x": { "type": "number" },
         "y": { "type": "number" },
+        "z": { "type": "number" },
         "width": { "type": "number" },
         "height": { "type": "number" },
         "rotation": { "type": "number" },

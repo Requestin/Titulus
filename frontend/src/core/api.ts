@@ -9,12 +9,22 @@ import { getSessionToken } from '@/core/session';
 export interface TemplateSummary {
   id: string;
   name: string;
+  folderId?: string | null;
+  folder_id?: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface TemplateRecord extends TemplateSummary {
   data: Template;
+}
+
+export interface TemplateFolder {
+  id: string;
+  name: string;
+  sortOrder: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export type OutputMode = 'browser' | 'obs_vmix' | 'decklink' | 'stream';
@@ -269,9 +279,28 @@ function errorMessageFromBody(body: unknown, fallback: string): string {
   if (typeof err === 'string') return err;
   if (err && typeof err === 'object' && 'message' in err) {
     const msg = (err as { message: unknown }).message;
-    if (typeof msg === 'string' && msg.trim()) return msg;
+    if (typeof msg === 'string' && msg.trim()) {
+      // Prefer server summary; if it's still the bare default, append details.
+      const details = (err as { details?: { errors?: ValidationError[] } }).details;
+      const list = details?.errors;
+      if (Array.isArray(list) && list.length > 0 && !msg.includes(' — ')) {
+        return formatTemplateValidationErrors(list);
+      }
+      return msg;
+    }
   }
   return fallback;
+}
+
+/** Format AJV validation errors for toasts (path + message). */
+export function formatTemplateValidationErrors(errors: ValidationError[], limit = 3): string {
+  if (!errors.length) return 'template validation failed';
+  const parts = errors.slice(0, limit).map((e) => {
+    const path = e.path && e.path !== '/' ? e.path : '(root)';
+    return `${path}: ${e.message || 'invalid'}`;
+  });
+  const more = errors.length > limit ? ` (+${errors.length - limit} more)` : '';
+  return `template validation failed — ${parts.join('; ')}${more}`;
 }
 
 export const api = {
@@ -300,11 +329,19 @@ export const api = {
     },
   },
   templates: {
-    list: () => req<TemplateSummary[]>('/api/templates'),
+    list: (params?: { folderId?: string }) => {
+      const query = new URLSearchParams();
+      if (params?.folderId) query.set('folderId', params.folderId);
+      const suffix = query.toString();
+      return req<TemplateSummary[]>(`/api/templates${suffix ? `?${suffix}` : ''}`);
+    },
     get: (id: string) => req<TemplateRecord>(`/api/templates/${id}`),
-    create: (name: string, data: Template) =>
-      req<TemplateRecord>('/api/templates', { method: 'POST', body: JSON.stringify({ name, data }) }),
-    update: (id: string, patch: { name?: string; data?: Template }) =>
+    create: (name: string, data: Template, folderId?: string | null) =>
+      req<TemplateRecord>('/api/templates', {
+        method: 'POST',
+        body: JSON.stringify({ name, data, ...(folderId ? { folderId } : {}) }),
+      }),
+    update: (id: string, patch: { name?: string; data?: Template; folderId?: string | null }) =>
       req<TemplateRecord>(`/api/templates/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
     remove: (id: string) => req<{ ok: true }>(`/api/templates/${id}`, { method: 'DELETE' }),
     validate: (data: Template) =>
@@ -312,6 +349,14 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+  },
+  templateFolders: {
+    list: () => req<TemplateFolder[]>('/api/template-folders'),
+    create: (name: string) =>
+      req<TemplateFolder>('/api/template-folders', { method: 'POST', body: JSON.stringify({ name }) }),
+    update: (id: string, patch: { name?: string; sortOrder?: number }) =>
+      req<TemplateFolder>(`/api/template-folders/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    remove: (id: string) => req<{ ok: true }>(`/api/template-folders/${id}`, { method: 'DELETE' }),
   },
   ueTemplates: {
     list: () => req<UeTemplateSummary[]>('/api/ue-templates'),
@@ -362,9 +407,10 @@ export const api = {
       }),
   },
   dataElements: {
-    list: (params?: { sort?: 'updated' | 'name' }) => {
+    list: (params?: { sort?: 'updated' | 'name'; templateId?: string }) => {
       const query = new URLSearchParams();
       if (params?.sort) query.set('sort', params.sort);
+      if (params?.templateId) query.set('templateId', params.templateId);
       const suffix = query.toString();
       return req<DataElement[]>(`/api/data-elements${suffix ? `?${suffix}` : ''}`);
     },

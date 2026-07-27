@@ -19,6 +19,15 @@ CREATE TABLE IF NOT EXISTS templates (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
   data       TEXT NOT NULL,            -- JSON Template
+  folder_id  TEXT,                     -- nullable; NULL = unfiled (All only)
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS template_folders (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -186,9 +195,28 @@ export function openDb(dbPath) {
   ensureMediaAssetColumns(db);
   ensureChannelVsColumns(db);
   ensureUeTemplatesTable(db);
+  ensureTemplateFolders(db);
   ensureLicenseRow(db);
   ensureAuthBootstrap(db);
   return db;
+}
+
+/** @param {Database} db */
+function ensureTemplateFolders(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS template_folders (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  const cols = db.prepare('PRAGMA table_info(templates)').all();
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has('folder_id')) {
+    db.exec('ALTER TABLE templates ADD COLUMN folder_id TEXT');
+  }
 }
 
 /** @param {Database} db */
@@ -279,34 +307,111 @@ function ensureAuthBootstrap(db) {
 // ---------------------------------------------------------------------------
 
 export const templatesDao = (db) => ({
-  all() {
-    return db.prepare('SELECT id, name, created_at, updated_at FROM templates ORDER BY updated_at DESC').all();
+  /**
+   * @param {{ folderId?: string }} [opts]
+   * folderId: omit/undefined = all; '__none__' = unfiled only; else that folder.
+   */
+  all(opts = {}) {
+    const folderId = opts.folderId;
+    let rows;
+    if (!folderId || folderId === '__all__') {
+      rows = db.prepare(
+        'SELECT id, name, folder_id, created_at, updated_at FROM templates ORDER BY updated_at DESC',
+      ).all();
+    } else if (folderId === '__none__') {
+      rows = db.prepare(
+        `SELECT id, name, folder_id, created_at, updated_at FROM templates
+         WHERE folder_id IS NULL ORDER BY updated_at DESC`,
+      ).all();
+    } else {
+      rows = db.prepare(
+        `SELECT id, name, folder_id, created_at, updated_at FROM templates
+         WHERE folder_id = ? ORDER BY updated_at DESC`,
+      ).all(folderId);
+    }
+    return rows.map((row) => ({
+      ...row,
+      folder_id: row.folder_id ?? null,
+      folderId: row.folder_id ?? null,
+    }));
   },
   get(id) {
     const row = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
     if (!row) return null;
-    return { ...row, data: JSON.parse(row.data) };
+    return {
+      ...row,
+      data: JSON.parse(row.data),
+      folder_id: row.folder_id ?? null,
+      folderId: row.folder_id ?? null,
+    };
   },
-  create({ id, name, data }) {
+  create({ id, name, data, folderId = null }) {
     db.prepare(
-      'INSERT INTO templates (id, name, data) VALUES (?, ?, ?)',
-    ).run(id, name, JSON.stringify(data));
+      'INSERT INTO templates (id, name, data, folder_id) VALUES (?, ?, ?, ?)',
+    ).run(id, name, JSON.stringify(data), folderId || null);
     return this.get(id);
   },
-  update(id, { name, data }) {
+  update(id, { name, data, folderId } = {}) {
     const cur = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
     if (!cur) return null;
-    const next = {
-      name: name ?? cur.name,
-      data: data !== undefined ? JSON.stringify(data) : cur.data,
-    };
+    const nextFolder = folderId !== undefined
+      ? (folderId || null)
+      : (cur.folder_id ?? null);
     db.prepare(
-      `UPDATE templates SET name = ?, data = ?, updated_at = datetime('now') WHERE id = ?`,
-    ).run(next.name, next.data, id);
+      `UPDATE templates SET name = ?, data = ?, folder_id = ?, updated_at = datetime('now') WHERE id = ?`,
+    ).run(
+      name ?? cur.name,
+      data !== undefined ? JSON.stringify(data) : cur.data,
+      nextFolder,
+      id,
+    );
     return this.get(id);
   },
   remove(id) {
     return db.prepare('DELETE FROM templates WHERE id = ?').run(id).changes > 0;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// template_folders (one-level grouping for Templates library)
+// ---------------------------------------------------------------------------
+
+export const templateFoldersDao = (db) => ({
+  all() {
+    return db.prepare(
+      'SELECT id, name, sort_order AS sortOrder, created_at AS createdAt, updated_at AS updatedAt FROM template_folders ORDER BY sort_order ASC, name ASC',
+    ).all();
+  },
+  get(id) {
+    const row = db.prepare(
+      'SELECT id, name, sort_order AS sortOrder, created_at AS createdAt, updated_at AS updatedAt FROM template_folders WHERE id = ?',
+    ).get(id);
+    return row || null;
+  },
+  create({ id, name, sortOrder = 0 }) {
+    db.prepare(
+      'INSERT INTO template_folders (id, name, sort_order) VALUES (?, ?, ?)',
+    ).run(id, name, sortOrder);
+    return this.get(id);
+  },
+  update(id, { name, sortOrder } = {}) {
+    const cur = db.prepare('SELECT * FROM template_folders WHERE id = ?').get(id);
+    if (!cur) return null;
+    db.prepare(
+      `UPDATE template_folders SET name = ?, sort_order = ?, updated_at = datetime('now') WHERE id = ?`,
+    ).run(
+      name ?? cur.name,
+      sortOrder !== undefined ? sortOrder : cur.sort_order,
+      id,
+    );
+    return this.get(id);
+  },
+  remove(id) {
+    const tx = db.transaction(() => {
+      db.prepare('UPDATE templates SET folder_id = NULL WHERE folder_id = ?').run(id);
+      return db.prepare('DELETE FROM template_folders WHERE id = ?').run(id).changes > 0;
+    });
+    return tx();
   },
 });
 

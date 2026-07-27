@@ -204,6 +204,7 @@ export function TimelinePanel() {
   const [dragIntent, setDragIntent] = useState<TrackDragIntent | null>(null);
   const [draggingTrackLabel, setDraggingTrackLabel] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pendingScrollLeft = useRef<number | null>(null);
   const addTrackBtnRef = useRef<HTMLButtonElement>(null);
   const seededTemplateId = useRef<string | null>(null);
 
@@ -214,6 +215,14 @@ export function TimelinePanel() {
     const r = addTrackBtnRef.current.getBoundingClientRect();
     setAddMenuPos({ left: r.left, top: r.top });
   }, [addOpen]);
+
+  // Keep the focused frame under the same viewport X after ± zoom.
+  useLayoutEffect(() => {
+    if (pendingScrollLeft.current == null) return;
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = pendingScrollLeft.current;
+    pendingScrollLeft.current = null;
+  }, [pxPerFrame]);
 
   // Update director starts collapsed when a template is opened / created.
   useEffect(() => {
@@ -256,6 +265,19 @@ export function TimelinePanel() {
   function frameToX(f: number) { return f * pxPerFrame; }
 
   function xToFrame(x: number) { return Math.max(0, Math.round(x / pxPerFrame)); }
+
+  /** Zoom timeline while keeping the main (global) playhead fixed in the viewport. */
+  function zoomTimeline(delta: number) {
+    const next = Math.min(24, Math.max(2, pxPerFrame + delta));
+    if (next === pxPerFrame) return;
+    const el = scrollRef.current;
+    if (el) {
+      const oldX = HEADER_W + globalPlayhead * pxPerFrame;
+      const newX = HEADER_W + globalPlayhead * next;
+      pendingScrollLeft.current = Math.max(0, el.scrollLeft + (newX - oldX));
+    }
+    setPxPerFrame(next);
+  }
 
   /** Frame from pointer on a full-width lane/ruler element (content coordinates). */
   function frameFromContentX(clientX: number, el: Element, maxFrame: number): number {
@@ -419,8 +441,8 @@ export function TimelinePanel() {
           >
             <Activity className="h-4 w-4" />
           </button>
-          <button onClick={() => setPxPerFrame((v) => Math.max(2, v - 2))} className="px-1.5 text-ink-muted hover:text-ink" title="Zoom out">-</button>
-          <button onClick={() => setPxPerFrame((v) => Math.min(24, v + 2))} className="px-1.5 text-ink-muted hover:text-ink" title="Zoom in">+</button>
+          <button onClick={() => zoomTimeline(-2)} className="px-1.5 text-ink-muted hover:text-ink" title="Zoom out">-</button>
+          <button onClick={() => zoomTimeline(2)} className="px-1.5 text-ink-muted hover:text-ink" title="Zoom in">+</button>
         </div>
       </div>
 
