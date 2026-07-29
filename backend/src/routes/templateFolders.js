@@ -4,14 +4,19 @@
 //   GET    /api/template-folders
 //   POST   /api/template-folders
 //   PUT    /api/template-folders/:id
-//   DELETE /api/template-folders/:id  (templates become unfiled)
+//   DELETE /api/template-folders/:id
+//     ?deleteTemplates=1  — also delete templates that belonged to the folder
+//     (default)           — unfile templates (folder_id = NULL)
 
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
-import { templateFoldersDao } from '../db.js';
+import { templateFoldersDao, templatesDao } from '../db.js';
+import { dataElementsDao } from '../dataElementsDb.js';
 
-export function templateFoldersRouter(db) {
+export function templateFoldersRouter(db, dataElementsDb = null) {
   const dao = templateFoldersDao(db);
+  const tplDao = templatesDao(db);
+  const deDao = dataElementsDb ? dataElementsDao(dataElementsDb) : null;
   const router = Router();
 
   router.get('/', (_req, res) => {
@@ -46,9 +51,22 @@ export function templateFoldersRouter(db) {
   });
 
   router.delete('/:id', (req, res) => {
+    const deleteTemplates =
+      req.query.deleteTemplates === '1'
+      || req.query.deleteTemplates === 'true'
+      || req.body?.deleteTemplates === true;
+
+    if (deleteTemplates) {
+      const members = tplDao.all({ folderId: req.params.id });
+      for (const t of members) {
+        tplDao.remove(t.id);
+        if (deDao) deDao.removeByTemplateId(t.id);
+      }
+    }
+
     const ok = dao.remove(req.params.id);
     if (!ok) return res.status(404).json({ error: 'not found' });
-    res.json({ ok: true });
+    res.json({ ok: true, deletedTemplates: deleteTemplates });
   });
 
   return router;

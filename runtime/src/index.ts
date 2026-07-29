@@ -11,6 +11,7 @@ export * from './stackOrder.js';
 export * from './timeline.js';
 export * from './directorRuntime.js';
 export * from './clock.js';
+export * from './timeExpr.js';
 export * from './fonts.js';
 export * from './stats.js';
 export * from './maskScopes.js';

@@ -3,8 +3,8 @@
 // Designer UI for template.data: sources → select → map → driven variables.
 // Control does not pick rows; this panel owns that logic.
 
-import { useEffect, useState } from 'react';
-import { Plus, Trash2, Play } from 'lucide-react';
+import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { Plus, Trash2, Play, ChevronDown, ChevronRight } from 'lucide-react';
 import type {
   DataMapAs,
   DataPipeline,
@@ -15,7 +15,11 @@ import type {
 } from '@runtime';
 import { runTemplateData, resolveVariableMap } from '@runtime';
 import { useEditor } from '../store';
-import { Input, Select, NumberInput } from '@/components/ui/form';
+import {
+  Input, Select, NumberInput,
+  CollapseAllButton,
+  type SectionCollapseSignal,
+} from '@/components/ui/form';
 import { Button } from '@/components/ui/Button';
 import { createId } from '@/core/id';
 import {
@@ -28,6 +32,54 @@ function emptyData(): TemplateData {
   return { version: 1, sources: [], pipelines: [], runOn: ['take', 'load'], onError: 'block' };
 }
 
+function useBlockOpen(
+  signal: SectionCollapseSignal,
+  defaultOpen = true,
+): [boolean, Dispatch<SetStateAction<boolean>>] {
+  const [open, setOpen] = useState(defaultOpen);
+  const lastVersion = useRef(signal.version);
+  useEffect(() => {
+    if (lastVersion.current === signal.version) return;
+    lastVersion.current = signal.version;
+    setOpen(signal.open);
+  }, [signal]);
+  return [open, setOpen];
+}
+
+function CollapsibleBlock({
+  title,
+  open,
+  onToggle,
+  actions,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-surface">
+      <div className="flex items-center gap-1 px-2 py-1.5">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+          aria-expanded={open}
+          onClick={onToggle}
+        >
+          {open
+            ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden />
+            : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden />}
+          <span className="truncate text-[12px] font-semibold text-ink">{title}</span>
+        </button>
+        {actions}
+      </div>
+      {open ? <div className="space-y-2 border-t border-border p-2.5">{children}</div> : null}
+    </div>
+  );
+}
+
 export function DataPanel() {
   const template = useEditor((s) => s.template);
   const ensureTemplateData = useEditor((s) => s.ensureTemplateData);
@@ -35,6 +87,8 @@ export function DataPanel() {
   const patchTemplateData = useEditor((s) => s.patchTemplateData);
   const [preview, setPreview] = useState<string>('');
   const [busy, setBusy] = useState(false);
+  const [collapseSignal, setCollapseSignal] = useState<SectionCollapseSignal>({ version: 0, open: true });
+  const [sourcesOpen, setSourcesOpen] = useBlockOpen(collapseSignal, true);
 
   if (!template) return null;
 
@@ -106,17 +160,20 @@ export function DataPanel() {
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <span className="text-[12px] font-semibold text-ink-muted">Data</span>
-        <button
-          type="button"
-          title="Remove data pipeline"
-          className="grid h-7 w-7 place-items-center rounded-md text-ink-faint hover:text-danger"
-          onClick={() => setTemplateData(undefined)}
-        >
-          <Trash2 className="h-4 w-4" aria-hidden />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <CollapseAllButton signal={collapseSignal} onChange={setCollapseSignal} />
+          <button
+            type="button"
+            title="Remove data pipeline"
+            className="grid h-7 w-7 place-items-center rounded-md text-ink-faint hover:text-danger"
+            onClick={() => setTemplateData(undefined)}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-auto p-3">
+      <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
         <div className="grid grid-cols-2 gap-2">
           <label className="space-y-1 text-[11px] text-ink-muted">
             onError
@@ -142,14 +199,18 @@ export function DataPanel() {
           </label>
         </div>
 
-        <section className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[12px] font-semibold text-ink">Sources</h3>
+        <CollapsibleBlock
+          title={`Sources (${data.sources.length})`}
+          open={sourcesOpen}
+          onToggle={() => setSourcesOpen((v) => !v)}
+          actions={(
             <button
               type="button"
               className="grid h-7 w-7 place-items-center rounded-md text-ink-muted hover:bg-surface-2"
               title="Add source"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
+                setSourcesOpen(true);
                 patchTemplateData((d) => {
                   d.sources.push({
                     id: createId(),
@@ -163,17 +224,18 @@ export function DataPanel() {
             >
               <Plus className="h-4 w-4" aria-hidden />
             </button>
-          </div>
+          )}
+        >
           {data.sources.map((src) => (
             <SourceCard key={src.id} source={src} />
           ))}
           {data.sources.length === 0 && (
             <p className="text-[12px] text-ink-faint">No sources yet.</p>
           )}
-        </section>
+        </CollapsibleBlock>
 
-        <section className="space-y-2">
-          <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between px-0.5">
             <h3 className="text-[12px] font-semibold text-ink">Pipelines</h3>
             <button
               type="button"
@@ -196,12 +258,12 @@ export function DataPanel() {
             </button>
           </div>
           {data.pipelines.map((p) => (
-            <PipelineCard key={p.id} pipeline={p} />
+            <PipelineCard key={p.id} pipeline={p} collapseSignal={collapseSignal} />
           ))}
           {data.pipelines.length === 0 && (
             <p className="text-[12px] text-ink-faint">No pipelines yet.</p>
           )}
-        </section>
+        </div>
 
         <div className="space-y-2">
           <Button size="sm" variant="neutral" disabled={busy} onClick={() => void runPreview()}>
@@ -219,17 +281,73 @@ export function DataPanel() {
   );
 }
 
+/**
+ * Editable id with local draft so React key={id} does not remount (and steal focus)
+ * on every keystroke.
+ */
+function DraftIdInput({
+  value,
+  onCommit,
+  className,
+  placeholder,
+}: {
+  value: string;
+  onCommit: (next: string) => void;
+  className?: string;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState(value);
+  const focused = useRef(false);
+
+  useEffect(() => {
+    if (!focused.current) setDraft(value);
+  }, [value]);
+
+  function commit() {
+    const next = draft.trim();
+    if (!next || next === value) {
+      setDraft(value);
+      return;
+    }
+    onCommit(next);
+  }
+
+  return (
+    <Input
+      value={draft}
+      className={className}
+      placeholder={placeholder}
+      onFocus={() => { focused.current = true; }}
+      onBlur={() => {
+        focused.current = false;
+        commit();
+      }}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.currentTarget.blur();
+        }
+        if (e.key === 'Escape') {
+          setDraft(value);
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 function SourceCard({ source }: { source: DataSource }) {
   const patchTemplateData = useEditor((s) => s.patchTemplateData);
   const variables = useEditor((s) => s.template?.variables ?? []);
 
   return (
-    <div className="space-y-2 rounded-md border border-border bg-surface p-2.5">
+    <div className="space-y-2 rounded-md border border-border bg-surface-2/40 p-2.5">
       <div className="flex items-center gap-2">
-        <Input
+        <DraftIdInput
           value={source.id}
-          onChange={(e) => {
-            const next = e.target.value;
+          className="flex-1 font-mono text-[12px]"
+          placeholder="source id"
+          onCommit={(next) => {
             patchTemplateData((d) => {
               const s = d.sources.find((x) => x.id === source.id);
               if (s) s.id = next;
@@ -238,8 +356,6 @@ function SourceCard({ source }: { source: DataSource }) {
               }
             });
           }}
-          className="flex-1 font-mono text-[12px]"
-          placeholder="source id"
         />
         <button
           type="button"
@@ -406,12 +522,19 @@ function ColumnsInput({
   );
 }
 
-function PipelineCard({ pipeline }: { pipeline: DataPipeline }) {
+function PipelineCard({
+  pipeline,
+  collapseSignal,
+}: {
+  pipeline: DataPipeline;
+  collapseSignal: SectionCollapseSignal;
+}) {
   const template = useEditor((s) => s.template);
   const patchTemplateData = useEditor((s) => s.patchTemplateData);
   const updateVariable = useEditor((s) => s.updateVariable);
   const sources = template?.data?.sources ?? [];
   const variables = template?.variables ?? [];
+  const [open, setOpen] = useBlockOpen(collapseSignal, true);
 
   function setSelect(mode: DataSelect['mode']) {
     patchTemplateData((d) => {
@@ -425,13 +548,31 @@ function PipelineCard({ pipeline }: { pipeline: DataPipeline }) {
   }
 
   return (
-    <div className="space-y-2 rounded-md border border-border bg-surface p-2.5">
-      <div className="flex items-center gap-2">
-        <Input
+    <CollapsibleBlock
+      title={pipeline.id || 'pipeline'}
+      open={open}
+      onToggle={() => setOpen((v) => !v)}
+      actions={(
+        <button
+          type="button"
+          className="grid h-7 w-7 place-items-center text-ink-faint hover:text-danger"
+          title="Delete pipeline"
+          onClick={(e) => {
+            e.stopPropagation();
+            patchTemplateData((d) => { d.pipelines = d.pipelines.filter((x) => x.id !== pipeline.id); });
+          }}
+        >
+          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      )}
+    >
+      <label className="block space-y-1 text-[11px] text-ink-muted">
+        Pipeline id
+        <DraftIdInput
           value={pipeline.id}
-          className="flex-1 font-mono text-[12px]"
-          onChange={(e) => {
-            const next = e.target.value;
+          className="font-mono text-[12px]"
+          placeholder="main"
+          onCommit={(next) => {
             patchTemplateData((d) => {
               const p = d.pipelines.find((x) => x.id === pipeline.id);
               if (p) p.id = next;
@@ -441,14 +582,7 @@ function PipelineCard({ pipeline }: { pipeline: DataPipeline }) {
             }
           }}
         />
-        <button
-          type="button"
-          className="grid h-7 w-7 place-items-center text-ink-faint hover:text-danger"
-          onClick={() => patchTemplateData((d) => { d.pipelines = d.pipelines.filter((x) => x.id !== pipeline.id); })}
-        >
-          <Trash2 className="h-3.5 w-3.5" aria-hidden />
-        </button>
-      </div>
+      </label>
 
       <Select
         value={pipeline.sourceId}
@@ -582,6 +716,7 @@ function PipelineCard({ pipeline }: { pipeline: DataPipeline }) {
               <option value="text">text</option>
               <option value="multitext">multitext</option>
               <option value="number">number</option>
+              <option value="time">time</option>
               <option value="image">image</option>
               <option value="video">video</option>
             </Select>
@@ -598,6 +733,6 @@ function PipelineCard({ pipeline }: { pipeline: DataPipeline }) {
           </div>
         ))}
       </div>
-    </div>
+    </CollapsibleBlock>
   );
 }

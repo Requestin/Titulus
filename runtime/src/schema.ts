@@ -62,7 +62,7 @@ export interface VariableBinding {
   variableId: string;
 }
 
-export type VariableType = 'text' | 'image' | 'number' | 'color' | 'video' | 'multitext' | 'textfile';
+export type VariableType = 'text' | 'image' | 'number' | 'color' | 'video' | 'multitext' | 'textfile' | 'time';
 
 export interface Variable {
   id: string;
@@ -135,7 +135,7 @@ export type DataSelect =
   | { mode: 'match'; key: string; pattern: string }
   | { mode: 'all' };
 
-export type DataMapAs = 'text' | 'number' | 'image' | 'video' | 'multitext';
+export type DataMapAs = 'text' | 'number' | 'image' | 'video' | 'multitext' | 'time';
 
 export type DataMapTarget = { type: 'variable'; variableId: string };
 
@@ -301,13 +301,16 @@ export interface VideoLayer extends BaseLayer {
 /**
  * Clock / timer layer (§6.2 clock). `format` is a token string like
  * "HH:mm:ss" consumed by runtime/clock.ts.
+ *
+ * `startTime` / `targetTime` may be a literal epoch ms or a binding to a
+ * `time` variable (operator expression like `today+1@20:00` — see timeExpr.ts).
  */
 export interface ClockLayer extends BaseLayer {
   type: 'clock';
   mode: 'clock' | 'countup' | 'countdown';
   format: string;
-  startTime?: number;  // epoch ms (countup/countdown origin)
-  targetTime?: number; // epoch ms (countdown target)
+  startTime?: number | VariableBinding;
+  targetTime?: number | VariableBinding;
   style: TextStyle;
 }
 

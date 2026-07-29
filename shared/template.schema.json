@@ -225,7 +225,7 @@
       "properties": {
         "from": { "type": "string", "minLength": 1 },
         "to": { "$ref": "#/$defs/dataMapTarget" },
-        "as": { "type": "string", "enum": ["text", "number", "image", "video", "multitext"] },
+        "as": { "type": "string", "enum": ["text", "number", "image", "video", "multitext", "time"] },
         "transform": { "$ref": "#/$defs/dataValueTransform" }
       }
     },
@@ -295,6 +295,12 @@
         { "$ref": "#/$defs/variableBinding" }
       ]
     },
+    "numberOrBinding": {
+      "oneOf": [
+        { "type": "number" },
+        { "$ref": "#/$defs/variableBinding" }
+      ]
+    },
     "transform": {
       "type": "object",
       "required": ["x", "y", "width", "height", "rotation", "rotationX", "rotationY", "perspective", "scaleX", "scaleY", "anchorX", "anchorY"],
@@ -323,7 +329,7 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "label": { "type": "string" },
-        "type": { "type": "string", "enum": ["text", "image", "number", "color", "video", "multitext", "textfile"] },
+        "type": { "type": "string", "enum": ["text", "image", "number", "color", "video", "multitext", "textfile", "time"] },
         "defaultValue": { "type": ["string", "number"] },
         "description": { "type": "string" },
         "required": { "type": "boolean" },
@@ -354,7 +360,7 @@
         },
         {
           "if": {
-            "properties": { "type": { "enum": ["text", "image", "color", "video", "multitext", "textfile"] } }
+            "properties": { "type": { "enum": ["text", "image", "color", "video", "multitext", "textfile", "time"] } }
           },
           "then": {
             "properties": { "defaultValue": { "type": "string" } }
@@ -458,8 +464,8 @@
         "durationFrames": { "type": "integer", "minimum": 1 },
         "mode": { "type": "string", "enum": ["clock", "countup", "countdown"] },
         "format": { "type": "string" },
-        "startTime": { "type": "number" },
-        "targetTime": { "type": "number" },
+        "startTime": { "$ref": "#/$defs/numberOrBinding" },
+        "targetTime": { "$ref": "#/$defs/numberOrBinding" },
         "maskMode": { "type": "string", "enum": ["normal", "inverted"] },
         "shape": { "type": "string", "enum": ["rect", "ellipse"] },
         "crawlDirectorId": { "type": "string" },
@@ -519,8 +525,8 @@
             "properties": {
               "mode": { "type": "string", "enum": ["clock", "countup", "countdown"] },
               "format": { "type": "string" },
-              "startTime": { "type": "number" },
-              "targetTime": { "type": "number" },
+              "startTime": { "$ref": "#/$defs/numberOrBinding" },
+              "targetTime": { "$ref": "#/$defs/numberOrBinding" },
               "style": { "$ref": "#/$defs/textStyle" }
             }
           }

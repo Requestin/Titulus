@@ -48,6 +48,7 @@ import {
   type TimelineSample,
 } from './timeline.js';
 import { formatClock } from './clock.js';
+import { parseTimeExpression } from './timeExpr.js';
 import { ensureFonts, collectFonts } from './fonts.js';
 import { type RenderStats, emptyRenderStats, snapshotStats } from './stats.js';
 import {
@@ -1282,8 +1283,9 @@ export class TemplateRenderer {
           this.setText(content, cache, 'textContent', applyTextTransform(raw, s.textTransform));
         } else {
           // clock content is refreshed by the clock ticker; set an initial value.
-          this.setText(content, cache, 'textContent', formatClock(layer.format, layer.mode, Date.now(),
-            { startTime: layer.startTime, targetTime: layer.targetTime }));
+          const now = Date.now();
+          this.setText(content, cache, 'textContent', formatClock(layer.format, layer.mode, now,
+            this.resolveClockOpts(layer, v, now)));
         }
         break;
       }
@@ -1682,15 +1684,38 @@ export class TemplateRenderer {
       if (!this.template) return;
       const hasClock = this.template.layers.some((l) => l.type === 'clock');
       if (!hasClock) return;
+      const now = Date.now();
+      const vars = this.variables;
       for (const layer of this.template.layers) {
         if (layer.type !== 'clock') continue;
         const node = this.layerEls.get(layer.id);
         if (node?.contentEl) {
-          node.contentEl.textContent = formatClock(layer.format, layer.mode, Date.now(),
-            { startTime: layer.startTime, targetTime: layer.targetTime });
+          node.contentEl.textContent = formatClock(layer.format, layer.mode, now,
+            this.resolveClockOpts(layer, vars, now));
         }
       }
     }, 1000) as unknown as number;
+  }
+
+  /** Resolve clock start/target — literal epoch or `time` variable expression. */
+  private resolveClockOpts(
+    layer: Extract<Layer, { type: 'clock' }>,
+    vars: Record<string, string | number>,
+    now: number,
+  ): { startTime?: number; targetTime?: number } {
+    const resolveField = (field: number | { type: 'variable'; variableId: string } | undefined): number | undefined => {
+      if (field === undefined) return undefined;
+      if (typeof field === 'object') {
+        return parseTimeExpression(vars[field.variableId], now);
+      }
+      return field;
+    };
+    const startTime = resolveField(layer.startTime);
+    const targetTime = resolveField(layer.targetTime);
+    return {
+      ...(startTime !== undefined ? { startTime } : {}),
+      ...(targetTime !== undefined ? { targetTime } : {}),
+    };
   }
 
   private stopClockTicker(): void {

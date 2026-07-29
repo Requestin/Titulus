@@ -27,10 +27,12 @@ export function EditorPage() {
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<'properties' | 'variables' | 'data'>('properties');
   const [timelineHeight, setTimelineHeight] = useState(256);
+  const [layersWidth, setLayersWidth] = useState(240);
   const [inspectorWidth, setInspectorWidth] = useState(320);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const allowNavigationRef = useRef(false);
   const timelineResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const layersResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const inspectorResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
@@ -67,6 +69,10 @@ export function EditorPage() {
       await api.templates.update(id, { name: t.name, data: t });
       useEditor.getState().markSaved();
       toast.success('Saved');
+      // Mid-timeline thumbnail — best-effort, don't block the save UX.
+      void api.templates.regenerateThumbnail(id).catch((err) => {
+        console.warn('[thumbnail] regenerate failed', err);
+      });
       return true;
     } catch (e) {
       toast.error(`Save failed: ${(e as Error).message}`);
@@ -192,6 +198,26 @@ export function EditorPage() {
     e.currentTarget.releasePointerCapture(e.pointerId);
   }
 
+  function beginLayersResize(e: ReactPointerEvent<HTMLDivElement>) {
+    layersResizeRef.current = { startX: e.clientX, startWidth: layersWidth };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
+  function resizeLayers(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = layersResizeRef.current;
+    if (!drag) return;
+    // Dragging the right edge: move right → wider panel.
+    const next = drag.startWidth + (e.clientX - drag.startX);
+    setLayersWidth(Math.min(480, Math.max(180, next)));
+  }
+
+  function endLayersResize(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!layersResizeRef.current) return;
+    layersResizeRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }
+
   function beginInspectorResize(e: ReactPointerEvent<HTMLDivElement>) {
     inspectorResizeRef.current = { startX: e.clientX, startWidth: inspectorWidth };
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -223,8 +249,21 @@ export function EditorPage() {
     <div className="flex h-full flex-col">
       <Toolbar onSave={() => { void save(); }} saving={saving} />
       <div className="flex min-h-0 flex-1">
-        <aside className="w-60 shrink-0 border-r border-border bg-surface">
+        <aside
+          className="relative flex shrink-0 flex-col border-r border-border bg-surface"
+          style={{ width: layersWidth }}
+        >
           <LayersPanel />
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize layers panel"
+            className="absolute -right-1 top-0 bottom-0 z-sticky w-2 cursor-col-resize transition-colors hover:bg-primary/30"
+            onPointerDown={beginLayersResize}
+            onPointerMove={resizeLayers}
+            onPointerUp={endLayersResize}
+            onPointerCancel={endLayersResize}
+          />
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">

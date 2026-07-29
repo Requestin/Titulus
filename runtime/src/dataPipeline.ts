@@ -597,7 +597,7 @@ async function mapOneEntry(
     return { ok: false, code: 'MEDIA_MISS', message: resolved.message, block: true };
   }
 
-  // text / multitext
+  // text / multitext / time (time stays as expression string for parseTimeExpression)
   return { ok: true, value, code: '', message: '', block: false };
 }
 

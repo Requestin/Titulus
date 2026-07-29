@@ -149,6 +149,7 @@ export function createVariable(name: string, type: VariableType = 'text'): Varia
     video: '',
     color: '#ffffff',
     number: 0,
+    time: 'today@18:00',
   };
   const resolvedName = type === 'multitext' && (!name || name === 'var') ? 'multitext' : name;
   return {

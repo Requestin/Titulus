@@ -2,10 +2,12 @@
 //
 // Media ingest + transcode pipeline (DEVELOPMENT_PROMPT §7.5, REQ-10).
 //
-// On video upload we transcode to CEF-friendly VP9/WebM **with alpha** so video
-// layers can carry transparency on air (same approach as CasparCG 2.5 WebM
-// alpha). Images are stored as-is. A poster JPEG (first frame) is generated for
-// thumbnails. Jobs run async; the frontend polls GET /api/uploads/jobs/:id.
+// On video upload we transcode to CEF-friendly WebM:
+//   - Source WITH alpha  → VP9 + yuva420p (alpha_mode) for keyed overlays
+//   - Source WITHOUT alpha → VP8 + yuv420p (NO alpha plane)
+// Forcing alpha on opaque clips previously starved CEF OSR on SDI (stutter /
+// strobing of the whole channel). Images are stored as-is. A poster JPEG
+// (first frame) is generated for thumbnails.
 //
 // ffmpeg alpha notes (verified on this host, ffmpeg 6.1 + libvpx):
 //   - alpha must be forced into the encoder with `-vf format=yuva420p`
@@ -15,6 +17,7 @@
 //     hidden plane), so ffprobe reports the main stream as yuv420p — that is
 //     expected. Chrome/CEF read `alpha_mode=1` to composite transparency.
 //   - Audio is dropped (`-an`): title graphics are silent overlays.
+//   - Opaque path uses libvpx (VP8): cheaper software decode in CEF OSR.
 
 import { spawn } from 'node:child_process';
 import { mkdirSync, unlinkSync } from 'node:fs';
@@ -174,54 +177,113 @@ export class MediaJobs {
     job.status = 'processing';
     job.updatedAt = nowIso();
 
-    const args = [
-      '-y', '-hide_banner', '-loglevel', 'error',
-      '-i', srcPath,
-      '-an',
-      '-c:v', 'libvpx-vp9',
-      '-vf', 'format=yuva420p',     // force alpha into the encoder
-      '-auto-alt-ref', '0',         // required for alpha
-      '-b:v', '0', '-crf', '24',    // CRF (sharp edges/text in graphics)
-      '-row-mt', '1', '-deadline', 'good', '-cpu-used', '3',
-      outPath,
-    ];
+    // Probe source for a real alpha channel before choosing the encode path.
+    // Opaque clips must NOT get alpha_mode=1 — CEF OSR software-decodes the
+    // extra plane and can starve the whole 1080i50 channel (strobe on SDI).
+    this._probeHasAlpha(srcPath, (hasAlpha) => {
+      const args = hasAlpha
+        ? [
+          '-y', '-hide_banner', '-loglevel', 'error',
+          '-i', srcPath,
+          '-an',
+          '-c:v', 'libvpx-vp9',
+          '-vf', 'format=yuva420p',
+          '-auto-alt-ref', '0',
+          '-b:v', '0', '-crf', '24',
+          '-row-mt', '1', '-deadline', 'good', '-cpu-used', '3',
+          outPath,
+        ]
+        : [
+          '-y', '-hide_banner', '-loglevel', 'error',
+          '-i', srcPath,
+          '-an',
+          '-map_metadata', '-1',
+          '-c:v', 'libvpx',
+          '-vf', 'format=yuv420p',
+          '-b:v', '0', '-crf', '22',
+          '-deadline', 'good', '-cpu-used', '4',
+          outPath,
+        ];
+      job.hasAlpha = hasAlpha;
 
-    const ff = spawn('ffmpeg', args);
-    let stderr = '';
-    const timeout = setTimeout(() => {
-      ff.kill('SIGKILL');
-    }, TRANSCODE_TIMEOUT_MS);
+      const ff = spawn('ffmpeg', args);
+      let stderr = '';
+      const timeout = setTimeout(() => {
+        ff.kill('SIGKILL');
+      }, TRANSCODE_TIMEOUT_MS);
 
-    ff.stderr.on('data', (d) => {
-      stderr += d.toString();
-      if (stderr.length > MAX_ERROR_TAIL * 2) {
-        stderr = stderr.slice(-MAX_ERROR_TAIL * 2);
-      }
-    });
-    ff.on('error', (err) => {
-      clearTimeout(timeout);
-      this._retryOrFail(job, {
-        code: 'FFMPEG_SPAWN_ERROR',
-        message: `ffmpeg spawn failed: ${err.message}`,
-        details: this._errorTail(stderr),
-      }, { attempt, srcPath, outPath, posterPath });
-    });
-    ff.on('close', (code) => {
-      clearTimeout(timeout);
-      if (code !== 0) {
-        return this._retryOrFail(job, {
-          code: 'FFMPEG_TRANSCODE_FAILED',
-          message: `ffmpeg exited with code ${code}`,
+      ff.stderr.on('data', (d) => {
+        stderr += d.toString();
+        if (stderr.length > MAX_ERROR_TAIL * 2) {
+          stderr = stderr.slice(-MAX_ERROR_TAIL * 2);
+        }
+      });
+      ff.on('error', (err) => {
+        clearTimeout(timeout);
+        this._retryOrFail(job, {
+          code: 'FFMPEG_SPAWN_ERROR',
+          message: `ffmpeg spawn failed: ${err.message}`,
           details: this._errorTail(stderr),
         }, { attempt, srcPath, outPath, posterPath });
-      }
-      // Poster is best-effort: a missing poster must not fail the job.
-      const pp = spawn('ffmpeg', [
-        '-y', '-hide_banner', '-loglevel', 'error',
-        '-i', srcPath, '-frames:v', '1', '-q:v', '3', posterPath,
-      ]);
-      pp.on('error', () => this._ready(job));
-      pp.on('close', () => this._ready(job));
+      });
+      ff.on('close', (code) => {
+        clearTimeout(timeout);
+        if (code !== 0) {
+          return this._retryOrFail(job, {
+            code: 'FFMPEG_TRANSCODE_FAILED',
+            message: `ffmpeg exited with code ${code}`,
+            details: this._errorTail(stderr),
+          }, { attempt, srcPath, outPath, posterPath });
+        }
+        // Poster is best-effort: a missing poster must not fail the job.
+        const pp = spawn('ffmpeg', [
+          '-y', '-hide_banner', '-loglevel', 'error',
+          '-i', srcPath, '-frames:v', '1', '-q:v', '3', posterPath,
+        ]);
+        pp.on('error', () => this._ready(job));
+        pp.on('close', () => this._ready(job));
+      });
+    });
+  }
+
+  /**
+   * True when the source video has a real alpha / RGBA-style pixel format.
+   * Note: WebM `alpha_mode=1` on an already-transcoded opaque file is NOT a
+   * source signal — we look at pix_fmt only.
+   */
+  _probeHasAlpha(srcPath, cb) {
+    const force = process.env.TITULUS_VIDEO_FORCE_ALPHA;
+    if (force === '1' || force === 'true') {
+      cb(true);
+      return;
+    }
+    if (force === '0' || force === 'false') {
+      cb(false);
+      return;
+    }
+    const ff = spawn('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=pix_fmt',
+      '-of', 'default=nw=1:nk=1',
+      srcPath,
+    ]);
+    let out = '';
+    ff.stdout.on('data', (d) => { out += d.toString(); });
+    ff.on('error', () => cb(false));
+    ff.on('close', () => {
+      const pix = out.trim().toLowerCase();
+      const has =
+        pix.includes('yuva')
+        || pix.includes('rgba')
+        || pix.includes('argb')
+        || pix.includes('bgra')
+        || pix.includes('abgr')
+        || pix.includes('gbrap')
+        || pix === 'ya8'
+        || pix === 'ya16le'
+        || pix === 'ya16be';
+      cb(has);
     });
   }
 

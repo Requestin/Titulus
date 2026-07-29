@@ -20,6 +20,14 @@ import { createAudit } from './audit.js';
 import { OnAirManager } from './onair.js';
 import { MediaJobs } from './media.js';
 import { MediaLibrary } from './mediaLibrary.js';
+import {
+  thumbnailsDir,
+  thumbnailExists,
+  thumbnailPublicUrl,
+  saveThumbnailJpeg,
+  removeThumbnail,
+  decodeImagePayload,
+} from './thumbnails.js';
 import { authRouter } from './routes/auth.js';
 import { auditRouter } from './routes/audit.js';
 import { billingRouter } from './routes/billing.js';
@@ -46,6 +54,7 @@ const DATA_DIR = process.env.TITULUS_DATA
   ? resolve(process.env.TITULUS_DATA)
   : DEFAULT_DATA_DIR;
 const UPLOADS_DIR = resolve(DATA_DIR, 'uploads');
+const THUMBNAILS_DIR = thumbnailsDir(DATA_DIR);
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -109,8 +118,24 @@ app.use('/api', audit.appendAudit);
 app.use('/api/auth', authRouter(auth));
 app.use('/api/billing', billingRouter(db, auth));
 app.use('/api/audit', auth.requireAuth, auth.requireRole('admin'), auditRouter(audit));
-app.use('/api/templates', auth.requireAuth, templatesRouter(db, dataElementsDb));
-app.use('/api/template-folders', auth.requireAuth, templateFoldersRouter(db));
+app.use('/api/templates', auth.requireAuth, templatesRouter(db, dataElementsDb, {
+  dataDir: DATA_DIR,
+  thumbnailExists: (id) => thumbnailExists(DATA_DIR, id),
+  thumbnailUrl: (id, bust) => thumbnailPublicUrl(id, bust),
+  saveThumbnail: (id, buf) => saveThumbnailJpeg(DATA_DIR, id, buf),
+  removeThumbnail: (id) => removeThumbnail(DATA_DIR, id),
+  decodeImagePayload,
+  regenerateThumbnail: async (template) => {
+    const { renderAndSaveThumbnail } = await import('./thumbnailRender.js');
+    return renderAndSaveThumbnail({
+      dataDir: DATA_DIR,
+      template,
+      uploadsDir: UPLOADS_DIR,
+      runtimePath: resolve(PUBLIC_DIR, 'bg-runtime.js'),
+    });
+  },
+}));
+app.use('/api/template-folders', auth.requireAuth, templateFoldersRouter(db, dataElementsDb));
 app.use('/api/channels', auth.requireAuth, auth.requireRole('admin'), channelsRouter(db));
 // Unreal pad invoke: operators need it on Control; pad CRUD still admin via channels PUT.
 app.use('/api/unreal', auth.requireAuth, unrealRouter(db));
@@ -149,6 +174,12 @@ app.use('/uploads', uploadsCors, express.static(UPLOADS_DIR, {
   setHeaders: (res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  },
+}));
+app.use('/thumbnails', express.static(THUMBNAILS_DIR, {
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'public, max-age=60');
   },
 }));
 app.use('/fonts', express.static(resolve(ROOT, 'fonts')));

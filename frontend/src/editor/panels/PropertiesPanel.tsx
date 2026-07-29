@@ -24,8 +24,8 @@ import {
 import { MediaSourcePicker } from '../media/MediaSourcePicker';
 import { placeVideoClipOnTimeline } from '../videoTimeline';
 import { CrawlTypeSections } from '../CrawlProperties';
-import { PropertyField, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
-import type { NumberInputExtraAction } from '@/components/ui/form';
+import { PropertyField, Section, SectionCollapseProvider, CollapseAllButton, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
+import type { NumberInputExtraAction, SectionCollapseSignal } from '@/components/ui/form';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 
@@ -56,6 +56,7 @@ export function PropertiesPanel() {
   const updateActionItem = useEditor((s) => s.updateActionItem);
   const addActionItem = useEditor((s) => s.addActionItem);
   const removeActionItem = useEditor((s) => s.removeActionItem);
+  const [collapseSignal, setCollapseSignal] = useState<SectionCollapseSignal>({ version: 0, open: true });
 
   if (!template) {
     return (
@@ -79,26 +80,32 @@ export function PropertiesPanel() {
     const directors = template.timeline.directors;
 
     return (
-      <div className="overflow-auto p-1">
-        <Section title="Action">
-          <PropertyField label="Name">
-            <Input
-              value={cue.name}
-              placeholder="Optional label"
-              onChange={(e) => updateActionCue(cue.id, { name: e.target.value })}
-            />
-          </PropertyField>
-          <PropertyField label="Frame">
-            <NumberInput
-              value={cue.frame}
-              min={0}
-              step={1}
-              onChange={(v) => updateActionCue(cue.id, { frame: Math.round(v) })}
-            />
-          </PropertyField>
-          <p className="px-3 pb-2 text-[11px] text-ink-faint">
-            Director: {hostDir?.name ?? cue.directorId}
-          </p>
+      <div className="flex h-full flex-col">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
+          <span className="text-[12px] font-semibold text-ink-muted">Properties</span>
+          <CollapseAllButton signal={collapseSignal} onChange={setCollapseSignal} />
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto p-1">
+          <SectionCollapseProvider signal={collapseSignal}>
+            <Section title="Action">
+              <PropertyField label="Name">
+                <Input
+                  value={cue.name}
+                  placeholder="Optional label"
+                  onChange={(e) => updateActionCue(cue.id, { name: e.target.value })}
+                />
+              </PropertyField>
+              <PropertyField label="Frame">
+                <NumberInput
+                  value={cue.frame}
+                  min={0}
+                  step={1}
+                  onChange={(v) => updateActionCue(cue.id, { frame: Math.round(v) })}
+                />
+              </PropertyField>
+              <p className="px-3 pb-2 text-[11px] text-ink-faint">
+                Director: {hostDir?.name ?? cue.directorId}
+              </p>
         </Section>
 
         {cue.items.map((item, idx) => {
@@ -221,6 +228,8 @@ export function PropertiesPanel() {
             +Action
           </button>
         </div>
+          </SectionCollapseProvider>
+        </div>
       </div>
     );
   }
@@ -239,26 +248,34 @@ export function PropertiesPanel() {
     const g = template.groups.find((x) => x.id === selection.id);
     if (!g) return null;
     return (
-      <div className="overflow-auto">
-        <Section title="Group">
-          <PropertyField label="Name">
-            <Input value={g.name} onChange={(e) => patch((t) => { const x = t.groups.find((q) => q.id === g.id); if (x) x.name = e.target.value; })} />
-          </PropertyField>
-        </Section>
-        <SizeSection
-          id={g.id}
-          kind="group"
-          canvas={template.canvas}
-          t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playheads)}
-          updateTransform={updateTransform}
-        />
-        <PositionSection
-          id={g.id}
-          kind="group"
-          template={template}
-          t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playheads)}
-          updateTransform={updateTransform}
-        />
+      <div className="flex h-full flex-col">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
+          <span className="text-[12px] font-semibold text-ink-muted">Properties</span>
+          <CollapseAllButton signal={collapseSignal} onChange={setCollapseSignal} />
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto">
+          <SectionCollapseProvider signal={collapseSignal}>
+            <Section title="Group">
+              <PropertyField label="Name">
+                <Input value={g.name} onChange={(e) => patch((t) => { const x = t.groups.find((q) => q.id === g.id); if (x) x.name = e.target.value; })} />
+              </PropertyField>
+            </Section>
+            <SizeSection
+              id={g.id}
+              kind="group"
+              canvas={template.canvas}
+              t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playheads)}
+              updateTransform={updateTransform}
+            />
+            <PositionSection
+              id={g.id}
+              kind="group"
+              template={template}
+              t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playheads)}
+              updateTransform={updateTransform}
+            />
+          </SectionCollapseProvider>
+        </div>
       </div>
     );
   }
@@ -267,11 +284,17 @@ export function PropertiesPanel() {
   if (!layer) return null;
 
   return (
-    <div className="overflow-auto">
-      <Section title="Layer">
-        <PropertyField label="Name">
-          <Input value={layer.name} onChange={(e) => updateLayer(layer.id, (l) => { l.name = e.target.value; })} />
-        </PropertyField>
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
+        <span className="text-[12px] font-semibold text-ink-muted">Properties</span>
+        <CollapseAllButton signal={collapseSignal} onChange={setCollapseSignal} />
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <SectionCollapseProvider signal={collapseSignal}>
+          <Section title="Layer">
+            <PropertyField label="Name">
+              <Input value={layer.name} onChange={(e) => updateLayer(layer.id, (l) => { l.name = e.target.value; })} />
+            </PropertyField>
         {layer.type !== 'mask' && (
           <>
             <PropertyField label="Opacity">
@@ -318,6 +341,8 @@ export function PropertiesPanel() {
       />
 
       <TypeSection layer={layer} variables={variables} updateLayer={updateLayer} />
+        </SectionCollapseProvider>
+      </div>
     </div>
   );
 }
@@ -747,16 +772,14 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             </PropertyField>
             {layer.mode === 'countup' && (
               <PropertyField label="Start time">
-                <Input
-                  type="datetime-local"
-                  step={1}
-                  value={epochToDatetimeLocal(layer.startTime)}
-                  onChange={(e) =>
+                <BindableTimeField
+                  value={layer.startTime}
+                  variables={variables.filter((v) => v.type === 'time')}
+                  onChange={(next) =>
                     updateLayer(layer.id, (l) => {
                       if (l.type !== 'clock') return;
-                      const ms = datetimeLocalToEpoch(e.target.value);
-                      if (ms === undefined) delete l.startTime;
-                      else l.startTime = ms;
+                      if (next === undefined) delete l.startTime;
+                      else l.startTime = next;
                     })
                   }
                 />
@@ -764,16 +787,14 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             )}
             {layer.mode === 'countdown' && (
               <PropertyField label="Target time">
-                <Input
-                  type="datetime-local"
-                  step={1}
-                  value={epochToDatetimeLocal(layer.targetTime)}
-                  onChange={(e) =>
+                <BindableTimeField
+                  value={layer.targetTime}
+                  variables={variables.filter((v) => v.type === 'time')}
+                  onChange={(next) =>
                     updateLayer(layer.id, (l) => {
                       if (l.type !== 'clock') return;
-                      const ms = datetimeLocalToEpoch(e.target.value);
-                      if (ms === undefined) delete l.targetTime;
-                      else l.targetTime = ms;
+                      if (next === undefined) delete l.targetTime;
+                      else l.targetTime = next;
                     })
                   }
                 />
@@ -1005,6 +1026,67 @@ function BindableField({
       >
         <Braces className="h-3.5 w-3.5" aria-hidden />
       </button>
+    </div>
+  );
+}
+
+function BindableTimeField({
+  value,
+  variables,
+  onChange,
+}: {
+  value: number | VariableBinding | undefined;
+  variables: Variable[];
+  onChange: (v: number | VariableBinding | undefined) => void;
+}) {
+  const isBound = typeof value === 'object' && value !== null;
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5">
+        {isBound ? (
+          <Select
+            className="flex-1"
+            value={value.variableId}
+            onChange={(e) => onChange({ type: 'variable', variableId: e.target.value })}
+          >
+            {variables.length === 0 && <option value="">No time variables</option>}
+            {variables.map((v) => (
+              <option key={v.id} value={v.id}>{v.label || v.name}</option>
+            ))}
+          </Select>
+        ) : (
+          <Input
+            type="datetime-local"
+            step={1}
+            className="flex-1"
+            value={epochToDatetimeLocal(typeof value === 'number' ? value : undefined)}
+            onChange={(e) => {
+              const ms = datetimeLocalToEpoch(e.target.value);
+              onChange(ms);
+            }}
+          />
+        )}
+        <button
+          type="button"
+          title={isBound ? 'Unbind variable' : 'Bind to time variable'}
+          disabled={!isBound && variables.length === 0}
+          onClick={() => {
+            if (isBound) onChange(undefined);
+            else if (variables[0]) onChange({ type: 'variable', variableId: variables[0].id });
+          }}
+          className={cn(
+            'grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border',
+            isBound ? 'border-primary text-primary' : 'text-ink-faint hover:text-ink disabled:opacity-40',
+          )}
+        >
+          <Braces className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </div>
+      {isBound && (
+        <p className="text-[10px] text-ink-faint">
+          Variable expression: today@18:00 · today+1 · now+5m
+        </p>
+      )}
     </div>
   );
 }

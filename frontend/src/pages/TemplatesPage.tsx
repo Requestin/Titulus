@@ -129,6 +129,9 @@ function EditorLibrary() {
   const [folderName, setFolderName] = useState('');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [folderRenameVal, setFolderRenameVal] = useState('');
+  const [pendingFolderDelete, setPendingFolderDelete] = useState<TemplateFolder | null>(null);
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -277,6 +280,44 @@ function EditorLibrary() {
     }
   }
 
+  async function commitFolderRename(id: string) {
+    const name = folderRenameVal.trim();
+    setRenamingFolderId(null);
+    if (!name) return;
+    const cur = folders.find((f) => f.id === id);
+    if (!cur || cur.name === name) return;
+    try {
+      const updated = await api.templateFolders.update(id, { name });
+      setFolders((list) => list.map((f) => (f.id === id ? { ...f, ...updated } : f)));
+      toast.success('Folder renamed');
+    } catch (e) {
+      toast.error(`Rename folder failed: ${(e as Error).message}`);
+    }
+  }
+
+  async function deleteFolder(mode: 'folder' | 'folderAndTemplates') {
+    if (!pendingFolderDelete) return;
+    const folder = pendingFolderDelete;
+    setPendingFolderDelete(null);
+    try {
+      await api.templateFolders.remove(folder.id, { deleteTemplates: mode === 'folderAndTemplates' });
+      setFolders((list) => list.filter((f) => f.id !== folder.id));
+      if (mode === 'folderAndTemplates') {
+        setItems((list) => (list ?? []).filter((t) => templateFolderId(t) !== folder.id));
+      } else {
+        setItems((list) => (list ?? []).map((t) => (
+          templateFolderId(t) === folder.id
+            ? { ...t, folderId: null, folder_id: null }
+            : t
+        )));
+      }
+      if (folderFilter === folder.id) setFolderFilter(ALL_FOLDER);
+      toast.success(mode === 'folderAndTemplates' ? 'Folder and templates deleted' : 'Folder deleted');
+    } catch (e) {
+      toast.error(`Delete folder failed: ${(e as Error).message}`);
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0">
       {/* Folders column */}
@@ -318,7 +359,14 @@ function EditorLibrary() {
               label={f.name}
               active={folderFilter === f.id}
               highlight={dragOverFolder === f.id}
+              renaming={renamingFolderId === f.id}
+              renameVal={folderRenameVal}
               onSelect={() => setFolderFilter(f.id)}
+              onRenameStart={() => { setRenamingFolderId(f.id); setFolderRenameVal(f.name); }}
+              onRenameChange={setFolderRenameVal}
+              onRenameCommit={() => { void commitFolderRename(f.id); }}
+              onRenameCancel={() => setRenamingFolderId(null)}
+              onDelete={() => setPendingFolderDelete(f)}
               droppable
               onDragOver={(e) => {
                 e.preventDefault();
@@ -457,6 +505,36 @@ function EditorLibrary() {
         </div>
       )}
 
+      {pendingFolderDelete && (
+        <div className="fixed inset-0 z-modal grid place-items-center bg-bg/70 px-4 backdrop-blur-sm">
+          <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-2xl">
+            <h3 className="mb-2 text-sm font-semibold text-ink">Delete folder</h3>
+            <p className="text-sm text-ink">
+              Folder will delete, do you want to delete templates which attached to this folder?
+            </p>
+            <p className="mt-1 text-[12px] text-ink-muted">
+              Folder: <span className="text-ink">{pendingFolderDelete.name}</span>
+            </p>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button
+                variant="danger"
+                onClick={() => { void deleteFolder('folder'); }}
+              >
+                Delete folder
+              </Button>
+              <Button
+                variant="neutral"
+                className="border-danger/40 text-danger hover:border-danger"
+                onClick={() => { void deleteFolder('folderAndTemplates'); }}
+              >
+                Delete folder and templates
+              </Button>
+              <Button variant="neutral" onClick={() => setPendingFolderDelete(null)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {folderModal && (
         <div className="fixed inset-0 z-modal grid place-items-center bg-bg/70 px-4 backdrop-blur-sm">
           <div role="dialog" aria-modal="true" className="w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-2xl">
@@ -484,6 +562,7 @@ function EditorLibrary() {
 
 function FolderRow({
   label, active, highlight, onSelect, droppable, onDragOver, onDragLeave, onDrop,
+  renaming, renameVal, onRenameStart, onRenameChange, onRenameCommit, onRenameCancel, onDelete,
 }: {
   label: string;
   active: boolean;
@@ -493,23 +572,73 @@ function FolderRow({
   onDragOver?: (e: DragEvent) => void;
   onDragLeave?: () => void;
   onDrop?: (e: DragEvent) => void;
+  renaming?: boolean;
+  renameVal?: string;
+  onRenameStart?: () => void;
+  onRenameChange?: (v: string) => void;
+  onRenameCommit?: () => void;
+  onRenameCancel?: () => void;
+  onDelete?: () => void;
 }) {
+  const editable = Boolean(onRenameStart && onDelete);
+
   return (
-    <button
-      type="button"
-      onClick={onSelect}
+    <div
       onDragOver={droppable ? onDragOver : undefined}
       onDragLeave={droppable ? onDragLeave : undefined}
       onDrop={droppable ? onDrop : undefined}
       className={cn(
-        'mb-0.5 flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors',
+        'group mb-0.5 flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-[13px] transition-colors',
         active ? 'bg-primary/15 text-primary' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
         highlight && 'ring-1 ring-primary',
       )}
     >
-      <Folder className="h-3.5 w-3.5 shrink-0" aria-hidden />
-      <span className="min-w-0 truncate">{label}</span>
-    </button>
+      <Folder className="ml-1 h-3.5 w-3.5 shrink-0" aria-hidden />
+      {renaming ? (
+        <Input
+          autoFocus
+          value={renameVal ?? ''}
+          className="h-7 min-w-0 flex-1 px-1.5 text-[12px]"
+          onChange={(e) => onRenameChange?.(e.target.value)}
+          onBlur={() => onRenameCommit?.()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onRenameCommit?.();
+            if (e.key === 'Escape') onRenameCancel?.();
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onSelect}
+          className="min-w-0 flex-1 truncate px-1 py-0.5 text-left"
+        >
+          {label}
+        </button>
+      )}
+      {editable && !renaming && (
+        <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100">
+          <button
+            type="button"
+            title="Rename folder"
+            aria-label={`Rename folder ${label}`}
+            className="grid h-6 w-6 place-items-center rounded text-ink-faint hover:bg-surface hover:text-ink"
+            onClick={(e) => { e.stopPropagation(); onRenameStart?.(); }}
+          >
+            <Pencil className="h-3 w-3" aria-hidden />
+          </button>
+          <button
+            type="button"
+            title="Delete folder"
+            aria-label={`Delete folder ${label}`}
+            className="grid h-6 w-6 place-items-center rounded text-ink-faint hover:bg-surface hover:text-danger"
+            onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
+          >
+            <Trash2 className="h-3 w-3" aria-hidden />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -585,10 +714,19 @@ function TemplateCard({
       <button
         type="button"
         onClick={onOpen}
-        className="grid aspect-video place-items-center bg-surface-2 text-ink-faint"
+        className="relative grid aspect-video place-items-center overflow-hidden bg-surface-2 text-ink-faint"
         aria-label={`Open ${t.name}`}
       >
-        <LayoutTemplate className="h-7 w-7" aria-hidden />
+        {t.thumbnailUrl ? (
+          <img
+            src={t.thumbnailUrl}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <LayoutTemplate className="h-7 w-7" aria-hidden />
+        )}
       </button>
       <div className="flex items-center justify-between gap-2 px-3 py-2.5">
         {renaming ? (

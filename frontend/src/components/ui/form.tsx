@@ -1,5 +1,7 @@
 import {
   forwardRef,
+  createContext,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -8,7 +10,7 @@ import {
   type SelectHTMLAttributes,
   type ReactNode,
 } from 'react';
-import { ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 const BASE_INPUT =
@@ -275,19 +277,82 @@ export function Field({ label, children, htmlFor }: { label: string; children: R
   );
 }
 
+/** Bump `version` to force every listening Section to `open`. */
+export type SectionCollapseSignal = { version: number; open: boolean };
+
+const SectionCollapseCtx = createContext<SectionCollapseSignal | undefined>(undefined);
+
+/** Provides expand/collapse-all signal to nested `Section` components. */
+export function SectionCollapseProvider({
+  signal,
+  children,
+}: {
+  signal: SectionCollapseSignal;
+  children: ReactNode;
+}) {
+  return (
+    <SectionCollapseCtx.Provider value={signal}>
+      {children}
+    </SectionCollapseCtx.Provider>
+  );
+}
+
+/** Toolbar control: collapse / expand all panel sections. */
+export function CollapseAllButton({
+  signal,
+  onChange,
+  className,
+}: {
+  signal: SectionCollapseSignal;
+  onChange: (next: SectionCollapseSignal) => void;
+  className?: string;
+}) {
+  const collapsing = signal.open;
+  return (
+    <button
+      type="button"
+      title={collapsing ? 'Collapse all' : 'Expand all'}
+      aria-label={collapsing ? 'Collapse all sections' : 'Expand all sections'}
+      className={cn(
+        'grid h-7 w-7 place-items-center rounded-md text-ink-muted hover:bg-surface-2 hover:text-ink',
+        className,
+      )}
+      onClick={() => onChange({ version: signal.version + 1, open: !signal.open })}
+    >
+      {collapsing
+        ? <ChevronsDownUp className="h-4 w-4" aria-hidden />
+        : <ChevronsUpDown className="h-4 w-4" aria-hidden />}
+    </button>
+  );
+}
+
 /** A panel section with a heading; optionally collapsible. */
 export function Section({
   title,
   children,
   collapsible = true,
   defaultOpen = true,
+  collapseSignal: collapseSignalProp,
 }: {
   title: string;
   children: ReactNode;
   collapsible?: boolean;
   defaultOpen?: boolean;
+  /** When `version` changes, force this section open/closed. */
+  collapseSignal?: SectionCollapseSignal;
 }) {
+  const ctxSignal = useContext(SectionCollapseCtx);
+  const collapseSignal = collapseSignalProp ?? ctxSignal;
   const [open, setOpen] = useState(defaultOpen);
+  const lastVersion = useRef(collapseSignal?.version);
+
+  useEffect(() => {
+    if (!collapseSignal) return;
+    if (lastVersion.current === collapseSignal.version) return;
+    lastVersion.current = collapseSignal.version;
+    setOpen(collapseSignal.open);
+  }, [collapseSignal]);
+
   if (!collapsible) {
     return (
       <div className="border-b border-border px-3 py-3 last:border-b-0">

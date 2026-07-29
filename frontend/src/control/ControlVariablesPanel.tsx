@@ -105,6 +105,14 @@ function VarsEditor({
               className="min-h-[72px] w-full resize-y rounded-md border border-border bg-surface-2 px-2 py-1.5 text-[13px] text-ink disabled:opacity-50"
               spellCheck={false}
             />
+          ) : v.type === 'time' ? (
+            <Input
+              value={String(values[v.id] ?? '')}
+              disabled={disabled}
+              placeholder="today@18:00 · today+1 · now+5m"
+              className="font-mono text-[12px]"
+              onChange={(e) => onChange(v.id, e.target.value)}
+            />
           ) : (
             <Input
               value={String(values[v.id] ?? '')}

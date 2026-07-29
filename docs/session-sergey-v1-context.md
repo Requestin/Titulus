@@ -1302,3 +1302,129 @@ Designer-owned pipeline: файл → parse → select row → map → variables
 - [ ] Editor: Z разносит tilted layers; Save старых шаблонов OK после backend restart
 - [ ] Continue после Update на 2-м dataelement
 - [ ] Timeline zoom in/out держит playhead в центре viewport
+
+---
+
+## 28–29 июля 2026 — folders actions, time variables, thumbnails, editor UX fixes
+
+### Template folders — rename/delete UX
+
+- `TemplatesPage`: у каждой папки добавлены `pencil` + `trash`
+- Rename папки теперь inline, без отдельного modal
+- Delete папки получил 3-way confirm:
+  - `Delete folder` — удалить только папку, шаблоны становятся `unfiled`
+  - `Delete folder and templates` — удалить папку и все шаблоны внутри
+  - `Cancel`
+- Backend: `DELETE /api/template-folders/:id?deleteTemplates=1`
+- При каскадном delete также удаляются связанные data elements
+
+### Clock / timer variables (`time`)
+
+- Добавлен новый тип переменной: `time`
+- `clock.startTime` / `clock.targetTime` теперь поддерживают literal epoch ms **или** `{ type:'variable' }` binding
+- Добавлен parser `runtime/src/timeExpr.ts` для operator-friendly выражений:
+  - `today`, `tomorrow`, `yesterday`
+  - `today+1`, `today-2`
+  - `today@18:00`, `today+1@09:30:00`
+  - `now+5m`, `now+1h`, `now+30s`
+  - ISO datetime / epoch ms
+- `PropertiesPanel`: Start/Target time можно bind-ить к `time` variable через `{ }`
+- `VariablesPanel`, `ControlVariablesPanel`, `VariableValues` поддерживают `time`
+- `DataPanel` map `as` расширен значением `time`
+
+### Data panel guide
+
+- Добавлен `docs/data-panel-guide.md`
+- Док покрывает:
+  - sources / formats / select modes
+  - map `as: text|number|time|image|video|multitext`
+  - media resolve
+  - clock + `time` variables
+  - troubleshooting / checklist
+
+### Video stutter on SDI — root cause + fix
+
+- Найдена причина: opaque clips транскодировались как WebM **с alpha path** (`yuva420p` + `alpha_mode=1`)
+- На editor/browser это выглядело терпимо, но в CPU-only CEF OSR для SDI лишняя alpha plane душила decode и вызывала stutter/strobe даже на primitive graphics
+- Fix в `backend/src/media.js`:
+  - source **with alpha** → VP9 + alpha
+  - source **without alpha** → VP8 / `yuv420p` / no metadata carry-over
+- Добавлен `backend/scripts/reencode-opaque-webm.sh`
+- Existing opaque clips в `/var/lib/titulus/uploads/Video` были re-encoded из `*.bak` без `alpha_mode`
+
+### Template thumbnails
+
+- Добавлен persistent thumbnails store: `/var/lib/titulus/thumbnails`
+- Backend:
+  - `backend/src/thumbnails.js`
+  - `backend/src/thumbnailRender.js`
+  - static route `/thumbnails/...`
+  - templates API возвращает `thumbnailUrl`
+  - `POST /api/templates/:id/regenerate-thumbnail`
+- Thumb generation сделана через `bg_engine --consumer=preview` на mid-timeline frame
+- `EditorPage` после Save best-effort вызывает regenerate thumbnail
+- `TemplatesPage` icons view снова показывает thumbnails
+- Добавлен one-shot bulk regen script: `backend/scripts/regen-thumbnails.mjs`
+- Ручной прогон выполнен: **21/21** template thumbnails regenerated successfully
+
+### Editor UX / panel collapses / resize
+
+- `DataPanel`:
+  - фикс cursor-jump в Pipeline id (draft + commit on blur/Enter)
+  - collapsible `Sources`
+  - collapsible каждый `Pipeline`
+  - global collapse / expand all
+- `VariablesPanel`:
+  - collapsible per-variable cards
+  - global collapse / expand all
+- `PropertiesPanel`:
+  - global collapse / expand all для всех `Section`
+  - общий `SectionCollapseProvider` / `CollapseAllButton` в `ui/form`
+- `EditorPage`:
+  - левая колонка `LayersPanel` стала horizontal-resizable
+
+### Timeline drag-and-drop fix
+
+- Bug: drag track upward фактически клал track вниз, потому что director droppable перехватывал hit-testing поверх track rows
+- Fix в `TimelinePanel`:
+  - collision detection теперь предпочитает track rows, director hit используется только для empty/end zone
+  - добавлен end-drop pad для вставки после последнего track
+  - insert indicator между tracks сделан визуально как в `LayersPanel`
+  - `useSortable` row transform отключён для стабильного before/after расчёта во время drag
+
+### Ключевые файлы
+
+| Area | Path |
+|---|---|
+| Session summary | `docs/session-sergey-v1-context.md` |
+| Data guide | `docs/data-panel-guide.md` |
+| Folders delete cascade | `backend/src/routes/templateFolders.js` |
+| Templates thumbnails API | `backend/src/routes/templates.js` |
+| Thumbnail engine render | `backend/src/thumbnailRender.js` |
+| Thumbnail storage helpers | `backend/src/thumbnails.js` |
+| Video transcode fix | `backend/src/media.js` |
+| Opaque clip reencode script | `backend/scripts/reencode-opaque-webm.sh` |
+| Bulk thumbnail regen | `backend/scripts/regen-thumbnails.mjs` |
+| Time expressions | `runtime/src/timeExpr.ts` |
+| Clock runtime binding | `runtime/src/domRenderer.ts` |
+| Schema updates | `runtime/src/schema.ts`, `shared/template.schema.json` |
+| Templates UI | `frontend/src/pages/TemplatesPage.tsx` |
+| Data panel | `frontend/src/editor/panels/DataPanel.tsx` |
+| Variables panel | `frontend/src/editor/panels/VariablesPanel.tsx` |
+| Properties panel | `frontend/src/editor/panels/PropertiesPanel.tsx` |
+| Shared collapsible sections | `frontend/src/components/ui/form.tsx` |
+| Timeline DnD | `frontend/src/editor/panels/TimelinePanel.tsx` |
+| Editor shell resizers | `frontend/src/pages/EditorPage.tsx` |
+
+### Чеклист
+
+- [x] Folders: rename + delete actions with confirm branches
+- [x] Clock: `time` variable + bindings + parser
+- [x] Data guide added
+- [x] Opaque video transcode path fixed for SDI
+- [x] Existing opaque WebM clips re-encoded without alpha metadata
+- [x] Template thumbnails generated into `/var/lib/titulus/thumbnails`
+- [x] Icons view thumbnails restored
+- [x] Data / Variables / Properties collapse controls added
+- [x] Timeline track drag up/down ordering fixed
+- [x] Layers panel width resizable

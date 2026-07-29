@@ -13,6 +13,7 @@ export interface TemplateSummary {
   folder_id?: string | null;
   created_at: string;
   updated_at: string;
+  thumbnailUrl?: string | null;
 }
 
 export interface TemplateRecord extends TemplateSummary {
@@ -343,6 +344,15 @@ export const api = {
       }),
     update: (id: string, patch: { name?: string; data?: Template; folderId?: string | null }) =>
       req<TemplateRecord>(`/api/templates/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    uploadThumbnail: (id: string, dataUrl: string) =>
+      req<{ ok: true; thumbnailUrl: string }>(`/api/templates/${id}/thumbnail`, {
+        method: 'PUT',
+        body: JSON.stringify({ dataUrl }),
+      }),
+    regenerateThumbnail: (id: string) =>
+      req<{ ok: true; thumbnailUrl: string }>(`/api/templates/${id}/regenerate-thumbnail`, {
+        method: 'POST',
+      }),
     remove: (id: string) => req<{ ok: true }>(`/api/templates/${id}`, { method: 'DELETE' }),
     validate: (data: Template) =>
       req<{ valid: boolean; errors: ValidationError[] }>('/api/templates/validate', {
@@ -356,7 +366,12 @@ export const api = {
       req<TemplateFolder>('/api/template-folders', { method: 'POST', body: JSON.stringify({ name }) }),
     update: (id: string, patch: { name?: string; sortOrder?: number }) =>
       req<TemplateFolder>(`/api/template-folders/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
-    remove: (id: string) => req<{ ok: true }>(`/api/template-folders/${id}`, { method: 'DELETE' }),
+    remove: (id: string, opts?: { deleteTemplates?: boolean }) => {
+      const q = opts?.deleteTemplates ? '?deleteTemplates=1' : '';
+      return req<{ ok: true; deletedTemplates?: boolean }>(`/api/template-folders/${id}${q}`, {
+        method: 'DELETE',
+      });
+    },
   },
   ueTemplates: {
     list: () => req<UeTemplateSummary[]>('/api/ue-templates'),

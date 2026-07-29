@@ -25,7 +25,6 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { Play, Pause, Square, Plus, Trash2, Activity, ListTree, GripVertical, ChevronRight, ChevronDown, SkipBack, Folder, ChevronsRight, Infinity as InfinityIcon } from 'lucide-react';
 import { ANIMATABLE_PROPS, getEasing, isUpdateDirectorName, type AnimatableProp, type EasingType } from '@runtime';
 import { useEditor, type Target } from '../store';
@@ -52,12 +51,21 @@ const TRACK_HEADER_BG = 'bg-surface';
 const DIRECTOR_HEADER_BG = 'bg-surface-2';
 const TRACK_HEADER_SHADOW = 'shadow-[2px_0_6px_-2px_oklch(var(--bg)/0.85)]';
 
-/** Prefer pointer hits on droppable director zones, then sortable tracks. */
+/** Prefer track rows; director zones only when not over a track (empty / end pad). */
 const timelineCollision: CollisionDetection = (args) => {
   const pointer = pointerWithin(args);
-  const directorHit = pointer.find((c) => String(c.id).startsWith('director:'));
-  if (directorHit) return [directorHit];
-  if (pointer.length > 0) return pointer;
+  const trackHits = pointer.filter((c) => !String(c.id).startsWith('director:'));
+  if (trackHits.length > 0) return trackHits;
+  const directorHits = pointer.filter((c) => String(c.id).startsWith('director:'));
+  if (directorHits.length > 0) return directorHits;
+  // closestCenter among tracks only — avoid picking the director wrapper.
+  const trackIds = new Set(
+    args.droppableContainers
+      .filter((c) => !String(c.id).startsWith('director:'))
+      .map((c) => c.id),
+  );
+  const closest = closestCenter(args).filter((c) => trackIds.has(c.id));
+  if (closest.length > 0) return closest;
   return closestCenter(args);
 };
 
@@ -559,7 +567,6 @@ export function TimelinePanel() {
                   return (
                     <DirectorSection
                       key={directorId}
-                      directorId={directorId}
                       dropActive={dragIntent?.type === 'director' && dragIntent.directorId === directorId}
                     >
                       <div className="flex">
@@ -673,8 +680,17 @@ export function TimelinePanel() {
                           );
                         })}
 
-                        {tracks.length === 0 && (
-                          <DirectorDropLane timelineWidth={timelineWidth} />
+                        {tracks.length === 0 ? (
+                          <DirectorDropLane
+                            directorId={directorId}
+                            timelineWidth={timelineWidth}
+                            active={dragIntent?.type === 'director' && dragIntent.directorId === directorId}
+                          />
+                        ) : (
+                          <DirectorEndDropPad
+                            directorId={directorId}
+                            active={dragIntent?.type === 'director' && dragIntent.directorId === directorId}
+                          />
                         )}
                         </>
                       )}
@@ -797,32 +813,17 @@ function TrackDragOverlay({ label }: { label: string }) {
   );
 }
 
-function TrackDropLine({ position }: { position: 'before' | 'after' }) {
-  return (
-    <div
-      className={cn(
-        'pointer-events-none absolute left-1 right-1 z-20 h-0.5 rounded-full bg-primary shadow-[0_0_0_1px_oklch(var(--primary)/0.2)]',
-        position === 'before' ? 'top-0' : 'bottom-0',
-      )}
-      aria-hidden
-    />
-  );
-}
-
 function DirectorSection({
-  directorId, children, dropActive,
+  children, dropActive,
 }: {
-  directorId: string;
   children: ReactNode;
   dropActive?: boolean;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `director:${directorId}` });
   return (
     <div
-      ref={setNodeRef}
       className={cn(
         'border-b border-border/30',
-        (isOver || dropActive) && 'bg-primary/10 ring-1 ring-inset ring-primary/35',
+        dropActive && 'bg-primary/10 ring-1 ring-inset ring-primary/35',
       )}
     >
       {children}
@@ -830,9 +831,23 @@ function DirectorSection({
   );
 }
 
-function DirectorDropLane({ timelineWidth }: { timelineWidth: number }) {
+function DirectorDropLane({
+  directorId, timelineWidth, active,
+}: {
+  directorId: string;
+  timelineWidth: number;
+  active?: boolean;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `director:${directorId}` });
+  const lit = isOver || active;
   return (
-    <div className="flex">
+    <div ref={setNodeRef} className={cn('relative flex', lit && 'bg-primary/10')}>
+      {lit && (
+        <div
+          className="pointer-events-none absolute inset-x-1 top-1/2 z-20 h-1 -translate-y-1/2 rounded-full bg-primary shadow-[0_0_0_1px_oklch(var(--primary)/0.25)]"
+          aria-hidden
+        />
+      )}
       <div
         className={cn('sticky left-0 shrink-0 border-r border-border/40 px-2 py-1 text-[11px] text-ink-faint', TRACK_HEADER_Z, TRACK_HEADER_BG, TRACK_HEADER_SHADOW)}
         style={{ width: HEADER_W, height: LANE_H }}
@@ -840,6 +855,41 @@ function DirectorDropLane({ timelineWidth }: { timelineWidth: number }) {
         Drop track here
       </div>
       <div style={{ width: timelineWidth, height: LANE_H }} className="border-b border-border/20 bg-surface/30" />
+    </div>
+  );
+}
+
+/** Thin end-of-list drop target — insert after the last track in this director. */
+function DirectorEndDropPad({
+  directorId, active,
+}: {
+  directorId: string;
+  active?: boolean;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `director:${directorId}` });
+  const lit = isOver || active;
+  return (
+    <div ref={setNodeRef} className="relative h-3">
+      {lit && (
+        <div
+          className="pointer-events-none absolute inset-x-1 top-1/2 z-20 h-1 -translate-y-1/2 rounded-full bg-primary shadow-[0_0_0_1px_oklch(var(--primary)/0.25)]"
+          aria-hidden
+        />
+      )}
+    </div>
+  );
+}
+
+function TrackDropLine({ position }: { position: 'before' | 'after' }) {
+  return (
+    <div
+      className={cn(
+        'pointer-events-none absolute inset-x-0 z-20 flex h-3 items-center',
+        position === 'before' ? '-top-1.5' : '-bottom-1.5',
+      )}
+      aria-hidden
+    >
+      <div className="mx-1 h-1 w-full rounded-full bg-primary shadow-[0_0_0_1px_oklch(var(--primary)/0.25)]" />
     </div>
   );
 }
@@ -1062,12 +1112,14 @@ function SortableTrackRow({
   timelineWidth: number;
   lane: ReactNode;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: trackId });
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({
+    id: trackId,
+    animateLayoutChanges: () => false,
+  });
 
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn('relative flex', isDragging && 'z-0')}
     >
       {dropBefore && <TrackDropLine position="before" />}
