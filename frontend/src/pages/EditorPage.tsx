@@ -189,7 +189,7 @@ export function EditorPage() {
     const drag = timelineResizeRef.current;
     if (!drag) return;
     const next = drag.startHeight + (drag.startY - e.clientY);
-    setTimelineHeight(Math.min(520, Math.max(160, next)));
+    setTimelineHeight(Math.min(624, Math.max(160, next)));
   }
 
   function endTimelineResize(e: ReactPointerEvent<HTMLDivElement>) {

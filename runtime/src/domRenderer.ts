@@ -963,9 +963,10 @@ export class TemplateRenderer {
 
       if (cmd === 'startDirector') {
         const trt = this.directorRuntimes[targetId];
-        if (trt && trt.state === 'stop') {
+        if (trt && (trt.state === 'stop' || trt.state === 'stopAndWaitContinue')) {
+          // Resume from current localFrame (kept on stop); never-started stays at 0.
+          waitingMayHaveChanged ||= trt.state === 'stopAndWaitContinue';
           trt.state = 'play';
-          trt.localFrame = 0;
           trt.lastLocalForActions = null;
         }
         continue;

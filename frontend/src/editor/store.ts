@@ -142,6 +142,103 @@ function removeFromTrackOrder(t: Template, key: string): void {
   }
 }
 
+export type KeyframeMove = {
+  target: Target;
+  prop: AnimatableProp;
+  from: number;
+  to: number;
+};
+
+export type SelectedKeyframeRef = {
+  target: Target;
+  prop: AnimatableProp;
+  frame: number;
+};
+
+function readPropValue(
+  t: Template,
+  target: Target,
+  prop: AnimatableProp,
+  frame: number,
+): number | undefined {
+  const kf = t.timeline.keyframes.find((k) => k.frame === frame);
+  if (!kf) return undefined;
+  const bag = (target.kind === 'layer' ? kf.layers : kf.groups)[target.id];
+  const v = bag?.[prop];
+  return typeof v === 'number' ? v : undefined;
+}
+
+function removePropAtFrame(t: Template, target: Target, prop: AnimatableProp, frame: number): void {
+  const kf = t.timeline.keyframes.find((k) => k.frame === frame);
+  if (!kf) return;
+  const sec = target.kind === 'layer' ? kf.layers : kf.groups;
+  const bag = sec[target.id];
+  if (!bag || bag[prop] === undefined) return;
+  delete bag[prop];
+  if (Object.keys(bag).length === 0) delete sec[target.id];
+  pruneKf(t, kf);
+}
+
+function writePropAtFrame(
+  t: Template,
+  target: Target,
+  prop: AnimatableProp,
+  frame: number,
+  value: number,
+): void {
+  const kf = kfAt(t, Math.round(frame));
+  const sec = target.kind === 'layer' ? kf.layers : kf.groups;
+  (sec[target.id] ??= {})[prop] = value;
+}
+
+/** Two-phase apply: strip all sources first, then write destinations (avoids A→B / B→C clobber). */
+function applyKeyframeMoves(t: Template, moves: KeyframeMove[]): void {
+  const effective = moves.filter((m) => m.from !== m.to);
+  if (effective.length === 0) return;
+
+  const payloads = effective.map((m) => {
+    const value = readPropValue(t, m.target, m.prop, m.from);
+    return value === undefined ? null : { ...m, value };
+  }).filter((x): x is KeyframeMove & { value: number } => x !== null);
+
+  for (const m of payloads) {
+    removePropAtFrame(t, m.target, m.prop, m.from);
+  }
+  for (const m of payloads) {
+    writePropAtFrame(t, m.target, m.prop, m.to, m.value);
+  }
+}
+
+function collectTargetPropFrames(
+  t: Template,
+  target: Target,
+  prop?: AnimatableProp,
+): Array<{ prop: AnimatableProp; frame: number; value: number }> {
+  const out: Array<{ prop: AnimatableProp; frame: number; value: number }> = [];
+  for (const k of t.timeline.keyframes) {
+    const bag = (target.kind === 'layer' ? k.layers : k.groups)[target.id];
+    if (!bag) continue;
+    for (const [p, v] of Object.entries(bag) as [AnimatableProp, number][]) {
+      if (prop && p !== prop) continue;
+      if (typeof v !== 'number') continue;
+      out.push({ prop: p, frame: k.frame, value: v });
+    }
+  }
+  return out;
+}
+
+function targetKeyframeSpan(t: Template, target: Target): { min: number; max: number } | null {
+  const pts = collectTargetPropFrames(t, target);
+  if (pts.length === 0) return null;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const p of pts) {
+    if (p.frame < min) min = p.frame;
+    if (p.frame > max) max = p.frame;
+  }
+  return { min, max };
+}
+
 function animatableFromTransformPartial(partial: Partial<Transform>): Partial<Record<AnimatableProp, number>> {
   const out: Partial<Record<AnimatableProp, number>> = {};
   for (const key of Object.keys(partial)) {
@@ -213,9 +310,14 @@ interface EditorState {
   assignTrack: (track: TimelineTrack, directorId: string) => void;
   reorderTracks: (directorId: string, trackKeys: string[]) => void;
   moveTrackToDirector: (track: TimelineTrack, toDirectorId: string, toIndex?: number) => void;
+  moveObjectToDirector: (target: Target, toDirectorId: string, beforeTrackKey?: string | null) => void;
   setKeyframeValue: (target: Target, frame: number, prop: AnimatableProp, value: number, directorId?: string) => void;
   movePoint: (target: Target, prop: AnimatableProp, fromFrame: number, toFrame: number) => void;
   moveKeyframeSegment: (target: Target, prop: AnimatableProp, edgeIndex: number, deltaFrames: number) => void;
+  shiftKeyframes: (moves: KeyframeMove[]) => void;
+  shiftTargetKeyframes: (target: Target, deltaFrames: number) => void;
+  scaleTargetKeyframes: (target: Target, newMin: number, newMax: number) => void;
+  shiftSelectedKeyframes: (selected: SelectedKeyframeRef[], deltaFrames: number) => SelectedKeyframeRef[] | null;
   deletePoint: (target: Target, prop: AnimatableProp, frame: number) => void;
   removeTrack: (target: Target, prop: AnimatableProp) => void;
   setKeyframeEasing: (frame: number, easing: EasingType) => void;
@@ -924,6 +1026,47 @@ export const useEditor = create<EditorState>()(
           t.timeline.trackOrder[toDirectorId] = without;
         }),
 
+      moveObjectToDirector: (target, toDirectorId, beforeTrackKey) =>
+        get().patch((t) => {
+          const keySet = new Set<string>();
+          for (const k of Object.keys(t.timeline.trackDirectors)) {
+            const parts = k.split(':');
+            if (parts[0] === target.kind && parts[1] === target.id) keySet.add(k);
+          }
+          for (const kf of t.timeline.keyframes) {
+            const bag = (target.kind === 'layer' ? kf.layers : kf.groups)[target.id];
+            if (!bag) continue;
+            for (const prop of Object.keys(bag) as AnimatableProp[]) {
+              keySet.add(trackKey(target, prop));
+            }
+          }
+          const keys = [...keySet];
+          if (keys.length === 0) return;
+
+          t.timeline.trackOrder ??= {};
+          for (const did of Object.keys(t.timeline.trackOrder)) {
+            t.timeline.trackOrder[did] = t.timeline.trackOrder[did]!.filter((k) => !keySet.has(k));
+          }
+          for (const key of keys) {
+            const parts = key.split(':');
+            const prop = parts.slice(2).join(':') as AnimatableProp;
+            assignTrackDirector(t, { target, prop }, toDirectorId);
+          }
+
+          const dest = t.timeline.trackOrder[toDirectorId] ??= [];
+          const existing = new Set(dest);
+          const toInsert = keys.filter((k) => !existing.has(k));
+          if (toInsert.length === 0) return;
+
+          let insertAt = dest.length;
+          if (beforeTrackKey) {
+            const idx = dest.indexOf(beforeTrackKey);
+            if (idx >= 0) insertAt = idx;
+          }
+          dest.splice(insertAt, 0, ...toInsert);
+          t.timeline.trackOrder[toDirectorId] = dest;
+        }),
+
       setKeyframeValue: (target, frame, prop, value, directorId) =>
         get().patch((t) => {
           const did = directorId ?? get().activeDirectorId;
@@ -938,18 +1081,10 @@ export const useEditor = create<EditorState>()(
       movePoint: (target, prop, fromFrame, toFrame) => {
         if (fromFrame === toFrame) return;
         get().patch((t) => {
-          const from = t.timeline.keyframes.find((k) => k.frame === fromFrame);
-          if (!from) return;
-          const sec = target.kind === 'layer' ? from.layers : from.groups;
-          const bag = sec[target.id];
-          if (!bag || bag[prop] === undefined) return;
-          const val = bag[prop] as number;
-          delete bag[prop];
-          if (Object.keys(bag).length === 0) delete sec[target.id];
-          pruneKf(t, from);
-          const to = kfAt(t, Math.round(toFrame));
-          const tsec = target.kind === 'layer' ? to.layers : to.groups;
-          (tsec[target.id] ??= {})[prop] = val;
+          // Block overwrite of a different keyframe on the same prop.
+          const destVal = readPropValue(t, target, prop, Math.round(toFrame));
+          if (destVal !== undefined && Math.round(toFrame) !== fromFrame) return;
+          applyKeyframeMoves(t, [{ target, prop, from: fromFrame, to: Math.round(toFrame) }]);
         });
       },
 
@@ -976,9 +1111,8 @@ export const useEditor = create<EditorState>()(
 
           const moving = [...component].sort((a, b) => a - b).map((i) => points[i]!.frame);
           const fixed = new Set(points.map((p) => p.frame).filter((f) => !moving.includes(f)));
-          const delta = deltaFrames;
 
-          const targetFrames = moving.map((f) => Math.max(0, f + delta));
+          const targetFrames = moving.map((f) => Math.max(0, f + deltaFrames));
           for (let i = 1; i < targetFrames.length; i++) {
             if (targetFrames[i]! <= targetFrames[i - 1]!) targetFrames[i] = targetFrames[i - 1]! + 1;
           }
@@ -986,23 +1120,150 @@ export const useEditor = create<EditorState>()(
             if (fixed.has(tf)) return;
           }
 
-          const frameMap = new Map(moving.map((f, i) => [f, targetFrames[i]!]));
-          for (const [from, to] of frameMap) {
-            if (from === to) continue;
-            const kfFrom = t.timeline.keyframes.find((k) => k.frame === from);
-            if (!kfFrom) continue;
-            const sec = target.kind === 'layer' ? kfFrom.layers : kfFrom.groups;
-            const bag = sec[target.id];
-            if (!bag || bag[prop] === undefined) continue;
-            const val = bag[prop] as number;
-            delete bag[prop];
-            if (Object.keys(bag).length === 0) delete sec[target.id];
-            pruneKf(t, kfFrom);
-            const kfTo = kfAt(t, to);
-            const tsec = target.kind === 'layer' ? kfTo.layers : kfTo.groups;
-            (tsec[target.id] ??= {})[prop] = val;
-          }
+          applyKeyframeMoves(
+            t,
+            moving.map((from, i) => ({ target, prop, from, to: targetFrames[i]! })),
+          );
         });
+      },
+
+      shiftKeyframes: (moves) => {
+        if (moves.length === 0) return;
+        get().patch((t) => { applyKeyframeMoves(t, moves); });
+      },
+
+      shiftTargetKeyframes: (target, deltaFrames) => {
+        if (deltaFrames === 0) return;
+        get().patch((t) => {
+          const pts = collectTargetPropFrames(t, target);
+          if (pts.length === 0) return;
+          const moves: KeyframeMove[] = pts.map((p) => ({
+            target,
+            prop: p.prop,
+            from: p.frame,
+            to: Math.max(0, p.frame + deltaFrames),
+          }));
+          // Preserve relative order per prop if clamping collapses.
+          const byProp = new Map<AnimatableProp, KeyframeMove[]>();
+          for (const m of moves) {
+            const list = byProp.get(m.prop) ?? [];
+            list.push(m);
+            byProp.set(m.prop, list);
+          }
+          const fixedMoves: KeyframeMove[] = [];
+          for (const [, list] of byProp) {
+            list.sort((a, b) => a.from - b.from);
+            for (let i = 1; i < list.length; i++) {
+              if (list[i]!.to <= list[i - 1]!.to) list[i]!.to = list[i - 1]!.to + 1;
+            }
+            fixedMoves.push(...list);
+          }
+          applyKeyframeMoves(t, fixedMoves);
+        });
+      },
+
+      scaleTargetKeyframes: (target, newMin, newMax) => {
+        get().patch((t) => {
+          const span = targetKeyframeSpan(t, target);
+          if (!span) return;
+          const { min: oldMin, max: oldMax } = span;
+          const oldRange = oldMax - oldMin;
+          let nMin = Math.max(0, Math.round(newMin));
+          let nMax = Math.max(0, Math.round(newMax));
+          if (nMax < nMin) {
+            const tmp = nMin;
+            nMin = nMax;
+            nMax = tmp;
+          }
+          if (oldRange === 0) {
+            // Single-frame span: move all to nMin (or keep if both edges same).
+            const pts = collectTargetPropFrames(t, target);
+            applyKeyframeMoves(t, pts.map((p) => ({
+              target,
+              prop: p.prop,
+              from: p.frame,
+              to: nMin,
+            })));
+            return;
+          }
+          if (nMax === nMin) nMax = nMin + 1;
+          const pts = collectTargetPropFrames(t, target);
+          const moves: KeyframeMove[] = pts.map((p) => {
+            const ratio = (p.frame - oldMin) / oldRange;
+            const to = Math.round(nMin + ratio * (nMax - nMin));
+            return { target, prop: p.prop, from: p.frame, to: Math.max(0, to) };
+          });
+          // Ensure per-prop uniqueness after rounding.
+          const byProp = new Map<AnimatableProp, KeyframeMove[]>();
+          for (const m of moves) {
+            const list = byProp.get(m.prop) ?? [];
+            list.push(m);
+            byProp.set(m.prop, list);
+          }
+          const fixed: KeyframeMove[] = [];
+          for (const [, list] of byProp) {
+            list.sort((a, b) => a.from - b.from);
+            for (let i = 1; i < list.length; i++) {
+              if (list[i]!.to <= list[i - 1]!.to) list[i]!.to = list[i - 1]!.to + 1;
+            }
+            fixed.push(...list);
+          }
+          applyKeyframeMoves(t, fixed);
+        });
+      },
+
+      shiftSelectedKeyframes: (selected, deltaFrames) => {
+        if (deltaFrames === 0 || selected.length === 0) return selected;
+        let result: SelectedKeyframeRef[] | null = selected;
+        get().patch((t) => {
+          const selectedKeys = new Set(
+            selected.map((s) => `${s.target.kind}:${s.target.id}:${s.prop}:${s.frame}`),
+          );
+          const moves: KeyframeMove[] = selected.map((s) => ({
+            target: s.target,
+            prop: s.prop,
+            from: s.frame,
+            to: Math.max(0, s.frame + deltaFrames),
+          }));
+
+          // Collision with non-selected keyframes of same prop → abort.
+          for (const m of moves) {
+            const destKey = `${m.target.kind}:${m.target.id}:${m.prop}:${m.to}`;
+            if (selectedKeys.has(`${m.target.kind}:${m.target.id}:${m.prop}:${m.from}`)
+              && moves.some((o) => o.target.kind === m.target.kind && o.target.id === m.target.id
+                && o.prop === m.prop && o.from === m.to)) {
+              continue; // destination occupied by another selected move — OK (two-phase)
+            }
+            const occupied = readPropValue(t, m.target, m.prop, m.to);
+            if (occupied === undefined) continue;
+            const isSelectedDest = selectedKeys.has(destKey);
+            if (!isSelectedDest) {
+              result = null;
+              return;
+            }
+          }
+          if (result === null) return;
+
+          // Per-prop uniqueness after move.
+          const byProp = new Map<string, KeyframeMove[]>();
+          for (const m of moves) {
+            const key = `${m.target.kind}:${m.target.id}:${m.prop}`;
+            const list = byProp.get(key) ?? [];
+            list.push(m);
+            byProp.set(key, list);
+          }
+          const fixed: KeyframeMove[] = [];
+          for (const [, list] of byProp) {
+            list.sort((a, b) => a.from - b.from);
+            for (let i = 1; i < list.length; i++) {
+              if (list[i]!.to <= list[i - 1]!.to) list[i]!.to = list[i - 1]!.to + 1;
+            }
+            fixed.push(...list);
+          }
+          applyKeyframeMoves(t, fixed);
+          result = fixed.map((m) => ({ target: m.target, prop: m.prop, frame: m.to }));
+        });
+        return result;
       },
 
       deletePoint: (target, prop, frame) =>

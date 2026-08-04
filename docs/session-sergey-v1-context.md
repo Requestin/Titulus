@@ -1,7 +1,7 @@
 # Ветка `sergey-v1` — контекст и changelog
 
 > Сводка работы Sergey + агент Cursor на ветке `sergey-v1`.  
-> Обновлено: **24 июля 2026**.
+> Обновлено: **4 августа 2026**.
 
 ---
 
@@ -50,6 +50,59 @@
 | `58c381e` | 17 июл | `add actions, continue,update` (perf + classic playback gate + session context) |
 | `05b4fe0` | 21 июл | `fix perfomance issue` (SDI smooth + web/editor fractional playback) |
 | `ee6d30c` | 24 июл | `video on timeline, UE path` |
+| `87ce6f5` | 4 авг | `folders,var data, fix thumb` |
+| `925ad0d` | 4 авг | `timeline group and select` |
+
+---
+
+## 4 августа 2026 — Timeline object tracks + multi-select
+
+Крупный пакет UI/store таймлайна: группировка треков по объекту, marquee multi-select, object move/stretch, UX-полировка и fix `startDirector`.
+
+### A) Object-track grouping (pure UI, без смены schema)
+
+Внутри директора треки **всегда** группируются по `target` (layer/group):
+
+- Object row = имя объекта (`targetLabel`) + chevron collapse + grip DnD
+- Summary-bar = `[minFrame, maxFrame]` по всем дочерним keyframes
+- Drag bar → `shiftTargetKeyframes` (все child kf с одним delta)
+- Drag края → `scaleTargetKeyframes` (пропорциональный stretch, противоположный край фиксирован)
+- DnD object в другой директор → `moveObjectToDirector`; если object уже есть — **merge**
+- Вложенные prop-треки визуально правее (`pl-11`); labels: `Z`, `pers` (perspective)
+
+**Файлы:** `frontend/src/editor/timelineTracks.ts` (`collectDirectorObjectTree`, `objectTrackKey`), `TimelinePanel.tsx` (`ObjectTrackGroup`, `ObjectSummaryLane`), `store.ts`.
+
+### B) Marquee multi-select + group drag
+
+- Rubber-band на dope lanes (`data-marquee-zone`); hit-test `[data-kf="1"]`
+- Shift/Ctrl/Meta+click toggle; drag выделенных → `shiftSelectedKeyframes` (two-phase apply)
+- Summary object-bar растёт вместе с multi-drag preview
+- `select-none` + clear `getSelection()` — текст названий треков не выделяется (ломало drag)
+- Marquee **не** стартует на playhead ruler (`data-playhead-scrub`); там только scrub; ruler `stopPropagation`
+
+### C) Selection sync + toolbar UX
+
+- Клик по object / Layers: подсветка только треков этого объекта (`activeTrack` сбрасывается)
+- Actions lane только если есть cues
+- `+Track` слева в toolbar с `+D` / `+K` / `+A`
+- Max высота таймлайна 624 (было 520); zoom out до fit viewport (`pxPerFrame` floor ~0.05–0.25)
+- Properties Action: кнопка `i` с подсказками команд
+
+### D) Correctness fixes
+
+- Two-phase `moveKeyframeSegment` / batch moves — kf не схлопываются при A→B / B→C
+- `startDirector` resumes с текущего `localFrame` (не сбрасывает в 0); также из `stopAndWaitContinue`
+
+**Файлы:** `frontend/src/editor/store.ts`, `TimelinePanel.tsx`, `PropertiesPanel.tsx`, `EditorPage.tsx`, `runtime/src/domRenderer.ts` (+ rebuild `bg-runtime.js`).
+
+### Чеклист
+
+- [ ] 2 kf на треке: drag сегмента так, что start попадает на старый end → оба kf сохраняются
+- [ ] Object row: collapse, move, edge stretch, DnD merge между директорами
+- [ ] Marquee + совместный drag; summary bar расширяется
+- [ ] Select layer/object → только его треки подсвечены
+- [ ] Playhead scrub на Global/director ruler; marquee только на track lanes
+- [ ] startDirector после stopDirector продолжает с той же точки
 
 ---
 

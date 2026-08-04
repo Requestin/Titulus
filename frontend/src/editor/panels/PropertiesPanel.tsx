@@ -57,6 +57,7 @@ export function PropertiesPanel() {
   const addActionItem = useEditor((s) => s.addActionItem);
   const removeActionItem = useEditor((s) => s.removeActionItem);
   const [collapseSignal, setCollapseSignal] = useState<SectionCollapseSignal>({ version: 0, open: true });
+  const [actionHelpOpen, setActionHelpOpen] = useState(false);
 
   if (!template) {
     return (
@@ -88,6 +89,32 @@ export function PropertiesPanel() {
         <div className="min-h-0 flex-1 overflow-auto p-1">
           <SectionCollapseProvider signal={collapseSignal}>
             <Section title="Action">
+              <div className="relative -mt-1 mb-2 flex justify-end">
+                <button
+                  type="button"
+                  aria-label="Action command help"
+                  aria-expanded={actionHelpOpen}
+                  onClick={() => setActionHelpOpen((open) => !open)}
+                  className={cn(
+                    'grid h-6 min-w-6 place-items-center rounded border border-border px-1 text-[11px] font-semibold text-ink-faint hover:bg-surface-2 hover:text-ink',
+                    actionHelpOpen && 'border-primary/40 bg-primary/15 text-primary',
+                  )}
+                >
+                  i
+                </button>
+                {actionHelpOpen && (
+                  <div
+                    role="status"
+                    className="absolute right-0 top-7 z-20 w-72 rounded-md border border-border bg-surface p-2 text-[11px] leading-relaxed text-ink-muted shadow-lg"
+                  >
+                    <p><span className="font-medium text-ink">start director</span> - start director if director not started or stopped.</p>
+                    <p><span className="font-medium text-ink">stop director</span>- stop director until another action will start it</p>
+                    <p><span className="font-medium text-ink">stop director and wait continue</span> - stop director and wait when press continue.</p>
+                    <p><span className="font-medium text-ink">pause director</span> - stop director for some time</p>
+                    <p><span className="font-medium text-ink">tag</span> - add tag</p>
+                  </div>
+                )}
+              </div>
               <PropertyField label="Name">
                 <Input
                   value={cue.name}
