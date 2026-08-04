@@ -51,7 +51,7 @@
 | `05b4fe0` | 21 июл | `fix perfomance issue` (SDI smooth + web/editor fractional playback) |
 | `ee6d30c` | 24 июл | `video on timeline, UE path` |
 | `87ce6f5` | 4 авг | `folders,var data, fix thumb` |
-| `925ad0d` | 4 авг | `timeline group and select` |
+| `7f63f16` | 4 авг | `timeline group and select` |
 
 ---
 
