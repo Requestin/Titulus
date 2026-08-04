@@ -52,6 +52,46 @@
 | `ee6d30c` | 24 июл | `video on timeline, UE path` |
 | `87ce6f5` | 4 авг | `folders,var data, fix thumb` |
 | `7f63f16` | 4 авг | `timeline group and select` |
+| `269272d` | 4 авг | `docs(sergey-v1): fix commit hash in session context` |
+| _(pending)_ | 4 авг | `action from end, crowl fix data` |
+
+---
+
+## 4 августа 2026 — Action `fromEnd` + Crawl duration vs variable
+
+Два follow-up после timeline object/select: позиционирование Action cue от конца директора и пересчёт длины Crawl при смене текста переменной.
+
+### A) Action cue `fromEnd`
+
+Опциональный флаг `fromEnd` на `TimelineActionCue`:
+
+- `fromEnd: false` (default) — `frame` = абсолютный кадр в директоре
+- `fromEnd: true` — `frame` = «за N кадров до конца» (`durationFrames - N`)
+- Helpers: `effectiveActionFrame` / `actionFrameFromEffective` в `runtime/src/schema.ts`
+- Runtime compile (`timeline.ts`) резолвит в абсолютный кадр для fire/sort
+- Editor: Properties checkbox «From end»; Action lane рисует по effective position; store create/move/update учитывает флаг
+- Schema: `shared/template.schema.json`
+
+**Файлы:** `runtime/src/schema.ts`, `runtime/src/timeline.ts`, `shared/template.schema.json`, `frontend/src/editor/panels/PropertiesPanel.tsx`, `TimelinePanel.tsx`, `store.ts`.
+
+### B) Crawl: длительность при content из переменной
+
+**Баг:** content crawl привязан к multitext/text переменной → смена текста не пересчитывала `durationFrames` Crawl-директора ни в editor, ни на TAKE/UPDATE в control.
+
+**Fix:**
+
+- `crawlContentString` / `recomputeCrawlDirectorDuration` принимают optional variable overrides
+- Helpers: `crawlContentUsesVariable`, `recomputeCrawlDirectorsForVariable`, `recomputeAllCrawlDirectors`
+- Editor `updateVariable`: при смене `defaultValue` — recompute привязанных crawl; при `removeVariable` — тоже
+- Control air path: `prepareTemplateForAir` после финальной карты переменных (incl. data overrides) вызывает `recomputeAllCrawlDirectors`
+
+**Файлы:** `frontend/src/editor/crawlTimeline.ts`, `frontend/src/editor/store.ts`, `frontend/src/core/prepareTemplateData.ts`.
+
+### Чеклист
+
+- [ ] Action: «From end» + frame=10 при duration=100 → cue на кадре 90; смена duration сдвигает effective
+- [ ] Editor: crawl content ← multitext var → правка defaultValue меняет длину Crawl на таймлайне
+- [ ] Control: TAKE / live UPDATE с другим текстом переменной → crawl director length соответствует контенту
 
 ---
 

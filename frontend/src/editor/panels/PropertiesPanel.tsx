@@ -9,7 +9,7 @@ import type {
   Layer, Template, Variable, VariableBinding, BlendMode, TextTransformMode,
   TimelineActionCommand, TimelineActionDirection, TimelineActionTag,
 } from '@runtime';
-import { isUpdateDirectorName } from '@runtime';
+import { isUpdateDirectorName, effectiveActionFrame } from '@runtime';
 import { useEditor } from '../store';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
 import {
@@ -122,7 +122,7 @@ export function PropertiesPanel() {
                   onChange={(e) => updateActionCue(cue.id, { name: e.target.value })}
                 />
               </PropertyField>
-              <PropertyField label="Frame">
+              <PropertyField label={cue.fromEnd ? 'Frames before end' : 'Frame'}>
                 <NumberInput
                   value={cue.frame}
                   min={0}
@@ -130,6 +130,18 @@ export function PropertiesPanel() {
                   onChange={(v) => updateActionCue(cue.id, { frame: Math.round(v) })}
                 />
               </PropertyField>
+              <div className="px-3 pb-1">
+                <Checkbox
+                  label="From end"
+                  checked={!!cue.fromEnd}
+                  onChange={(v) => updateActionCue(cue.id, { fromEnd: v })}
+                />
+              </div>
+              {!!cue.fromEnd && hostDir && (
+                <p className="px-3 pb-1 text-[11px] tabular-nums text-ink-faint">
+                  Effective @ {effectiveActionFrame(cue, hostDir.durationFrames)} / {hostDir.durationFrames}
+                </p>
+              )}
               <p className="px-3 pb-2 text-[11px] text-ink-faint">
                 Director: {hostDir?.name ?? cue.directorId}
               </p>

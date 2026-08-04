@@ -470,13 +470,41 @@ export interface TimelineActionItem {
 /**
  * One visual marker on a director timeline at `frame`.
  * May contain N command items executed in array order when the playhead crosses.
+ *
+ * When `fromEnd` is true, `frame` is an offset from the director end
+ * (effective = durationFrames - frame). Legacy cues omit `fromEnd` (= absolute).
  */
 export interface TimelineActionCue {
   id: string;
   directorId: string;
   frame: number;
+  /** If true, `frame` is frames-before-end of the host director. */
+  fromEnd?: boolean;
   name: string;
   items: TimelineActionItem[];
+}
+
+/** Resolve cue marker to an absolute local frame on its host director. */
+export function effectiveActionFrame(
+  cue: Pick<TimelineActionCue, 'frame' | 'fromEnd'>,
+  durationFrames: number,
+): number {
+  const dur = Math.max(0, Math.round(durationFrames));
+  const raw = Math.max(0, Math.round(cue.frame));
+  if (!cue.fromEnd) return Math.min(raw, dur);
+  return Math.max(0, dur - raw);
+}
+
+/** Store value for `frame` given an absolute drop position and fromEnd mode. */
+export function actionFrameFromEffective(
+  effectiveFrame: number,
+  durationFrames: number,
+  fromEnd: boolean | undefined,
+): number {
+  const dur = Math.max(0, Math.round(durationFrames));
+  const eff = Math.max(0, Math.min(dur, Math.round(effectiveFrame)));
+  if (!fromEnd) return eff;
+  return Math.max(0, dur - eff);
 }
 
 /** @deprecated Use TimelineActionCue — kept as alias during editor migration. */

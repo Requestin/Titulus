@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { DndContext, DragOverlay, PointerSensor, closestCenter, pointerWithin, useDroppable, useSensor, useSensors, type CollisionDetection, type DragCancelEvent, type DragEndEvent, type DragMoveEvent, type DragOverEvent, type DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Activity, ChevronDown, ChevronRight, ChevronsRight, Folder, GripVertical, Infinity as InfinityIcon, ListTree, Pause, Play, Plus, SkipBack, Square, Trash2 } from 'lucide-react';
-import { ANIMATABLE_PROPS, getEasing, isUpdateDirectorName, type AnimatableProp, type EasingType } from '@runtime';
+import { ANIMATABLE_PROPS, effectiveActionFrame, getEasing, isUpdateDirectorName, type AnimatableProp, type EasingType } from '@runtime';
 import { useEditor, type Target } from '../store';
 import { collectDirectorObjectTree, directorForTrack, objectTrackKey, parseObjectTrackKey, sameTarget, targetKeyframeSpan, targetLabel, trackKey, trackPropLabel, type DirectorObjectTree, type TimelineTrack } from '../timelineTracks';
 import { getVideoClipWindow, moveVideoClip } from '../videoTimeline';
@@ -419,7 +419,17 @@ export function TimelinePanel() {
                       </div>
                       <div className="relative shrink-0" style={{ width: timelineWidth }}>
                         <DirectorRuler dur={item.durationFrames} pxPerFrame={pxPerFrame} onScrub={(event, element) => { setPlaying(false); setActiveDirector(directorId); setPlayhead(directorId, frameFromContentX(event.clientX, element, item.durationFrames)); }} />
-                        {!collapsed && hasActions && <ActionLane cues={cues} pxPerFrame={pxPerFrame} dur={item.durationFrames} selectedId={selectedActionCueId} onSelect={(id) => { setSelectedKfs([]); selectActionCue(id); }} onMove={moveActionCue} frameFromEvent={(event, element) => frameFromContentX(event.clientX, element, item.durationFrames)} />}
+                        {!collapsed && hasActions && (
+                          <ActionLane
+                            cues={cues}
+                            pxPerFrame={pxPerFrame}
+                            dur={item.durationFrames}
+                            selectedId={selectedActionCueId}
+                            onSelect={(id) => { setSelectedKfs([]); selectActionCue(id); }}
+                            onMove={moveActionCue}
+                            frameFromEvent={(event, element) => frameFromContentX(event.clientX, element, item.durationFrames)}
+                          />
+                        )}
                         <div className={cn('pointer-events-none absolute top-0 z-sticky w-px bg-live', playing && 'transition-[left] duration-[70ms] ease-linear')} style={{ left: (playheads[directorId] ?? 0) * pxPerFrame, height: DIRECTOR_HDR_H + (!collapsed && hasActions ? ACTION_LANE_H : 0) }}><div className="absolute -left-1 top-0 h-2 w-2 rounded-sm bg-live" /></div>
                       </div>
                     </div>
@@ -636,9 +646,68 @@ function GlobalPlayheadRow({ maxDur, pxPerFrame, timelineWidth, playhead, smooth
   );
 }
 
-function ActionLane({ cues, pxPerFrame, dur, selectedId, onSelect, onMove, frameFromEvent }: { cues: { id: string; frame: number; name: string; items: unknown[] }[]; pxPerFrame: number; dur: number; selectedId: string | null; onSelect: (id: string) => void; onMove: (id: string, frame: number) => void; frameFromEvent: (event: ReactPointerEvent, element: Element) => number }) {
+function ActionLane({
+  cues, pxPerFrame, dur, selectedId, onSelect, onMove, frameFromEvent,
+}: {
+  cues: { id: string; frame: number; fromEnd?: boolean; name: string; items: unknown[] }[];
+  pxPerFrame: number;
+  dur: number;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onMove: (id: string, frame: number) => void;
+  frameFromEvent: (event: ReactPointerEvent, element: Element) => number;
+}) {
   const [drag, setDrag] = useState<{ id: string; frame: number } | null>(null);
-  return <div className="relative border-b border-border/60 bg-surface/40" style={{ height: ACTION_LANE_H, width: Math.max(1, dur) * pxPerFrame + 40 }}>{cues.map((cue) => <div key={cue.id} data-action="1" className={cn('absolute top-1/2 z-10 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-sm border', selectedId === cue.id ? 'border-live bg-live' : 'border-amber-400/80 bg-amber-500/80')} style={{ left: (drag?.id === cue.id ? drag.frame : cue.frame) * pxPerFrame }} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); onSelect(cue.id); setDrag({ id: cue.id, frame: cue.frame }); }} onPointerMove={(event) => { const lane = event.currentTarget.parentElement; if (drag?.id === cue.id && lane) setDrag({ id: cue.id, frame: frameFromEvent(event, lane) }); }} onPointerUp={(event) => { const lane = event.currentTarget.parentElement; if (drag?.id === cue.id && lane) onMove(cue.id, frameFromEvent(event, lane)); setDrag(null); }} />)}</div>;
+  return (
+    <div
+      className="relative border-b border-border/60 bg-surface/40"
+      style={{ height: ACTION_LANE_H, width: Math.max(1, dur) * pxPerFrame + 40 }}
+    >
+      {cues.map((cue) => {
+        const base = effectiveActionFrame(cue, dur);
+        const frame = drag?.id === cue.id ? drag.frame : base;
+        const title = cue.name.trim()
+          ? cue.name
+          : cue.fromEnd
+            ? `Action @ end-${cue.frame} (=${base})`
+            : `Action @ ${base}`;
+        return (
+          <div
+            key={cue.id}
+            data-action="1"
+            title={title}
+            className={cn(
+              'absolute top-1/2 z-10 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-sm border',
+              selectedId === cue.id
+                ? 'border-live bg-live'
+                : cue.fromEnd
+                  ? 'border-amber-300/90 bg-amber-400/70'
+                  : 'border-amber-400/80 bg-amber-500/80',
+            )}
+            style={{ left: frame * pxPerFrame }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              onSelect(cue.id);
+              setDrag({ id: cue.id, frame: base });
+            }}
+            onPointerMove={(event) => {
+              const lane = event.currentTarget.parentElement;
+              if (drag?.id === cue.id && event.buttons === 1 && lane) {
+                setDrag({ id: cue.id, frame: frameFromEvent(event, lane) });
+              }
+            }}
+            onPointerUp={(event) => {
+              const lane = event.currentTarget.parentElement;
+              if (drag?.id === cue.id && lane) onMove(cue.id, frameFromEvent(event, lane));
+              setDrag(null);
+            }}
+            onPointerCancel={() => setDrag(null)}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
 function DirectorHeader({ name, selected, collapsed, canRemove, onToggleCollapse, onSelect, onRemove }: { name: string; selected: boolean; collapsed: boolean; canRemove: boolean; onToggleCollapse: () => void; onSelect: () => void; onRemove: () => void }) {

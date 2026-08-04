@@ -21,7 +21,7 @@ import type {
   AnimatableValues,
   AnimatableProp,
 } from './schema.js';
-import { timelineTrackKey } from './schema.js';
+import { effectiveActionFrame, timelineTrackKey } from './schema.js';
 import { getEasing, makeBezierEasing, lerp, type EasingFn } from './easing.js';
 
 /**
@@ -180,11 +180,20 @@ export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
   }
 
   const actions: Record<string, TimelineAction[]> = {};
+  const directorDur = new Map(tl.directors.map((d) => [d.id, d.durationFrames]));
   for (const a of tl.actions) {
     if (!actions[a.directorId]) actions[a.directorId] = [];
-    actions[a.directorId].push(a);
+    const dur = directorDur.get(a.directorId) ?? tl.durationFrames;
+    // Resolve fromEnd → absolute frame once at compile so fire/sort stay simple.
+    actions[a.directorId]!.push({
+      ...a,
+      frame: effectiveActionFrame(a, dur),
+      fromEnd: undefined,
+    });
   }
-  for (const did of Object.keys(actions)) actions[did].sort((a, b) => a.frame - b.frame);
+  for (const did of Object.keys(actions)) {
+    actions[did]!.sort((a, b) => a.frame - b.frame || a.id.localeCompare(b.id));
+  }
 
   return {
     directors,

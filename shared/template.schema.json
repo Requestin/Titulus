@@ -688,6 +688,10 @@
         "id": { "type": "string" },
         "directorId": { "type": "string", "minLength": 1 },
         "frame": { "type": "integer", "minimum": 0 },
+        "fromEnd": {
+          "type": "boolean",
+          "description": "If true, frame is an offset from the director end (fires at durationFrames - frame)"
+        },
         "name": { "type": "string" },
         "items": {
           "type": "array",

@@ -22,11 +22,18 @@ import {
   normalizeTemplateTextStyles,
   resolveTrackDirector,
   splitCrawlLines,
+  effectiveActionFrame,
+  actionFrameFromEffective,
 } from '@runtime';
 import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
 import { reparentEntriesIntoGroup } from './groupBounds';
-import { recomputeCrawlDirectorDuration, removeCrawlDirector, ensureCrawlProgressTrack } from './crawlTimeline';
+import {
+  recomputeCrawlDirectorDuration,
+  recomputeCrawlDirectorsForVariable,
+  removeCrawlDirector,
+  ensureCrawlProgressTrack,
+} from './crawlTimeline';
 import { trackKey, type TimelineTrack } from './timelineTracks';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
@@ -140,6 +147,17 @@ function removeFromTrackOrder(t: Template, key: string): void {
   for (const did of Object.keys(t.timeline.trackOrder)) {
     t.timeline.trackOrder[did] = t.timeline.trackOrder[did]!.filter((k) => k !== key);
   }
+}
+
+function sortActionsByEffective(t: Template): void {
+  const durByDir = new Map(t.timeline.directors.map((d) => [d.id, d.durationFrames]));
+  t.timeline.actions.sort((a, b) => {
+    const da = durByDir.get(a.directorId) ?? t.timeline.durationFrames;
+    const db = durByDir.get(b.directorId) ?? t.timeline.durationFrames;
+    const fa = effectiveActionFrame(a, da);
+    const fb = effectiveActionFrame(b, db);
+    return fa - fb || a.id.localeCompare(b.id);
+  });
 }
 
 export type KeyframeMove = {
@@ -328,7 +346,7 @@ interface EditorState {
   addActionCueAtPlayhead: () => void;
   removeSelectedActionCue: () => void;
   moveActionCue: (id: string, frame: number) => void;
-  updateActionCue: (id: string, partial: Partial<Pick<TimelineActionCue, 'name' | 'frame'>>) => void;
+  updateActionCue: (id: string, partial: Partial<Pick<TimelineActionCue, 'name' | 'frame' | 'fromEnd'>>) => void;
   addActionItem: (cueId: string) => void;
   removeActionItem: (cueId: string, itemId: string) => void;
   updateActionItem: (cueId: string, itemId: string, partial: Partial<TimelineActionItem>) => void;
@@ -676,10 +694,17 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => {
           const v = t.variables.find((x) => x.id === id);
           if (v) Object.assign(v, partial);
+          // Crawl director length depends on resolved content length.
+          if (partial.defaultValue !== undefined) {
+            recomputeCrawlDirectorsForVariable(t, id);
+          }
         }),
 
       removeVariable: (id) =>
-        get().patch((t) => { t.variables = t.variables.filter((v) => v.id !== id); }),
+        get().patch((t) => {
+          t.variables = t.variables.filter((v) => v.id !== id);
+          recomputeCrawlDirectorsForVariable(t, id);
+        }),
 
       ensureTemplateData: () => {
         get().patch((t) => {
@@ -872,7 +897,9 @@ export const useEditor = create<EditorState>()(
         const dir = t0.timeline.directors.find((d) => d.id === directorId);
         if (!dir) return;
         const frame = Math.max(0, Math.min(dir.durationFrames, Math.round(st.playheads[directorId] ?? 0)));
-        const existing = t0.timeline.actions.find((a) => a.directorId === directorId && a.frame === frame);
+        const existing = t0.timeline.actions.find(
+          (a) => a.directorId === directorId && effectiveActionFrame(a, dir.durationFrames) === frame,
+        );
         if (existing) {
           get().patch((t) => {
             const cue = t.timeline.actions.find((a) => a.id === existing.id);
@@ -903,7 +930,7 @@ export const useEditor = create<EditorState>()(
               }),
             ],
           });
-          t.timeline.actions.sort((a, b) => a.frame - b.frame || a.id.localeCompare(b.id));
+          sortActionsByEffective(t);
         });
         set({ selectedActionCueId: cueId, selection: null });
       },
@@ -924,18 +951,21 @@ export const useEditor = create<EditorState>()(
           if (!cue) return;
           const dir = t.timeline.directors.find((d) => d.id === cue.directorId);
           const max = dir?.durationFrames ?? t.timeline.durationFrames;
-          const nextFrame = Math.max(0, Math.min(max, Math.round(frame)));
+          const nextEffective = Math.max(0, Math.min(max, Math.round(frame)));
+          const stored = actionFrameFromEffective(nextEffective, max, cue.fromEnd);
           const other = t.timeline.actions.find(
-            (a) => a.id !== id && a.directorId === cue.directorId && a.frame === nextFrame,
+            (a) => a.id !== id
+              && a.directorId === cue.directorId
+              && effectiveActionFrame(a, max) === nextEffective,
           );
           if (other) {
             other.items.push(...cue.items);
             t.timeline.actions = t.timeline.actions.filter((a) => a.id !== id);
             selectId = other.id;
           } else {
-            cue.frame = nextFrame;
+            cue.frame = stored;
           }
-          t.timeline.actions.sort((a, b) => a.frame - b.frame || a.id.localeCompare(b.id));
+          sortActionsByEffective(t);
         });
         set({ selectedActionCueId: selectId });
       },
@@ -944,12 +974,23 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => {
           const cue = t.timeline.actions.find((a) => a.id === id);
           if (!cue) return;
+          const dir = t.timeline.directors.find((d) => d.id === cue.directorId);
+          const max = dir?.durationFrames ?? t.timeline.durationFrames;
           if (partial.name !== undefined) cue.name = partial.name;
-          if (partial.frame !== undefined) {
-            const dir = t.timeline.directors.find((d) => d.id === cue.directorId);
-            const max = dir?.durationFrames ?? t.timeline.durationFrames;
-            cue.frame = Math.max(0, Math.min(max, Math.round(partial.frame)));
+
+          if (partial.fromEnd !== undefined && partial.fromEnd !== !!cue.fromEnd) {
+            // Keep marker position: convert absolute ↔ offset.
+            const effective = effectiveActionFrame(cue, max);
+            cue.fromEnd = partial.fromEnd || undefined;
+            cue.frame = actionFrameFromEffective(effective, max, cue.fromEnd);
           }
+
+          if (partial.frame !== undefined) {
+            const next = Math.max(0, Math.round(partial.frame));
+            // In fromEnd mode the number is an offset (not clamped to dur as absolute).
+            cue.frame = cue.fromEnd ? next : Math.max(0, Math.min(max, next));
+          }
+          sortActionsByEffective(t);
         }),
 
       addActionItem: (cueId) =>

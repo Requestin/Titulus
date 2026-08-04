@@ -20,6 +20,7 @@ import {
   readCrawlTextFile,
   templateForTake,
 } from '@/core/crawlFile';
+import { recomputeAllCrawlDirectors } from '@/editor/crawlTimeline';
 import { ensureVideoClipsForVariables } from '@/editor/videoTimeline';
 
 export class TemplateDataError extends Error {
@@ -134,6 +135,8 @@ export async function prepareTemplateForAir(
 
   if (!prepared.data) {
     await ensureVideoClipsForVariables(prepared, base);
+    // Operator / default vars drive crawl length when content is variable-bound.
+    recomputeAllCrawlDirectors(prepared, base);
     return { template: prepared, variables: base, dataResult: null };
   }
 
@@ -164,6 +167,8 @@ export async function prepareTemplateForAir(
   const variables = { ...base, ...dataResult.overrides };
   // Data-driven video src → create/update timeline clip; keep prior start if any.
   await ensureVideoClipsForVariables(prepared, variables);
+  // After final variable map (incl. data overrides), refresh crawl director durations.
+  recomputeAllCrawlDirectors(prepared, variables);
 
   return {
     template: prepared,

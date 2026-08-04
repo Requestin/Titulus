@@ -13,9 +13,21 @@ import {
 } from '@runtime';
 import { createId } from '@/core/id';
 
-export function crawlContentString(template: Template, layer: CrawlLayer): string {
-  const vars = resolveVariableMap(template);
+export function crawlContentString(
+  template: Template,
+  layer: CrawlLayer,
+  overrides: Record<string, string | number> = {},
+): string {
+  const vars = resolveVariableMap(template, overrides);
   return String(resolveBinding(layer.content, vars, ''));
+}
+
+/** True when crawl content is bound to the given variable id. */
+export function crawlContentUsesVariable(layer: CrawlLayer, variableId: string): boolean {
+  return typeof layer.content === 'object'
+    && layer.content !== null
+    && 'variableId' in layer.content
+    && layer.content.variableId === variableId;
 }
 
 function kfAt(t: Template, frame: number): TimelineKeyframe {
@@ -69,10 +81,14 @@ export function ensureCrawlProgressTrack(template: Template, layer: CrawlLayer):
   kf1.easing = 'linear';
 }
 
-export function recomputeCrawlDirectorDuration(template: Template, layer: CrawlLayer): void {
+export function recomputeCrawlDirectorDuration(
+  template: Template,
+  layer: CrawlLayer,
+  overrides: Record<string, string | number> = {},
+): void {
   const dir = template.timeline.directors.find((d) => d.id === layer.crawlDirectorId);
   if (!dir) return;
-  const raw = crawlContentString(template, layer);
+  const raw = crawlContentString(template, layer, overrides);
   const lines = splitCrawlLines(raw, layer.crawl.maxTextLengthEnabled, layer.crawl.maxTextLength);
   const fps = template.timeline.fps || 50;
   const frames = estimateCrawlDurationFrames({
@@ -95,6 +111,29 @@ export function recomputeCrawlDirectorDuration(template: Template, layer: CrawlL
   }
 
   ensureCrawlProgressTrack(template, layer);
+}
+
+/** Recompute every Crawl director (variable-bound + literal + Use File already inlined). */
+export function recomputeAllCrawlDirectors(
+  template: Template,
+  overrides: Record<string, string | number> = {},
+): void {
+  for (const layer of template.layers) {
+    if (layer.type === 'crawl') recomputeCrawlDirectorDuration(template, layer, overrides);
+  }
+}
+
+/** Recompute Crawl directors whose content binds to `variableId`. */
+export function recomputeCrawlDirectorsForVariable(
+  template: Template,
+  variableId: string,
+  overrides: Record<string, string | number> = {},
+): void {
+  for (const layer of template.layers) {
+    if (layer.type === 'crawl' && crawlContentUsesVariable(layer, variableId)) {
+      recomputeCrawlDirectorDuration(template, layer, overrides);
+    }
+  }
 }
 
 export function removeCrawlDirector(template: Template, directorId: string): void {
