@@ -53,7 +53,7 @@
 | `87ce6f5` | 4 авг | `folders,var data, fix thumb` |
 | `7f63f16` | 4 авг | `timeline group and select` |
 | `269272d` | 4 авг | `docs(sergey-v1): fix commit hash in session context` |
-| _(pending)_ | 4 авг | `action from end, crowl fix data` |
+| `28348e4` | 4 авг | `action from end, crowl fix data` |
 
 ---
 
