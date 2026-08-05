@@ -55,7 +55,7 @@
 | `269272d` | 4 авг | `docs(sergey-v1): fix commit hash in session context` |
 | `28348e4` | 4 авг | `action from end, crowl fix data` |
 | `675b1d3` | 4 авг | `docs(sergey-v1): fix commit hash in session context` |
-| _(pending)_ | 5 авг | `add gradient, hide folders` |
+| `6ae72ad` | 5 авг | `add gradient, hide folders` |
 
 ---
 
