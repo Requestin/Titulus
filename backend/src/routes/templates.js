@@ -132,7 +132,7 @@ export function templatesRouter(db, dataElementsDb = null, thumb = {}) {
   });
 
   router.put('/:id', (req, res) => {
-    const { name, data, folderId } = req.body ?? {};
+    const { name, data, folderId, hiddenInControl } = req.body ?? {};
     if (data !== undefined) {
       const { valid, errors } = validateTemplate(data);
       if (!valid) {
@@ -143,6 +143,7 @@ export function templatesRouter(db, dataElementsDb = null, thumb = {}) {
       name,
       data,
       ...(folderId !== undefined ? { folderId: folderId || null } : {}),
+      ...(hiddenInControl !== undefined ? { hiddenInControl: Boolean(hiddenInControl) } : {}),
     });
     if (!updated) return res.status(404).json({ error: 'not found' });
     res.json(withThumb(updated));

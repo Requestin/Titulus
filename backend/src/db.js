@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS templates (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
   data       TEXT NOT NULL,            -- JSON Template
-  folder_id  TEXT,                     -- nullable; NULL = unfiled (All only)
+  folder_id  TEXT,                     -- nullable; NULL = unfiled (All / unassigned)
+  hidden_in_control INTEGER NOT NULL DEFAULT 0, -- 1 = hidden from Control pickers
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS template_folders (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
+  hidden_in_control INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -208,6 +210,7 @@ function ensureTemplateFolders(db) {
       id         TEXT PRIMARY KEY,
       name       TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
+      hidden_in_control INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -216,6 +219,15 @@ function ensureTemplateFolders(db) {
   const names = new Set(cols.map((c) => c.name));
   if (!names.has('folder_id')) {
     db.exec('ALTER TABLE templates ADD COLUMN folder_id TEXT');
+  }
+  // Legacy per-template flag (unused; visibility is folder-scoped).
+  if (!names.has('hidden_in_control')) {
+    db.exec('ALTER TABLE templates ADD COLUMN hidden_in_control INTEGER NOT NULL DEFAULT 0');
+  }
+  const folderCols = db.prepare('PRAGMA table_info(template_folders)').all();
+  const folderNames = new Set(folderCols.map((c) => c.name));
+  if (!folderNames.has('hidden_in_control')) {
+    db.exec('ALTER TABLE template_folders ADD COLUMN hidden_in_control INTEGER NOT NULL DEFAULT 0');
   }
 }
 
@@ -306,6 +318,20 @@ function ensureAuthBootstrap(db) {
 // templates
 // ---------------------------------------------------------------------------
 
+function mapTemplateRow(row) {
+  const hidden = Boolean(row.hidden_in_control);
+  return {
+    id: row.id,
+    name: row.name,
+    folder_id: row.folder_id ?? null,
+    folderId: row.folder_id ?? null,
+    hidden_in_control: hidden,
+    hiddenInControl: hidden,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 export const templatesDao = (db) => ({
   /**
    * @param {{ folderId?: string }} [opts]
@@ -316,53 +342,54 @@ export const templatesDao = (db) => ({
     let rows;
     if (!folderId || folderId === '__all__') {
       rows = db.prepare(
-        'SELECT id, name, folder_id, created_at, updated_at FROM templates ORDER BY updated_at DESC',
+        `SELECT id, name, folder_id, hidden_in_control, created_at, updated_at
+         FROM templates ORDER BY updated_at DESC`,
       ).all();
     } else if (folderId === '__none__') {
       rows = db.prepare(
-        `SELECT id, name, folder_id, created_at, updated_at FROM templates
+        `SELECT id, name, folder_id, hidden_in_control, created_at, updated_at FROM templates
          WHERE folder_id IS NULL ORDER BY updated_at DESC`,
       ).all();
     } else {
       rows = db.prepare(
-        `SELECT id, name, folder_id, created_at, updated_at FROM templates
+        `SELECT id, name, folder_id, hidden_in_control, created_at, updated_at FROM templates
          WHERE folder_id = ? ORDER BY updated_at DESC`,
       ).all(folderId);
     }
-    return rows.map((row) => ({
-      ...row,
-      folder_id: row.folder_id ?? null,
-      folderId: row.folder_id ?? null,
-    }));
+    return rows.map((row) => mapTemplateRow(row));
   },
   get(id) {
     const row = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
     if (!row) return null;
     return {
-      ...row,
+      ...mapTemplateRow(row),
       data: JSON.parse(row.data),
-      folder_id: row.folder_id ?? null,
-      folderId: row.folder_id ?? null,
     };
   },
-  create({ id, name, data, folderId = null }) {
+  create({ id, name, data, folderId = null, hiddenInControl = false }) {
     db.prepare(
-      'INSERT INTO templates (id, name, data, folder_id) VALUES (?, ?, ?, ?)',
-    ).run(id, name, JSON.stringify(data), folderId || null);
+      `INSERT INTO templates (id, name, data, folder_id, hidden_in_control)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(id, name, JSON.stringify(data), folderId || null, hiddenInControl ? 1 : 0);
     return this.get(id);
   },
-  update(id, { name, data, folderId } = {}) {
+  update(id, { name, data, folderId, hiddenInControl } = {}) {
     const cur = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
     if (!cur) return null;
     const nextFolder = folderId !== undefined
       ? (folderId || null)
       : (cur.folder_id ?? null);
+    const nextHidden = hiddenInControl !== undefined
+      ? (hiddenInControl ? 1 : 0)
+      : (cur.hidden_in_control ? 1 : 0);
     db.prepare(
-      `UPDATE templates SET name = ?, data = ?, folder_id = ?, updated_at = datetime('now') WHERE id = ?`,
+      `UPDATE templates SET name = ?, data = ?, folder_id = ?, hidden_in_control = ?,
+       updated_at = datetime('now') WHERE id = ?`,
     ).run(
       name ?? cur.name,
       data !== undefined ? JSON.stringify(data) : cur.data,
       nextFolder,
+      nextHidden,
       id,
     );
     return this.get(id);
@@ -379,29 +406,41 @@ export const templatesDao = (db) => ({
 export const templateFoldersDao = (db) => ({
   all() {
     return db.prepare(
-      'SELECT id, name, sort_order AS sortOrder, created_at AS createdAt, updated_at AS updatedAt FROM template_folders ORDER BY sort_order ASC, name ASC',
-    ).all();
+      `SELECT id, name, sort_order AS sortOrder,
+              hidden_in_control,
+              created_at AS createdAt, updated_at AS updatedAt
+       FROM template_folders ORDER BY sort_order ASC, name ASC`,
+    ).all().map(mapFolderRow);
   },
   get(id) {
     const row = db.prepare(
-      'SELECT id, name, sort_order AS sortOrder, created_at AS createdAt, updated_at AS updatedAt FROM template_folders WHERE id = ?',
+      `SELECT id, name, sort_order AS sortOrder,
+              hidden_in_control,
+              created_at AS createdAt, updated_at AS updatedAt
+       FROM template_folders WHERE id = ?`,
     ).get(id);
-    return row || null;
+    return row ? mapFolderRow(row) : null;
   },
-  create({ id, name, sortOrder = 0 }) {
+  create({ id, name, sortOrder = 0, hiddenInControl = false }) {
     db.prepare(
-      'INSERT INTO template_folders (id, name, sort_order) VALUES (?, ?, ?)',
-    ).run(id, name, sortOrder);
+      `INSERT INTO template_folders (id, name, sort_order, hidden_in_control)
+       VALUES (?, ?, ?, ?)`,
+    ).run(id, name, sortOrder, hiddenInControl ? 1 : 0);
     return this.get(id);
   },
-  update(id, { name, sortOrder } = {}) {
+  update(id, { name, sortOrder, hiddenInControl } = {}) {
     const cur = db.prepare('SELECT * FROM template_folders WHERE id = ?').get(id);
     if (!cur) return null;
+    const nextHidden = hiddenInControl !== undefined
+      ? (hiddenInControl ? 1 : 0)
+      : (cur.hidden_in_control ? 1 : 0);
     db.prepare(
-      `UPDATE template_folders SET name = ?, sort_order = ?, updated_at = datetime('now') WHERE id = ?`,
+      `UPDATE template_folders SET name = ?, sort_order = ?, hidden_in_control = ?,
+       updated_at = datetime('now') WHERE id = ?`,
     ).run(
       name ?? cur.name,
       sortOrder !== undefined ? sortOrder : cur.sort_order,
+      nextHidden,
       id,
     );
     return this.get(id);
@@ -414,6 +453,21 @@ export const templateFoldersDao = (db) => ({
     return tx();
   },
 });
+
+function mapFolderRow(row) {
+  const hidden = Boolean(row.hidden_in_control);
+  return {
+    id: row.id,
+    name: row.name,
+    sortOrder: row.sortOrder ?? row.sort_order ?? 0,
+    hiddenInControl: hidden,
+    hidden_in_control: hidden,
+    createdAt: row.createdAt ?? row.created_at,
+    updatedAt: row.updatedAt ?? row.updated_at,
+    created_at: row.createdAt ?? row.created_at,
+    updated_at: row.updatedAt ?? row.updated_at,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // ue_templates (Unreal Blueprint catalog — ZeroDensity-style)

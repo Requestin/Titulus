@@ -45,6 +45,9 @@ export function templateFoldersRouter(db, dataElementsDb = null) {
     if (req.body?.sortOrder !== undefined) {
       patch.sortOrder = Number(req.body.sortOrder) || 0;
     }
+    if (req.body?.hiddenInControl !== undefined) {
+      patch.hiddenInControl = Boolean(req.body.hiddenInControl);
+    }
     const updated = dao.update(req.params.id, patch);
     if (!updated) return res.status(404).json({ error: 'not found' });
     res.json(updated);

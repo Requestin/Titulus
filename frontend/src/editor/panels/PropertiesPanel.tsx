@@ -8,10 +8,11 @@ import { Braces, Link2, Unlink } from 'lucide-react';
 import type {
   Layer, Template, Variable, VariableBinding, BlendMode, TextTransformMode,
   TimelineActionCommand, TimelineActionDirection, TimelineActionTag,
+  RectGradientProp,
 } from '@runtime';
-import { isUpdateDirectorName, effectiveActionFrame } from '@runtime';
+import { isUpdateDirectorName, effectiveActionFrame, defaultRectGradient } from '@runtime';
 import { useEditor } from '../store';
-import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
+import { effectiveOpacity, effectiveTransform, effectiveAnimatableValues } from '../effectiveValues';
 import {
   axisCenterFromPixels,
   axisCenterFromPixelsGroup,
@@ -679,14 +680,7 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
     case 'rect':
       return (
         <Section title="Rectangle">
-          <PropertyField label="Fill">
-            <BindableField
-              kind="color"
-              value={layer.fill}
-              variables={variables}
-              onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.fill = v; })}
-            />
-          </PropertyField>
+          <RectFillSection layer={layer} variables={variables} updateLayer={updateLayer} />
           <PropertyField label="Radius">
             <NumberInput value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.cornerRadius = v; })} />
           </PropertyField>
@@ -851,6 +845,108 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
         </>
       );
   }
+}
+
+const GRADIENT_CORNERS: {
+  key: 'upperLeft' | 'lowerLeft' | 'upperRight' | 'lowerRight';
+  label: string;
+  prop: RectGradientProp;
+}[] = [
+  { key: 'upperLeft', label: 'UpperLeft', prop: 'UpperLeft' },
+  { key: 'lowerLeft', label: 'LowerLeft', prop: 'LowerLeft' },
+  { key: 'upperRight', label: 'UpperRight', prop: 'UpperRight' },
+  { key: 'lowerRight', label: 'LowerRight', prop: 'LowerRight' },
+];
+
+function RectFillSection({
+  layer, variables, updateLayer,
+}: {
+  layer: Extract<Layer, { type: 'rect' }>;
+  variables: Variable[];
+  updateLayer: UpdateLayer;
+}) {
+  const setRectFillMode = useEditor((s) => s.setRectFillMode);
+  const setRectGradientCorner = useEditor((s) => s.setRectGradientCorner);
+  const template = useEditor((s) => s.template);
+  const playheads = useEditor((s) => s.playheads);
+  const mode = layer.fillMode ?? 'solid';
+  const gradient = layer.gradient ?? defaultRectGradient();
+  const anim = template
+    ? effectiveAnimatableValues(template, { kind: 'layer', id: layer.id }, playheads)
+    : {};
+
+  return (
+    <>
+      <div className="space-y-1.5">
+        <div className="text-[12px] text-ink-muted">Fill mode</div>
+        <div className="flex gap-1" role="radiogroup" aria-label="Fill mode">
+          {([
+            { id: 'solid' as const, label: 'Fill' },
+            { id: 'gradient' as const, label: 'Gradient' },
+          ]).map((opt) => {
+            const active = mode === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                className={cn(
+                  'flex-1 rounded-md border px-2 py-1.5 text-[12px] font-medium transition-colors',
+                  active
+                    ? 'border-primary bg-primary/15 text-primary'
+                    : 'border-border text-ink-muted hover:bg-surface-2 hover:text-ink',
+                )}
+                onClick={() => setRectFillMode(layer.id, opt.id)}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {mode === 'solid' ? (
+        <PropertyField label="Fill">
+          <BindableField
+            kind="color"
+            value={layer.fill}
+            variables={variables}
+            onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.fill = v; })}
+          />
+        </PropertyField>
+      ) : (
+        <div className="space-y-2">
+          {GRADIENT_CORNERS.map((c) => {
+            const corner = gradient[c.key];
+            const value = anim[c.prop] ?? corner.value;
+            return (
+              <PropertyField key={c.key} label={c.label}>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <input
+                    type="color"
+                    aria-label={`${c.label} color`}
+                    className="h-8 w-8 shrink-0 cursor-pointer rounded-md border border-border bg-surface-2 p-0.5"
+                    value={/^#[0-9a-fA-F]{6}$/.test(corner.color) ? corner.color : '#ffffff'}
+                    onChange={(e) => setRectGradientCorner(layer.id, c.key, { color: e.target.value })}
+                  />
+                  <NumberInput
+                    value={value}
+                    step={1}
+                    resetValue={100}
+                    onChange={(v) => setRectGradientCorner(layer.id, c.key, {
+                      value: Math.min(100, Math.max(0, v)),
+                    })}
+                    className="min-w-0 flex-1"
+                  />
+                </div>
+              </PropertyField>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
 }
 
 function TextStyleSection({ layer, variables, updateLayer }: { layer: Extract<Layer, { style: import('@runtime').TextStyle }>; variables: Variable[]; updateLayer: UpdateLayer }) {

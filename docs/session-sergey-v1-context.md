@@ -1,7 +1,7 @@
 # Ветка `sergey-v1` — контекст и changelog
 
 > Сводка работы Sergey + агент Cursor на ветке `sergey-v1`.  
-> Обновлено: **4 августа 2026**.
+> Обновлено: **5 августа 2026**.
 
 ---
 
@@ -54,6 +54,41 @@
 | `7f63f16` | 4 авг | `timeline group and select` |
 | `269272d` | 4 авг | `docs(sergey-v1): fix commit hash in session context` |
 | `28348e4` | 4 авг | `action from end, crowl fix data` |
+| `675b1d3` | 4 авг | `docs(sergey-v1): fix commit hash in session context` |
+| _(pending)_ | 5 авг | `add gradient, hide folders` |
+
+---
+
+## 5 августа 2026 — Rectangle gradient + folder visibility in Control
+
+### A) Hide folders from Control (eye on folders)
+
+- Глаз на папках (не на темплейтах): `<All>`, `<unassigned>`, обычные папки
+- Скрытая папка → в Control не показывается папка и все её темплейты (templates + dataelements)
+- Persist:
+  - обычные папки: `template_folders.hidden_in_control`
+  - `<All>` / `<unassigned>`: settings keys `allFolderHiddenInControl` / `unassignedHiddenInControl`
+- Virtual `<unassigned>` в Templates library (темплейты с `folder_id IS NULL`)
+- Rundown slots **не** фильтруются — уже добавленные в rundown темплейты продолжают работать
+
+**Файлы:** `backend/src/db.js`, `routes/templateFolders.js`, `frontend/src/pages/TemplatesPage.tsx`, `control/RundownTab.tsx`, `core/api.ts`.
+
+### B) Rectangle Fill / Gradient
+
+- Properties: взаимноисключающие кнопки **Fill** | **Gradient** (default Fill)
+- Gradient: 4 угла UpperLeft / LowerLeft / UpperRight / LowerRight — цвет + вес 0–100 (clamp)
+- Runtime: непрозрачный bilinear SVG data-URI (`rectCornerGradientCss`); solid через `backgroundColor`
+- Schema: `fillMode` + `gradient` в base layer `properties` (AJV `additionalProperties: false`)
+- Timeline: props `UpperLeft`…`LowerRight` в конце `ANIMATABLE_PROPS`; **не** автосоздаются — только через `+Track` когда rect в gradient mode
+
+**Файлы:** `runtime/src/schema.ts`, `domRenderer.ts`, `shared/template.schema.json`, `frontend/src/editor/factories.ts`, `PropertiesPanel.tsx`, `store.ts`, `TimelinePanel.tsx`, `rectGradientTimeline.ts`, `timelineTracks.ts`, `effectiveValues.ts`.
+
+### Чеклист
+
+- [ ] Templates: глаз на All / unassigned / folder → Control dropdown скрывает папку и members
+- [ ] Rundown slot с темплейтом из скрытой папки — TAKE/UPDATE/CLEAR без изменений
+- [ ] New rect: Fill + цвет сразу виден; Save без AJV fillMode error
+- [ ] Gradient: opacity=1 → без «дыр»; веса 0–100; треки только через +Track
 
 ---
 

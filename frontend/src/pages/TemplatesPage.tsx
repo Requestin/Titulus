@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Plus, Trash2, Loader2, LayoutTemplate, Copy, Radio, X, Pencil, Folder, List, LayoutGrid,
-  ArrowDownAZ, ArrowUpAZ, ArrowDownNarrowWide, ArrowUpNarrowWide,
+  ArrowDownAZ, ArrowUpAZ, ArrowDownNarrowWide, ArrowUpNarrowWide, Eye, EyeOff,
 } from 'lucide-react';
 import { createDefaultTemplate, isUpdateDirectorArmed } from '@runtime';
 import {
@@ -35,12 +35,19 @@ type LibraryView = 'icons' | 'list';
 type LibrarySortBy = 'modified' | 'name';
 type LibrarySortDir = 'asc' | 'desc';
 const ALL_FOLDER = '__all__';
+const UNASSIGNED_FOLDER = '__none__';
+const ALL_HIDDEN_KEY = 'allFolderHiddenInControl';
+const UNASSIGNED_HIDDEN_KEY = 'unassignedHiddenInControl';
 const VIEW_KEY = 'titulus.templates.view';
 const SORT_BY_KEY = 'titulus.templates.sortBy';
 const SORT_DIR_KEY = 'titulus.templates.sortDir';
 
 function templateFolderId(t: TemplateSummary): string | null {
   return t.folderId ?? t.folder_id ?? null;
+}
+
+function isFolderHiddenInControl(f: TemplateFolder): boolean {
+  return Boolean(f.hiddenInControl ?? f.hidden_in_control);
 }
 
 function readSortBy(): LibrarySortBy {
@@ -133,15 +140,20 @@ function EditorLibrary() {
   const [folderRenameVal, setFolderRenameVal] = useState('');
   const [pendingFolderDelete, setPendingFolderDelete] = useState<TemplateFolder | null>(null);
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+  const [allHidden, setAllHidden] = useState(false);
+  const [unassignedHidden, setUnassignedHidden] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [tpls, flds] = await Promise.all([
+      const [tpls, flds, settings] = await Promise.all([
         api.templates.list(),
         api.templateFolders.list(),
+        api.settings.get().catch(() => ({} as Record<string, string>)),
       ]);
       setItems(tpls);
       setFolders(flds);
+      setAllHidden(settings[ALL_HIDDEN_KEY] === '1' || settings[ALL_HIDDEN_KEY] === 'true');
+      setUnassignedHidden(settings[UNASSIGNED_HIDDEN_KEY] === '1' || settings[UNASSIGNED_HIDDEN_KEY] === 'true');
     } catch (e) {
       toast.error(`Failed to load templates: ${(e as Error).message}`);
       setItems([]);
@@ -156,7 +168,9 @@ function EditorLibrary() {
     if (!items) return [];
     const filtered = folderFilter === ALL_FOLDER
       ? [...items]
-      : items.filter((t) => templateFolderId(t) === folderFilter);
+      : folderFilter === UNASSIGNED_FOLDER
+        ? items.filter((t) => templateFolderId(t) === null)
+        : items.filter((t) => templateFolderId(t) === folderFilter);
     const dir = sortDir === 'asc' ? 1 : -1;
     filtered.sort((a, b) => {
       if (sortBy === 'name') {
@@ -200,13 +214,49 @@ function EditorLibrary() {
   async function create() {
     setCreating(true);
     try {
-      const folderId = folderFilter !== ALL_FOLDER ? folderFilter : null;
+      const folderId = (folderFilter !== ALL_FOLDER && folderFilter !== UNASSIGNED_FOLDER)
+        ? folderFilter
+        : null;
       const rec = await api.templates.create('Untitled template', createDefaultTemplate(), folderId);
       nav(`/editor/${rec.id}`);
     } catch (e) {
       toast.error(`Create failed: ${(e as Error).message}`);
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function toggleFolderHidden(folderId: string) {
+    const f = folders.find((x) => x.id === folderId);
+    if (!f) return;
+    const next = !isFolderHiddenInControl(f);
+    try {
+      const updated = await api.templateFolders.update(folderId, { hiddenInControl: next });
+      setFolders((cur) => cur.map((x) => (x.id === folderId ? { ...x, ...updated, hiddenInControl: next, hidden_in_control: next } : x)));
+    } catch (e) {
+      toast.error(`Visibility update failed: ${(e as Error).message}`);
+    }
+  }
+
+  async function toggleAllHidden() {
+    const next = !allHidden;
+    try {
+      const cur = await api.settings.get().catch(() => ({} as Record<string, string>));
+      await api.settings.put({ ...cur, [ALL_HIDDEN_KEY]: next ? '1' : '0' });
+      setAllHidden(next);
+    } catch (e) {
+      toast.error(`Visibility update failed: ${(e as Error).message}`);
+    }
+  }
+
+  async function toggleUnassignedHidden() {
+    const next = !unassignedHidden;
+    try {
+      const cur = await api.settings.get().catch(() => ({} as Record<string, string>));
+      await api.settings.put({ ...cur, [UNASSIGNED_HIDDEN_KEY]: next ? '1' : '0' });
+      setUnassignedHidden(next);
+    } catch (e) {
+      toast.error(`Visibility update failed: ${(e as Error).message}`);
     }
   }
 
@@ -338,6 +388,8 @@ function EditorLibrary() {
           <FolderRow
             label="<All>"
             active={folderFilter === ALL_FOLDER}
+            hidden={allHidden}
+            onToggleHidden={() => { void toggleAllHidden(); }}
             onSelect={() => setFolderFilter(ALL_FOLDER)}
             droppable
             highlight={dragOverFolder === ALL_FOLDER}
@@ -353,11 +405,33 @@ function EditorLibrary() {
               if (id) void moveToFolder(id, null);
             }}
           />
+          <FolderRow
+            label="<unassigned>"
+            active={folderFilter === UNASSIGNED_FOLDER}
+            hidden={unassignedHidden}
+            onToggleHidden={() => { void toggleUnassignedHidden(); }}
+            onSelect={() => setFolderFilter(UNASSIGNED_FOLDER)}
+            droppable
+            highlight={dragOverFolder === UNASSIGNED_FOLDER}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOverFolder(UNASSIGNED_FOLDER);
+            }}
+            onDragLeave={() => setDragOverFolder((cur) => (cur === UNASSIGNED_FOLDER ? null : cur))}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOverFolder(null);
+              const id = e.dataTransfer.getData('text/template-id');
+              if (id) void moveToFolder(id, null);
+            }}
+          />
           {folders.map((f) => (
             <FolderRow
               key={f.id}
               label={f.name}
               active={folderFilter === f.id}
+              hidden={isFolderHiddenInControl(f)}
+              onToggleHidden={() => { void toggleFolderHidden(f.id); }}
               highlight={dragOverFolder === f.id}
               renaming={renamingFolderId === f.id}
               renameVal={folderRenameVal}
@@ -561,12 +635,15 @@ function EditorLibrary() {
 }
 
 function FolderRow({
-  label, active, highlight, onSelect, droppable, onDragOver, onDragLeave, onDrop,
+  label, active, highlight, hidden, onToggleHidden, onSelect, droppable, onDragOver, onDragLeave, onDrop,
   renaming, renameVal, onRenameStart, onRenameChange, onRenameCommit, onRenameCancel, onDelete,
 }: {
   label: string;
   active: boolean;
   highlight?: boolean;
+  /** Folder hidden from Control (and all templates inside). */
+  hidden?: boolean;
+  onToggleHidden?: () => void;
   onSelect: () => void;
   droppable: boolean;
   onDragOver?: (e: DragEvent) => void;
@@ -591,6 +668,7 @@ function FolderRow({
         'group mb-0.5 flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-[13px] transition-colors',
         active ? 'bg-primary/15 text-primary' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
         highlight && 'ring-1 ring-primary',
+        hidden && 'opacity-70',
       )}
     >
       <Folder className="ml-1 h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -614,6 +692,23 @@ function FolderRow({
           className="min-w-0 flex-1 truncate px-1 py-0.5 text-left"
         >
           {label}
+        </button>
+      )}
+      {onToggleHidden && (
+        <button
+          type="button"
+          title={hidden ? 'Hidden from Control — click to show' : 'Visible in Control — click to hide'}
+          aria-label={hidden ? `Show folder ${label} in Control` : `Hide folder ${label} from Control`}
+          aria-pressed={Boolean(hidden)}
+          className={cn(
+            'grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-surface',
+            hidden ? 'text-ink-muted' : 'text-ink-faint hover:text-ink',
+          )}
+          onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}
+        >
+          {hidden
+            ? <EyeOff className="h-3.5 w-3.5" aria-hidden />
+            : <Eye className="h-3.5 w-3.5" aria-hidden />}
         </button>
       )}
       {editable && !renaming && (
@@ -652,7 +747,7 @@ function TemplateActions({
   onDelete: () => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onRenameStart(); }}

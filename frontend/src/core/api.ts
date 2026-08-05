@@ -24,6 +24,9 @@ export interface TemplateFolder {
   id: string;
   name: string;
   sortOrder: number;
+  /** When true, folder and all its templates are hidden from Control pickers. */
+  hiddenInControl?: boolean;
+  hidden_in_control?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -342,7 +345,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ name, data, ...(folderId ? { folderId } : {}) }),
       }),
-    update: (id: string, patch: { name?: string; data?: Template; folderId?: string | null }) =>
+    update: (id: string, patch: {
+      name?: string;
+      data?: Template;
+      folderId?: string | null;
+    }) =>
       req<TemplateRecord>(`/api/templates/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
     uploadThumbnail: (id: string, dataUrl: string) =>
       req<{ ok: true; thumbnailUrl: string }>(`/api/templates/${id}/thumbnail`, {
@@ -364,7 +371,7 @@ export const api = {
     list: () => req<TemplateFolder[]>('/api/template-folders'),
     create: (name: string) =>
       req<TemplateFolder>('/api/template-folders', { method: 'POST', body: JSON.stringify({ name }) }),
-    update: (id: string, patch: { name?: string; sortOrder?: number }) =>
+    update: (id: string, patch: { name?: string; sortOrder?: number; hiddenInControl?: boolean }) =>
       req<TemplateFolder>(`/api/template-folders/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
     remove: (id: string, opts?: { deleteTemplates?: boolean }) => {
       const q = opts?.deleteTemplates ? '?deleteTemplates=1' : '';

@@ -236,7 +236,17 @@ export function TimelinePanel() {
   const sortableIds = [...tree.flatMap((item) => item.objects.map((object) => objectTrackKey(object.target))), ...tracks.map((track) => trackKey(track.target, track.prop))];
   const selectedTarget = selection ? { kind: selection.kind, id: selection.id } : null;
   const trackedProps = selectedTarget ? ANIMATABLE_PROPS.filter((prop) => tracks.some((track) => sameTarget(track.target, selectedTarget) && track.prop === prop)) : [];
-  const untrackedProps = ANIMATABLE_PROPS.filter((prop) => prop !== 'crawlProgress' && prop !== 'videoProgress' && !trackedProps.includes(prop));
+  const untrackedProps = ANIMATABLE_PROPS.filter((prop) => {
+    if (prop === 'crawlProgress' || prop === 'videoProgress') return false;
+    if (trackedProps.includes(prop)) return false;
+    // Gradient corner tracks only for rect layers in gradient mode.
+    if (prop === 'UpperLeft' || prop === 'LowerLeft' || prop === 'UpperRight' || prop === 'LowerRight') {
+      if (!selectedTarget || selectedTarget.kind !== 'layer') return false;
+      const layer = template?.layers.find((l) => l.id === selectedTarget.id);
+      return layer?.type === 'rect' && (layer.fillMode ?? 'solid') === 'gradient';
+    }
+    return true;
+  });
   const activeTrackResolved = (() => {
     if (activeTrack && tracks.some((track) => trackKey(track.target, track.prop) === trackKey(activeTrack.target, activeTrack.prop))) {
       if (!selectedTarget || sameTarget(activeTrack.target, selectedTarget)) return activeTrack;

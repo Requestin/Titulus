@@ -21,7 +21,7 @@
 import type {
   Template, Layer, LayerGroup, AnimatableValues,
 } from './schema.js';
-import { applyTextTransform, resolveBinding, isUpdateDirectorName, timelineNeedsDirectorRuntime } from './schema.js';
+import { applyTextTransform, resolveBinding, isUpdateDirectorName, timelineNeedsDirectorRuntime, defaultRectGradient, rectCornerGradientCss } from './schema.js';
 import {
   applyTextStyleToEl,
   crawlAlignActive,
@@ -1233,8 +1233,28 @@ export class TemplateRenderer {
     const cache = node.cache;
     switch (layer.type) {
       case 'rect': {
-        const fill = String(resolveBinding(layer.fill, v));
-        this.setStyle(el, cache, 'background', fill);
+        const mode = layer.fillMode ?? 'solid';
+        if (mode === 'gradient') {
+          const g = layer.gradient ?? defaultRectGradient();
+          const bg = rectCornerGradientCss(g, {
+            UpperLeft: anim?.UpperLeft,
+            LowerLeft: anim?.LowerLeft,
+            UpperRight: anim?.UpperRight,
+            LowerRight: anim?.LowerRight,
+          });
+          // Opaque SVG fill (no alpha holes). Avoid `background` shorthand —
+          // it would wipe longhand image/size we set below.
+          this.setStyle(el, cache, 'backgroundColor', g.upperLeft.color);
+          this.setStyle(el, cache, 'backgroundImage', bg);
+          this.setStyle(el, cache, 'backgroundSize', '100% 100%');
+          this.setStyle(el, cache, 'backgroundRepeat', 'no-repeat');
+        } else {
+          const fill = String(resolveBinding(layer.fill, v));
+          this.setStyle(el, cache, 'backgroundImage', 'none');
+          this.setStyle(el, cache, 'backgroundSize', 'auto');
+          this.setStyle(el, cache, 'backgroundRepeat', 'repeat');
+          this.setStyle(el, cache, 'backgroundColor', fill);
+        }
         this.setStyle(el, cache, 'borderRadius', `${layer.cornerRadius}px`);
         const border = layer.borderWidth > 0
           ? `${layer.borderWidth}px solid ${layer.borderColor}`

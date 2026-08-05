@@ -49,10 +49,17 @@ type SendControl = (cmd: {
 
 type SidebarMode = 'rundowns' | 'templates' | 'dataElements';
 const ALL_FOLDER = '__all__';
+const UNASSIGNED_FOLDER = '__none__';
+const ALL_HIDDEN_KEY = 'allFolderHiddenInControl';
+const UNASSIGNED_HIDDEN_KEY = 'unassignedHiddenInControl';
 const ALL_TEMPLATE = '__all__';
 
 function templateFolderIdOf(t: TemplateSummary): string | null {
   return t.folderId ?? t.folder_id ?? null;
+}
+
+function isFolderHiddenInControl(f: TemplateFolder): boolean {
+  return Boolean(f.hiddenInControl ?? f.hidden_in_control);
 }
 
 const LAST_RUNDOWN_KEY = (channelId: string) => `titulus.control.lastRundown.${channelId}`;
@@ -92,6 +99,8 @@ export function RundownTab({
 }) {
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('rundowns');
   const [folders, setFolders] = useState<TemplateFolder[]>([]);
+  const [allHidden, setAllHidden] = useState(false);
+  const [unassignedHidden, setUnassignedHidden] = useState(false);
   const [sidebarFolderId, setSidebarFolderId] = useState<string>(ALL_FOLDER);
   const [sidebarTemplateId, setSidebarTemplateId] = useState<string>(ALL_TEMPLATE);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -149,17 +158,71 @@ export function RundownTab({
   useEffect(() => {
     void (async () => {
       try {
-        setFolders(await api.templateFolders.list());
+        const [flds, settings] = await Promise.all([
+          api.templateFolders.list(),
+          api.settings.get().catch(() => ({} as Record<string, string>)),
+        ]);
+        setFolders(flds);
+        setAllHidden(settings[ALL_HIDDEN_KEY] === '1' || settings[ALL_HIDDEN_KEY] === 'true');
+        setUnassignedHidden(
+          settings[UNASSIGNED_HIDDEN_KEY] === '1' || settings[UNASSIGNED_HIDDEN_KEY] === 'true',
+        );
       } catch {
         setFolders([]);
       }
     })();
   }, []);
 
+  const hiddenFolderIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const f of folders) {
+      if (isFolderHiddenInControl(f)) ids.add(f.id);
+    }
+    return ids;
+  }, [folders]);
+
+  const controlFolders = useMemo(
+    () => folders.filter((f) => !isFolderHiddenInControl(f)),
+    [folders],
+  );
+
+  const showAllFolder = !allHidden;
+  const showUnassignedFolder = !unassignedHidden;
+
+  function fallbackSidebarFolder(): string {
+    if (!allHidden) return ALL_FOLDER;
+    if (!unassignedHidden) return UNASSIGNED_FOLDER;
+    return controlFolders[0]?.id ?? ALL_FOLDER;
+  }
+
   const templatesInFolder = useMemo(() => {
-    if (sidebarFolderId === ALL_FOLDER) return templates;
-    return templates.filter((t) => templateFolderIdOf(t) === sidebarFolderId);
-  }, [templates, sidebarFolderId]);
+    // Hide all templates that live in a Control-hidden folder (or unassigned if hidden).
+    const visible = templates.filter((t) => {
+      const fid = templateFolderIdOf(t);
+      if (fid === null) return !unassignedHidden;
+      return !hiddenFolderIds.has(fid);
+    });
+    if (sidebarFolderId === ALL_FOLDER) return visible;
+    if (sidebarFolderId === UNASSIGNED_FOLDER) {
+      return visible.filter((t) => templateFolderIdOf(t) === null);
+    }
+    return visible.filter((t) => templateFolderIdOf(t) === sidebarFolderId);
+  }, [templates, sidebarFolderId, hiddenFolderIds, unassignedHidden]);
+
+  useEffect(() => {
+    if (sidebarFolderId === ALL_FOLDER) {
+      if (!showAllFolder) setSidebarFolderId(fallbackSidebarFolder());
+      return;
+    }
+    if (sidebarFolderId === UNASSIGNED_FOLDER) {
+      if (!showUnassignedFolder) setSidebarFolderId(fallbackSidebarFolder());
+      return;
+    }
+    if (!controlFolders.some((f) => f.id === sidebarFolderId)) {
+      setSidebarFolderId(fallbackSidebarFolder());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sidebarFolderId, showAllFolder, showUnassignedFolder, controlFolders]);
 
   const templatesSorted = useMemo(
     () => [...templatesInFolder].sort((a, b) => a.name.localeCompare(b.name)),
@@ -230,11 +293,12 @@ export function RundownTab({
     setDeSelectedIds(new Set());
     setDeAnchorId(null);
     setDeDeleteIds(null);
-    setSidebarFolderId(ALL_FOLDER);
+    setSidebarFolderId(fallbackSidebarFolder());
     setSidebarTemplateId(ALL_TEMPLATE);
     if (sidebarMode !== 'rundowns') {
       setVarsSelection({ kind: 'none' });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sidebarMode]);
 
   useEffect(() => {
@@ -801,8 +865,11 @@ export function RundownTab({
                 className="w-full"
                 aria-label="Template folder"
               >
-                <option value={ALL_FOLDER}>&lt;All&gt;</option>
-                {folders.map((f) => (
+                {showAllFolder && <option value={ALL_FOLDER}>&lt;All&gt;</option>}
+                {showUnassignedFolder && (
+                  <option value={UNASSIGNED_FOLDER}>&lt;unassigned&gt;</option>
+                )}
+                {controlFolders.map((f) => (
                   <option key={f.id} value={f.id}>{f.name}</option>
                 ))}
               </Select>
@@ -834,11 +901,14 @@ export function RundownTab({
                   className="w-full"
                   aria-label="Data element folder"
                 >
-                  <option value={ALL_FOLDER}>&lt;All&gt;</option>
-                  {folders.map((f) => (
-                    <option key={f.id} value={f.id}>{f.name}</option>
-                  ))}
-                </Select>
+                  {showAllFolder && <option value={ALL_FOLDER}>&lt;All&gt;</option>}
+                {showUnassignedFolder && (
+                  <option value={UNASSIGNED_FOLDER}>&lt;unassigned&gt;</option>
+                )}
+                {controlFolders.map((f) => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </Select>
                 <Select
                   value={sidebarTemplateId}
                   onChange={(e) => setSidebarTemplateId(e.target.value)}

@@ -36,7 +36,8 @@ export function effectiveTransform(
   const anim = effectiveAnimatableValues(template, target, playheads);
   const out = { ...base };
   for (const p of ANIMATABLE_PROPS) {
-    if (p === 'opacity') continue;
+    if (p === 'opacity' || p === 'crawlProgress' || p === 'videoProgress') continue;
+    if (p === 'UpperLeft' || p === 'LowerLeft' || p === 'UpperRight' || p === 'LowerRight') continue;
     if (anim[p] !== undefined) (out as unknown as Record<string, number>)[p] = anim[p]!;
   }
   return out;

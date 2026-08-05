@@ -24,6 +24,8 @@ import {
   splitCrawlLines,
   effectiveActionFrame,
   actionFrameFromEffective,
+  defaultRectGradient,
+  type RectGradientProp,
 } from '@runtime';
 import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
@@ -34,7 +36,18 @@ import {
   removeCrawlDirector,
   ensureCrawlProgressTrack,
 } from './crawlTimeline';
+import { removeRectGradientTracks } from './rectGradientTimeline';
 import { trackKey, type TimelineTrack } from './timelineTracks';
+
+const GRADIENT_CORNER_PROP: Record<
+  'upperLeft' | 'lowerLeft' | 'upperRight' | 'lowerRight',
+  RectGradientProp
+> = {
+  upperLeft: 'UpperLeft',
+  lowerLeft: 'LowerLeft',
+  upperRight: 'UpperRight',
+  lowerRight: 'LowerRight',
+};
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
 export type Target = { kind: 'layer' | 'group'; id: string };
@@ -56,6 +69,15 @@ function baseValue(t: Template, target: Target, prop: AnimatableProp): number {
     const l = t.layers.find((x) => x.id === target.id);
     if (!l) return 0;
     if (prop === 'opacity') return l.opacity;
+    if (l.type === 'rect' && l.gradient) {
+      if (prop === 'UpperLeft') return l.gradient.upperLeft.value;
+      if (prop === 'LowerLeft') return l.gradient.lowerLeft.value;
+      if (prop === 'UpperRight') return l.gradient.upperRight.value;
+      if (prop === 'LowerRight') return l.gradient.lowerRight.value;
+    }
+    if (prop === 'UpperLeft' || prop === 'LowerLeft' || prop === 'UpperRight' || prop === 'LowerRight') {
+      return 100;
+    }
     return (l.transform as unknown as Record<string, number>)[prop] ?? 0;
   }
   const g = t.groups.find((x) => x.id === target.id);
@@ -283,6 +305,12 @@ interface EditorState {
   patch: (mutator: (t: Template) => void) => void;
   updateLayer: (id: string, mutator: (l: Layer) => void) => void;
   setLayerOpacity: (id: string, opacity: number) => void;
+  setRectFillMode: (id: string, mode: 'solid' | 'gradient') => void;
+  setRectGradientCorner: (
+    id: string,
+    corner: 'upperLeft' | 'lowerLeft' | 'upperRight' | 'lowerRight',
+    partial: { color?: string; value?: number },
+  ) => void;
   updateTransform: (id: string, partial: Partial<Transform>, kind?: 'layer' | 'group') => void;
   setName: (name: string) => void;
   setCanvas: (partial: Partial<Template['canvas']>) => void;
@@ -428,6 +456,11 @@ export const useEditor = create<EditorState>()(
           g.transform.width = 0;
           g.transform.height = 0;
         }
+        for (const l of normalized.layers) {
+          if (l.type === 'rect' && (l.fillMode ?? 'solid') === 'gradient') {
+            l.gradient ??= defaultRectGradient();
+          }
+        }
         set({
           template: normalized,
           selection: null,
@@ -473,6 +506,36 @@ export const useEditor = create<EditorState>()(
             { opacity: l.opacity },
             get().playheads,
           );
+        }),
+
+      setRectFillMode: (id, mode) =>
+        get().patch((t) => {
+          const l = t.layers.find((x) => x.id === id);
+          if (!l || l.type !== 'rect') return;
+          l.fillMode = mode;
+          if (mode === 'gradient') {
+            l.gradient ??= defaultRectGradient();
+          } else {
+            removeRectGradientTracks(t, l.id);
+          }
+        }),
+
+      setRectGradientCorner: (id, corner, partial) =>
+        get().patch((t) => {
+          const l = t.layers.find((x) => x.id === id);
+          if (!l || l.type !== 'rect') return;
+          l.gradient ??= defaultRectGradient();
+          Object.assign(l.gradient[corner], partial);
+          if (partial.value !== undefined) {
+            const value = Math.min(100, Math.max(0, partial.value));
+            l.gradient[corner].value = value;
+            syncAnimatedPropsAtPlayhead(
+              t,
+              { kind: 'layer', id },
+              { [GRADIENT_CORNER_PROP[corner]]: value },
+              get().playheads,
+            );
+          }
         }),
 
       updateTransform: (id, partial, kind = 'layer') =>

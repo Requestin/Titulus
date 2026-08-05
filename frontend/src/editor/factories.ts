@@ -88,6 +88,7 @@ export function createLayer(type: LayerType, name: string, crawlDirectorId?: str
         ...base, type: 'rect',
         transform: createEditorTransform(480, 140),
         fill: '#1f2937',
+        fillMode: 'solid',
         cornerRadius: 8,
         borderColor: '#000000',
         borderWidth: 0,

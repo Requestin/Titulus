@@ -267,9 +267,128 @@ export interface TextLayer extends BaseLayer {
 export interface RectLayer extends BaseLayer {
   type: 'rect';
   fill: string | VariableBinding;
+  /** Solid fill (default) or 4-corner gradient. */
+  fillMode?: 'solid' | 'gradient';
+  /** Corner colors + weights (0–100). Used when `fillMode === 'gradient'`. */
+  gradient?: RectGradient;
   cornerRadius: number;
   borderColor: string;
   borderWidth: number;
+}
+
+/** One corner of a rectangle gradient (VizArtist-style). */
+export interface RectGradientCorner {
+  color: string;
+  /** Corner fill strength 0–100 (100 = maximum). */
+  value: number;
+}
+
+export interface RectGradient {
+  upperLeft: RectGradientCorner;
+  lowerLeft: RectGradientCorner;
+  upperRight: RectGradientCorner;
+  lowerRight: RectGradientCorner;
+}
+
+export function defaultRectGradient(): RectGradient {
+  return {
+    upperLeft: { color: '#ff0000', value: 100 },
+    lowerLeft: { color: '#f5f5f5', value: 100 },
+    upperRight: { color: '#0000ff', value: 100 },
+    lowerRight: { color: '#00ff00', value: 100 },
+  };
+}
+
+/** Animatable corner-weight prop names (timeline tracks). */
+export const RECT_GRADIENT_PROPS = [
+  'UpperLeft',
+  'LowerLeft',
+  'UpperRight',
+  'LowerRight',
+] as const;
+export type RectGradientProp = (typeof RECT_GRADIENT_PROPS)[number];
+
+export function isRectGradientProp(prop: string): prop is RectGradientProp {
+  return (RECT_GRADIENT_PROPS as readonly string[]).includes(prop);
+}
+
+function clampCornerPct(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, n));
+}
+
+/**
+ * VizArtist-style 4-corner fill (opaque).
+ * Corner `value` 0–100 scales that corner's weight in a bilinear blend.
+ * Uses an SVG data-URI so the fill stays fully opaque at opacity=1.
+ */
+export function rectCornerGradientCss(
+  g: RectGradient,
+  overrides?: Partial<Record<RectGradientProp, number>>,
+): string {
+  const ulV = clampCornerPct(overrides?.UpperLeft ?? g.upperLeft.value) / 100;
+  const llV = clampCornerPct(overrides?.LowerLeft ?? g.lowerLeft.value) / 100;
+  const urV = clampCornerPct(overrides?.UpperRight ?? g.upperRight.value) / 100;
+  const lrV = clampCornerPct(overrides?.LowerRight ?? g.lowerRight.value) / 100;
+
+  const ul = weightedCornerColor(g.upperLeft.color, ulV);
+  const ur = weightedCornerColor(g.upperRight.color, urV);
+  const ll = weightedCornerColor(g.lowerLeft.color, llV);
+  const lr = weightedCornerColor(g.lowerRight.color, lrV);
+
+  // Opaque bilinear: top row UL→UR, bottom LL→LR, vertical mask blend.
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" preserveAspectRatio="none">` +
+    `<defs>` +
+    `<linearGradient id="t" x1="0" y1="0" x2="1" y2="0">` +
+    `<stop offset="0" stop-color="${ul}"/><stop offset="1" stop-color="${ur}"/>` +
+    `</linearGradient>` +
+    `<linearGradient id="b" x1="0" y1="0" x2="1" y2="0">` +
+    `<stop offset="0" stop-color="${ll}"/><stop offset="1" stop-color="${lr}"/>` +
+    `</linearGradient>` +
+    `<linearGradient id="v" x1="0" y1="0" x2="0" y2="1">` +
+    `<stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#000"/>` +
+    `</linearGradient>` +
+    `<mask id="m"><rect width="100%" height="100%" fill="url(#v)"/></mask>` +
+    `</defs>` +
+    `<rect width="100%" height="100%" fill="url(#b)"/>` +
+    `<rect width="100%" height="100%" fill="url(#t)" mask="url(#m)"/>` +
+    `</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
+/** Mix corner toward a neutral gray by (1 - weight); stays opaque. */
+function weightedCornerColor(hex: string, weight: number): string {
+  const w = Math.max(0, Math.min(1, weight));
+  const c = parseHexColor(hex) ?? { r: 128, g: 128, b: 128 };
+  // weight 1 → full corner color; 0 → mid gray (no contribution / neutral fill)
+  const r = Math.round(c.r * w + 128 * (1 - w));
+  const g = Math.round(c.g * w + 128 * (1 - w));
+  const b = Math.round(c.b * w + 128 * (1 - w));
+  return `#${toHex2(r)}${toHex2(g)}${toHex2(b)}`;
+}
+
+function parseHexColor(input: string): { r: number; g: number; b: number } | null {
+  const s = input.trim();
+  const m6 = /^#([0-9a-fA-F]{6})$/.exec(s);
+  if (m6) {
+    const n = Number.parseInt(m6[1]!, 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+  const m3 = /^#([0-9a-fA-F]{3})$/.exec(s);
+  if (m3) {
+    const h = m3[1]!;
+    return {
+      r: Number.parseInt(h[0]! + h[0]!, 16),
+      g: Number.parseInt(h[1]! + h[1]!, 16),
+      b: Number.parseInt(h[2]! + h[2]!, 16),
+    };
+  }
+  return null;
+}
+
+function toHex2(n: number): string {
+  return Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
 }
 
 export type ImageFit = 'stretch' | 'contain' | 'cover';
@@ -390,6 +509,11 @@ export const ANIMATABLE_PROPS = [
   'crawlProgress',
   /** Video clip progress 0..1 over source duration (default-director clip track). */
   'videoProgress',
+  /** Rect gradient corner weights 0..100 (when fillMode=gradient). */
+  'UpperLeft',
+  'LowerLeft',
+  'UpperRight',
+  'LowerRight',
 ] as const;
 export type AnimatableProp = (typeof ANIMATABLE_PROPS)[number];
 export type AnimatableValues = Partial<Record<AnimatableProp, number>>;

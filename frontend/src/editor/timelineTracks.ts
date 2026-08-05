@@ -242,6 +242,10 @@ export function trackPropLabel(prop: AnimatableProp): string {
     rotationY: 'rotationY',
     crawlProgress: 'Crawl',
     videoProgress: 'Video',
+    UpperLeft: 'UpperLeft',
+    LowerLeft: 'LowerLeft',
+    UpperRight: 'UpperRight',
+    LowerRight: 'LowerRight',
   };
   return labels[prop] ?? prop;
 }
