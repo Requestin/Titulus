@@ -57,6 +57,8 @@ export function TemplatesTab({
                     className={cn(
                       'flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-[13px] transition-colors',
                       prep?.id === t.id ? 'border-primary bg-primary/10' : 'border-border bg-surface hover:border-ink-faint',
+                      isLive && 'border-live/40 bg-live/10',
+                      isLive && prep?.id === t.id && 'border-primary bg-live/15',
                     )}
                   >
                     {isLive && <span className="h-2 w-2 shrink-0 rounded-full bg-live" aria-label="on air" />}

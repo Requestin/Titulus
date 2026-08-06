@@ -551,6 +551,7 @@ export function RundownTab({
       kind: 'template',
       templateId: t.id,
       templateName: t.name,
+      layerId: typeof rec.data.layerId === 'number' ? rec.data.layerId : 50,
       variables: rec.data.variables,
       values: defaultsFromVariables(rec.data.variables),
     });
@@ -563,6 +564,7 @@ export function RundownTab({
     setVarsSelection({
       kind: 'dataElement',
       dataElement: de,
+      layerId: typeof rec?.data.layerId === 'number' ? rec.data.layerId : 50,
       variables,
       values: buildValuesFromVars(variables, de.vars),
     });
@@ -629,6 +631,7 @@ export function RundownTab({
       slotId: slot.slotId,
       templateId: slot.templateId,
       dataElementId: slot.dataElementId,
+      layerId: typeof rec?.data.layerId === 'number' ? rec.data.layerId : 50,
       variables,
       values: buildValuesFromVars(variables, slot.vars),
       missing,
@@ -1336,6 +1339,8 @@ function SortableSlotRow({
       className={cn(
         'rounded border px-3 py-2',
         selected || focused ? 'border-primary/70 bg-surface-2' : 'border-border bg-surface',
+        live && 'border-live/40 bg-live/10',
+        live && (selected || focused) && 'border-primary/70 bg-live/15',
         isDragging && 'opacity-60',
       )}
     >

@@ -15,6 +15,14 @@
 
 import { onAirDao } from './db.js';
 
+/** Resolve template layerId for playout stacking (1–99, default 50). */
+function resolveLayerId(template) {
+  const raw = template && typeof template === 'object' ? template.layerId : undefined;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n)) return 50;
+  return Math.min(99, Math.max(1, Math.round(n)));
+}
+
 export class OnAirManager {
   /** @param {import('better-sqlite3').Database} db */
   constructor(db) {
@@ -86,10 +94,26 @@ export class OnAirManager {
     if (!cmd.templateId || !cmd.template) return;
     const next = { ...cmd };
     delete next.waitingContinue;
-    this.dao.set(next, { bringToFront: true }); // persist with z-order bump
-    if (!this.state[cmd.channelId]) this.state[cmd.channelId] = [];
+    const layerId = resolveLayerId(next.template);
+    next.template = { ...next.template, layerId };
+
+    // Same layerId: clear other templates already on this channel (not self).
+    const channel = this.state[cmd.channelId] || [];
+    const victims = channel.filter(
+      (c) => c.templateId !== cmd.templateId && resolveLayerId(c.template) === layerId,
+    );
+    for (const v of victims) {
+      this.dao.remove(cmd.channelId, v.templateId);
+      this.fanout(cmd.channelId, { type: 'clear', templateId: v.templateId, channelId: cmd.channelId });
+    }
+    const withoutVictims = channel.filter(
+      (c) => c.templateId === cmd.templateId || resolveLayerId(c.template) !== layerId,
+    );
+
+    // Persist without last-wins bump; visual stack uses template.layerId z-index.
+    this.dao.set(next, { bringToFront: false, orderIndex: layerId });
     // Replace any existing take of the same templateId.
-    this.state[cmd.channelId] = this.state[cmd.channelId].filter((c) => c.templateId !== cmd.templateId);
+    this.state[cmd.channelId] = withoutVictims.filter((c) => c.templateId !== cmd.templateId);
     this.state[cmd.channelId].push(next);
     this.fanout(cmd.channelId, next);
     this.notifyControls();
@@ -108,7 +132,8 @@ export class OnAirManager {
       ...(cmd.slotId !== undefined ? { slotId: cmd.slotId } : {}),
     };
     delete next.waitingContinue;
-    this.dao.set(next, { bringToFront: true });
+    const layerId = resolveLayerId(next.template);
+    this.dao.set(next, { bringToFront: false, orderIndex: layerId });
     const arr = this.state[cmd.channelId] || [];
     const idx = arr.findIndex((c) => c.templateId === cmd.templateId);
     if (idx >= 0) arr[idx] = next; else arr.push(next);

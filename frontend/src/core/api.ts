@@ -4,7 +4,7 @@
 // All paths are relative and proxied to the backend by Vite (§8.5).
 
 import type { Template } from '@runtime';
-import { getSessionToken } from '@/core/session';
+import { clearSessionToken, getSessionToken } from '@/core/session';
 
 export interface TemplateSummary {
   id: string;
@@ -185,6 +185,22 @@ export interface LicenseState {
 
 export type UserRole = 'operator' | 'admin';
 
+export type Permission = 'template_editor' | 'template_ue_editor' | 'control' | 'settings';
+
+export const ALL_PERMISSIONS: Permission[] = [
+  'template_editor',
+  'template_ue_editor',
+  'control',
+  'settings',
+];
+
+export const PERMISSION_LABELS: Record<Permission, string> = {
+  template_editor: 'Templates',
+  template_ue_editor: 'UE Templates',
+  control: 'Control',
+  settings: 'Settings',
+};
+
 export interface AuthUser {
   id: string;
   tenantId: string;
@@ -193,6 +209,50 @@ export interface AuthUser {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  groupId?: string | null;
+  groupName?: string | null;
+  permissions?: Permission[];
+}
+
+export interface AuthGroup {
+  id: string;
+  name: string;
+  isSystem?: boolean;
+  permissions: Permission[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TemplateLock {
+  templateId: string;
+  userId: string;
+  username: string;
+  lockedAt: string;
+  heartbeatAt: string;
+}
+
+/** True if user has the given permission (admin with empty perms = all). */
+export function hasPermission(user: AuthUser | null | undefined, perm: Permission): boolean {
+  if (!user) return false;
+  const perms = user.permissions;
+  if ((!perms || perms.length === 0) && user.role === 'admin') return true;
+  return (perms ?? []).includes(perm);
+}
+
+const ROUTE_PERMISSIONS: { path: string; perm: Permission }[] = [
+  { path: '/templates', perm: 'template_editor' },
+  { path: '/ue-templates', perm: 'template_ue_editor' },
+  { path: '/control', perm: 'control' },
+  { path: '/settings', perm: 'settings' },
+];
+
+/** First nav path the user may open, or null if none. */
+export function firstAllowedPath(user: AuthUser | null | undefined): string | null {
+  if (!user) return null;
+  for (const { path, perm } of ROUTE_PERMISSIONS) {
+    if (hasPermission(user, perm)) return path;
+  }
+  return null;
 }
 
 export interface Entitlements {
@@ -262,6 +322,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text();
   const body = text ? safeJson(text) : null;
   if (!res.ok) {
+    if (res.status === 401 && path !== '/api/auth/login') {
+      clearSessionToken();
+      if (typeof window !== 'undefined') {
+        window.location.assign('/login');
+      }
+    }
     const msg = errorMessageFromBody(body, `${res.status} ${res.statusText}`);
     throw new ApiError(res.status, msg, body);
   }
@@ -315,10 +381,40 @@ export const api = {
         body: JSON.stringify({ username, password }),
       }),
     logout: () => req<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
-    me: () => req<{ user: AuthUser; tenantId: string; role: UserRole }>('/api/auth/me'),
+    me: () =>
+      req<{
+        user: AuthUser;
+        tenantId: string;
+        role: UserRole;
+        permissions?: Permission[];
+      }>('/api/auth/me'),
     listUsers: () => req<AuthUser[]>('/api/auth/users'),
-    createUser: (body: { username: string; password: string; role?: UserRole }) =>
+    createUser: (body: {
+      username: string;
+      password: string;
+      role?: UserRole;
+      groupId?: string | null;
+      isActive?: boolean;
+    }) =>
       req<AuthUser>('/api/auth/users', { method: 'POST', body: JSON.stringify(body) }),
+    updateUser: (
+      id: string,
+      body: {
+        username?: string;
+        password?: string;
+        role?: UserRole;
+        groupId?: string | null;
+        isActive?: boolean;
+      },
+    ) =>
+      req<AuthUser>(`/api/auth/users/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    listGroups: () => req<AuthGroup[]>('/api/auth/groups'),
+    createGroup: (body: { name: string; permissions?: Permission[] }) =>
+      req<AuthGroup>('/api/auth/groups', { method: 'POST', body: JSON.stringify(body) }),
+    updateGroup: (id: string, body: { name?: string; permissions?: Permission[] }) =>
+      req<AuthGroup>(`/api/auth/groups/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    deleteGroup: (id: string) =>
+      req<{ ok: true }>(`/api/auth/groups/${id}`, { method: 'DELETE' }),
   },
   billing: {
     entitlements: () => req<Entitlements>('/api/billing/entitlements'),
@@ -366,6 +462,14 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    lock: (id: string) =>
+      req<TemplateLock>(`/api/templates/${id}/lock`, { method: 'POST' }),
+    heartbeat: (id: string) =>
+      req<TemplateLock>(`/api/templates/${id}/lock/heartbeat`, { method: 'POST' }),
+    unlock: (id: string) =>
+      req<{ ok: true }>(`/api/templates/${id}/lock`, { method: 'DELETE' }),
+    getLock: (id: string) =>
+      req<TemplateLock | null>(`/api/templates/${id}/lock`),
   },
   templateFolders: {
     list: () => req<TemplateFolder[]>('/api/template-folders'),

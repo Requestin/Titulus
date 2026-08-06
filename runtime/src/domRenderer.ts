@@ -192,6 +192,14 @@ export class TemplateRenderer {
     this.root.style.height = `${template.canvas.height}px`;
     this.root.style.background =
       template.canvas.background === 'transparent' ? 'transparent' : template.canvas.background;
+    // Cross-template stack: smaller layerId paints above (z-index = 100 - layerId).
+    {
+      const raw = template.layerId;
+      const layerId = typeof raw === 'number' && Number.isFinite(raw)
+        ? Math.min(99, Math.max(1, Math.round(raw)))
+        : 50;
+      this.root.style.zIndex = String(100 - layerId);
+    }
 
     this.buildDom();
     this.applyCurrentState();

@@ -1,24 +1,30 @@
 // frontend/src/pages/SettingsPage.tsx
 //
-// Channel + output mode settings (DEVELOPMENT_PROMPT §8.5, REQ-11).
-// CRUD for up to 8 channels with output_mode, DeckLink device/format/keyer,
-// and stream URL. Used by run-engines.sh to pick consumer per channel.
+// Settings shell: Channels | License | User interface | Users and groups.
+// Channel CRUD drives run-engines.sh consumer selection (REQ-11).
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Trash2, Loader2, Radio, Save, RefreshCw, ShieldCheck, ShieldOff, ClipboardList } from 'lucide-react';
+import {
+  Plus, Trash2, Loader2, Radio, Save, RefreshCw, ShieldCheck, ShieldOff, ClipboardList, Pencil,
+} from 'lucide-react';
 import {
   api,
   ApiError,
+  ALL_PERMISSIONS,
+  PERMISSION_LABELS,
+  type AuthGroup,
+  type AuthUser,
   type Channel,
   type KeyerMode,
   type OutputMode,
+  type Permission,
   type RenderBackend,
   type LicenseState,
   type Entitlements,
   type AuditEvent,
 } from '@/core/api';
 import { Button } from '@/components/ui/Button';
-import { Field, Input, Select } from '@/components/ui/form';
+import { Checkbox, Field, Input, Select } from '@/components/ui/form';
 import { toast } from '@/core/toast';
 import { cn } from '@/lib/cn';
 
@@ -42,12 +48,32 @@ const KEYER_MODES: { value: KeyerMode; label: string }[] = [
 
 const DISPLAY_MODES = ['HD1080i50', 'HD1080p50', 'HD720p60', 'HD1080p25', 'HD1080i60'];
 
+const SETTINGS_SECTIONS = [
+  { id: 'channels', label: 'Channels' },
+  { id: 'license', label: 'License' },
+  { id: 'ui', label: 'User interface' },
+  { id: 'users', label: 'Users and groups' },
+] as const;
+
+type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id'];
+
+const ADMINISTRATORS_GROUP = 'administrators';
+
 type Draft = Omit<Channel, 'created_at'> & { isNew?: boolean };
 
-function emptyDraft(): Draft {
+function nextChannelName(channels: Channel[]): string {
+  let max = 0;
+  for (const c of channels) {
+    const m = /^Channel(\d+)$/i.exec(c.name.trim());
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `Channel${max + 1}`;
+}
+
+function emptyDraft(name: string): Draft {
   return {
     id: '',
-    name: 'Channel 1',
+    name,
     output_mode: 'browser',
     device_index: -1,
     display_mode: 'HD1080i50',
@@ -82,72 +108,83 @@ function channelPayload(draft: Draft) {
   };
 }
 
+function isAdministratorsGroup(g: AuthGroup): boolean {
+  return g.name.toLowerCase() === ADMINISTRATORS_GROUP || !!g.isSystem;
+}
+
 export function SettingsPage() {
+  const [section, setSection] = useState<SettingsSection>('channels');
+
+  return (
+    <div className="flex h-full min-h-0">
+      <aside className="flex w-56 shrink-0 flex-col border-r border-border">
+        <div className="border-b border-border px-3 py-3">
+          <h2 className="text-sm font-semibold">Settings</h2>
+          <p className="text-[11px] text-ink-muted">Channels · license · access</p>
+        </div>
+        <nav className="min-h-0 flex-1 space-y-0.5 overflow-auto p-2">
+          {SETTINGS_SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => setSection(s.id)}
+              className={cn(
+                'flex w-full items-center rounded-md px-2.5 py-2 text-left text-[13px] transition-colors',
+                section === s.id
+                  ? 'bg-primary/15 text-ink'
+                  : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
+              )}
+            >
+              {s.label}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+        {section === 'channels' && <ChannelsSection />}
+        {section === 'license' && <LicenseSection />}
+        {section === 'ui' && (
+          <div className="grid h-full place-items-center p-6 text-[13px] text-ink-faint">
+            Coming soon.
+          </div>
+        )}
+        {section === 'users' && <UsersAndGroupsSection />}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Channels ─────────────────────────────────────────────────────────── */
+
+function ChannelsSection() {
   const [channels, setChannels] = useState<Channel[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
-  const [license, setLicense] = useState<LicenseState | null>(null);
-  const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
-  const [events, setEvents] = useState<AuditEvent[]>([]);
-  const [licenseKey, setLicenseKey] = useState('');
-  const [holder, setHolder] = useState('');
-  const [licenseBusy, setLicenseBusy] = useState(false);
-  const [eventsBusy, setEventsBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const list = await api.channels.list();
       setChannels(list);
-      if (list.length && !selectedId) setSelectedId(list[0].id);
+      setSelectedId((cur) => {
+        if (cur === '__new__') return cur;
+        if (cur && list.some((c) => c.id === cur)) return cur;
+        return list[0]?.id ?? null;
+      });
     } catch (e) {
       toast.error(`Failed to load channels: ${(e as Error).message}`);
       setChannels([]);
     }
-  }, [selectedId]);
+  }, []);
 
   useEffect(() => { void load(); }, [load]);
-
-  const loadLicense = useCallback(async () => {
-    try {
-      setLicense(await api.license.get());
-    } catch (e) {
-      toast.error(`Failed to load license: ${(e as Error).message}`);
-      setLicense(null);
-    }
-  }, []);
-
-  useEffect(() => { void loadLicense(); }, [loadLicense]);
-
-  const loadEntitlements = useCallback(async () => {
-    try {
-      setEntitlements(await api.billing.entitlements());
-    } catch (e) {
-      toast.error(`Failed to load entitlements: ${(e as Error).message}`);
-      setEntitlements(null);
-    }
-  }, []);
-
-  useEffect(() => { void loadEntitlements(); }, [loadEntitlements]);
-
-  const loadEvents = useCallback(async () => {
-    setEventsBusy(true);
-    try {
-      setEvents(await api.audit.events({ limit: 20 }));
-    } catch (e) {
-      toast.error(`Failed to load audit events: ${(e as Error).message}`);
-      setEvents([]);
-    } finally {
-      setEventsBusy(false);
-    }
-  }, []);
-
-  useEffect(() => { void loadEvents(); }, [loadEvents]);
 
   useEffect(() => {
     if (!channels) return;
     if (selectedId === '__new__') {
-      setDraft(emptyDraft());
+      // Keep existing draft name when already drafting.
+      setDraft((prev) => (prev?.isNew ? prev : emptyDraft(nextChannelName(channels))));
       return;
     }
     const ch = channels.find((c) => c.id === selectedId);
@@ -156,6 +193,12 @@ export function SettingsPage() {
 
   function patch<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((d) => (d ? { ...d, [key]: value } : d));
+  }
+
+  function addChannel() {
+    if (!channels) return;
+    setDraft(emptyDraft(nextChannelName(channels)));
+    setSelectedId('__new__');
   }
 
   async function save() {
@@ -207,53 +250,13 @@ export function SettingsPage() {
     }
   }
 
-  async function activateLicense() {
-    if (!licenseKey.trim()) {
-      toast.error('License key is required');
-      return;
-    }
-    setLicenseBusy(true);
-    try {
-      const state = await api.license.activate({
-        licenseKey: licenseKey.trim(),
-        holder: holder.trim() || undefined,
-      });
-      setLicense(state);
-      await Promise.all([loadEntitlements(), loadEvents()]);
-      setLicenseKey('');
-      toast.success('License activated');
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : (e as Error).message;
-      toast.error(msg);
-    } finally {
-      setLicenseBusy(false);
-    }
-  }
-
-  async function deactivateLicense() {
-    if (!window.confirm('Deactivate current license?')) return;
-    setLicenseBusy(true);
-    try {
-      const state = await api.license.deactivate();
-      setLicense(state);
-      await Promise.all([loadEntitlements(), loadEvents()]);
-      toast.success('License deactivated');
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : (e as Error).message;
-      toast.error(msg);
-    } finally {
-      setLicenseBusy(false);
-    }
-  }
-
   const atMax = (channels?.length ?? 0) >= 8;
 
   return (
     <div className="flex h-full min-h-0">
-      {/* Channel list */}
       <aside className="flex w-56 shrink-0 flex-col border-r border-border">
         <div className="border-b border-border px-3 py-3">
-          <h2 className="text-sm font-semibold">Channels</h2>
+          <h3 className="text-sm font-semibold">Channels</h3>
           <p className="text-[11px] text-ink-muted">Max 8 · output per channel</p>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-2">
@@ -266,6 +269,7 @@ export function SettingsPage() {
               {channels.map((c) => (
                 <li key={c.id}>
                   <button
+                    type="button"
                     onClick={() => setSelectedId(c.id)}
                     className={cn(
                       'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[13px] transition-colors',
@@ -277,6 +281,17 @@ export function SettingsPage() {
                   </button>
                 </li>
               ))}
+              {selectedId === '__new__' && draft?.isNew && (
+                <li>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-md bg-primary/15 px-2.5 py-2 text-left text-[13px] text-ink"
+                  >
+                    <Radio className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate">{draft.name}</span>
+                  </button>
+                </li>
+              )}
             </ul>
           )}
         </div>
@@ -285,15 +300,14 @@ export function SettingsPage() {
             variant="neutral"
             size="sm"
             className="w-full"
-            disabled={atMax}
-            onClick={() => setSelectedId('__new__')}
+            disabled={atMax || selectedId === '__new__'}
+            onClick={addChannel}
           >
             <Plus className="h-4 w-4" aria-hidden /> Add channel
           </Button>
         </div>
       </aside>
 
-      {/* Editor */}
       <div className="min-w-0 flex-1 overflow-auto p-6">
         {!draft ? (
           <div className="grid h-full place-items-center text-center text-[13px] text-ink-faint">
@@ -436,122 +450,610 @@ export function SettingsPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="primary" onClick={save} disabled={saving}>
+              <Button variant="primary" onClick={() => void save()} disabled={saving}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
                 {draft.isNew ? 'Create' : 'Save'}
               </Button>
               {!draft.isNew && (
-                <Button variant="ghost" onClick={() => remove(draft.id, draft.name)}>
+                <Button variant="ghost" onClick={() => void remove(draft.id, draft.name)}>
                   <Trash2 className="h-4 w-4" aria-hidden /> Delete
                 </Button>
               )}
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h4 className="flex items-center gap-2 text-sm font-semibold">
-                    {license?.status === 'active' ? (
-                      <ShieldCheck className="h-4 w-4 text-success" aria-hidden />
-                    ) : (
-                      <ShieldOff className="h-4 w-4 text-warning" aria-hidden />
-                    )}
-                    License
-                  </h4>
-                  <p className="text-[12px] text-ink-muted">
-                    Phase 6 foundation: local activation state for SaaS/on-prem licensing.
-                  </p>
-                </div>
+              {draft.isNew && (
                 <Button
-                  variant="neutral"
-                  size="sm"
-                  onClick={() => void Promise.all([loadLicense(), loadEntitlements(), loadEvents()])}
-                  disabled={licenseBusy}
+                  variant="ghost"
+                  onClick={() => {
+                    setSelectedId(channels?.[0]?.id ?? null);
+                    setDraft(null);
+                  }}
                 >
-                  <RefreshCw className={cn('h-4 w-4', licenseBusy && 'animate-spin')} aria-hidden />
-                  Refresh
+                  Cancel
                 </Button>
-              </div>
-
-              <div className="grid gap-2 text-[12px] text-ink-muted">
-                <div>Status: <span className="font-medium text-ink">{license?.status ?? 'unknown'}</span></div>
-                <div>Plan: <span className="font-medium text-ink">{license?.plan ?? 'none'}</span></div>
-                <div>Holder: <span className="font-medium text-ink">{license?.holder || '—'}</span></div>
-                <div>Key: <span className="font-medium text-ink">{license?.hasKey ? license?.keyMasked : 'not set'}</span></div>
-                <div>Expires: <span className="font-medium text-ink">{license?.expiresAt ?? '—'}</span></div>
-                {license?.lastError ? (
-                  <div className="text-warning">Last error: {license.lastError}</div>
-                ) : null}
-              </div>
-
-              <div className="rounded-md border border-border bg-surface-2 p-3 text-[12px] text-ink-muted">
-                <div className="mb-1 font-medium text-ink">Entitlements</div>
-                <div>Plan resolved: <span className="text-ink">{entitlements?.plan ?? 'none'}</span></div>
-                <div>Max channels: <span className="text-ink">{entitlements?.limits.maxChannels ?? 0}</span></div>
-                <div>DeckLink enabled: <span className="text-ink">{entitlements?.limits.decklink ? 'yes' : 'no'}</span></div>
-                <div>Stream enabled: <span className="text-ink">{entitlements?.limits.stream ? 'yes' : 'no'}</span></div>
-                <div>Users: <span className="text-ink">{entitlements?.limits.users ?? 1}</span></div>
-              </div>
-
-              <Field label="License key">
-                <Input
-                  value={licenseKey}
-                  placeholder="TIT-XXXX-XXXX-XXXX-XXXX"
-                  onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
-                />
-              </Field>
-
-              <Field label="Holder (optional)">
-                <Input
-                  value={holder}
-                  placeholder="Company / owner"
-                  onChange={(e) => setHolder(e.target.value)}
-                />
-              </Field>
-
-              <div className="flex items-center gap-2">
-                <Button variant="primary" onClick={() => void activateLicense()} disabled={licenseBusy}>
-                  {licenseBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                  Activate
-                </Button>
-                <Button variant="ghost" onClick={() => void deactivateLicense()} disabled={licenseBusy || !license?.hasKey}>
-                  Deactivate
-                </Button>
-              </div>
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="flex items-center gap-2 text-sm font-semibold">
-                  <ClipboardList className="h-4 w-4 text-info" aria-hidden />
-                  Audit events
-                </h4>
-                <Button variant="neutral" size="sm" onClick={() => void loadEvents()} disabled={eventsBusy}>
-                  {eventsBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                  Refresh
-                </Button>
-              </div>
-              {events.length === 0 ? (
-                <p className="text-[12px] text-ink-faint">No events yet.</p>
-              ) : (
-                <ul className="space-y-1">
-                  {events.slice(0, 12).map((ev) => (
-                    <li key={ev.id} className="rounded-md border border-border bg-surface-2 px-2.5 py-2 text-[12px]">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate font-medium text-ink">{ev.eventType}</span>
-                        <span className="tnum text-ink-faint">{ev.status}</span>
-                      </div>
-                      <div className="mt-0.5 truncate text-ink-muted">
-                        {ev.method} {ev.path} · {ev.username || 'system'} · {ev.createdAt}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
               )}
             </div>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ─── License ──────────────────────────────────────────────────────────── */
+
+function LicenseSection() {
+  const [license, setLicense] = useState<LicenseState | null>(null);
+  const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
+  const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [licenseKey, setLicenseKey] = useState('');
+  const [holder, setHolder] = useState('');
+  const [licenseBusy, setLicenseBusy] = useState(false);
+  const [eventsBusy, setEventsBusy] = useState(false);
+
+  const loadLicense = useCallback(async () => {
+    try {
+      setLicense(await api.license.get());
+    } catch (e) {
+      toast.error(`Failed to load license: ${(e as Error).message}`);
+      setLicense(null);
+    }
+  }, []);
+
+  const loadEntitlements = useCallback(async () => {
+    try {
+      setEntitlements(await api.billing.entitlements());
+    } catch (e) {
+      toast.error(`Failed to load entitlements: ${(e as Error).message}`);
+      setEntitlements(null);
+    }
+  }, []);
+
+  const loadEvents = useCallback(async () => {
+    setEventsBusy(true);
+    try {
+      setEvents(await api.audit.events({ limit: 20 }));
+    } catch (e) {
+      toast.error(`Failed to load audit events: ${(e as Error).message}`);
+      setEvents([]);
+    } finally {
+      setEventsBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadLicense();
+    void loadEntitlements();
+    void loadEvents();
+  }, [loadLicense, loadEntitlements, loadEvents]);
+
+  async function activateLicense() {
+    if (!licenseKey.trim()) {
+      toast.error('License key is required');
+      return;
+    }
+    setLicenseBusy(true);
+    try {
+      const state = await api.license.activate({
+        licenseKey: licenseKey.trim(),
+        holder: holder.trim() || undefined,
+      });
+      setLicense(state);
+      await Promise.all([loadEntitlements(), loadEvents()]);
+      setLicenseKey('');
+      toast.success('License activated');
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : (e as Error).message;
+      toast.error(msg);
+    } finally {
+      setLicenseBusy(false);
+    }
+  }
+
+  async function deactivateLicense() {
+    if (!window.confirm('Deactivate current license?')) return;
+    setLicenseBusy(true);
+    try {
+      const state = await api.license.deactivate();
+      setLicense(state);
+      await Promise.all([loadEntitlements(), loadEvents()]);
+      toast.success('License deactivated');
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : (e as Error).message;
+      toast.error(msg);
+    } finally {
+      setLicenseBusy(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-lg space-y-6 p-6">
+      <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h4 className="flex items-center gap-2 text-sm font-semibold">
+              {license?.status === 'active' ? (
+                <ShieldCheck className="h-4 w-4 text-success" aria-hidden />
+              ) : (
+                <ShieldOff className="h-4 w-4 text-warning" aria-hidden />
+              )}
+              License
+            </h4>
+            <p className="text-[12px] text-ink-muted">
+              Phase 6 foundation: local activation state for SaaS/on-prem licensing.
+            </p>
+          </div>
+          <Button
+            variant="neutral"
+            size="sm"
+            onClick={() => void Promise.all([loadLicense(), loadEntitlements(), loadEvents()])}
+            disabled={licenseBusy}
+          >
+            <RefreshCw className={cn('h-4 w-4', licenseBusy && 'animate-spin')} aria-hidden />
+            Refresh
+          </Button>
+        </div>
+
+        <div className="grid gap-2 text-[12px] text-ink-muted">
+          <div>Status: <span className="font-medium text-ink">{license?.status ?? 'unknown'}</span></div>
+          <div>Plan: <span className="font-medium text-ink">{license?.plan ?? 'none'}</span></div>
+          <div>Holder: <span className="font-medium text-ink">{license?.holder || '—'}</span></div>
+          <div>Key: <span className="font-medium text-ink">{license?.hasKey ? license?.keyMasked : 'not set'}</span></div>
+          <div>Expires: <span className="font-medium text-ink">{license?.expiresAt ?? '—'}</span></div>
+          {license?.lastError ? (
+            <div className="text-warning">Last error: {license.lastError}</div>
+          ) : null}
+        </div>
+
+        <div className="rounded-md border border-border bg-surface-2 p-3 text-[12px] text-ink-muted">
+          <div className="mb-1 font-medium text-ink">Entitlements</div>
+          <div>Plan resolved: <span className="text-ink">{entitlements?.plan ?? 'none'}</span></div>
+          <div>Max channels: <span className="text-ink">{entitlements?.limits.maxChannels ?? 0}</span></div>
+          <div>DeckLink enabled: <span className="text-ink">{entitlements?.limits.decklink ? 'yes' : 'no'}</span></div>
+          <div>Stream enabled: <span className="text-ink">{entitlements?.limits.stream ? 'yes' : 'no'}</span></div>
+          <div>Users: <span className="text-ink">{entitlements?.limits.users ?? 1}</span></div>
+        </div>
+
+        <Field label="License key">
+          <Input
+            value={licenseKey}
+            placeholder="TIT-XXXX-XXXX-XXXX-XXXX"
+            onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
+          />
+        </Field>
+
+        <Field label="Holder (optional)">
+          <Input
+            value={holder}
+            placeholder="Company / owner"
+            onChange={(e) => setHolder(e.target.value)}
+          />
+        </Field>
+
+        <div className="flex items-center gap-2">
+          <Button variant="primary" onClick={() => void activateLicense()} disabled={licenseBusy}>
+            {licenseBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            Activate
+          </Button>
+          <Button variant="ghost" onClick={() => void deactivateLicense()} disabled={licenseBusy || !license?.hasKey}>
+            Deactivate
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="flex items-center gap-2 text-sm font-semibold">
+            <ClipboardList className="h-4 w-4 text-info" aria-hidden />
+            Audit events
+          </h4>
+          <Button variant="neutral" size="sm" onClick={() => void loadEvents()} disabled={eventsBusy}>
+            {eventsBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            Refresh
+          </Button>
+        </div>
+        {events.length === 0 ? (
+          <p className="text-[12px] text-ink-faint">No events yet.</p>
+        ) : (
+          <ul className="space-y-1">
+            {events.slice(0, 12).map((ev) => (
+              <li key={ev.id} className="rounded-md border border-border bg-surface-2 px-2.5 py-2 text-[12px]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-medium text-ink">{ev.eventType}</span>
+                  <span className="tnum text-ink-faint">{ev.status}</span>
+                </div>
+                <div className="mt-0.5 truncate text-ink-muted">
+                  {ev.method} {ev.path} · {ev.username || 'system'} · {ev.createdAt}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Users and groups ─────────────────────────────────────────────────── */
+
+type GroupDraft = {
+  id?: string;
+  name: string;
+  permissions: Permission[];
+  isSystem?: boolean;
+};
+
+type UserDraft = {
+  id?: string;
+  username: string;
+  password: string;
+  groupId: string;
+  isActive: boolean;
+};
+
+function UsersAndGroupsSection() {
+  const [groups, setGroups] = useState<AuthGroup[] | null>(null);
+  const [users, setUsers] = useState<AuthUser[] | null>(null);
+  const [groupDraft, setGroupDraft] = useState<GroupDraft | null>(null);
+  const [userDraft, setUserDraft] = useState<UserDraft | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [g, u] = await Promise.all([api.auth.listGroups(), api.auth.listUsers()]);
+      setGroups(g);
+      setUsers(u);
+    } catch (e) {
+      toast.error(`Failed to load users/groups: ${(e as Error).message}`);
+      setGroups([]);
+      setUsers([]);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function saveGroup() {
+    if (!groupDraft) return;
+    const name = groupDraft.name.trim();
+    if (!name) {
+      toast.error('Group name is required');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (groupDraft.id) {
+        const locked = isAdministratorsGroup({
+          id: groupDraft.id,
+          name: groupDraft.name,
+          isSystem: groupDraft.isSystem,
+          permissions: groupDraft.permissions,
+        });
+        const permissions = locked
+          ? [...new Set([...groupDraft.permissions, 'settings' as Permission])]
+          : groupDraft.permissions;
+        await api.auth.updateGroup(groupDraft.id, {
+          name: locked ? undefined : name,
+          permissions,
+        });
+        toast.success('Group saved');
+      } else {
+        await api.auth.createGroup({ name, permissions: groupDraft.permissions });
+        toast.success('Group created');
+      }
+      setGroupDraft(null);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteGroup(g: AuthGroup) {
+    if (isAdministratorsGroup(g)) {
+      toast.error('Cannot delete the administrators group');
+      return;
+    }
+    if (!window.confirm(`Delete group "${g.name}"?`)) return;
+    setBusy(true);
+    try {
+      await api.auth.deleteGroup(g.id);
+      toast.success('Group deleted');
+      if (groupDraft?.id === g.id) setGroupDraft(null);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveUser() {
+    if (!userDraft) return;
+    const username = userDraft.username.trim();
+    if (!username) {
+      toast.error('Username is required');
+      return;
+    }
+    if (!userDraft.id && !userDraft.password) {
+      toast.error('Password is required');
+      return;
+    }
+    if (!userDraft.groupId) {
+      toast.error('Group is required');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (userDraft.id) {
+        await api.auth.updateUser(userDraft.id, {
+          username,
+          groupId: userDraft.groupId,
+          isActive: userDraft.isActive,
+          ...(userDraft.password ? { password: userDraft.password } : {}),
+        });
+        toast.success('User saved');
+      } else {
+        await api.auth.createUser({
+          username,
+          password: userDraft.password,
+          groupId: userDraft.groupId,
+          isActive: userDraft.isActive,
+        });
+        toast.success('User created');
+      }
+      setUserDraft(null);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const defaultGroupId = groups?.find((g) => g.name.toLowerCase() === 'operators')?.id
+    ?? groups?.[0]?.id
+    ?? '';
+
+  return (
+    <div className="space-y-8 p-6">
+      {/* Groups */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold">Groups</h3>
+            <p className="text-[12px] text-ink-muted">Permissions control which pages a member can open.</p>
+          </div>
+          <Button
+            variant="neutral"
+            size="sm"
+            disabled={!!groupDraft}
+            onClick={() => setGroupDraft({ name: '', permissions: ['control'] })}
+          >
+            <Plus className="h-4 w-4" aria-hidden /> Add group
+          </Button>
+        </div>
+
+        {groupDraft && (
+          <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
+            <Field label="Name">
+              <Input
+                value={groupDraft.name}
+                disabled={!!groupDraft.id && (groupDraft.isSystem || groupDraft.name.toLowerCase() === ADMINISTRATORS_GROUP)}
+                onChange={(e) => setGroupDraft({ ...groupDraft, name: e.target.value })}
+              />
+            </Field>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {ALL_PERMISSIONS.map((perm) => {
+                const isAdmins = !!groupDraft.id && (
+                  groupDraft.isSystem || groupDraft.name.toLowerCase() === ADMINISTRATORS_GROUP
+                );
+                const settingsLocked = isAdmins && perm === 'settings';
+                return (
+                  <Checkbox
+                    key={perm}
+                    label={PERMISSION_LABELS[perm]}
+                    checked={settingsLocked || groupDraft.permissions.includes(perm)}
+                    disabled={settingsLocked}
+                    onChange={(v) => {
+                      if (settingsLocked) return;
+                      setGroupDraft({
+                        ...groupDraft,
+                        permissions: v
+                          ? [...new Set([...groupDraft.permissions, perm])]
+                          : groupDraft.permissions.filter((p) => p !== perm),
+                      });
+                    }}
+                  />
+                );
+              })}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="primary" size="sm" disabled={busy} onClick={() => void saveGroup()}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
+                {groupDraft.id ? 'Save' : 'Create'}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setGroupDraft(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        <div className="overflow-hidden rounded-lg border border-border">
+          <table className="w-full text-left text-[13px]">
+            <thead className="border-b border-border bg-surface-2 text-[11px] uppercase tracking-wide text-ink-muted">
+              <tr>
+                <th className="px-3 py-2 font-medium">Name</th>
+                <th className="px-3 py-2 font-medium">Permissions</th>
+                <th className="px-3 py-2 font-medium w-28" />
+              </tr>
+            </thead>
+            <tbody>
+              {groups === null ? (
+                <tr><td colSpan={3} className="px-3 py-4 text-ink-faint">Loading…</td></tr>
+              ) : groups.length === 0 ? (
+                <tr><td colSpan={3} className="px-3 py-4 text-ink-faint">No groups.</td></tr>
+              ) : (
+                groups.map((g) => {
+                  const locked = isAdministratorsGroup(g);
+                  const perms = locked
+                    ? [...new Set([...(g.permissions ?? []), 'settings' as Permission])]
+                    : (g.permissions ?? []);
+                  return (
+                    <tr key={g.id} className="border-b border-border last:border-0">
+                      <td className="px-3 py-2 font-medium text-ink">{g.name}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-x-3 gap-y-1">
+                          {ALL_PERMISSIONS.map((perm) => (
+                            <Checkbox
+                              key={perm}
+                              label={PERMISSION_LABELS[perm]}
+                              checked={perms.includes(perm)}
+                              disabled
+                              onChange={() => {}}
+                            />
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setGroupDraft({
+                              id: g.id,
+                              name: g.name,
+                              permissions: [...perms],
+                              isSystem: locked || g.isSystem,
+                            })}
+                          >
+                            <Pencil className="h-3.5 w-3.5" aria-hidden /> Edit
+                          </Button>
+                          {!locked && (
+                            <Button variant="ghost" size="sm" onClick={() => void deleteGroup(g)}>
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Users */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold">Users</h3>
+            <p className="text-[12px] text-ink-muted">Each user belongs to one group.</p>
+          </div>
+          <Button
+            variant="neutral"
+            size="sm"
+            disabled={!!userDraft || !defaultGroupId}
+            onClick={() => setUserDraft({
+              username: '',
+              password: '',
+              groupId: defaultGroupId,
+              isActive: true,
+            })}
+          >
+            <Plus className="h-4 w-4" aria-hidden /> Add user
+          </Button>
+        </div>
+
+        {userDraft && (
+          <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
+            <Field label="Username">
+              <Input
+                value={userDraft.username}
+                onChange={(e) => setUserDraft({ ...userDraft, username: e.target.value })}
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="Group">
+              <Select
+                value={userDraft.groupId}
+                onChange={(e) => setUserDraft({ ...userDraft, groupId: e.target.value })}
+              >
+                {(groups ?? []).map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label={userDraft.id ? 'Password (optional)' : 'Password'}>
+              <Input
+                type="password"
+                value={userDraft.password}
+                placeholder={userDraft.id ? 'Leave blank to keep' : ''}
+                onChange={(e) => setUserDraft({ ...userDraft, password: e.target.value })}
+                autoComplete="new-password"
+              />
+            </Field>
+            {userDraft.id && (
+              <Checkbox
+                label="Active"
+                checked={userDraft.isActive}
+                onChange={(v) => setUserDraft({ ...userDraft, isActive: v })}
+              />
+            )}
+            <div className="flex gap-2">
+              <Button variant="primary" size="sm" disabled={busy} onClick={() => void saveUser()}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
+                {userDraft.id ? 'Save' : 'Create'}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setUserDraft(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+
+        <div className="overflow-hidden rounded-lg border border-border">
+          <table className="w-full text-left text-[13px]">
+            <thead className="border-b border-border bg-surface-2 text-[11px] uppercase tracking-wide text-ink-muted">
+              <tr>
+                <th className="px-3 py-2 font-medium">Username</th>
+                <th className="px-3 py-2 font-medium">Group</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium w-24" />
+              </tr>
+            </thead>
+            <tbody>
+              {users === null ? (
+                <tr><td colSpan={4} className="px-3 py-4 text-ink-faint">Loading…</td></tr>
+              ) : users.length === 0 ? (
+                <tr><td colSpan={4} className="px-3 py-4 text-ink-faint">No users.</td></tr>
+              ) : (
+                users.map((u) => (
+                  <tr key={u.id} className="border-b border-border last:border-0">
+                    <td className="px-3 py-2 font-medium text-ink">{u.username}</td>
+                    <td className="px-3 py-2 text-ink-muted">{u.groupName || '—'}</td>
+                    <td className="px-3 py-2 text-ink-muted">{u.isActive ? 'active' : 'inactive'}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setUserDraft({
+                            id: u.id,
+                            username: u.username,
+                            password: '',
+                            groupId: u.groupId || defaultGroupId,
+                            isActive: u.isActive,
+                          })}
+                        >
+                          <Pencil className="h-3.5 w-3.5" aria-hidden /> Edit
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

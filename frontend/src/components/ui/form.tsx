@@ -55,6 +55,25 @@ export function NumberInput({
   const step = typeof props.step === 'number' ? props.step : Number.parseFloat(String(props.step ?? 1));
   const scale = dragScale ?? (Number.isFinite(step) ? step : 1);
   const nudge = stepperStep ?? 1;
+  const min = props.min !== undefined && props.min !== null && props.min !== ''
+    ? Number(props.min)
+    : undefined;
+  const max = props.max !== undefined && props.max !== null && props.max !== ''
+    ? Number(props.max)
+    : undefined;
+
+  function clamp(n: number): number {
+    let out = n;
+    if (typeof min === 'number' && Number.isFinite(min)) out = Math.max(min, out);
+    if (typeof max === 'number' && Number.isFinite(max)) out = Math.min(max, out);
+    return out;
+  }
+
+  function emit(n: number) {
+    const next = clamp(n);
+    setDraft(formatNumber(next));
+    onChange(next);
+  }
 
   useEffect(() => {
     if (!dragRef.current?.dragging) setDraft(formatNumber(value));
@@ -64,7 +83,7 @@ export function NumberInput({
     setDraft(next);
     if (next === '' || next === '-' || next === '.' || next === '-.') return;
     const n = Number.parseFloat(next);
-    if (Number.isFinite(n)) onChange(n);
+    if (Number.isFinite(n)) emit(n);
   }
 
   function onPointerDown(e: PointerEvent<HTMLInputElement>) {
@@ -80,7 +99,7 @@ export function NumberInput({
     if (!drag.dragging && Math.abs(dx) < 3) return;
     drag.dragging = true;
     e.preventDefault();
-    const rounded = roundForStep(drag.value + dx * scale, scale);
+    const rounded = clamp(roundForStep(drag.value + dx * scale, scale));
     setDraft(formatNumber(rounded));
     onChange(rounded);
   }
@@ -94,13 +113,14 @@ export function NumberInput({
     } catch {
       // Pointer capture may already be released by the browser.
     }
-    if (wasDragging) e.preventDefault();
+    if (wasDragging) {
+      e.preventDefault();
+      setDraft(formatNumber(clamp(value)));
+    }
   }
 
   function nudgeBy(delta: number) {
-    const next = roundForStep(value + delta, nudge);
-    setDraft(formatNumber(next));
-    onChange(next);
+    emit(roundForStep(value + delta, nudge));
   }
 
   const stepperBtn =
@@ -115,7 +135,11 @@ export function NumberInput({
         className={cn(BASE_INPUT, 'min-w-0 flex-1 cursor-ew-resize tabular-nums', className)}
         value={draft}
         onChange={(e) => commit(e.target.value)}
-        onBlur={() => setDraft(formatNumber(value))}
+        onBlur={() => {
+          const n = Number.parseFloat(draft);
+          if (Number.isFinite(n)) emit(n);
+          else setDraft(formatNumber(value));
+        }}
         onPointerDown={props.disabled ? undefined : onPointerDown}
         onPointerMove={props.disabled ? undefined : onPointerMove}
         onPointerUp={props.disabled ? undefined : onPointerUp}
@@ -125,7 +149,7 @@ export function NumberInput({
         <button
           type="button"
           title={`Increase by ${nudge}`}
-          disabled={props.disabled}
+          disabled={props.disabled || (typeof max === 'number' && value >= max)}
           onClick={() => nudgeBy(nudge)}
           className={cn(stepperBtn, 'h-3.5')}
         >
@@ -134,7 +158,7 @@ export function NumberInput({
         <button
           type="button"
           title={`Decrease by ${nudge}`}
-          disabled={props.disabled}
+          disabled={props.disabled || (typeof min === 'number' && value <= min)}
           onClick={() => nudgeBy(-nudge)}
           className={cn(stepperBtn, 'h-3.5')}
         >
@@ -146,7 +170,7 @@ export function NumberInput({
           type="button"
           title="Reset"
           disabled={props.disabled}
-          onClick={() => onChange(resetValue)}
+          onClick={() => emit(resetValue)}
           className="grid h-8 w-7 shrink-0 place-items-center rounded-md border border-border bg-surface-2 text-[11px] font-semibold text-ink-muted hover:border-ink-faint hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
         >
           R
@@ -235,17 +259,24 @@ export function Checkbox({
   checked,
   onChange,
   label,
+  disabled,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex cursor-pointer select-none items-center gap-2 text-[13px] text-ink">
+    <label className={cn(
+      'flex select-none items-center gap-2 text-[13px] text-ink',
+      disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+    )}
+    >
       <input
         type="checkbox"
         className="h-3.5 w-3.5 accent-[oklch(var(--primary))]"
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
       {label}

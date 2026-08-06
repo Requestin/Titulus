@@ -25,6 +25,13 @@
       "maxItems": 32
     },
     "metadata": { "$ref": "#/$defs/templateMetadata" },
+    "layerId": {
+      "type": "integer",
+      "description": "Cross-template playout stack rank on a channel (1–99). Smaller draws above. Default 50. Same layerId TAKE clears the previous occupant.",
+      "minimum": 1,
+      "maximum": 99,
+      "default": 50
+    },
     "canvas": {
       "type": "object",
       "required": ["width", "height", "background"],

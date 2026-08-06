@@ -116,10 +116,33 @@ CREATE TABLE IF NOT EXISTS users (
   username      TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   password_salt TEXT NOT NULL,
-  role          TEXT NOT NULL DEFAULT 'operator', -- operator|admin
+  role          TEXT NOT NULL DEFAULT 'operator', -- operator|admin (derived from group)
+  group_id      TEXT,
   is_active     INTEGER NOT NULL DEFAULT 1,
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS auth_groups (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL UNIQUE,
+  is_system  INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS auth_group_permissions (
+  group_id   TEXT NOT NULL REFERENCES auth_groups(id) ON DELETE CASCADE,
+  permission TEXT NOT NULL,
+  PRIMARY KEY (group_id, permission)
+);
+
+CREATE TABLE IF NOT EXISTS template_locks (
+  template_id  TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL,
+  username     TEXT NOT NULL,
+  locked_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  heartbeat_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -200,8 +223,20 @@ export function openDb(dbPath) {
   ensureTemplateFolders(db);
   ensureLicenseRow(db);
   ensureAuthBootstrap(db);
+  ensureAuthGroupsBootstrap(db);
   return db;
 }
+
+/** Permission string constants mirrored in auth.js (ALL_PERMISSIONS). */
+const BOOTSTRAP_ALL_PERMISSIONS = [
+  'template_editor',
+  'template_ue_editor',
+  'control',
+  'settings',
+];
+const ADMINISTRATORS_GROUP_NAME = 'administrators';
+const OPERATORS_GROUP_NAME = 'operators';
+const LOCK_STALE_SECONDS = 90;
 
 /** @param {Database} db */
 function ensureTemplateFolders(db) {
@@ -312,6 +347,84 @@ function ensureAuthBootstrap(db) {
        VALUES (?, ?, ?, ?, ?, 'admin', 1)`,
     ).run(randomUUID(), defaultTenantId, username, passwordHash, salt);
   }
+}
+
+/**
+ * Soft-migrate auth_groups / permissions / template_locks and bootstrap
+ * system groups + attach users without group_id.
+ * @param {Database} db
+ */
+function ensureAuthGroupsBootstrap(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS auth_groups (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL UNIQUE,
+      is_system  INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS auth_group_permissions (
+      group_id   TEXT NOT NULL REFERENCES auth_groups(id) ON DELETE CASCADE,
+      permission TEXT NOT NULL,
+      PRIMARY KEY (group_id, permission)
+    );
+    CREATE TABLE IF NOT EXISTS template_locks (
+      template_id  TEXT PRIMARY KEY,
+      user_id      TEXT NOT NULL,
+      username     TEXT NOT NULL,
+      locked_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      heartbeat_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  const userCols = db.prepare('PRAGMA table_info(users)').all();
+  const userColNames = new Set(userCols.map((c) => c.name));
+  if (!userColNames.has('group_id')) {
+    db.exec('ALTER TABLE users ADD COLUMN group_id TEXT');
+  }
+
+  const getGroupByName = db.prepare('SELECT id, name, is_system FROM auth_groups WHERE name = ?');
+  const insertGroup = db.prepare(
+    `INSERT INTO auth_groups (id, name, is_system) VALUES (?, ?, ?)
+     ON CONFLICT(name) DO NOTHING`,
+  );
+  const insertPerm = db.prepare(
+    `INSERT INTO auth_group_permissions (group_id, permission) VALUES (?, ?)
+     ON CONFLICT(group_id, permission) DO NOTHING`,
+  );
+
+  let admins = getGroupByName.get(ADMINISTRATORS_GROUP_NAME);
+  if (!admins) {
+    const id = randomUUID();
+    insertGroup.run(id, ADMINISTRATORS_GROUP_NAME, 1);
+    admins = getGroupByName.get(ADMINISTRATORS_GROUP_NAME);
+  } else {
+    db.prepare('UPDATE auth_groups SET is_system = 1 WHERE id = ?').run(admins.id);
+  }
+
+  let operators = getGroupByName.get(OPERATORS_GROUP_NAME);
+  if (!operators) {
+    const id = randomUUID();
+    insertGroup.run(id, OPERATORS_GROUP_NAME, 0);
+    operators = getGroupByName.get(OPERATORS_GROUP_NAME);
+  }
+
+  for (const perm of BOOTSTRAP_ALL_PERMISSIONS) {
+    insertPerm.run(admins.id, perm);
+  }
+  for (const perm of ['control', 'template_editor']) {
+    insertPerm.run(operators.id, perm);
+  }
+
+  db.prepare(
+    `UPDATE users SET group_id = ?, role = 'admin', updated_at = datetime('now')
+     WHERE role = 'admin' AND (group_id IS NULL OR group_id = '')`,
+  ).run(admins.id);
+
+  db.prepare(
+    `UPDATE users SET group_id = ?, role = 'operator', updated_at = datetime('now')
+     WHERE (group_id IS NULL OR group_id = '') AND role != 'admin'`,
+  ).run(operators.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -882,46 +995,242 @@ export const licenseDao = (db) => ({
 });
 
 // ---------------------------------------------------------------------------
-// auth (phase 6.2 baseline)
+// auth (phase 6.2 baseline + groups/permissions)
 // ---------------------------------------------------------------------------
+
+const USER_PUBLIC_SELECT = `
+  u.id, u.tenant_id, u.username,
+  u.role, u.group_id, u.is_active, u.created_at, u.updated_at,
+  g.name AS group_name
+`;
+
+function roleForGroupName(groupName) {
+  return groupName === ADMINISTRATORS_GROUP_NAME ? 'admin' : 'operator';
+}
+
+function mapGroupRow(row, permissions = []) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    is_system: row.is_system,
+    isSystem: !!row.is_system,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    permissions,
+  };
+}
 
 export const authDao = (db) => ({
   findUserByUsername(username) {
     return db.prepare(
-      `SELECT u.id, u.tenant_id, u.username, u.password_hash, u.password_salt, u.role, u.is_active
+      `SELECT ${USER_PUBLIC_SELECT}, u.password_hash, u.password_salt
        FROM users u
+       LEFT JOIN auth_groups g ON g.id = u.group_id
        WHERE u.username = ?`,
     ).get(username);
   },
   getUserById(id) {
     return db.prepare(
-      `SELECT u.id, u.tenant_id, u.username, u.role, u.is_active, u.created_at, u.updated_at
+      `SELECT ${USER_PUBLIC_SELECT}
        FROM users u
+       LEFT JOIN auth_groups g ON g.id = u.group_id
        WHERE u.id = ?`,
     ).get(id);
   },
   listUsers() {
     return db.prepare(
-      `SELECT u.id, u.tenant_id, u.username, u.role, u.is_active, u.created_at, u.updated_at
+      `SELECT ${USER_PUBLIC_SELECT}
        FROM users u
+       LEFT JOIN auth_groups g ON g.id = u.group_id
        ORDER BY u.created_at ASC`,
     ).all();
   },
-  createUser({ tenantId, username, passwordHash, passwordSalt, role }) {
+  createUser({ tenantId, username, passwordHash, passwordSalt, groupId, role }) {
     const id = randomUUID();
+    let resolvedRole = role || 'operator';
+    let resolvedGroupId = groupId ?? null;
+    if (resolvedGroupId) {
+      const group = this.getGroup(resolvedGroupId);
+      if (!group) throw new Error('GROUP_NOT_FOUND');
+      resolvedRole = roleForGroupName(group.name);
+    } else if (resolvedRole === 'admin') {
+      const admins = db.prepare('SELECT id FROM auth_groups WHERE name = ?').get(ADMINISTRATORS_GROUP_NAME);
+      resolvedGroupId = admins?.id ?? null;
+    } else {
+      const operators = db.prepare('SELECT id FROM auth_groups WHERE name = ?').get(OPERATORS_GROUP_NAME);
+      resolvedGroupId = operators?.id ?? null;
+    }
     db.prepare(
-      `INSERT INTO users (id, tenant_id, username, password_hash, password_salt, role, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, 1)`,
-    ).run(id, tenantId, username, passwordHash, passwordSalt, role);
+      `INSERT INTO users (id, tenant_id, username, password_hash, password_salt, role, group_id, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+    ).run(id, tenantId, username, passwordHash, passwordSalt, resolvedRole, resolvedGroupId);
+    return this.getUserById(id);
+  },
+  updateUser({ id, username, passwordHash, passwordSalt, groupId, isActive, role }) {
+    const existing = db.prepare(
+      `SELECT id, username, password_hash, password_salt, group_id, role, is_active
+       FROM users WHERE id = ?`,
+    ).get(id);
+    if (!existing) return null;
+
+    let nextUsername = existing.username;
+    let nextHash = existing.password_hash;
+    let nextSalt = existing.password_salt;
+    let nextGroupId = existing.group_id;
+    let nextRole = existing.role;
+    let nextActive = existing.is_active;
+
+    if (typeof username === 'string' && username.trim()) {
+      nextUsername = username.trim();
+    }
+    if (typeof passwordHash === 'string' && typeof passwordSalt === 'string') {
+      nextHash = passwordHash;
+      nextSalt = passwordSalt;
+    }
+    if (groupId !== undefined) {
+      if (groupId === null || groupId === '') {
+        nextGroupId = null;
+      } else {
+        const group = this.getGroup(groupId);
+        if (!group) throw new Error('GROUP_NOT_FOUND');
+        nextGroupId = group.id;
+        nextRole = roleForGroupName(group.name);
+      }
+    }
+    if (role !== undefined && groupId === undefined) {
+      if (role !== 'admin' && role !== 'operator') throw new Error('ROLE_INVALID');
+      nextRole = role;
+    }
+    if (isActive !== undefined) {
+      nextActive = isActive ? 1 : 0;
+    }
+
+    db.prepare(
+      `UPDATE users
+       SET username = ?, password_hash = ?, password_salt = ?, group_id = ?, role = ?,
+           is_active = ?, updated_at = datetime('now')
+       WHERE id = ?`,
+    ).run(nextUsername, nextHash, nextSalt, nextGroupId, nextRole, nextActive, id);
     return this.getUserById(id);
   },
   setUserActive(id, isActive) {
+    return this.updateUser({ id, isActive: !!isActive });
+  },
+  countActiveAdministrators({ excludeUserId } = {}) {
+    const admins = db.prepare('SELECT id FROM auth_groups WHERE name = ?').get(ADMINISTRATORS_GROUP_NAME);
+    if (!admins) return 0;
+    if (excludeUserId) {
+      return db.prepare(
+        `SELECT COUNT(*) AS n FROM users
+         WHERE group_id = ? AND is_active = 1 AND id != ?`,
+      ).get(admins.id, excludeUserId).n;
+    }
+    return db.prepare(
+      `SELECT COUNT(*) AS n FROM users
+       WHERE group_id = ? AND is_active = 1`,
+    ).get(admins.id).n;
+  },
+  getUserPermissions(userId) {
+    const row = this.getUserById(userId);
+    if (!row) return [];
+    if (!row.group_id) {
+      // Safety: legacy admin without group still has full access.
+      if (row.role === 'admin') return [...BOOTSTRAP_ALL_PERMISSIONS];
+      return [];
+    }
+    return db.prepare(
+      `SELECT permission FROM auth_group_permissions
+       WHERE group_id = ?
+       ORDER BY permission ASC`,
+    ).all(row.group_id).map((r) => r.permission);
+  },
+  listGroups() {
+    const groups = db.prepare(
+      `SELECT id, name, is_system, created_at, updated_at
+       FROM auth_groups
+       ORDER BY name ASC`,
+    ).all();
+    return groups.map((g) => mapGroupRow(g, this.getGroupPermissions(g.id)));
+  },
+  getGroup(id) {
+    const row = db.prepare(
+      `SELECT id, name, is_system, created_at, updated_at
+       FROM auth_groups WHERE id = ?`,
+    ).get(id);
+    if (!row) return null;
+    return mapGroupRow(row, this.getGroupPermissions(id));
+  },
+  getGroupByName(name) {
+    const row = db.prepare(
+      `SELECT id, name, is_system, created_at, updated_at
+       FROM auth_groups WHERE name = ?`,
+    ).get(name);
+    if (!row) return null;
+    return mapGroupRow(row, this.getGroupPermissions(row.id));
+  },
+  getGroupPermissions(groupId) {
+    return db.prepare(
+      `SELECT permission FROM auth_group_permissions
+       WHERE group_id = ?
+       ORDER BY permission ASC`,
+    ).all(groupId).map((r) => r.permission);
+  },
+  createGroup({ name, permissions = [] }) {
+    const id = randomUUID();
     db.prepare(
-      `UPDATE users
-       SET is_active = ?, updated_at = datetime('now')
-       WHERE id = ?`,
-    ).run(isActive ? 1 : 0, id);
-    return this.getUserById(id);
+      `INSERT INTO auth_groups (id, name, is_system) VALUES (?, ?, 0)`,
+    ).run(id, name);
+    this.setGroupPermissions(id, permissions);
+    return this.getGroup(id);
+  },
+  updateGroup(id, { name } = {}) {
+    const existing = this.getGroup(id);
+    if (!existing) return null;
+    if (typeof name === 'string' && name.trim()) {
+      if (existing.name === ADMINISTRATORS_GROUP_NAME && name.trim() !== ADMINISTRATORS_GROUP_NAME) {
+        throw new Error('ADMINISTRATORS_IMMUTABLE');
+      }
+      db.prepare(
+        `UPDATE auth_groups SET name = ?, updated_at = datetime('now') WHERE id = ?`,
+      ).run(name.trim(), id);
+    }
+    return this.getGroup(id);
+  },
+  setGroupPermissions(groupId, permissions) {
+    const existing = this.getGroup(groupId);
+    if (!existing) throw new Error('GROUP_NOT_FOUND');
+    let perms = [...new Set(permissions)];
+    // administrators: settings is mandatory; other permissions may be removed.
+    if (existing.name === ADMINISTRATORS_GROUP_NAME) {
+      if (!perms.includes('settings')) perms.push('settings');
+    }
+    const del = db.prepare('DELETE FROM auth_group_permissions WHERE group_id = ?');
+    const ins = db.prepare(
+      `INSERT INTO auth_group_permissions (group_id, permission) VALUES (?, ?)`,
+    );
+    const tx = db.transaction((list) => {
+      del.run(groupId);
+      for (const p of list) ins.run(groupId, p);
+      db.prepare(
+        `UPDATE auth_groups SET updated_at = datetime('now') WHERE id = ?`,
+      ).run(groupId);
+    });
+    tx(perms);
+    return this.getGroup(groupId);
+  },
+  deleteGroup(id) {
+    const existing = this.getGroup(id);
+    if (!existing) return false;
+    if (existing.name === ADMINISTRATORS_GROUP_NAME) {
+      throw new Error('ADMINISTRATORS_IMMUTABLE');
+    }
+    const inUse = db.prepare(
+      `SELECT COUNT(*) AS n FROM users WHERE group_id = ?`,
+    ).get(id).n;
+    if (inUse > 0) throw new Error('GROUP_IN_USE');
+    db.prepare('DELETE FROM auth_groups WHERE id = ?').run(id);
+    return true;
   },
   createSession({ token, userId, tenantId, expiresAt }) {
     db.prepare(
@@ -932,9 +1241,10 @@ export const authDao = (db) => ({
   getSessionWithUser(token) {
     return db.prepare(
       `SELECT s.token, s.user_id, s.tenant_id, s.expires_at, s.revoked_at,
-              u.username, u.role, u.is_active
+              u.username, u.role, u.is_active, u.group_id, g.name AS group_name
        FROM sessions s
        JOIN users u ON u.id = s.user_id
+       LEFT JOIN auth_groups g ON g.id = u.group_id
        WHERE s.token = ?`,
     ).get(token);
   },
@@ -958,6 +1268,91 @@ export const authDao = (db) => ({
        SET revoked_at = datetime('now')
        WHERE user_id = ? AND revoked_at IS NULL`,
     ).run(userId);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// template locks (editor exclusive edit)
+// ---------------------------------------------------------------------------
+
+function mapLockRow(row) {
+  if (!row) return null;
+  return {
+    template_id: row.template_id,
+    templateId: row.template_id,
+    user_id: row.user_id,
+    userId: row.user_id,
+    username: row.username,
+    locked_at: row.locked_at,
+    lockedAt: row.locked_at,
+    heartbeat_at: row.heartbeat_at,
+    heartbeatAt: row.heartbeat_at,
+  };
+}
+
+export const templateLocksDao = (db) => ({
+  getLock(templateId) {
+    return mapLockRow(
+      db.prepare(
+        `SELECT template_id, user_id, username, locked_at, heartbeat_at
+         FROM template_locks WHERE template_id = ?`,
+      ).get(templateId),
+    );
+  },
+  acquireLock(templateId, userId, username) {
+    const existing = this.getLock(templateId);
+    if (!existing) {
+      db.prepare(
+        `INSERT INTO template_locks (template_id, user_id, username, locked_at, heartbeat_at)
+         VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+      ).run(templateId, userId, username);
+      return mapLockRow(this.getLock(templateId));
+    }
+    if (existing.user_id === userId) {
+      db.prepare(
+        `UPDATE template_locks
+         SET username = ?, heartbeat_at = datetime('now')
+         WHERE template_id = ? AND user_id = ?`,
+      ).run(username, templateId, userId);
+      return mapLockRow(this.getLock(templateId));
+    }
+    return null;
+  },
+  heartbeatLock(templateId, userId) {
+    const result = db.prepare(
+      `UPDATE template_locks
+       SET heartbeat_at = datetime('now')
+       WHERE template_id = ? AND user_id = ?`,
+    ).run(templateId, userId);
+    if (result.changes === 0) return null;
+    return this.getLock(templateId);
+  },
+  releaseLock(templateId, userId) {
+    const result = db.prepare(
+      `DELETE FROM template_locks WHERE template_id = ? AND user_id = ?`,
+    ).run(templateId, userId);
+    return result.changes > 0;
+  },
+  stealStaleLock(templateId, userId, username) {
+    const existing = this.getLock(templateId);
+    if (!existing) {
+      return this.acquireLock(templateId, userId, username);
+    }
+    if (existing.user_id === userId) {
+      return this.acquireLock(templateId, userId, username);
+    }
+    const stale = db.prepare(
+      `SELECT 1 AS ok FROM template_locks
+       WHERE template_id = ?
+         AND heartbeat_at < datetime('now', ?)`,
+    ).get(templateId, `-${LOCK_STALE_SECONDS} seconds`);
+    if (!stale) return null;
+    db.prepare(
+      `UPDATE template_locks
+       SET user_id = ?, username = ?, locked_at = datetime('now'), heartbeat_at = datetime('now')
+       WHERE template_id = ?`,
+    ).run(userId, username, templateId);
+    return this.getLock(templateId);
   },
 });
 
@@ -1082,16 +1477,21 @@ export const onAirDao = (db) => ({
     }
   },
   /** Persist a take. */
-  set(command, { bringToFront = true } = {}) {
+  set(command, { bringToFront = true, orderIndex: orderIndexOpt } = {}) {
     const existing = db.prepare(
       'SELECT order_index FROM on_air WHERE channel_id = ? AND template_id = ?',
     ).get(command.channelId, command.templateId);
     const max = db.prepare(
       'SELECT COALESCE(MAX(order_index), 0) AS n FROM on_air WHERE channel_id = ?',
     ).get(command.channelId).n;
-    const orderIndex = bringToFront
-      ? (max + 1)
-      : (existing ? existing.order_index : (max + 1));
+    let orderIndex;
+    if (typeof orderIndexOpt === 'number' && Number.isFinite(orderIndexOpt)) {
+      orderIndex = Math.round(orderIndexOpt);
+    } else if (bringToFront) {
+      orderIndex = max + 1;
+    } else {
+      orderIndex = existing ? existing.order_index : (max + 1);
+    }
     db.prepare(
       `INSERT INTO on_air (channel_id, template_id, command_json, order_index)
        VALUES (?, ?, ?, ?)

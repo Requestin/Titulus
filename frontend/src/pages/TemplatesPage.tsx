@@ -3,7 +3,7 @@
 // Templates hub: EDITOR (library + open editor) | PLAY (operator TAKE/UPDATE/CLEAR
 // for templates — formerly Control → Templates tab).
 
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Plus, Trash2, Loader2, LayoutTemplate, Copy, Radio, X, Pencil, Folder, List, LayoutGrid,
@@ -41,6 +41,18 @@ const UNASSIGNED_HIDDEN_KEY = 'unassignedHiddenInControl';
 const VIEW_KEY = 'titulus.templates.view';
 const SORT_BY_KEY = 'titulus.templates.sortBy';
 const SORT_DIR_KEY = 'titulus.templates.sortDir';
+const FOLDER_WIDTH_KEY = 'titulus.templates.folderWidth';
+const FOLDER_WIDTH_DEFAULT = 224;
+const FOLDER_WIDTH_MIN = 160;
+const FOLDER_WIDTH_MAX = 480;
+
+function readFolderWidth(): number {
+  try {
+    const n = Number(localStorage.getItem(FOLDER_WIDTH_KEY));
+    if (Number.isFinite(n)) return Math.min(FOLDER_WIDTH_MAX, Math.max(FOLDER_WIDTH_MIN, n));
+  } catch { /* ignore */ }
+  return FOLDER_WIDTH_DEFAULT;
+}
 
 function templateFolderId(t: TemplateSummary): string | null {
   return t.folderId ?? t.folder_id ?? null;
@@ -142,6 +154,8 @@ function EditorLibrary() {
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
   const [allHidden, setAllHidden] = useState(false);
   const [unassignedHidden, setUnassignedHidden] = useState(false);
+  const [folderWidth, setFolderWidth] = useState(readFolderWidth);
+  const folderResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -368,10 +382,41 @@ function EditorLibrary() {
     }
   }
 
+  function beginFolderResize(e: ReactPointerEvent<HTMLDivElement>) {
+    folderResizeRef.current = { startX: e.clientX, startWidth: folderWidth };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
+  function resizeFolder(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = folderResizeRef.current;
+    if (!drag) return;
+    const next = drag.startWidth + (e.clientX - drag.startX);
+    setFolderWidth(Math.min(FOLDER_WIDTH_MAX, Math.max(FOLDER_WIDTH_MIN, next)));
+  }
+
+  function endFolderResize(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = folderResizeRef.current;
+    if (!drag) return;
+    const next = Math.min(
+      FOLDER_WIDTH_MAX,
+      Math.max(FOLDER_WIDTH_MIN, drag.startWidth + (e.clientX - drag.startX)),
+    );
+    setFolderWidth(next);
+    folderResizeRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    try {
+      localStorage.setItem(FOLDER_WIDTH_KEY, String(Math.round(next)));
+    } catch { /* ignore */ }
+  }
+
   return (
     <div className="flex h-full min-h-0">
       {/* Folders column */}
-      <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-surface">
+      <aside
+        className="relative flex shrink-0 flex-col border-r border-border bg-surface"
+        style={{ width: folderWidth }}
+      >
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
           <span className="text-[12px] font-semibold text-ink-muted">Folders</span>
           <button
@@ -456,6 +501,16 @@ function EditorLibrary() {
             />
           ))}
         </div>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize folders panel"
+          className="absolute -right-1 top-0 bottom-0 z-10 w-2 cursor-col-resize transition-colors hover:bg-primary/30"
+          onPointerDown={beginFolderResize}
+          onPointerMove={resizeFolder}
+          onPointerUp={endFolderResize}
+          onPointerCancel={endFolderResize}
+        />
       </aside>
 
       {/* Templates */}

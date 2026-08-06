@@ -19,6 +19,7 @@ import {
   ensureUpdateDirector,
   estimateCrawlDurationFrames,
   isUpdateDirectorName,
+  normalizeTemplateLayerId,
   normalizeTemplateTextStyles,
   resolveTrackDirector,
   splitCrawlLines,
@@ -60,6 +61,7 @@ function migrateLoadedTemplate(t: Template): Template {
       !!a && typeof a === 'object' && Array.isArray((a as TimelineActionCue).items) && (a as TimelineActionCue).items.length > 0,
   );
   ensureUpdateDirector(next.timeline);
+  next.layerId = normalizeTemplateLayerId(next.layerId);
   return next;
 }
 
@@ -314,6 +316,7 @@ interface EditorState {
   updateTransform: (id: string, partial: Partial<Transform>, kind?: 'layer' | 'group') => void;
   setName: (name: string) => void;
   setCanvas: (partial: Partial<Template['canvas']>) => void;
+  setLayerId: (layerId: number) => void;
   addLayer: (type: LayerType) => void;
   duplicateSelected: () => void;
   deleteSelected: () => void;
@@ -561,6 +564,10 @@ export const useEditor = create<EditorState>()(
 
       setName: (name) => get().patch((t) => { t.name = name; }),
       setCanvas: (partial) => get().patch((t) => { Object.assign(t.canvas, partial); }),
+      setLayerId: (layerId) => get().patch((t) => {
+        const n = Math.round(Number(layerId));
+        t.layerId = Number.isFinite(n) ? Math.min(99, Math.max(1, n)) : 50;
+      }),
 
       addLayer: (type) => {
         const t0 = get().template;

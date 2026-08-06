@@ -5,7 +5,8 @@
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api, formatTemplateValidationErrors } from '@/core/api';
+import { api, ApiError, formatTemplateValidationErrors } from '@/core/api';
+import { createId } from '@/core/id';
 import { toast } from '@/core/toast';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +18,31 @@ import { PropertiesPanel } from '@/editor/panels/PropertiesPanel';
 import { VariablesPanel } from '@/editor/panels/VariablesPanel';
 import { DataPanel } from '@/editor/panels/DataPanel';
 import { TimelinePanel } from '@/editor/panels/TimelinePanel';
+
+function lockedByFromBody(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null;
+  const root = body as Record<string, unknown>;
+  if (typeof root.lockedBy === 'string' && root.lockedBy.trim()) return root.lockedBy.trim();
+  if (typeof root.username === 'string' && root.username.trim()) return root.username.trim();
+  const lock = root.lock;
+  if (lock && typeof lock === 'object') {
+    const l = lock as Record<string, unknown>;
+    if (typeof l.username === 'string' && l.username.trim()) return l.username.trim();
+    if (typeof l.lockedBy === 'string' && l.lockedBy.trim()) return l.lockedBy.trim();
+  }
+  const err = root.error;
+  if (err && typeof err === 'object') {
+    const e = err as Record<string, unknown>;
+    if (typeof e.lockedBy === 'string' && e.lockedBy.trim()) return e.lockedBy.trim();
+    const details = e.details;
+    if (details && typeof details === 'object') {
+      const d = details as Record<string, unknown>;
+      if (typeof d.lockedBy === 'string' && d.lockedBy.trim()) return d.lockedBy.trim();
+      if (typeof d.username === 'string' && d.username.trim()) return d.username.trim();
+    }
+  }
+  return null;
+}
 
 export function EditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,7 +56,11 @@ export function EditorPage() {
   const [layersWidth, setLayersWidth] = useState(240);
   const [inspectorWidth, setInspectorWidth] = useState(320);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const [lockBlocked, setLockBlocked] = useState<{ lockedBy: string } | null>(null);
+  const [copying, setCopying] = useState(false);
+  const [folderId, setFolderId] = useState<string | null>(null);
   const allowNavigationRef = useRef(false);
+  const holdLockRef = useRef(false);
   const timelineResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const layersResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const inspectorResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -38,13 +68,15 @@ export function EditorPage() {
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
+    setLockBlocked(null);
+    holdLockRef.current = false;
     (async () => {
       try {
         const rec = await api.templates.get(id!);
-        if (!cancelled) {
-          load(rec.data);
-          setStatus('ready');
-        }
+        if (cancelled) return;
+        load(rec.data);
+        setFolderId(rec.folderId ?? rec.folder_id ?? null);
+        setStatus('ready');
       } catch (e) {
         if (!cancelled) {
           toast.error(`Failed to load template: ${(e as Error).message}`);
@@ -54,6 +86,63 @@ export function EditorPage() {
     })();
     return () => { cancelled = true; };
   }, [id, load]);
+
+  // Acquire edit lock after successful load; heartbeat while mounted.
+  useEffect(() => {
+    if (status !== 'ready' || !id || lockBlocked) return undefined;
+    let cancelled = false;
+    let heartbeatTimer: number | undefined;
+
+    (async () => {
+      try {
+        await api.templates.lock(id);
+        if (cancelled) {
+          void api.templates.unlock(id).catch(() => {});
+          return;
+        }
+        holdLockRef.current = true;
+        heartbeatTimer = window.setInterval(() => {
+          void api.templates.heartbeat(id).catch(() => {});
+        }, 30_000);
+      } catch (e) {
+        if (cancelled) return;
+        if (e instanceof ApiError && e.status === 409) {
+          const lockedBy = lockedByFromBody(e.body) || 'another user';
+          setLockBlocked({ lockedBy });
+          return;
+        }
+        toast.error(`Could not lock template: ${(e as Error).message}`);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (heartbeatTimer !== undefined) window.clearInterval(heartbeatTimer);
+      if (holdLockRef.current) {
+        holdLockRef.current = false;
+        void api.templates.unlock(id).catch(() => {});
+      }
+    };
+  }, [id, status, lockBlocked]);
+
+  async function makeCopy() {
+    if (!id) return;
+    setCopying(true);
+    try {
+      const rec = await api.templates.get(id);
+      const copyName = `${rec.name}(copy)`;
+      const data = structuredClone(rec.data);
+      data.id = createId();
+      data.name = copyName;
+      const created = await api.templates.create(copyName, data, folderId ?? rec.folderId ?? rec.folder_id ?? null);
+      toast.success(`Copied as "${copyName}"`);
+      navigate(`/editor/${created.id}`, { replace: true });
+    } catch (e) {
+      toast.error(`Copy failed: ${(e as Error).message}`);
+    } finally {
+      setCopying(false);
+    }
+  }
 
   const save = useCallback(async (): Promise<boolean> => {
     const t = useEditor.getState().template;
@@ -244,6 +333,27 @@ export function EditorPage() {
   if (status === 'error') {
     return <div className="grid h-full place-items-center text-sm text-danger">Could not load this template.</div>;
   }
+  if (lockBlocked) {
+    return (
+      <div className="grid h-full place-items-center px-4">
+        <div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-surface p-5 text-center">
+          <h2 className="text-base font-semibold text-ink">Template is locked</h2>
+          <p className="text-[13px] text-ink-muted">
+            Currently edited by <span className="font-medium text-ink">{lockBlocked.lockedBy}</span>.
+            You can make a copy and edit that instead.
+          </p>
+          <div className="flex justify-center gap-2">
+            <Button variant="primary" disabled={copying} onClick={() => { void makeCopy(); }}>
+              {copying ? 'Copying…' : 'Make a copy'}
+            </Button>
+            <Button variant="neutral" onClick={() => navigate('/templates')}>
+              Back to templates
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -257,7 +367,7 @@ export function EditorPage() {
           <div
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize layers panel"
+            aria-label="Resize tree panel"
             className="absolute -right-1 top-0 bottom-0 z-sticky w-2 cursor-col-resize transition-colors hover:bg-primary/30"
             onPointerDown={beginLayersResize}
             onPointerMove={resizeLayers}

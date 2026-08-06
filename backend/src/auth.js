@@ -4,6 +4,15 @@ import { authDao } from './db.js';
 const ROLES = new Set(['operator', 'admin']);
 const SESSION_TTL_HOURS = parseInt(process.env.TITULUS_SESSION_TTL_HOURS || '12', 10);
 
+export const ALL_PERMISSIONS = Object.freeze([
+  'template_editor',
+  'template_ue_editor',
+  'control',
+  'settings',
+]);
+
+export const ADMINISTRATORS_GROUP_NAME = 'administrators';
+
 function hashPassword(password, saltHex) {
   return scryptSync(password, Buffer.from(saltHex, 'hex'), 64);
 }
@@ -30,6 +39,15 @@ function authError(res, status, code, message) {
   return res.status(status).json({ error: { code, message } });
 }
 
+function resolvePermissions(dao, session) {
+  let permissions = dao.getUserPermissions(session.user_id);
+  // Safety: legacy admin with empty permissions still gets full access.
+  if ((!permissions || permissions.length === 0) && session.role === 'admin') {
+    permissions = [...ALL_PERMISSIONS];
+  }
+  return permissions;
+}
+
 export function createAuth(db) {
   const dao = authDao(db);
 
@@ -43,6 +61,20 @@ export function createAuth(db) {
     return row;
   }
 
+  function buildAuthContext(token, session) {
+    const permissions = resolvePermissions(dao, session);
+    return {
+      token,
+      userId: session.user_id,
+      tenantId: session.tenant_id,
+      username: session.username,
+      role: session.role,
+      groupId: session.group_id ?? null,
+      groupName: session.group_name ?? null,
+      permissions,
+    };
+  }
+
   function requireAuth(req, res, next) {
     if (req.method === 'OPTIONS') return next();
     const token = parseBearerToken(req);
@@ -52,13 +84,7 @@ export function createAuth(db) {
     if (!session) return authError(res, 401, 'AUTH_INVALID', 'authorization token is invalid or expired');
 
     dao.touchSession(token);
-    req.auth = {
-      token,
-      userId: session.user_id,
-      tenantId: session.tenant_id,
-      username: session.username,
-      role: session.role,
-    };
+    req.auth = buildAuthContext(token, session);
     return next();
   }
 
@@ -73,23 +99,32 @@ export function createAuth(db) {
     };
   }
 
+  /** Require that the user has ALL listed permissions. */
+  function requirePermission(...perms) {
+    const needed = perms.filter((p) => typeof p === 'string' && p);
+    return (req, res, next) => {
+      if (!req.auth) return authError(res, 401, 'AUTH_REQUIRED', 'authentication required');
+      const have = new Set(req.auth.permissions || []);
+      const missing = needed.filter((p) => !have.has(p));
+      if (missing.length > 0) {
+        return authError(res, 403, 'FORBIDDEN', 'insufficient permissions');
+      }
+      return next();
+    };
+  }
+
   function authenticateToken(token) {
     const session = resolveSession(token);
     if (!session) return null;
     dao.touchSession(token);
-    return {
-      token,
-      userId: session.user_id,
-      tenantId: session.tenant_id,
-      username: session.username,
-      role: session.role,
-    };
+    return buildAuthContext(token, session);
   }
 
   return {
     dao,
     requireAuth,
     requireRole,
+    requirePermission,
     authenticateToken,
     passwordMatches,
     sessionExpiresAt,
@@ -105,4 +140,8 @@ export function buildPasswordHash(password) {
 
 export function isValidRole(role) {
   return ROLES.has(role);
+}
+
+export function isValidPermission(permission) {
+  return ALL_PERMISSIONS.includes(permission);
 }

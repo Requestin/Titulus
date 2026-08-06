@@ -4,16 +4,16 @@ import {
   LayoutTemplate, SlidersHorizontal, Settings, LogOut, Box, PanelLeftClose, PanelLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import type { AuthUser } from '@/core/api';
+import { hasPermission, type AuthUser, type Permission } from '@/core/api';
 import { WsStatus } from './WsStatus';
 import { Toaster } from './Toaster';
 
-const NAV = [
-  { to: '/templates', label: 'Templates', icon: LayoutTemplate },
-  { to: '/ue-templates', label: 'UE Templates', icon: Box },
-  { to: '/control', label: 'Control', icon: SlidersHorizontal },
-  { to: '/settings', label: 'Settings', icon: Settings },
-] as const;
+const NAV: { to: string; label: string; icon: typeof LayoutTemplate; perm: Permission }[] = [
+  { to: '/templates', label: 'Templates', icon: LayoutTemplate, perm: 'template_editor' },
+  { to: '/ue-templates', label: 'UE Templates', icon: Box, perm: 'template_ue_editor' },
+  { to: '/control', label: 'Control', icon: SlidersHorizontal, perm: 'control' },
+  { to: '/settings', label: 'Settings', icon: Settings, perm: 'settings' },
+];
 
 const NAV_COLLAPSED_KEY = (userId: string) => `titulus.nav.collapsed.${userId}`;
 
@@ -42,6 +42,9 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
       /* ignore quota */
     }
   }, [collapsed, user.id]);
+
+  const navItems = NAV.filter((item) => hasPermission(user, item.perm));
+  const roleLabel = user.groupName || user.role;
 
   return (
     <div className="flex h-full">
@@ -79,7 +82,7 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
         </div>
 
         <nav className="flex-1 space-y-0.5 p-2">
-          {NAV.map(({ to, label, icon: Icon }) => (
+          {navItems.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
@@ -108,7 +111,7 @@ export function AppShell({ user, onLogout }: { user: AuthUser; onLogout: () => v
           {!collapsed && (
             <>
               <div className="truncate font-medium text-ink">{user.username}</div>
-              <div className="mt-0.5 tnum text-[11px] uppercase tracking-wide">{user.role}</div>
+              <div className="mt-0.5 tnum text-[11px] uppercase tracking-wide">{roleLabel}</div>
             </>
           )}
           <button

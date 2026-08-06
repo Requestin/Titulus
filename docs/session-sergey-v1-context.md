@@ -1,7 +1,7 @@
 # Ветка `sergey-v1` — контекст и changelog
 
 > Сводка работы Sergey + агент Cursor на ветке `sergey-v1`.  
-> Обновлено: **5 августа 2026**.
+> Обновлено: **6 августа 2026**.
 
 ---
 
@@ -56,6 +56,84 @@
 | `28348e4` | 4 авг | `action from end, crowl fix data` |
 | `675b1d3` | 4 авг | `docs(sergey-v1): fix commit hash in session context` |
 | `6ae72ad` | 5 авг | `add gradient, hide folders` |
+| `9e235ce` | 5 авг | `docs(sergey-v1): fix commit hash in session context` |
+| `PENDING` | 6 авг | `layers,settings` (Tree, LayerID, Settings RBAC) |
+
+---
+
+## 6 августа 2026 — Tree, LayerID playout, Settings RBAC
+
+Пакет UI/playout/access: editor Tree + template LayerID, Control on-air UX, Templates folders resize, Settings section shell, Users/groups permissions, session expiry redirect, template edit locks.
+
+### A) Editor: Layers → Tree
+
+- Видимый label панели слоёв: **Tree** (компонент `LayersPanel` / schema `layers` без rename)
+- Resize handle aria: `Resize tree panel`
+
+**Файлы:** `frontend/src/editor/panels/LayersPanel.tsx`, `frontend/src/pages/EditorPage.tsx`.
+
+### B) Template LayerID (1–99, default 50)
+
+- Top-level `layerId` в schema + `runtime` (`normalizeTemplateLayerId`, default в `createDefaultTemplate`)
+- Editor: поле **LayerID** в Properties при пустом выделении (`setLayerId` в store; migrate on load)
+- Playout stacking: **меньше LayerID → выше** (`z-index = 100 - layerId` на `.titulus-root`)
+- TAKE другого темплейта с тем же LayerID на канале → clear occupant + take нового (`OnAirManager.applyTake`)
+- Тот же `templateId`: Update armed → `update` как раньше; без треков Update → `clear+take`
+- `applyUpdate` больше не bump’ает last-wins z-order
+- Control rundown Variables: read-only строка `LayerID: N` над переменными
+
+**Файлы:** `shared/template.schema.json`, `runtime/src/schema.ts`, `domRenderer.ts`, `backend/src/onair.js`, `db.js` (`orderIndex` opt), `PropertiesPanel.tsx`, `store.ts`, `ControlVariablesPanel.tsx`, `RundownTab.tsx`.
+
+### C) Control on-air row highlight
+
+- Templates list + Rundown slot rows: фон/бордер `bg-live/10` + badge/dot как раньше
+
+**Файлы:** `TemplatesTab.tsx`, `RundownTab.tsx`.
+
+### D) Templates folders column resize
+
+- Горизонтальный drag-resize колонки Folders; persist `titulus.templates.folderWidth` (160–480)
+
+**Файлы:** `TemplatesPage.tsx`.
+
+### E) Settings section shell
+
+Левый nav (A–Z): **Channels** | **License** | **User interface** | **Users and groups**
+
+- Channels: список + Add channel → draft `ChannelN` (следующий свободный N) + форма параметров
+- License: бывший license + entitlements + audit
+- User interface: пустой placeholder
+- Users and groups: две таблицы (группы/права, пользователи/пароль/группа)
+
+### F) RBAC groups + session + template lock
+
+Permissions: `template_editor`, `template_ue_editor`, `control`, `settings`
+
+- Bootstrap groups: `administrators` (все права), `operators` (`control` + `template_editor`)
+- `administrators`: право **settings** нельзя снять; остальные галочки снимаются
+- Nav + route guards по permissions; `/api/auth/me` отдаёт `permissions[]`
+- Settings-sensitive API: `requirePermission('settings')`
+- 401 (кроме login) → clear token + redirect `/login`; poll `/me` каждые 60s
+- Template edit lock: POST/heartbeat/DELETE `/api/templates/:id/lock`; 409 → UI «locked by …» + Make a copy
+
+**Файлы:** `backend/src/db.js`, `auth.js`, `routes/auth.js`, `routes/templates.js`, `index.js`, `frontend/src/core/api.ts`, `App.tsx`, `AppShell.tsx`, `SettingsPage.tsx`, `EditorPage.tsx`.
+
+### G) NumberInput clamp follow-up
+
+- `NumberInput` уважает `min`/`max` при вводе, drag и стрелках (LayerID 1–99, gradient weights 0–100)
+
+**Файлы:** `frontend/src/components/ui/form.tsx`, `PropertiesPanel.tsx`.
+
+### Чеклист
+
+- [ ] Editor Tree label; empty selection → LayerID 1–99 (drag/arrows не выходят за диапазон)
+- [ ] TAKE A@50 + B@10 → оба в эфире, B выше; TAKE C@50 → A cleared, B+C remain
+- [ ] Re-TAKE same Update-armed → update; without Update tracks → clear+take
+- [ ] Control: on-air row tint; Variables показывает LayerID read-only
+- [ ] Templates folders resize persists
+- [ ] Settings sections; Add channel → ChannelN; Users/groups CRUD
+- [ ] administrators: settings locked on; other perms editable
+- [ ] 401 / expired session → login; second user opens locked template → copy path
 
 ---
 

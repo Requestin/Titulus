@@ -14,12 +14,14 @@ export type VarsSelection =
     kind: 'template';
     templateId: string;
     templateName: string;
+    layerId: number;
     variables: Variable[];
     values: Record<string, string | number>;
   }
   | {
     kind: 'dataElement';
     dataElement: DataElement;
+    layerId: number;
     variables: Variable[];
     values: Record<string, string | number>;
   }
@@ -29,6 +31,7 @@ export type VarsSelection =
     slotId: string;
     templateId: string;
     dataElementId?: string | null;
+    layerId: number;
     variables: Variable[];
     values: Record<string, string | number>;
     missing: boolean;
@@ -252,6 +255,12 @@ export function ControlVariablesPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <h3 className="mb-2 shrink-0 text-[12px] font-semibold text-ink-muted">Variables</h3>
+      {'layerId' in selection && (
+        <p className="mb-2 shrink-0 text-[12px] text-ink-muted">
+          LayerID:{' '}
+          <span className="font-medium tabular-nums text-ink">{selection.layerId}</span>
+        </p>
+      )}
       <div className="min-h-0 flex-1 overflow-auto">
         {missing ? (
           <p className="text-[12px] font-semibold text-live">NOT FOUND IN DB</p>

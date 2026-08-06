@@ -57,6 +57,7 @@ export function PropertiesPanel() {
   const updateActionItem = useEditor((s) => s.updateActionItem);
   const addActionItem = useEditor((s) => s.addActionItem);
   const removeActionItem = useEditor((s) => s.removeActionItem);
+  const setLayerId = useEditor((s) => s.setLayerId);
   const [collapseSignal, setCollapseSignal] = useState<SectionCollapseSignal>({ version: 0, open: true });
   const [actionHelpOpen, setActionHelpOpen] = useState(false);
 
@@ -275,9 +276,32 @@ export function PropertiesPanel() {
   }
 
   if (!selection) {
+    const layerId = template.layerId ?? 50;
     return (
-      <div className="grid h-full place-items-center p-6 text-center text-[13px] text-ink-faint">
-        Select a layer or action to edit its properties.
+      <div className="flex h-full flex-col">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
+          <span className="text-[12px] font-semibold text-ink-muted">Properties</span>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Section title="Template">
+            <PropertyField label="LayerID">
+              <NumberInput
+                value={layerId}
+                min={1}
+                max={99}
+                step={1}
+                onChange={(v) => setLayerId(v)}
+              />
+            </PropertyField>
+            <p className="px-3 pb-3 text-[11px] leading-snug text-ink-faint">
+              1–99. Smaller draws above other templates on the same channel. Default 50.
+              TAKE of a different template with the same LayerID clears the current one.
+            </p>
+          </Section>
+          <p className="px-3 py-4 text-center text-[12px] text-ink-faint">
+            Select a layer or action to edit its properties.
+          </p>
+        </div>
       </div>
     );
   }
@@ -932,11 +956,11 @@ function RectFillSection({
                   />
                   <NumberInput
                     value={value}
+                    min={0}
+                    max={100}
                     step={1}
                     resetValue={100}
-                    onChange={(v) => setRectGradientCorner(layer.id, c.key, {
-                      value: Math.min(100, Math.max(0, v)),
-                    })}
+                    onChange={(v) => setRectGradientCorner(layer.id, c.key, { value: v })}
                     className="min-w-0 flex-1"
                   />
                 </div>

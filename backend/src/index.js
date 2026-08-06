@@ -117,7 +117,7 @@ app.locals.mediaLibrary = mediaLibrary;
 app.use('/api', audit.appendAudit);
 app.use('/api/auth', authRouter(auth));
 app.use('/api/billing', billingRouter(db, auth));
-app.use('/api/audit', auth.requireAuth, auth.requireRole('admin'), auditRouter(audit));
+app.use('/api/audit', auth.requireAuth, auth.requirePermission('settings'), auditRouter(audit));
 app.use('/api/templates', auth.requireAuth, templatesRouter(db, dataElementsDb, {
   dataDir: DATA_DIR,
   thumbnailExists: (id) => thumbnailExists(DATA_DIR, id),
@@ -136,7 +136,7 @@ app.use('/api/templates', auth.requireAuth, templatesRouter(db, dataElementsDb, 
   },
 }));
 app.use('/api/template-folders', auth.requireAuth, templateFoldersRouter(db, dataElementsDb));
-app.use('/api/channels', auth.requireAuth, auth.requireRole('admin'), channelsRouter(db));
+app.use('/api/channels', auth.requireAuth, auth.requirePermission('settings'), channelsRouter(db));
 // Unreal pad invoke: operators need it on Control; pad CRUD still admin via channels PUT.
 app.use('/api/unreal', auth.requireAuth, unrealRouter(db));
 app.use('/api/ue-templates', auth.requireAuth, ueTemplatesRouter(db));
@@ -145,7 +145,7 @@ app.use('/api/data-elements', auth.requireAuth, dataElementsRouter(dataElementsD
 app.use('/api/uploads', auth.requireAuth, uploadsCors, uploadsRouter(media, UPLOADS_DIR));
 app.use('/api/media', auth.requireAuth, mediaRouter(mediaLibrary, UPLOADS_DIR));
 app.use('/api/files', auth.requireAuth, filesRouter());
-app.use('/api/license', auth.requireAuth, auth.requireRole('admin'), licenseRouter(db));
+app.use('/api/license', auth.requireAuth, auth.requirePermission('settings'), licenseRouter(db));
 
 // On-air snapshot for the control panel (§7.4). Separate from the WS router so
 // it sits under /api alongside the other REST endpoints.
@@ -156,7 +156,7 @@ app.use('/ws', wsRouter(onAir, auth));
 
 // Settings: global key-value fallback (GET all / PUT replace).
 app.get('/api/settings', auth.requireAuth, (req, res) => res.json(settingsDao(db).all()));
-app.put('/api/settings', auth.requireAuth, auth.requireRole('admin'), (req, res) => {
+app.put('/api/settings', auth.requireAuth, auth.requirePermission('settings'), (req, res) => {
   if (!req.body || typeof req.body !== 'object') {
     return res.status(400).json({ error: 'settings object required' });
   }

@@ -15,6 +15,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { validateTemplate, schema, templateValidationErrorPayload } from '../templateValidation.js';
 import { dataElementsDao } from '../dataElementsDb.js';
+import { templatesDao as templatesRouterDao, templateLocksDao } from '../db.js';
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -31,6 +32,7 @@ import { dataElementsDao } from '../dataElementsDb.js';
  */
 export function templatesRouter(db, dataElementsDb = null, thumb = {}) {
   const dao = templatesRouterDao(db);
+  const locks = templateLocksDao(db);
   const deDao = dataElementsDb ? dataElementsDao(dataElementsDb) : null;
   const router = Router();
 
@@ -97,6 +99,81 @@ export function templatesRouter(db, dataElementsDb = null, thumb = {}) {
     res.json(withThumb(t));
   });
 
+  router.get('/:id/lock', (req, res) => {
+    const t = dao.get(req.params.id);
+    if (!t) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'template not found' } });
+    const lock = locks.getLock(req.params.id);
+    return res.json({
+      lock,
+      isOwner: !!(lock && req.auth && lock.userId === req.auth.userId),
+    });
+  });
+
+  router.post('/:id/lock', (req, res) => {
+    const t = dao.get(req.params.id);
+    if (!t) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'template not found' } });
+    if (!req.auth?.userId) {
+      return res.status(401).json({ error: { code: 'AUTH_REQUIRED', message: 'authentication required' } });
+    }
+
+    let lock = locks.acquireLock(req.params.id, req.auth.userId, req.auth.username);
+    if (!lock) {
+      lock = locks.stealStaleLock(req.params.id, req.auth.userId, req.auth.username);
+    }
+    if (!lock) {
+      const held = locks.getLock(req.params.id);
+      return res.status(409).json({
+        error: {
+          code: 'TEMPLATE_LOCKED',
+          message: 'template is locked by another user',
+        },
+        lock: held,
+      });
+    }
+    return res.json({ lock, isOwner: true });
+  });
+
+  router.post('/:id/lock/heartbeat', (req, res) => {
+    const t = dao.get(req.params.id);
+    if (!t) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'template not found' } });
+    if (!req.auth?.userId) {
+      return res.status(401).json({ error: { code: 'AUTH_REQUIRED', message: 'authentication required' } });
+    }
+    const lock = locks.heartbeatLock(req.params.id, req.auth.userId);
+    if (!lock) {
+      const held = locks.getLock(req.params.id);
+      return res.status(409).json({
+        error: {
+          code: 'LOCK_NOT_OWNED',
+          message: 'lock heartbeat requires ownership',
+        },
+        lock: held,
+      });
+    }
+    return res.json({ lock, isOwner: true });
+  });
+
+  router.delete('/:id/lock', (req, res) => {
+    const t = dao.get(req.params.id);
+    if (!t) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'template not found' } });
+    if (!req.auth?.userId) {
+      return res.status(401).json({ error: { code: 'AUTH_REQUIRED', message: 'authentication required' } });
+    }
+    const ok = locks.releaseLock(req.params.id, req.auth.userId);
+    if (!ok) {
+      const held = locks.getLock(req.params.id);
+      if (!held) return res.json({ ok: true });
+      return res.status(409).json({
+        error: {
+          code: 'LOCK_NOT_OWNED',
+          message: 'only the lock owner can release the lock',
+        },
+        lock: held,
+      });
+    }
+    return res.json({ ok: true });
+  });
+
   router.put('/:id/thumbnail', (req, res) => {
     const t = dao.get(req.params.id);
     if (!t) return res.status(404).json({ error: 'not found' });
@@ -159,6 +236,3 @@ export function templatesRouter(db, dataElementsDb = null, thumb = {}) {
 
   return router;
 }
-
-// Local import to avoid a circular top-level dep: db.js exports the DAO factory.
-import { templatesDao as templatesRouterDao } from '../db.js';

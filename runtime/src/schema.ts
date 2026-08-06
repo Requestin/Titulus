@@ -678,6 +678,16 @@ export interface TemplateMetadata {
   notes?: string;
 }
 
+/** Default cross-template playout stack rank (1 = frontmost, 99 = backmost). */
+export const DEFAULT_TEMPLATE_LAYER_ID = 50;
+
+/** Clamp / default template layerId for playout stacking. */
+export function normalizeTemplateLayerId(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_TEMPLATE_LAYER_ID;
+  return Math.min(99, Math.max(1, Math.round(n)));
+}
+
 export interface Template {
   schemaVersion?: string;
   id: string;
@@ -685,6 +695,11 @@ export interface Template {
   description?: string;
   tags?: string[];
   metadata?: TemplateMetadata;
+  /**
+   * Cross-template playout stack on a channel (1–99). Smaller paints above.
+   * Missing → treat as {@link DEFAULT_TEMPLATE_LAYER_ID}.
+   */
+  layerId?: number;
   canvas: Canvas;
   variables: Variable[];
   /**
@@ -896,6 +911,7 @@ export function createDefaultTemplate(): Template {
   return {
     id: randomUUID(),
     name: 'Untitled',
+    layerId: DEFAULT_TEMPLATE_LAYER_ID,
     canvas: { width: 1920, height: 1080, background: 'transparent' },
     variables: [],
     groups: [],
