@@ -57,7 +57,7 @@
 | `675b1d3` | 4 авг | `docs(sergey-v1): fix commit hash in session context` |
 | `6ae72ad` | 5 авг | `add gradient, hide folders` |
 | `9e235ce` | 5 авг | `docs(sergey-v1): fix commit hash in session context` |
-| `PENDING` | 6 авг | `layers,settings` (Tree, LayerID, Settings RBAC) |
+| `687c0d9` | 6 авг | `layers,settings` (Tree, LayerID, Settings RBAC) |
 
 ---
 
