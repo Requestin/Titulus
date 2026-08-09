@@ -48,6 +48,7 @@ test('canonical 3ch dry-run writes equal channel digests and explicit environmen
   assert.equal(root.config.environment.BG_LAYERED_COMPOSITOR, '1');
   assert.equal(root.config.environment.BG_LAYERED_COMPOSITOR_ALLOWLIST, null);
   assert.equal(root.config.environment.BG_NUM_RASTER_THREADS, '3');
+  assert.equal(root.config.pacingMode, 'accumulator');
   assert.equal(root.config.url.includes('pacing=1'), true);
   assert.equal(root.config.url.includes('graph=1'), true);
   assert.match(root.configDigest, /^[a-f0-9]{64}$/);
@@ -74,6 +75,18 @@ test('config digest excludes artifact paths and changes for a pacing-relevant fl
 
   assert.equal(manifest(first).configDigest, manifest(second).configDigest);
   assert.notEqual(manifest(first).configDigest, manifest(control).configDigest);
+});
+
+test('one-tick P20.3 cell is explicit in its digest and engine URL', () => {
+  const baseline = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-accumulator-'));
+  const oneTick = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-one-tick-'));
+  runDryCell(baseline);
+  runDryCell(oneTick, ['--pacing-mode=one-tick']);
+
+  const manifestOneTick = manifest(oneTick);
+  assert.equal(manifestOneTick.config.pacingMode, 'one_tick');
+  assert.match(manifestOneTick.config.url, /pacing_mode=one_tick/);
+  assert.notEqual(manifest(baseline).configDigest, manifestOneTick.configDigest);
 });
 
 test('canonical cell rejects an unsafe duplicate CPU assignment before execution', () => {
