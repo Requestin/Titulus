@@ -150,6 +150,12 @@ export function analyzeP20M0({ eventRows, engineLog }) {
       for (const seq of unmatched) errors.push(`missing completion for schedule_seq=${seq}`);
     }
   }
+  if (prerollCompletions.length !== 3) {
+    errors.push(`expected 3 preroll completions, got ${prerollCompletions.length}`);
+  }
+  if (unmatched.length > 0 && !engineLog.includes('duration reached, shutting down')) {
+    errors.push('shutdown tail lacks graceful shutdown marker');
+  }
 
   errors.push(...validateScheduleSources(schedules));
   const telemetry = finalTelemetry(engineLog);

@@ -61,7 +61,9 @@ measure. На момент run engine был
 config digest
 `4f5e0e9f6953af31408a77b7d93a206e10a427e53a6c69ca4084bd3564224b31`.
 Параметры: accumulator (намеренно не `one_tick`), provenance ON, 10 s warm-up,
-5 min measure, плюс 60 s graceful flush tail.
+5 min measure, плюс фактический graceful flush tail около 58 s (точное
+normal-exit доказательство — `duration reached, shutting down` в каждом
+engine log).
 
 | Channel | schedules | completions | preroll / shutdown tail | overwrite events | Verdict |
 |---|---:|---:|---:|---:|---|
