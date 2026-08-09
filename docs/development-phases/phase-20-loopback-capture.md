@@ -137,8 +137,13 @@ For every captured field produce:
 
 ```text
 unix_us,output_channel,capture_input,field_index,semantic_id,
-semantic_delta,field_parity,expected_parity,order_ok,frame_hash
+field_parity,expected_parity,frame_hash
 ```
+
+`semantic_delta` and `order_ok` are derived by the offline analyser from
+consecutive `semantic_id` values; they are deliberately not callback CSV
+columns. The L1 probe contract and its safe-label rules are documented in
+[`engine/research/p20/README-decklink-field-capture.md`](../../engine/research/p20/README-decklink-field-capture.md).
 
 Classify:
 
