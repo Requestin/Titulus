@@ -108,6 +108,11 @@ TITULUS_API_USER=admin TITULUS_API_PASSWORD=admin123 \
 
 ## 8. DeckLink (HW-хост)
 
+> Текущий Quad 2 стенд — среда разработки и валидации, не действующий эфир:
+> тестовые каналы и процессы можно свободно запускать, останавливать и
+> переключать для проверки картинки. Указания по production rollout и rollback
+> ниже сохраняются как будущая операционная документация.
+
 **Перед экспериментами:** `pgrep -af "bg_engine|run-channel|run-engines"`
 
 Домашний стенд (Quad 2): genlock на Reference In; монитор на **SDI #3**; `--device-index=1`, `HD1080i50`. Подробности — `docs/development-phases/phase-06-saas-decklink.md`.

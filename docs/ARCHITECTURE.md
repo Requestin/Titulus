@@ -10,6 +10,12 @@
 
 Titulus — proprietary cloud/on-prem broadcast graphics. Два плоскости: **control plane** (React + Express) и **render plane** (`bg_engine`, C++20 + CEF OSR).
 
+> **Текущий статус:** проект находится в разработке и hardware/performance
+> валидации. Действующих эфирных или production-инсталляций нет; DeckLink
+> выходы на текущем стенде используются для тестов, визуальной проверки и
+> измерений. Production safeguards документируются заранее, но не запрещают
+> обоснованные dev-эксперименты.
+
 | Принцип | Требование |
 |---|---|
 | CPU-only render | CEF OSR, `--disable-gpu`. GPU только через отдельный gate-doc |

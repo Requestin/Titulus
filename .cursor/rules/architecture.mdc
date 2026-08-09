@@ -6,6 +6,15 @@ alwaysApply: false
 
 Proprietary cloud/on-prem broadcast graphics. Control plane (React + Express) + render plane (`bg_engine`, C++20 + CEF OSR). CasparCG-parity по эфиру — clean-room reimplement by reference.
 
+## Статус проекта
+
+Titulus находится в активной стадии разработки и hardware/performance
+валидации; действующих эфирных или production-инсталляций нет. DeckLink
+выходы на текущем стенде — тестовые: их можно запускать, останавливать и
+переключать для проверки изображения и производительности. Production
+ограничения и rollback-документация сохраняются как дизайн-цели, но не должны
+блокировать обоснованные dev-эксперименты.
+
 ## Иерархия решений
 
 1. `.cursor/rules/architecture.mdc` + `docs/ARCHITECTURE.md`

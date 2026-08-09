@@ -1,9 +1,14 @@
-# Phase 19 — Style Guide + cost model (in progress)
+# Phase 19 — Style Guide + cost model
 
-**Статус:** в процессе. Milestone 1 (baseline + G0) — DONE 2026-07-13.
+**Статус:** DONE — Doc02 audit recovery merged as PR #84.
 **Программа:** `docs/performance investigation/` (docs 00–07).
 **Цель фазы:** снизить стоимость кадра сложного шаблона до уровня, при котором
 3× DeckLink 1080i50 дают ≥50 unique fps на `tests/templates/test1.json`.
+
+> **Контекст:** это dev-проект и hardware/performance стенд; действующих
+> эфирных или production-инсталляций нет. DeckLink-каналы используются для
+> свободных визуальных и измерительных экспериментов. Production safeguards
+> остаются документацией для будущего rollout, а не блокером текущей разработки.
 
 ## Milestone 1 — Baseline & G0 (DONE)
 
@@ -70,7 +75,7 @@ Fresh 3ch baseline подтвердил: C1 + C2 + clone дают несколь
 clone устранён. Direct path не даёт устойчивого throughput uplift в crossover OFF/ON,
 поэтому ownership ring отложен как неоправданная сложность.
 
-## Следующие milestone
+## Итоговые milestone
 
 - **Doc 04 (pinning/CCX)** — hardware gate complete: sequential, CCX and
   `performance` governor produced no reliable throughput uplift on 3× DeckLink
@@ -95,3 +100,18 @@ clone устранён. Direct path не даёт устойчивого through
 - Doc02 clears G1/G2 throughput for canonical `test1` and passed the recorded
   15-minute 1ch (180 windows) and 60-minute 3ch
   (720 windows/channel) stability soaks at 50.0 fps with zero delivery errors.
+
+## Граница результата
+
+Phase 19 доказал throughput и DeckLink delivery health, но не заменяет
+субъективную проверку temporal pacing. Визуальные тесты 2026-08-09 показали
+неровную плавность и микрофризы при `in_fps≈50`, `d_pairs≈125` и нулевых
+DeckLink `late/drop/flush`. Эти значения подтверждают скорость enqueue и
+scheduled playback, но не равномерность semantic animation states и не
+исключают interlace/deinterlacer artifacts.
+
+Дальнейшая работа не является повторным открытием K2 или отменой результатов
+Doc02. Она вынесена в
+[`phase-20-visual-frame-pacing.md`](phase-20-visual-frame-pacing.md):
+отдельно измеряются timeline cadence, CEF paint, weave field identity и
+фактический SDI loopback.
