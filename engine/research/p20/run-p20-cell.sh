@@ -16,6 +16,7 @@ RUNTIME_BUNDLE="${ROOT}/backend/public/bg-runtime.js"
 TOKEN_FILE="${TOKEN_FILE:-/tmp/titulus-doc04-setup/token}"
 LAYERED="off"
 RASTER_THREADS=3
+PACING_MODE="accumulator"
 CPU_MASKS="0,6,1,7;2,8,3,9;4,10,5,11"
 DEVICE_INDEXES="1,2,3"
 START_OFFSETS_MS="0,0,0"
@@ -42,6 +43,7 @@ Options:
   --token-file=PATH          Control WebSocket token for --execute
   --layered=off|on           Explicit compositor state (default off)
   --raster-threads=N         Explicit BG_NUM_RASTER_THREADS (default 3)
+  --pacing-mode=MODE         accumulator|one-tick (default accumulator)
   --cpu-masks=A;B;C          Safe-mask permutation for the selected channels
   --device-indexes=A,B,C     Device-index permutation for selected channels
   --start-offsets-ms=A,B,C   Controlled spawn offsets (0/5/10 for matrix D)
@@ -75,6 +77,7 @@ for arg in "$@"; do
     --token-file=*) TOKEN_FILE="${arg#*=}" ;;
     --layered=*) LAYERED="${arg#*=}" ;;
     --raster-threads=*) RASTER_THREADS="${arg#*=}" ;;
+    --pacing-mode=*) PACING_MODE="${arg#*=}" ;;
     --cpu-masks=*) CPU_MASKS="${arg#*=}" ;;
     --device-indexes=*) DEVICE_INDEXES="${arg#*=}" ;;
     --start-offsets-ms=*) START_OFFSETS_MS="${arg#*=}" ;;
@@ -89,6 +92,11 @@ done
 [[ -n "$CHANNELS" ]] || fail "--channels is required"
 [[ -n "$OUT_DIR" ]] || fail "--out-dir is required"
 [[ "$LAYERED" == "off" || "$LAYERED" == "on" ]] || fail "--layered must be off|on"
+case "$PACING_MODE" in
+  accumulator) PACING_MODE="accumulator" ;;
+  one-tick) PACING_MODE="one_tick" ;;
+  *) fail "--pacing-mode must be accumulator|one-tick" ;;
+esac
 [[ "$DURATION" =~ ^[0-9]+$ && "$DURATION" -ge 30 ]] || fail "--duration must be an integer >= 30"
 [[ "$WARMUP" =~ ^[0-9]+$ && "$WARMUP" -ge 10 ]] || fail "--warmup must be an integer >= 10"
 [[ "$RASTER_THREADS" =~ ^[1-9][0-9]*$ ]] || fail "--raster-threads must be a positive integer"
@@ -150,7 +158,7 @@ RUNTIME_SHA256="$(sha256sum "$RUNTIME_BUNDLE" | awk '{print $1}')"
 TEMPLATE_SHA256="$(sha256sum "$TEMPLATE" | awk '{print $1}')"
 LAYERED_VALUE=0
 [[ "$LAYERED" == "on" ]] && LAYERED_VALUE=1
-URL_PATTERN="http://${BACKEND_HOST}/channel.html?channel={channel}&engine=1&engine_fps=50&w=1920&h=1080&pacing=1&graph=1"
+URL_PATTERN="http://${BACKEND_HOST}/channel.html?channel={channel}&engine=1&engine_fps=50&w=1920&h=1080&pacing=1&graph=1&pacing_mode=${PACING_MODE}"
 
 export P20_CONFIG_PATH="$RUN_DIR/config.json"
 export P20_MODE="$MODE"
@@ -165,6 +173,7 @@ export P20_RUNTIME_SHA256="$RUNTIME_SHA256"
 export P20_TEMPLATE_SHA256="$TEMPLATE_SHA256"
 export P20_LAYERED_VALUE="$LAYERED_VALUE"
 export P20_RASTER_THREADS="$RASTER_THREADS"
+export P20_PACING_MODE="$PACING_MODE"
 export P20_BACKEND_URL="$BACKEND_URL"
 export P20_URL_PATTERN="$URL_PATTERN"
 export P20_DURATION="$DURATION"
@@ -185,6 +194,7 @@ const config = {
   durationSeconds: Number(process.env.P20_DURATION),
   warmupSeconds: Number(process.env.P20_WARMUP),
   modeSettings: { displayMode: 'HD1080i50', keyer: 'fill_only', fps: 50 },
+  pacingMode: process.env.P20_PACING_MODE,
   environment: {
     BG_LAYERED_COMPOSITOR: process.env.P20_LAYERED_VALUE,
     BG_LAYERED_COMPOSITOR_ALLOWLIST: null,
