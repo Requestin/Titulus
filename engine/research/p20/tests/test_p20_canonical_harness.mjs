@@ -49,6 +49,7 @@ test('canonical 3ch dry-run writes equal channel digests and explicit environmen
   assert.equal(root.config.environment.BG_LAYERED_COMPOSITOR_ALLOWLIST, null);
   assert.equal(root.config.environment.BG_NUM_RASTER_THREADS, '3');
   assert.equal(root.config.pacingMode, 'accumulator');
+  assert.equal(root.config.provenance, 'on');
   assert.equal(root.config.url.includes('pacing=1'), true);
   assert.equal(root.config.url.includes('graph=1'), true);
   assert.match(root.configDigest, /^[a-f0-9]{64}$/);
@@ -87,6 +88,18 @@ test('one-tick P20.3 cell is explicit in its digest and engine URL', () => {
   assert.equal(manifestOneTick.config.pacingMode, 'one_tick');
   assert.match(manifestOneTick.config.url, /pacing_mode=one_tick/);
   assert.notEqual(manifest(baseline).configDigest, manifestOneTick.configDigest);
+});
+
+test('P20.1 provenance-off baseline keeps the common performance recorder only', () => {
+  const off = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-provenance-off-'));
+  runDryCell(off, ['--provenance=off']);
+
+  const root = manifest(off);
+  const channel = manifest(off, 'ch1/manifest.json');
+  assert.equal(root.config.provenance, 'off');
+  assert.match(root.config.url, /pacing=0/);
+  assert.match(channel.plannedCommand.join(' '), /--frame-log=/);
+  assert.doesNotMatch(channel.plannedCommand.join(' '), /--decklink-completion-log=/);
 });
 
 test('canonical cell rejects an unsafe duplicate CPU assignment before execution', () => {
