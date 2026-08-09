@@ -7,7 +7,8 @@
  * round-trips dominate the frame interval, not raster work itself).
  *
  * CSV format (header row always present, one row per pump tick):
- *   wall_clock_us,interval_us,paint_seq,pump_active_us,paint_latency_us,waited_deadline
+ *   v1: wall_clock_us,interval_us,paint_seq,...,waited_deadline
+ *   v2: schema_version,unix_us,mono_us,interval_us,...,deadline_miss
  *
  * Usage:
  *   node engine/research/lib/analyze-frame-log.mjs --in=/tmp/frame-log.csv \
@@ -55,6 +56,7 @@ function main() {
   const iInterval = col('interval_us');
   const iPumpActive = col('pump_active_us');
   const iPaintLatency = col('paint_latency_us');
+  const iDeadlineMiss = col('deadline_miss');
   const iWaited = col('waited_deadline');
   const iInflight = col('inflight_depth');
   const iPaintDelta = col('paint_seq_delta');
@@ -79,7 +81,9 @@ function main() {
     const intervalUs = Number(cells[iInterval]);
     const pumpActiveUs = Number(cells[iPumpActive]);
     const paintLatencyUs = Number(cells[iPaintLatency]);
-    const waitedDeadline = Number(cells[iWaited]);
+    const waitedDeadline = iDeadlineMiss >= 0
+      ? Number(cells[iDeadlineMiss])
+      : (iWaited >= 0 ? Number(cells[iWaited]) : 0);
     const inflight = iInflight >= 0 ? Number(cells[iInflight]) : 0;
     const paintDelta = iPaintDelta >= 0 ? Number(cells[iPaintDelta]) : 0;
 
