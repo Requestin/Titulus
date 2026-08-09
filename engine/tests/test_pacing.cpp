@@ -3,6 +3,7 @@
 // P20.1 RED/GREEN tests for the optional FrameLog v2 evidence schema.
 
 #include "../src/frame_log.h"
+#include "../src/cef_paint_wait.h"
 #include "../src/decklink_provenance.h"
 #include "../src/decklink_event_log.h"
 #include "../src/pacing_message_parser.h"
@@ -110,6 +111,44 @@ TEST(FrameLogV2WritesDualClocksAndPacingColumns) {
           "v2 record must preserve explicit provenance values");
     CHECK(content.find("wall_clock_us") == std::string::npos,
           "steady-clock epoch must not be labelled wall clock");
+}
+
+TEST(TokenArmedCefWaitIgnoresPublishOnlyProgressAndTimesOutBoundedly) {
+    const auto waiting = bg::DecideCefPaintWait({
+        .request_sent = true,
+        .cef_seq_at_send = 10,
+        .cef_seq_now = 10,
+        .deadline_reached = false,
+    });
+    CHECK(waiting == bg::CefPaintWaitDecision::Continue,
+          "unchanged CEF sequence must keep waiting regardless of publish progress");
+
+    const auto painted = bg::DecideCefPaintWait({
+        .request_sent = true,
+        .cef_seq_at_send = 10,
+        .cef_seq_now = 11,
+        .deadline_reached = false,
+    });
+    CHECK(painted == bg::CefPaintWaitDecision::PaintObserved,
+          "CEF sequence advance after send must satisfy token-armed wait");
+
+    const auto timeout = bg::DecideCefPaintWait({
+        .request_sent = true,
+        .cef_seq_at_send = 10,
+        .cef_seq_now = 10,
+        .deadline_reached = true,
+    });
+    CHECK(timeout == bg::CefPaintWaitDecision::Timeout,
+          "deadline must release wait without an unbounded recovery gate");
+
+    const auto no_request = bg::DecideCefPaintWait({
+        .request_sent = false,
+        .cef_seq_at_send = 0,
+        .cef_seq_now = 0,
+        .deadline_reached = false,
+    });
+    CHECK(no_request == bg::CefPaintWaitDecision::NoRequest,
+          "ticks without BeginFrame must not wait a full field");
 }
 
 TEST(ParsesBoundedRuntimePacingEvent) {
