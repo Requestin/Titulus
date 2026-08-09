@@ -17,6 +17,7 @@ TOKEN_FILE="${TOKEN_FILE:-/tmp/titulus-doc04-setup/token}"
 LAYERED="off"
 RASTER_THREADS=3
 PACING_MODE="accumulator"
+PROVENANCE="on"
 CPU_MASKS="0,6,1,7;2,8,3,9;4,10,5,11"
 DEVICE_INDEXES="1,2,3"
 START_OFFSETS_MS="0,0,0"
@@ -44,6 +45,7 @@ Options:
   --layered=off|on           Explicit compositor state (default off)
   --raster-threads=N         Explicit BG_NUM_RASTER_THREADS (default 3)
   --pacing-mode=MODE         accumulator|one-tick (default accumulator)
+  --provenance=on|off        P20 runtime + DeckLink event logs (default on)
   --cpu-masks=A;B;C          Safe-mask permutation for the selected channels
   --device-indexes=A,B,C     Device-index permutation for selected channels
   --start-offsets-ms=A,B,C   Controlled spawn offsets (0/5/10 for matrix D)
@@ -78,6 +80,7 @@ for arg in "$@"; do
     --layered=*) LAYERED="${arg#*=}" ;;
     --raster-threads=*) RASTER_THREADS="${arg#*=}" ;;
     --pacing-mode=*) PACING_MODE="${arg#*=}" ;;
+    --provenance=*) PROVENANCE="${arg#*=}" ;;
     --cpu-masks=*) CPU_MASKS="${arg#*=}" ;;
     --device-indexes=*) DEVICE_INDEXES="${arg#*=}" ;;
     --start-offsets-ms=*) START_OFFSETS_MS="${arg#*=}" ;;
@@ -97,9 +100,11 @@ case "$PACING_MODE" in
   one-tick) PACING_MODE="one_tick" ;;
   *) fail "--pacing-mode must be accumulator|one-tick" ;;
 esac
+[[ "$PROVENANCE" == "on" || "$PROVENANCE" == "off" ]] || fail "--provenance must be on|off"
 [[ "$DURATION" =~ ^[0-9]+$ && "$DURATION" -ge 30 ]] || fail "--duration must be an integer >= 30"
 [[ "$WARMUP" =~ ^[0-9]+$ && "$WARMUP" -ge 10 ]] || fail "--warmup must be an integer >= 10"
 [[ "$RASTER_THREADS" =~ ^[1-9][0-9]*$ ]] || fail "--raster-threads must be a positive integer"
+ENGINE_DURATION=$((WARMUP + DURATION + 60))
 if (( EXECUTE == 1 && CONFIRM_DECKLINK != 1 )); then
   fail "DeckLink execution requires --execute --confirm-decklink"
 fi
@@ -158,7 +163,9 @@ RUNTIME_SHA256="$(sha256sum "$RUNTIME_BUNDLE" | awk '{print $1}')"
 TEMPLATE_SHA256="$(sha256sum "$TEMPLATE" | awk '{print $1}')"
 LAYERED_VALUE=0
 [[ "$LAYERED" == "on" ]] && LAYERED_VALUE=1
-URL_PATTERN="http://${BACKEND_HOST}/channel.html?channel={channel}&engine=1&engine_fps=50&w=1920&h=1080&pacing=1&graph=1&pacing_mode=${PACING_MODE}"
+PACING_QUERY=0
+[[ "$PROVENANCE" == "on" ]] && PACING_QUERY=1
+URL_PATTERN="http://${BACKEND_HOST}/channel.html?channel={channel}&engine=1&engine_fps=50&w=1920&h=1080&pacing=${PACING_QUERY}&graph=1&pacing_mode=${PACING_MODE}"
 
 export P20_CONFIG_PATH="$RUN_DIR/config.json"
 export P20_MODE="$MODE"
@@ -174,10 +181,12 @@ export P20_TEMPLATE_SHA256="$TEMPLATE_SHA256"
 export P20_LAYERED_VALUE="$LAYERED_VALUE"
 export P20_RASTER_THREADS="$RASTER_THREADS"
 export P20_PACING_MODE="$PACING_MODE"
+export P20_PROVENANCE="$PROVENANCE"
 export P20_BACKEND_URL="$BACKEND_URL"
 export P20_URL_PATTERN="$URL_PATTERN"
 export P20_DURATION="$DURATION"
 export P20_WARMUP="$WARMUP"
+export P20_ENGINE_DURATION="$ENGINE_DURATION"
 node - <<'NODE'
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -193,8 +202,10 @@ const config = {
   url: process.env.P20_URL_PATTERN,
   durationSeconds: Number(process.env.P20_DURATION),
   warmupSeconds: Number(process.env.P20_WARMUP),
+  engineDurationSeconds: Number(process.env.P20_ENGINE_DURATION),
   modeSettings: { displayMode: 'HD1080i50', keyer: 'fill_only', fps: 50 },
   pacingMode: process.env.P20_PACING_MODE,
+  provenance: process.env.P20_PROVENANCE,
   environment: {
     BG_LAYERED_COMPOSITOR: process.env.P20_LAYERED_VALUE,
     BG_LAYERED_COMPOSITOR_ALLOWLIST: null,
@@ -250,7 +261,7 @@ for (let index = 0; index < config.channels.length; index += 1) {
     artifacts: {
       engineLog: 'engine.log',
       frameLog: 'frame.csv',
-      completionLog: 'decklink-completion.csv',
+      completionLog: config.provenance === 'on' ? 'decklink-completion.csv' : null,
       cefCache: 'cef-cache',
     },
   };
@@ -267,14 +278,14 @@ for index in "${!CHANNEL_ARRAY[@]}"; do
     "$ENGINE_BIN"
     "--name=p20-${LABEL}-ch${number}"
     "--url=${url}"
-    "--width=1920" "--height=1080" "--fps=50" "--duration=0"
+    "--width=1920" "--height=1080" "--fps=50" "--duration=${ENGINE_DURATION}"
     "--consumer=decklink"
     "--device-index=${DEVICE_ARRAY[$index]}"
     "--display-mode=HD1080i50" "--keyer=fill_only"
     "--cache-dir=${channel_dir}/cef-cache"
     "--frame-log=${channel_dir}/frame.csv"
-    "--decklink-completion-log=${channel_dir}/decklink-completion.csv"
   )
+  [[ "$PROVENANCE" == "on" ]] && cmd+=("--decklink-completion-log=${channel_dir}/decklink-completion.csv")
   (( LAYERED_VALUE == 1 )) && cmd+=(--layered-compositor)
   printf '%s\0' "${cmd[@]}" | node -e '
     let data = ""; process.stdin.on("data", c => { data += c; });
@@ -328,14 +339,14 @@ for index in "${!CHANNEL_ARRAY[@]}"; do
     "$ENGINE_BIN"
     "--name=p20-${LABEL}-ch${number}"
     "--url=${url}"
-    "--width=1920" "--height=1080" "--fps=50" "--duration=0"
+    "--width=1920" "--height=1080" "--fps=50" "--duration=${ENGINE_DURATION}"
     "--consumer=decklink"
     "--device-index=${DEVICE_ARRAY[$index]}"
     "--display-mode=HD1080i50" "--keyer=fill_only"
     "--cache-dir=${channel_dir}/cef-cache"
     "--frame-log=${channel_dir}/frame.csv"
-    "--decklink-completion-log=${channel_dir}/decklink-completion.csv"
   )
+  [[ "$PROVENANCE" == "on" ]] && cmd+=("--decklink-completion-log=${channel_dir}/decklink-completion.csv")
   (( LAYERED_VALUE == 1 )) && cmd+=(--layered-compositor)
   setsid env -u BG_LAYERED_COMPOSITOR -u BG_LAYERED_COMPOSITOR_ALLOWLIST -u BG_NUM_RASTER_THREADS \
     "BG_LAYERED_COMPOSITOR=${LAYERED_VALUE}" "BG_NUM_RASTER_THREADS=${RASTER_THREADS}" \
@@ -366,6 +377,25 @@ sleep "$WARMUP"
 MEASURE_START_UNIX_US="$(date -u +%s%6N)"
 sleep "$DURATION"
 MEASURE_END_UNIX_US="$(date -u +%s%6N)"
+# The engine's own duration exits through its normal teardown, flushing the
+# FrameLog and DeckLinkEventLog. A process-group TERM is a timeout fallback
+# only; it cannot serve as M0 evidence because it can truncate both CSVs.
+GRACE_DEADLINE=$((SECONDS + 90))
+while true; do
+  alive=0
+  for pid in "${PIDS[@]}"; do
+    kill -0 "$pid" 2>/dev/null && alive=1
+  done
+  (( alive == 0 )) && break
+  (( SECONDS < GRACE_DEADLINE )) || fail "engine duration did not exit gracefully"
+  sleep 1
+done
+status=0
+for pid in "${PIDS[@]}"; do
+  wait "$pid" || status=1
+done
+PIDS=()
+(( status == 0 )) || fail "one or more engines failed before graceful completion"
 ps -eo pid=,ppid=,pgid=,comm=,args= >"$RUN_DIR/processes-at-stop.txt"
 export P20_MEASURE_START_UNIX_US="$MEASURE_START_UNIX_US"
 export P20_MEASURE_END_UNIX_US="$MEASURE_END_UNIX_US"

@@ -56,7 +56,10 @@ test('fails for an interior completion gap, nonzero delivery errors, or logger o
 
 test('rejects malformed provenance rows and source IDs lost without an overwrite event', () => {
   assert.throws(
-    () => events(['1,schedule,1,1']),
+    () => events([
+      '1,schedule,1,1',
+      '1,completion,1,2,2,0,0,0,0,0,0,0,0,starved,0,0',
+    ]),
     /incomplete DeckLink event row/,
   );
 

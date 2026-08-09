@@ -61,6 +61,7 @@ test('canonical 3ch dry-run writes equal channel digests and explicit environmen
     assert.equal(channel.channel.index, index);
     assert.equal(channel.channel.cpuMask, root.config.cpuMasks[index - 1]);
     assert.equal(channel.channel.deviceIndex, root.config.deviceIndexes[index - 1]);
+    assert.equal(channel.plannedCommand.includes('--duration=100'), true);
     assert.match(channel.plannedCommand.join(' '), /--frame-log=/);
     assert.match(channel.plannedCommand.join(' '), /--decklink-completion-log=/);
   }
