@@ -1,6 +1,6 @@
 # Phase 20 — Visual Frame Pacing + Microfreeze
 
-**Статус:** IN PROGRESS
+**Статус:** DONE — visual closure; strict on-wire zero-anomaly evidence deferred
 **Дата открытия:** 2026-08-09
 **Предшественник:** Phase 19 Doc02 K2 PASS (PR #84)
 **Scope:** dev/hardware-validation стенд, DeckLink Quad 2, HD1080i50,
@@ -111,6 +111,11 @@ slice дал 71 duplicate, один skip и один reverse среди 14,998 d
 несмотря на zero DeckLink late/drop/flush. Наивный serial recovery затем
 вызвал реальный стоп-кадр и был откатан. Подробности:
 [P20.2 L0/L1 evidence](../performance%20investigation/reports/p20-02-loopback-l0-l1.md).
+
+После переноса на i7-14700KF 30-second marker loopback `5 → 6` прошёл joint
+gate: 1,500 decoded fields, continuous reference и zero measurement
+`single`/`overwrite`. Это подтверждает новую host/card setup, но не заменяет
+строгий 5–15-minute semantic run.
 
 ## 4. Рабочие гипотезы
 
@@ -283,6 +288,27 @@ average FPS.
 | Microfreeze | zero hard clusters; microfreeze rate ≤0.05/min or zero when claiming elimination |
 | Soak | 1ch 10–15 min detector+loopback, 3ch 15 min, final 3ch 60 min |
 | Visual review | no systematic perceived 25–30 fps segments on `test1` |
+
+### Visual closure — 2026-08-10
+
+Cross-host validation на i7-14700KF закрыла пользовательскую цель фазы:
+
+- 1ch и 3ch null preflight дали ≈50 unique poses/s и `(1,1)=100%`;
+- 30-second DeckLink marker loopback на `port 5 → port 6` прошёл joint
+  liveness/delivery/semantic smoke;
+- оператор не увидел фризов в 5-minute 1ch и 15-minute 3ch `p20-test1-visual`
+  на реальном SDI output;
+- 3ch hardware cadence осталась ≈50 poses/s и `(1,1)=100%`, с zero
+  DeckLink `late/drop/flush`.
+
+Остаточные measurement-window `single`/`input_overwrite` реальны, но редки
+(7/5, 8/8, 11/9 по каналам за 15 минут), примерно на два порядка ниже
+Ryzen baseline и без замеченного visual symptom. Поэтому Phase 20 закрыта как
+**visual acceptance**, а не как формальный on-wire zero-error certification.
+Final 60-minute 3ch soak и repeatable 5–15-minute semantic zero-anomaly
+evidence не выполнялись; при потребности в таком claim они открываются
+отдельной SDI-semantic задачей. Полный отчёт:
+[P20.6 i7 visual closure](../performance%20investigation/reports/p20-06-i7-14700k-visual-closure.md).
 
 ## 7. Rollback
 
