@@ -22,6 +22,10 @@ import type { Template } from './schema.js';
 import { TemplateRenderer, type TemplateRendererOptions, type OnFrameFn } from './domRenderer.js';
 import { classifyRenderGraph } from './layerPromote.js';
 import { isGraphPublishingEnabled, publishTemplateGraph } from './graphPublisher.js';
+import {
+  selectPacingIdentity,
+  type PacingIdentity,
+} from './pacingProtocol.js';
 export type WsStatus = 'connecting' | 'connected' | 'disconnected';
 
 /** A take/update/clear message on /ws/renderer (mirrors §7.4). */
@@ -119,6 +123,21 @@ export class ChannelClient {
 
   /** Current on-air template count (for the control-panel status badge). */
   activeCount(): number { return this.active.size; }
+
+  /**
+   * P20.1: provenance snapshot for one rAF heartbeat. Multiple on-air
+   * templates deliberately remain ambiguous; no arbitrary template is chosen.
+   */
+  getPacingIdentity(): PacingIdentity {
+    return selectPacingIdentity(
+      [...this.active.entries()].map(([templateId, active]) => ({
+        templateId,
+        logicalFrame: active.renderer.getFrame(),
+        graphRevision: active.graphRevision,
+        stateRevision: active.stateRevision,
+      })),
+    );
+  }
 
   // -----------------------------------------------------------------------
   // Internals

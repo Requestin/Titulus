@@ -23,6 +23,46 @@ export interface PacingEvent {
   stateRevision: number;
 }
 
+export interface PacingIdentityCandidate {
+  templateId: string;
+  logicalFrame: number;
+  graphRevision: number;
+  stateRevision: number;
+}
+
+export interface PacingIdentity {
+  activeCount: number;
+  identityValid: boolean;
+  templateId: string | null;
+  logicalFrame: number;
+  graphRevision: number;
+  stateRevision: number;
+}
+
+export function selectPacingIdentity(
+  active: readonly PacingIdentityCandidate[],
+): PacingIdentity {
+  if (active.length !== 1) {
+    return {
+      activeCount: active.length,
+      identityValid: false,
+      templateId: null,
+      logicalFrame: 0,
+      graphRevision: 0,
+      stateRevision: 0,
+    };
+  }
+  const candidate = active[0]!;
+  return {
+    activeCount: 1,
+    identityValid: true,
+    templateId: candidate.templateId,
+    logicalFrame: candidate.logicalFrame,
+    graphRevision: candidate.graphRevision,
+    stateRevision: candidate.stateRevision,
+  };
+}
+
 function validUnsigned(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0;
 }
