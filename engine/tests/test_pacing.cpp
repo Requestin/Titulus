@@ -169,6 +169,7 @@ TEST(DecklinkEventLogWritesScheduleAndCompletionWithoutCallbackIo) {
             .schedule_seq = 7,
             .unix_us = 1'725'000'000'000'000ULL,
             .mono_us = 100,
+            .popped = {},
             .woven = {.field_a_seq = 20, .field_b_seq = 21},
         }), "schedule event unexpectedly overflowed");
         CHECK(log.TryPush({
@@ -176,6 +177,8 @@ TEST(DecklinkEventLogWritesScheduleAndCompletionWithoutCallbackIo) {
             .schedule_seq = 7,
             .unix_us = 1'725'000'000'040'000ULL,
             .mono_us = 40'100,
+            .popped = {},
+            .woven = {},
         }), "completion event unexpectedly overflowed");
     }
     const std::string content = ReadAll(path);
