@@ -81,6 +81,27 @@ function text(id, name, content, x, y, width, height) {
   };
 }
 
+function clock(id, name, x, y, width, height) {
+  return {
+    id,
+    name,
+    type: 'clock',
+    visible: true,
+    locked: true,
+    opacity: 1,
+    blendMode: 'normal',
+    transform: transform(x, y, width, height),
+    groupId: null,
+    mode: 'clock',
+    format: 'HH:mm:ss',
+    style: {
+      ...textStyle,
+      fontSize: 48,
+      align: 'right',
+    },
+  };
+}
+
 export function generateP20MovingBarTemplate() {
   const keyframes = Array.from({ length: FIELD_STATES + 1 }, (_, field) => ({
     id: `p20-semantic-frame-${String(field).padStart(2, '0')}`,
@@ -115,6 +136,7 @@ export function generateP20MovingBarTemplate() {
       rect('p20-marker-track', 'Semantic residue track', BAR_X, 180, BAR_STEP * FIELD_STATES, 720, '#202c34'),
       rect('p20-semantic-bar', 'Semantic residue bar', BAR_X, 180, 18, 720, '#00ff7f'),
       text('p20-marker-title', 'Marker title', 'P20 SEMANTIC MARKER v1', 144, 132, 850, 42),
+      clock('p20-marker-clock', 'P20 operator clock', 1440, 126, 300, 54),
       text('p20-marker-decoder', 'Marker decoder', 'FIELD RESIDUE = (BAR X - 144) / 24  |  MOD 64', 144, 912, 1100, 34),
     ],
     rootStack: [
@@ -122,6 +144,7 @@ export function generateP20MovingBarTemplate() {
       { kind: 'layer', id: 'p20-marker-track' },
       { kind: 'layer', id: 'p20-semantic-bar' },
       { kind: 'layer', id: 'p20-marker-title' },
+      { kind: 'layer', id: 'p20-marker-clock' },
       { kind: 'layer', id: 'p20-marker-decoder' },
     ],
     groupStacks: {},

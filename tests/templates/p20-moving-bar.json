@@ -147,6 +147,47 @@
       }
     },
     {
+      "id": "p20-marker-clock",
+      "name": "P20 operator clock",
+      "type": "clock",
+      "visible": true,
+      "locked": true,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": {
+        "x": 1440,
+        "y": 126,
+        "width": 300,
+        "height": 54,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      },
+      "groupId": null,
+      "mode": "clock",
+      "format": "HH:mm:ss",
+      "style": {
+        "fontFamily": "Arial",
+        "fontSize": 48,
+        "fontWeight": "700",
+        "fill": "#ffffff",
+        "align": "right",
+        "lineHeight": 1,
+        "letterSpacing": 0,
+        "strokeColor": "#000000",
+        "strokeWidth": 2,
+        "dropShadow": false,
+        "dropShadowBlur": 0,
+        "dropShadowColor": "#000000",
+        "dropShadowDistance": 0
+      }
+    },
+    {
       "id": "p20-marker-decoder",
       "name": "Marker decoder",
       "type": "text",
@@ -203,6 +244,10 @@
     {
       "kind": "layer",
       "id": "p20-marker-title"
+    },
+    {
+      "kind": "layer",
+      "id": "p20-marker-clock"
     },
     {
       "kind": "layer",
