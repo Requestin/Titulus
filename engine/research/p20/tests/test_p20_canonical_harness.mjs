@@ -185,4 +185,5 @@ test('canonical harness has bounded process-group cleanup and records aborted ru
   assert.match(source, /flock -n/);
   assert.match(source, /runId/);
   assert.match(source, /output directory must be empty|refusing to reuse/i);
+  assert.match(source, /p20-take\.mjs/);
 });

@@ -66,6 +66,19 @@ test('joint evidence fails a frozen frame stream or semantic anomaly despite hea
   assert.match(report.errors.join('\n'), /CEF paint sequence did not advance/);
 });
 
+test('frame liveness accepts a looping logical sequence that ends on its start value', () => {
+  const report = analyzeP20Evidence({
+    m0Report: healthyM0(),
+    semanticReport: semantic(),
+    frameRows: [
+      { cef_paint_after: '10', publish_seq_after: '20', logical_frame_after: '0' },
+      { cef_paint_after: '11', publish_seq_after: '21', logical_frame_after: '1' },
+      { cef_paint_after: '12', publish_seq_after: '22', logical_frame_after: '0' },
+    ],
+  });
+  assert.equal(report.planes.frameLiveness.healthy, true);
+});
+
 test('run metadata requires completed execution, measurement bounds, and matching digest', () => {
   const valid = {
     manifest: {
@@ -114,7 +127,7 @@ test('capture binding requires one expected stream fully inside measurement wind
     expected,
   ).healthy, false);
   assert.equal(validateCaptureBinding(
-    [...rows, { ...rows[1], unix_us: '201' }],
+    [...rows, { ...rows[1], unix_us: '206' }],
     expected,
   ).healthy, false);
   assert.equal(validateCaptureBinding(

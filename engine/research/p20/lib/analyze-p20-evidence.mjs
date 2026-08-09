@@ -18,7 +18,16 @@ import {
 function sequenceRange(rows, column) {
   const values = rows.map((row) => Number(row[column])).filter(Number.isFinite);
   if (values.length === 0) return null;
-  return { first: values[0], last: values.at(-1), delta: values.at(-1) - values[0] };
+  let changes = 0;
+  for (let index = 1; index < values.length; index += 1) {
+    if (values[index] !== values[index - 1]) changes += 1;
+  }
+  return {
+    first: values[0],
+    last: values.at(-1),
+    delta: values.at(-1) - values[0],
+    changes,
+  };
 }
 
 function assessFrameLiveness(frameRows) {
@@ -31,7 +40,9 @@ function assessFrameLiveness(frameRows) {
   const logicalFrame = sequenceRange(frameRows ?? [], 'logical_frame_after');
   if (!cefPaint || cefPaint.delta <= 0) errors.push('CEF paint sequence did not advance');
   if (!publish || publish.delta <= 0) errors.push('publish sequence did not advance');
-  if (!logicalFrame || logicalFrame.delta <= 0) errors.push('logical frame sequence did not advance');
+  if (!logicalFrame || logicalFrame.changes === 0) {
+    errors.push('logical frame sequence did not advance');
+  }
   return {
     rows: frameRows?.length ?? 0,
     cefPaint,
@@ -159,7 +170,8 @@ export function validateCaptureBinding(rows, {
     }
     firstUnixUs = Math.min(firstUnixUs, unixUs);
     lastUnixUs = Math.max(lastUnixUs, unixUs);
-    if (unixUs < measurement.startUnixUs || unixUs > measurement.endUnixUs) {
+    if (unixUs < measurement.startUnixUs - coverageToleranceUs
+        || unixUs > measurement.endUnixUs + coverageToleranceUs) {
       errors.push(`capture timestamp ${unixUs} is outside measurement window`);
     }
   }

@@ -515,7 +515,7 @@ done
 
 TOKEN="$(<"$TOKEN_FILE")"
 for index in "${!CHANNEL_ARRAY[@]}"; do
-  node "$ROOT/backend/p15-take.mjs" "${CHANNEL_ARRAY[$index]}" "$TEMPLATE" "$TOKEN" \
+  node "$ROOT/backend/p20-take.mjs" "${CHANNEL_ARRAY[$index]}" "$TEMPLATE" "$TOKEN" \
     >>"$RUN_DIR/takes.log" 2>&1
 done
 sleep "$WARMUP"
