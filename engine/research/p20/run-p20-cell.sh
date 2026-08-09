@@ -299,9 +299,11 @@ fi
 printf '%s\n' "$$" >"$LOCK"
 PIDS=()
 cleanup() {
+  set +e
   for pid in "${PIDS[@]:-}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
   for pid in "${PIDS[@]:-}"; do wait "$pid" 2>/dev/null || true; done
   [[ "$(<"$LOCK" 2>/dev/null || true)" == "$$" ]] && rm -f "$LOCK"
+  return 0
 }
 trap cleanup EXIT INT TERM
 ps -eo pid=,ppid=,pgid=,comm=,args= >"$RUN_DIR/processes-at-start.txt"

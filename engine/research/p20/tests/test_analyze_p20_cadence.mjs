@@ -56,6 +56,17 @@ test('excludes startup rows before the supplied measurement boundary', () => {
   assert.equal(report.logicalMotion.poseRate, 50);
 });
 
+test('discards only an incomplete final CSV row from controlled shutdown', () => {
+  const rows = parseFrameLogCsv(
+    `${fixture('p20-cadence-clean-11.csv').trim()}\n2,1100000,600000,0,6`,
+  );
+  const report = analyzeP20Cadence(rows);
+
+  assert.equal(rows.trailingPartialRows, 1);
+  assert.equal(report.sourceRows, 5);
+  assert.equal(report.trailingPartialRows, 1);
+});
+
 test('fails closed for missing or contradictory runtime provenance', () => {
   assert.throws(
     () => parseFrameLogCsv(fixture('p20-cadence-missing-provenance.csv')),

@@ -92,7 +92,28 @@ function assertColumns(rows) {
 export function parseFrameLogCsv(text) {
   const rows = parseCsv(text);
   assertColumns(rows);
-  return rows;
+  const complete = [];
+  let trailingPartialRows = 0;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const incomplete = REQUIRED_COLUMNS.some((column) => (
+      row[column] === undefined || String(row[column]).trim() === ''
+    ));
+    if (!incomplete) {
+      complete.push(row);
+      continue;
+    }
+    if (index !== rows.length - 1) {
+      throw new Error(`incomplete FrameLog v2 row before EOF at row ${index + 2}`);
+    }
+    trailingPartialRows = 1;
+  }
+  Object.defineProperty(complete, 'headers', { value: rows.headers, enumerable: false });
+  Object.defineProperty(complete, 'trailingPartialRows', {
+    value: trailingPartialRows,
+    enumerable: false,
+  });
+  return complete;
 }
 
 function eventFromRow(row) {
@@ -205,6 +226,7 @@ export function analyzeP20Cadence(rows, { warmupUnixUs = 0 } = {}) {
   return {
     schemaVersion: 'p20-cadence-v1',
     sourceRows: rows.length,
+    trailingPartialRows: rows.trailingPartialRows ?? 0,
     measuredRows: measuredRows.length,
     runtimeEvents: events.length,
     measurement: {
