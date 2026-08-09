@@ -497,7 +497,21 @@ struct DecklinkConsumer::Impl {
             }
             frame_queue_.push_back(std::move(packed));
         }
-        if (have_overwritten) RecycleInputBuffer(std::move(overwritten.bytes));
+        if (have_overwritten) {
+            // A source frame removed from the bounded queue must be explicit
+            // in the provenance stream. It lets P20 distinguish intentional
+            // queue overwrite from an unexplained schedule-source gap.
+            if (event_log_ && event_log_->enabled()) {
+                const FrameLogClockSample clocks = CaptureFrameLogClocks();
+                event_log_->TryPush({
+                    .type = DecklinkEventType::InputOverwrite,
+                    .unix_us = clocks.unix_us,
+                    .mono_us = clocks.mono_us,
+                    .popped = {.field_a_seq = overwritten.seq},
+                });
+            }
+            RecycleInputBuffer(std::move(overwritten.bytes));
+        }
 
         RecordStageTime(copy_us_sum_, copy_us_max_, copy_us_count_, t_total);
     }

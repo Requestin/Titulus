@@ -80,7 +80,7 @@ function finalTelemetry(engineLog) {
   };
 }
 
-function scheduleSourceGaps(schedules) {
+function scheduleSourceGaps(schedules, overwrittenSourceIds) {
   const errors = [];
   let previousPairEnd = null;
   for (const schedule of schedules) {
@@ -92,7 +92,12 @@ function scheduleSourceGaps(schedules) {
       continue;
     }
     if (previousPairEnd !== null && first !== previousPairEnd + 1) {
-      errors.push(`source sequence gap before schedule_seq=${schedule.schedule_seq}`);
+      for (let sourceId = previousPairEnd + 1; sourceId < first; sourceId += 1) {
+        if (!overwrittenSourceIds.has(sourceId)) {
+          errors.push(`source sequence gap before schedule_seq=${schedule.schedule_seq}`);
+          break;
+        }
+      }
     }
     previousPairEnd = second;
   }
@@ -106,6 +111,16 @@ export function analyzeP20M0({ eventRows, engineLog }) {
   const errors = [];
   const schedules = eventRows.filter((row) => row.event === 'schedule');
   const completions = eventRows.filter((row) => row.event === 'completion');
+  const overwrites = eventRows.filter((row) => row.event === 'input_overwrite');
+  const overwrittenSourceIds = new Set();
+  for (const overwrite of overwrites) {
+    const sourceId = positive(overwrite, 'popped_a');
+    if (sourceId === 0) errors.push('input_overwrite without popped_a source ID');
+    if (overwrittenSourceIds.has(sourceId)) {
+      errors.push(`duplicate input_overwrite source_id=${sourceId}`);
+    }
+    overwrittenSourceIds.add(sourceId);
+  }
   const scheduleBySeq = new Map();
   for (const schedule of schedules) {
     const seq = positive(schedule, 'schedule_seq');
@@ -131,16 +146,21 @@ export function analyzeP20M0({ eventRows, engineLog }) {
     }
   }
 
-  errors.push(...scheduleSourceGaps(schedules));
+  errors.push(...scheduleSourceGaps(schedules, overwrittenSourceIds));
   const telemetry = finalTelemetry(engineLog);
   for (const [name, value] of Object.entries(telemetry)) {
+    if (name === 'overwrite') continue;
     if (value !== 0) errors.push(`${name === 'eventOverflow' ? 'event_overflow' : name}=${value}`);
+  }
+  if (telemetry.overwrite !== overwrites.length) {
+    errors.push(`overwrite telemetry=${telemetry.overwrite} differs from input_overwrite events=${overwrites.length}`);
   }
 
   return {
     schemaVersion: 'p20-m0-v1',
     schedules: schedules.length,
     completions: completions.length,
+    inputOverwrites: overwrites.length,
     shutdownTail: unmatched,
     telemetry,
     errors: [...new Set(errors)],
