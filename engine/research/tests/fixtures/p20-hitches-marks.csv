@@ -1,0 +1,4 @@
+note,event,unix_us
+"operator saw a hitch",freeze,1051000
+"expected control",control,1500000
+"distant control",control,3000000
