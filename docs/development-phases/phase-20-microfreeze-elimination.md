@@ -1,6 +1,6 @@
 # Phase 20 — Residual Microfreeze Evidence and Elimination
 
-**Статус:** planned after P20.1 cadence baseline.
+**Статус:** P20.1 provenance/M0 PASS; loopback L0/L1 and M1 pending.
 **Supersedes as an execution checklist:** the plan-only portions of
 [06-microfreeze-elimination.md](../performance%20investigation/06-microfreeze-elimination.md).
 **Does not supersede:** its historical observations, safety constraints and
@@ -37,8 +37,8 @@ Completed:
 Not completed:
 
 - historical Phase 14 was intentionally skipped;
-- `mark-freeze.sh`, per-completion late-log and
-  `analyze-microfreeze.mjs` exist only as design text in Doc 06;
+- P20.1 has not yet proved semantic field order after the SDI wire; only
+  loopback L1 can do that;
 - V8 MemoryReducer, THP/khugepaged and DeckLink-driver A/Bs were never
   causally ranked;
 - `telemetry5s` remains insufficient for 50–200 ms events.
@@ -67,6 +67,23 @@ It has no specified Unix epoch.
 
 All CSV writers are opt-in and buffered. No capture or diagnostic I/O may be
 enabled by default in the DeckLink hot path.
+
+### M0 readiness result — 2026-08-09
+
+P20.1 now provides FrameLog v2, `BGPACING v1`, buffered DeckLink
+schedule/completion events, explicit bounded-queue `input_overwrite` events,
+operator marks and the microfreeze/semantic analysers. Formal 1ch
+provenance-OFF/ON overhead and 3ch M0 passed; exact artifacts and limits are
+in [P20.1 M0 readiness evidence](../performance%20investigation/reports/p20-01-m0-readiness.md).
+
+The ON-vs-OFF `pump_active_us` p95 delta was `+0.207 ms`, below the P20.1
+limit `max(5%, 0.5 ms) = 0.5 ms`. The 3ch five-minute run had zero
+`late/drop/flush`, zero event logger overflow, no reference unlock, monotonic
+event clocks and complete schedule→completion records except the expected
+three-frame controlled-shutdown tail per channel. ch2/ch3 recorded two/one
+queue overwrites; they are explicit source-ID events matching consumer
+telemetry, not hidden logger loss. This is instrumentation readiness, not
+cadence or microfreeze elimination.
 
 ### Detector implementation
 

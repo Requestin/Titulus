@@ -168,6 +168,41 @@ Rollback has no migration or cache cleanup requirement. Flag-off restores the
 legacy monolith `OnPaint → FrameRing` path. Unsupported/non-allowlisted graphs
 also fall back automatically and must never produce approximate mixed output.
 
+### P20 provenance/M0 cell
+
+Для Phase 20 используйте только canonical entrypoint; он запрещает пересечение
+CPU masks и параллельный Titulus engine, сохраняет config digest и ждёт
+нормальное завершение engine для полного CSV:
+
+```bash
+TOKEN_FILE=/tmp/titulus-p20-canonical-token \
+engine/research/p20/run-p20-cell.sh 1ch \
+  --channels=1 --out-dir=/tmp/titulus-p20-m0/off \
+  --duration=120 --warmup=10 --layered=off --raster-threads=3 \
+  --pacing-mode=accumulator --provenance=off --execute --confirm-decklink
+
+TOKEN_FILE=/tmp/titulus-p20-canonical-token \
+engine/research/p20/run-p20-cell.sh 3ch \
+  --channels=1,2,3 --out-dir=/tmp/titulus-p20-m0/three-channel \
+  --duration=300 --warmup=10 --layered=off --raster-threads=3 \
+  --pacing-mode=accumulator --provenance=on --execute --confirm-decklink
+```
+
+Проверка каждого provenance-enabled channel:
+
+```bash
+node engine/research/p20/lib/analyze-p20-m0.mjs \
+  --events=/tmp/titulus-p20-m0/three-channel/ch1/decklink-completion.csv \
+  --engine-log=/tmp/titulus-p20-m0/three-channel/ch1/engine.log
+```
+
+`--provenance=off` выключает P20 runtime/completion logging; общий FrameLog
+остаётся в обоих плечах только для честного p95 A/B. `accumulator` намеренно
+может выглядеть как 20–25 unique poses/s при здоровых 50 fields/s — это
+известный P20 cadence baseline, не визуальный PASS. Для development visual
+control используйте явный `--pacing-mode=one-tick`; он не заменяет L1 SDI
+loopback.
+
 ## 9. Blink research (bench)
 
 ```bash

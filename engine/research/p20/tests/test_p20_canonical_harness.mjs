@@ -31,6 +31,22 @@ function runDryCell(outDir, extra = []) {
   });
 }
 
+function runDryOneCell(outDir, extra = []) {
+  return execFileSync('bash', [
+    harness.pathname,
+    '1ch',
+    '--channels=00000000-0000-4000-8000-000000000001',
+    `--out-dir=${outDir}`,
+    '--duration=30',
+    '--warmup=10',
+    ...extra,
+  ], {
+    cwd: repoRoot.pathname,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+}
+
 function manifest(outDir, name = 'manifest.json') {
   return JSON.parse(readFileSync(join(outDir, name), 'utf8'));
 }
@@ -49,6 +65,7 @@ test('canonical 3ch dry-run writes equal channel digests and explicit environmen
   assert.equal(root.config.environment.BG_LAYERED_COMPOSITOR_ALLOWLIST, null);
   assert.equal(root.config.environment.BG_NUM_RASTER_THREADS, '3');
   assert.equal(root.config.pacingMode, 'accumulator');
+  assert.equal(root.config.provenance, 'on');
   assert.equal(root.config.url.includes('pacing=1'), true);
   assert.equal(root.config.url.includes('graph=1'), true);
   assert.match(root.configDigest, /^[a-f0-9]{64}$/);
@@ -60,6 +77,7 @@ test('canonical 3ch dry-run writes equal channel digests and explicit environmen
     assert.equal(channel.channel.index, index);
     assert.equal(channel.channel.cpuMask, root.config.cpuMasks[index - 1]);
     assert.equal(channel.channel.deviceIndex, root.config.deviceIndexes[index - 1]);
+    assert.equal(channel.plannedCommand.includes('--duration=100'), true);
     assert.match(channel.plannedCommand.join(' '), /--frame-log=/);
     assert.match(channel.plannedCommand.join(' '), /--decklink-completion-log=/);
   }
@@ -87,6 +105,28 @@ test('one-tick P20.3 cell is explicit in its digest and engine URL', () => {
   assert.equal(manifestOneTick.config.pacingMode, 'one_tick');
   assert.match(manifestOneTick.config.url, /pacing_mode=one_tick/);
   assert.notEqual(manifest(baseline).configDigest, manifestOneTick.configDigest);
+});
+
+test('P20.1 provenance-off baseline keeps the common performance recorder only', () => {
+  const off = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-provenance-off-'));
+  runDryCell(off, ['--provenance=off']);
+
+  const root = manifest(off);
+  const channel = manifest(off, 'ch1/manifest.json');
+  assert.equal(root.config.provenance, 'off');
+  assert.match(root.config.url, /pacing=0/);
+  assert.match(channel.plannedCommand.join(' '), /--frame-log=/);
+  assert.doesNotMatch(channel.plannedCommand.join(' '), /--decklink-completion-log=/);
+});
+
+test('canonical 1ch defaults to the first physical-safe map entry', () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-one-channel-'));
+  runDryOneCell(outDir);
+
+  const root = manifest(outDir);
+  assert.deepEqual(root.config.cpuMasks, ['0,6,1,7']);
+  assert.deepEqual(root.config.deviceIndexes, [1]);
+  assert.deepEqual(root.config.startOffsetsMs, [0]);
 });
 
 test('canonical cell rejects an unsafe duplicate CPU assignment before execution', () => {

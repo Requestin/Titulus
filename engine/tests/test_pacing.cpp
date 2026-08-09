@@ -180,6 +180,13 @@ TEST(DecklinkEventLogWritesScheduleAndCompletionWithoutCallbackIo) {
             .popped = {},
             .woven = {},
         }), "completion event unexpectedly overflowed");
+        CHECK(log.TryPush({
+            .type = bg::DecklinkEventType::InputOverwrite,
+            .unix_us = 1'725'000'000'050'000ULL,
+            .mono_us = 50'100,
+            .popped = {.field_a_seq = 22},
+            .woven = {},
+        }), "input overwrite event unexpectedly overflowed");
     }
     const std::string content = ReadAll(path);
     std::filesystem::remove(path);
@@ -189,6 +196,8 @@ TEST(DecklinkEventLogWritesScheduleAndCompletionWithoutCallbackIo) {
           "schedule row missing");
     CHECK(content.find("completion,7,1725000000040000,40100") != std::string::npos,
           "completion row missing");
+    CHECK(content.find("input_overwrite,0,1725000000050000,50100") != std::string::npos,
+          "input overwrite row missing");
 }
 
 int main() {

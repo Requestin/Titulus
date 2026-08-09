@@ -83,6 +83,23 @@ poses/s, а one-tick — 49.982/49.966/49.994 poses/s с `(1,1)=1.0000` и
 `(2,0)=0.0000` на всех трёх каналах. Это internal provenance pass, не
 заменяющий P20.2 loopback и visual/microfreeze acceptance.
 
+### P20.1 M0 readiness — 2026-08-09
+
+Формальный 1ch provenance OFF/ON и 3ch 5-minute M0 завершены PASS:
+`pump_active_us` p95 вырос с 1.255 до 1.462 ms (`+0.207 ms`, меньше
+разрешённых 0.5 ms), а все три канала получили zero
+DeckLink `late/drop/flush`, `event_overflow=0` и no `ref=UNLOCKED`.
+Schedule/completion CSV имеет monotonic clocks, три preroll completion и
+только ожидаемый shutdown tail из трёх schedules. ch2/ch3 queue overwrite
+были явно записаны с source ID и совпали с consumer telemetry.
+
+M0 одновременно подтвердил наблюдение оператора, но не является его
+устранением: в 3ch accumulator run ch1 дал 25.002 logical poses/s при
+CEF/publish 49.971 Hz, ch2/ch3 — 49.948/49.797 poses/s. Следовательно,
+увиденные 20–25 FPS в accumulator test — известная systematical timeline
+cadence, а не DeckLink drop. Подробные артефакты, правило graceful teardown и
+границы вывода — в [P20.1 M0 readiness evidence](../performance%20investigation/reports/p20-01-m0-readiness.md).
+
 ## 4. Рабочие гипотезы
 
 ### H20.1 — batch cadence в decklink-driven path
