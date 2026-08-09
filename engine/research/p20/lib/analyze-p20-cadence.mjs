@@ -137,13 +137,14 @@ function stableEventSignature(event) {
   ].join(':');
 }
 
-function dedupeRuntimeEvents(rows, warmupUnixUs) {
+function dedupeRuntimeEvents(rows, warmupUnixUs, measurementEndUnixUs) {
   const events = [];
   const seen = new Map();
   let previousMonoUs = -1;
   for (const row of rows) {
     const event = eventFromRow(row);
     if (event.unixUs < warmupUnixUs) continue;
+    if (measurementEndUnixUs !== undefined && event.unixUs >= measurementEndUnixUs) continue;
     if (event.monoUs < previousMonoUs) throw new Error('frame log mono_us must be non-decreasing');
     previousMonoUs = event.monoUs;
     if (event.runtimeEventSeq === 0) throw new Error('frame log has missing runtime provenance (runtime_event_seq=0)');
@@ -207,16 +208,29 @@ function tickPairDistribution(events) {
 }
 
 /**
- * `warmupUnixUs` is an observed boundary from a canonical run manifest; it
- * does not infer warm-up from event counts or nominal wall time.
+ * Boundaries are observed from a canonical run manifest; they do not infer
+ * warm-up or shutdown duration from event counts or nominal wall time.
  */
-export function analyzeP20Cadence(rows, { warmupUnixUs = 0 } = {}) {
+export function analyzeP20Cadence(
+  rows,
+  { warmupUnixUs = 0, measurementEndUnixUs = undefined } = {},
+) {
   assertColumns(rows);
   if (!Number.isSafeInteger(warmupUnixUs) || warmupUnixUs < 0) {
     throw new Error('warmupUnixUs must be a non-negative integer');
   }
-  const measuredRows = rows.filter((row) => unsigned(row, 'unix_us') >= warmupUnixUs);
-  const events = dedupeRuntimeEvents(rows, warmupUnixUs);
+  if (
+    measurementEndUnixUs !== undefined
+    && (!Number.isSafeInteger(measurementEndUnixUs) || measurementEndUnixUs <= warmupUnixUs)
+  ) {
+    throw new Error('measurementEndUnixUs must be an integer after warmupUnixUs');
+  }
+  const measuredRows = rows.filter((row) => {
+    const unixUs = unsigned(row, 'unix_us');
+    return unixUs >= warmupUnixUs
+      && (measurementEndUnixUs === undefined || unixUs < measurementEndUnixUs);
+  });
+  const events = dedupeRuntimeEvents(rows, warmupUnixUs, measurementEndUnixUs);
   let positiveMotionTransitions = 0;
   for (let index = 1; index < events.length; index += 1) {
     if (events[index].logicalFrameAfter - events[index - 1].logicalFrameAfter > 0) {
@@ -260,16 +274,20 @@ export function main(argv = process.argv.slice(2)) {
   const opts = options(argv);
   if (!opts.in || opts.help) {
     process.stderr.write(
-      'Usage: analyze-p20-cadence.mjs --in=frame.csv [--warmup-unix-us=US] [--out=report.json]\n',
+      'Usage: analyze-p20-cadence.mjs --in=frame.csv [--warmup-unix-us=US] '
+      + '[--measurement-end-unix-us=US] [--out=report.json]\n',
     );
     return opts.help ? 0 : 1;
   }
   const warmupUnixUs = opts['warmup-unix-us'] === undefined
     ? 0
     : Number(opts['warmup-unix-us']);
+  const measurementEndUnixUs = opts['measurement-end-unix-us'] === undefined
+    ? undefined
+    : Number(opts['measurement-end-unix-us']);
   const report = analyzeP20Cadence(
     parseFrameLogCsv(readFileSync(opts.in, 'utf8')),
-    { warmupUnixUs },
+    { warmupUnixUs, measurementEndUnixUs },
   );
   const output = `${JSON.stringify(report, null, 2)}\n`;
   if (opts.out) writeFileSync(opts.out, output);
