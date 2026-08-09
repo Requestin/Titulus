@@ -1,6 +1,6 @@
 // engine/src/decklink_event_log.h
 //
-// Opt-in, bounded SPSC event writer for DeckLink callback provenance.
+// Opt-in, bounded event writer for DeckLink callback provenance.
 
 #ifndef BG_ENGINE_DECKLINK_EVENT_LOG_H
 #define BG_ENGINE_DECKLINK_EVENT_LOG_H
@@ -66,6 +66,9 @@ class DecklinkEventLog {
 
     std::FILE* file_ = nullptr;
     std::array<DecklinkEvent, kCapacity> ring_{};
+    // DeckLink does not promise that completion callbacks are serialized.
+    // Producers never wait: a concurrent producer drops its event explicitly.
+    std::atomic_flag producer_lock_ = ATOMIC_FLAG_INIT;
     std::atomic<size_t> write_index_{0};
     std::atomic<size_t> read_index_{0};
     std::atomic<uint64_t> overflow_count_{0};

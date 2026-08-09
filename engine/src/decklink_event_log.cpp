@@ -52,14 +52,20 @@ DecklinkEventLog::~DecklinkEventLog() {
 
 bool DecklinkEventLog::TryPush(const DecklinkEvent& event) noexcept {
     if (!file_) return false;
+    if (producer_lock_.test_and_set(std::memory_order_acquire)) {
+        overflow_count_.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
     const size_t write = write_index_.load(std::memory_order_relaxed);
     const size_t next = (write + 1) % kCapacity;
     if (next == read_index_.load(std::memory_order_acquire)) {
         overflow_count_.fetch_add(1, std::memory_order_relaxed);
+        producer_lock_.clear(std::memory_order_release);
         return false;
     }
     ring_[write] = event;
     write_index_.store(next, std::memory_order_release);
+    producer_lock_.clear(std::memory_order_release);
     wake_cv_.notify_one();
     return true;
 }
