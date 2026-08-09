@@ -86,6 +86,9 @@ TEST(FrameLogV2WritesDualClocksAndPacingColumns) {
             .mono_us = 123'456ULL,
             .interval_us = 20'000,
             .begin_frame_token = 7,
+            .cef_seq_at_send = 40,
+            .publish_seq_at_send = 50,
+            .wait_exit_reason = bg::FrameWaitExitReason::CefPaint,
             .batch_id = 3,
             .batch_index = 1,
             .batch_size = 2,
@@ -104,9 +107,12 @@ TEST(FrameLogV2WritesDualClocksAndPacingColumns) {
     const std::string content = ReadAll(path);
     std::filesystem::remove(path);
     CHECK(content.starts_with(
-              "schema_version,unix_us,mono_us,interval_us,begin_frame_token,batch_id,"),
+              "schema_version,unix_us,mono_us,interval_us,begin_frame_token,"
+              "cef_seq_at_send,publish_seq_at_send,wait_exit_reason,batch_id,"),
           "v2 header must lead with explicit dual-clock columns");
-    CHECK(content.find("1725000000123456,123456,20000,7,3,1,2,40,41,50,51,cef_forward")
+    CHECK(content.find(
+              "1725000000123456,123456,20000,7,40,50,cef_paint,3,1,2,40,41,50,51,"
+              "cef_forward")
               != std::string::npos,
           "v2 record must preserve explicit provenance values");
     CHECK(content.find("wall_clock_us") == std::string::npos,
