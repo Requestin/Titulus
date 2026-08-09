@@ -16,6 +16,7 @@ export * from './maskGeometry.js';
 export * from './layerPromote.js';
 export * from './graphProtocol.js';
 export * from './graphPublisher.js';
+export * from './pacingProtocol.js';
 export * from './renderGraphFrame.js';
 export * from './domRenderer.js';
 export * from './channelClient.js';
