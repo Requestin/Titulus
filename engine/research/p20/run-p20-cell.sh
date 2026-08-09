@@ -18,6 +18,11 @@ LAYERED="off"
 RASTER_THREADS=3
 PACING_MODE="accumulator"
 PROVENANCE="on"
+TOKEN_ARMED_WAIT=0
+LOOPBACK_CAPTURE_BIN=""
+LOOPBACK_INPUT_DEVICE=""
+LOOPBACK_OUTPUT_CHANNEL=""
+LOOPBACK_CAPTURE_INPUT=""
 CPU_MASKS="0,6,1,7;2,8,3,9;4,10,5,11"
 DEVICE_INDEXES="1,2,3"
 START_OFFSETS_MS="0,0,0"
@@ -49,6 +54,11 @@ Options:
   --raster-threads=N         Explicit BG_NUM_RASTER_THREADS (default 3)
   --pacing-mode=MODE         accumulator|one-tick (default accumulator)
   --provenance=on|off        P20 runtime + DeckLink event logs (default on)
+  --token-armed-wait         Complete waits only on post-send CEF paint
+  --loopback-capture-bin=PATH  Observer capture binary (1ch only)
+  --loopback-input-device=N    DeckLink input device for observer capture
+  --loopback-output-channel=T  Safe output label recorded in capture CSV
+  --loopback-capture-input=T   Safe physical input label recorded in capture CSV
   --cpu-masks=A;B;C          Safe-mask permutation for the selected channels
   --device-indexes=A,B,C     Device-index permutation for selected channels
   --start-offsets-ms=A,B,C   Controlled spawn offsets (0/5/10 for matrix D)
@@ -84,6 +94,11 @@ for arg in "$@"; do
     --raster-threads=*) RASTER_THREADS="${arg#*=}" ;;
     --pacing-mode=*) PACING_MODE="${arg#*=}" ;;
     --provenance=*) PROVENANCE="${arg#*=}" ;;
+    --token-armed-wait) TOKEN_ARMED_WAIT=1 ;;
+    --loopback-capture-bin=*) LOOPBACK_CAPTURE_BIN="${arg#*=}" ;;
+    --loopback-input-device=*) LOOPBACK_INPUT_DEVICE="${arg#*=}" ;;
+    --loopback-output-channel=*) LOOPBACK_OUTPUT_CHANNEL="${arg#*=}" ;;
+    --loopback-capture-input=*) LOOPBACK_CAPTURE_INPUT="${arg#*=}" ;;
     --cpu-masks=*) CPU_MASKS="${arg#*=}"; CPU_MASKS_EXPLICIT=1 ;;
     --device-indexes=*) DEVICE_INDEXES="${arg#*=}"; DEVICE_INDEXES_EXPLICIT=1 ;;
     --start-offsets-ms=*) START_OFFSETS_MS="${arg#*=}"; START_OFFSETS_EXPLICIT=1 ;;
@@ -107,6 +122,15 @@ esac
 [[ "$DURATION" =~ ^[0-9]+$ && "$DURATION" -ge 30 ]] || fail "--duration must be an integer >= 30"
 [[ "$WARMUP" =~ ^[0-9]+$ && "$WARMUP" -ge 10 ]] || fail "--warmup must be an integer >= 10"
 [[ "$RASTER_THREADS" =~ ^[1-9][0-9]*$ ]] || fail "--raster-threads must be a positive integer"
+LOOPBACK_ENABLED=0
+if [[ -n "$LOOPBACK_CAPTURE_BIN$LOOPBACK_INPUT_DEVICE$LOOPBACK_OUTPUT_CHANNEL$LOOPBACK_CAPTURE_INPUT" ]]; then
+  [[ -n "$LOOPBACK_CAPTURE_BIN" && -n "$LOOPBACK_INPUT_DEVICE" \
+    && -n "$LOOPBACK_OUTPUT_CHANNEL" && -n "$LOOPBACK_CAPTURE_INPUT" ]] \
+    || fail "all loopback capture options must be supplied together"
+  [[ "$LOOPBACK_INPUT_DEVICE" =~ ^[0-9]+$ ]] || fail "--loopback-input-device must be non-negative"
+  [[ "$MODE" == "1ch" ]] || fail "integrated loopback capture currently requires 1ch mode"
+  LOOPBACK_ENABLED=1
+fi
 ENGINE_DURATION=$((WARMUP + DURATION + 60))
 if (( EXECUTE == 1 && CONFIRM_DECKLINK != 1 )); then
   fail "DeckLink execution requires --execute --confirm-decklink"
@@ -116,6 +140,8 @@ fi
 if (( EXECUTE == 1 )); then
   [[ -x "$ENGINE_BIN" ]] || fail "bg_engine is not executable: $ENGINE_BIN"
   [[ -s "$TOKEN_FILE" ]] || fail "missing token file: $TOKEN_FILE"
+  (( LOOPBACK_ENABLED == 0 )) || [[ -x "$LOOPBACK_CAPTURE_BIN" ]] \
+    || fail "loopback capture binary is not executable: $LOOPBACK_CAPTURE_BIN"
 fi
 
 COUNT=1
@@ -164,7 +190,11 @@ for index in $(seq 1 "$COUNT"); do
 done
 
 MARKER_GENERATOR="${ROOT}/engine/research/p20/generate-semantic-marker.mjs"
-node "$MARKER_GENERATOR" --check --out="$TEMPLATE"
+TEST1_MARKER_GENERATOR="${ROOT}/engine/research/p20/generate-test1-marker.mjs"
+case "$TEMPLATE" in
+  */p20-moving-bar.json) node "$MARKER_GENERATOR" --check --out="$TEMPLATE" ;;
+  */p20-test1-marker.json) node "$TEST1_MARKER_GENERATOR" --check --out="$TEMPLATE" ;;
+esac
 
 BACKEND_HOST="${BACKEND_URL#http://}"
 BACKEND_HOST="${BACKEND_HOST#https://}"
@@ -174,6 +204,7 @@ GIT_DIFF_SHA256="$(git -C "$ROOT" diff HEAD --binary | sha256sum | awk '{print $
 ENGINE_SHA256="$(sha256sum "$ENGINE_BIN" 2>/dev/null | awk '{print $1}' || true)"
 RUNTIME_SHA256="$(sha256sum "$RUNTIME_BUNDLE" | awk '{print $1}')"
 TEMPLATE_SHA256="$(sha256sum "$TEMPLATE" | awk '{print $1}')"
+TEMPLATE_PATH="$(realpath --relative-to="$ROOT" "$TEMPLATE")"
 LAYERED_VALUE=0
 [[ "$LAYERED" == "on" ]] && LAYERED_VALUE=1
 PACING_QUERY=0
@@ -191,10 +222,16 @@ export P20_GIT_DIFF_SHA256="$GIT_DIFF_SHA256"
 export P20_ENGINE_SHA256="$ENGINE_SHA256"
 export P20_RUNTIME_SHA256="$RUNTIME_SHA256"
 export P20_TEMPLATE_SHA256="$TEMPLATE_SHA256"
+export P20_TEMPLATE_PATH="$TEMPLATE_PATH"
 export P20_LAYERED_VALUE="$LAYERED_VALUE"
 export P20_RASTER_THREADS="$RASTER_THREADS"
 export P20_PACING_MODE="$PACING_MODE"
 export P20_PROVENANCE="$PROVENANCE"
+export P20_TOKEN_ARMED_WAIT="$TOKEN_ARMED_WAIT"
+export P20_LOOPBACK_ENABLED="$LOOPBACK_ENABLED"
+export P20_LOOPBACK_INPUT_DEVICE="$LOOPBACK_INPUT_DEVICE"
+export P20_LOOPBACK_OUTPUT_CHANNEL="$LOOPBACK_OUTPUT_CHANNEL"
+export P20_LOOPBACK_CAPTURE_INPUT="$LOOPBACK_CAPTURE_INPUT"
 export P20_BACKEND_URL="$BACKEND_URL"
 export P20_URL_PATTERN="$URL_PATTERN"
 export P20_DURATION="$DURATION"
@@ -219,6 +256,12 @@ const config = {
   modeSettings: { displayMode: 'HD1080i50', keyer: 'fill_only', fps: 50 },
   pacingMode: process.env.P20_PACING_MODE,
   provenance: process.env.P20_PROVENANCE,
+  tokenArmedWait: process.env.P20_TOKEN_ARMED_WAIT === '1',
+  loopback: process.env.P20_LOOPBACK_ENABLED === '1' ? {
+    inputDeviceIndex: Number(process.env.P20_LOOPBACK_INPUT_DEVICE),
+    outputChannel: process.env.P20_LOOPBACK_OUTPUT_CHANNEL,
+    captureInput: process.env.P20_LOOPBACK_CAPTURE_INPUT,
+  } : null,
   environment: {
     BG_LAYERED_COMPOSITOR: process.env.P20_LAYERED_VALUE,
     BG_LAYERED_COMPOSITOR_ALLOWLIST: null,
@@ -229,7 +272,7 @@ const config = {
     engineSha256: process.env.P20_ENGINE_SHA256 || null,
     runtimeBundleSha256: process.env.P20_RUNTIME_SHA256,
   },
-  template: { path: 'tests/templates/p20-moving-bar.json', sha256: process.env.P20_TEMPLATE_SHA256 },
+  template: { path: process.env.P20_TEMPLATE_PATH, sha256: process.env.P20_TEMPLATE_SHA256 },
 };
 const serialized = JSON.stringify(config);
 const configDigest = createHash('sha256').update(serialized).digest('hex');
@@ -258,7 +301,13 @@ const root = {
   configDigest,
   config,
   execution: { mode: process.env.P20_EXECUTION_MODE, decklinkArmed: process.env.P20_EXECUTION_MODE === 'execute' },
-  artifacts: { processSnapshot: 'processes-at-start.txt', cadenceAnalysis: 'cadence-analysis.json' },
+      artifacts: {
+        processSnapshot: 'processes-at-start.txt',
+        cadenceAnalysis: 'cadence-analysis.json',
+        captureFields: config.loopback ? 'capture-fields.csv' : null,
+        captureSummary: config.loopback ? 'capture-summary.json' : null,
+        jointEvidence: config.loopback ? 'joint-evidence.json' : null,
+      },
 };
 writeFileSync(`${process.env.P20_RUN_DIR}/manifest.json`, `${JSON.stringify(root, null, 2)}\n`);
 for (let index = 0; index < config.channels.length; index += 1) {
@@ -304,6 +353,7 @@ for index in "${!CHANNEL_ARRAY[@]}"; do
   )
   [[ "$PROVENANCE" == "on" ]] && cmd+=("--decklink-completion-log=${channel_dir}/decklink-completion.csv")
   (( LAYERED_VALUE == 1 )) && cmd+=(--layered-compositor)
+  (( TOKEN_ARMED_WAIT == 1 )) && cmd+=(--decklink-token-armed-wait)
   printf '%s\0' "${cmd[@]}" | node -e '
     let data = ""; process.stdin.on("data", c => { data += c; });
     process.stdin.on("end", () => {
@@ -316,6 +366,31 @@ for index in "${!CHANNEL_ARRAY[@]}"; do
     });
   ' "$channel_dir/manifest.json"
 done
+
+if (( LOOPBACK_ENABLED == 1 )); then
+  capture_cmd=(
+    "$LOOPBACK_CAPTURE_BIN"
+    "--device-index=${LOOPBACK_INPUT_DEVICE}"
+    "--duration-sec=${DURATION}"
+    "--field-order=tff"
+    "--output-channel=${LOOPBACK_OUTPUT_CHANNEL}"
+    "--capture-input=${LOOPBACK_CAPTURE_INPUT}"
+    "--run-id=${RUN_ID}"
+    "--config-digest=${CONFIG_DIGEST}"
+    "--summary=${RUN_DIR}/capture-summary.json"
+    "--csv=${RUN_DIR}/capture-fields.csv"
+  )
+  printf '%s\0' "${capture_cmd[@]}" | node -e '
+    let data = ""; process.stdin.on("data", c => { data += c; });
+    process.stdin.on("end", () => {
+      const path = process.argv[1];
+      const fs = require("fs");
+      const manifest = JSON.parse(fs.readFileSync(path, "utf8"));
+      manifest.plannedCaptureCommand = data.split("\0").filter(Boolean);
+      fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+    });
+  ' "$RUN_DIR/manifest.json"
+fi
 
 printf '[p20-cell] manifest: %s/manifest.json\n' "$RUN_DIR"
 printf '[p20-cell] config digest: %s\n' "$CONFIG_DIGEST"
@@ -417,6 +492,7 @@ for index in "${!CHANNEL_ARRAY[@]}"; do
   )
   [[ "$PROVENANCE" == "on" ]] && cmd+=("--decklink-completion-log=${channel_dir}/decklink-completion.csv")
   (( LAYERED_VALUE == 1 )) && cmd+=(--layered-compositor)
+  (( TOKEN_ARMED_WAIT == 1 )) && cmd+=(--decklink-token-armed-wait)
   setsid env -u BG_LAYERED_COMPOSITOR -u BG_LAYERED_COMPOSITOR_ALLOWLIST -u BG_NUM_RASTER_THREADS \
     "BG_LAYERED_COMPOSITOR=${LAYERED_VALUE}" "BG_NUM_RASTER_THREADS=${RASTER_THREADS}" \
     taskset -c "${MASK_ARRAY[$index]}" "${cmd[@]}" >"$channel_dir/engine.log" 2>&1 &
@@ -443,6 +519,21 @@ for index in "${!CHANNEL_ARRAY[@]}"; do
     >>"$RUN_DIR/takes.log" 2>&1
 done
 sleep "$WARMUP"
+if (( LOOPBACK_ENABLED == 1 )); then
+  setsid "${capture_cmd[@]}" >"$RUN_DIR/capture.log" 2>&1 &
+  PIDS+=("$!")
+  capture_pid="$!"
+  capture_ready=0
+  for _ in $(seq 1 100); do
+    grep -q '\[p20-field-capture\] capturing ' "$RUN_DIR/capture.log" && {
+      capture_ready=1
+      break
+    }
+    kill -0 "$capture_pid" 2>/dev/null || fail "loopback capture exited before readiness"
+    sleep 0.1
+  done
+  (( capture_ready == 1 )) || fail "loopback capture readiness timeout"
+fi
 MEASURE_START_UNIX_US="$(date -u +%s%6N)"
 sleep "$DURATION"
 MEASURE_END_UNIX_US="$(date -u +%s%6N)"
@@ -484,6 +575,16 @@ manifest.measurement = {
 };
 writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
 NODE
-RUN_COMPLETED=1
 write_run_status "completed" "graceful"
+if (( LOOPBACK_ENABLED == 1 )); then
+  node "$ROOT/engine/research/p20/lib/analyze-p20-evidence.mjs" \
+    --run-dir="$RUN_DIR" \
+    --capture="$RUN_DIR/capture-fields.csv" \
+    --capture-summary="$RUN_DIR/capture-summary.json" \
+    --channel=1 \
+    --output-channel="$LOOPBACK_OUTPUT_CHANNEL" \
+    --capture-input="$LOOPBACK_CAPTURE_INPUT" \
+    --out="$RUN_DIR/joint-evidence.json"
+fi
+RUN_COMPLETED=1
 printf '[p20-cell] completed: %s\n' "$RUN_DIR"

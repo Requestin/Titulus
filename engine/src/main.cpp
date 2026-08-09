@@ -9,6 +9,7 @@
 //              record cadence into Stats.
 
 #include "config.h"
+#include "cef_paint_wait.h"
 #include "engine_app.h"
 #include "engine_client.h"
 #include "consumers/consumer.h"
@@ -460,6 +461,9 @@ int main(int argc, char** argv) {
                     paint_seq.load(std::memory_order_acquire);
                 const uint64_t cef_paint_before = client->cef_paint_seq();
                 uint64_t begin_frame_token = 0;
+                uint64_t cef_seq_at_send = 0;
+                uint64_t publish_seq_at_send = 0;
+                bool request_sent = false;
 
                 if (browser_ready.load(std::memory_order_acquire)) {
                     if (g_live_pipeline) g_live_pipeline->OnTick();
@@ -471,7 +475,10 @@ int main(int argc, char** argv) {
                     if (CefRefPtr<CefBrowser> b = client->browser()) {
                         if (auto host = b->GetHost()) {
                             begin_frame_token = ++next_begin_frame_token;
+                            cef_seq_at_send = client->cef_paint_seq();
+                            publish_seq_at_send = paint_seq.load(std::memory_order_acquire);
                             host->SendExternalBeginFrame();
+                            request_sent = true;
                         }
                     }
                 }
@@ -494,14 +501,42 @@ int main(int argc, char** argv) {
                 // up to ~20ms of wait budget; Phase 18 Fallback only removes
                 // the *post*-paint sleep before the next sub-tick so two
                 // sequential rasters can share one ~40ms output-frame window.
+                bg::FrameWaitExitReason wait_exit_reason =
+                    bg::FrameWaitExitReason::NoRequest;
                 while (true) {
                     const auto pump_t0 = std::chrono::steady_clock::now();
                     CefDoMessageLoopWork();
                     pump_active_us += std::chrono::duration_cast<std::chrono::microseconds>(
                         std::chrono::steady_clock::now() - pump_t0).count();
-                    if (paint_seq.load(std::memory_order_acquire) != last_delivered_seq) break;
                     const auto now = std::chrono::steady_clock::now();
-                    if (now >= tick_deadline) break;
+                    if (cfg.decklink_token_armed_wait) {
+                        const auto decision = bg::DecideCefPaintWait({
+                            .request_sent = request_sent,
+                            .cef_seq_at_send = cef_seq_at_send,
+                            .cef_seq_now = client->cef_paint_seq(),
+                            .deadline_reached = now >= tick_deadline,
+                        });
+                        if (decision == bg::CefPaintWaitDecision::PaintObserved) {
+                            wait_exit_reason = bg::FrameWaitExitReason::CefPaint;
+                            break;
+                        }
+                        if (decision == bg::CefPaintWaitDecision::Timeout) {
+                            wait_exit_reason = bg::FrameWaitExitReason::Timeout;
+                            break;
+                        }
+                        if (decision == bg::CefPaintWaitDecision::NoRequest) break;
+                    } else {
+                        if (paint_seq.load(std::memory_order_acquire) != last_delivered_seq) {
+                            wait_exit_reason = bg::FrameWaitExitReason::LegacyPublish;
+                            break;
+                        }
+                        if (now >= tick_deadline) {
+                            wait_exit_reason = request_sent
+                                ? bg::FrameWaitExitReason::Timeout
+                                : bg::FrameWaitExitReason::NoRequest;
+                            break;
+                        }
+                    }
                     const auto remaining = tick_deadline - now;
                     const auto slice = remaining < std::chrono::microseconds(4000)
                         ? remaining
@@ -544,6 +579,9 @@ int main(int argc, char** argv) {
                         .mono_us = clocks.mono_us,
                         .interval_us = interval_us,
                         .begin_frame_token = begin_frame_token,
+                        .cef_seq_at_send = cef_seq_at_send,
+                        .publish_seq_at_send = publish_seq_at_send,
+                        .wait_exit_reason = wait_exit_reason,
                         .batch_id = batch_id,
                         .batch_index = static_cast<uint32_t>(t),
                         .batch_size = static_cast<uint32_t>(run_ticks),
@@ -556,7 +594,8 @@ int main(int argc, char** argv) {
                             : bg::FrameDeliveryKind::None,
                         .pump_active_us = pump_active_us,
                         .paint_latency_us = paint_latency_us,
-                        .deadline_miss = cef_paint_after == cef_paint_before,
+                        .deadline_miss = request_sent
+                            && wait_exit_reason == bg::FrameWaitExitReason::Timeout,
                     };
                     PopulateRuntimeProvenance(&record, client->pacing_snapshot());
                     PopulateComposeProvenance(&record);

@@ -83,6 +83,10 @@ struct Config {
     // copy while never retaining the CEF pointer after OnPaint returns.
     bool decklink_direct_paint = false;
 
+    // P20.3 research: complete a field wait only after an actual CEF OnPaint
+    // observed after SendExternalBeginFrame, never from publish/reuse progress.
+    bool decklink_token_armed_wait = false;
+
     // Phase 19 Doc02 PR5: full-path layered compositor. When true, the engine
     // captures per-layer CEF snapshots (via DOM visibility filters), caches
     // cacheable sources, and publishes composed frames through FrameRing

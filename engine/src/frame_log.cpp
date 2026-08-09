@@ -39,12 +39,23 @@ std::string_view FrameDeliveryKindName(FrameDeliveryKind kind) noexcept {
     return "unknown";
 }
 
+std::string_view FrameWaitExitReasonName(FrameWaitExitReason reason) noexcept {
+    switch (reason) {
+        case FrameWaitExitReason::NoRequest: return "no_request";
+        case FrameWaitExitReason::LegacyPublish: return "legacy_publish";
+        case FrameWaitExitReason::CefPaint: return "cef_paint";
+        case FrameWaitExitReason::Timeout: return "timeout";
+    }
+    return "unknown";
+}
+
 FrameLog::FrameLog(const std::string& path) {
     if (path.empty()) return;
     file_ = std::fopen(path.c_str(), "w");
     if (!file_) return;
     std::fputs(
-        "schema_version,unix_us,mono_us,interval_us,begin_frame_token,batch_id,"
+        "schema_version,unix_us,mono_us,interval_us,begin_frame_token,"
+        "cef_seq_at_send,publish_seq_at_send,wait_exit_reason,batch_id,"
         "batch_index,batch_size,cef_paint_before,cef_paint_after,"
         "publish_seq_before,publish_seq_after,delivery_kind,pump_active_us,"
         "paint_latency_us,deadline_miss,inflight_depth,paint_seq_delta,"
@@ -68,12 +79,16 @@ void FrameLog::RecordTick(const FrameLogRecord& record) {
     char line[768];
     const int n = std::snprintf(
         line, sizeof(line),
-        "2,%llu,%llu,%llu,%llu,%llu,%u,%u,%llu,%llu,%llu,%llu,%.*s,"
+        "3,%llu,%llu,%llu,%llu,%llu,%llu,%.*s,%llu,%u,%u,%llu,%llu,%llu,%llu,%.*s,"
         "%llu,%llu,%d,%u,%u,%llu,%llu,%llu,%llu,%u,%llu,%llu,%llu,%llu,%llu,%llu\n",
         static_cast<unsigned long long>(record.unix_us),
         static_cast<unsigned long long>(record.mono_us),
         static_cast<unsigned long long>(record.interval_us),
         static_cast<unsigned long long>(record.begin_frame_token),
+        static_cast<unsigned long long>(record.cef_seq_at_send),
+        static_cast<unsigned long long>(record.publish_seq_at_send),
+        static_cast<int>(FrameWaitExitReasonName(record.wait_exit_reason).size()),
+        FrameWaitExitReasonName(record.wait_exit_reason).data(),
         static_cast<unsigned long long>(record.batch_id),
         record.batch_index,
         record.batch_size,
