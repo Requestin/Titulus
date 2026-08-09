@@ -56,7 +56,8 @@ FrameLog::FrameLog(const std::string& path) {
     std::fputs(
         "schema_version,unix_us,mono_us,interval_us,begin_frame_token,"
         "cef_seq_at_send,publish_seq_at_send,wait_exit_reason,batch_id,"
-        "batch_index,batch_size,cef_paint_before,cef_paint_after,"
+        "batch_index,batch_size,absolute_field_grid,field_target_offset_us,"
+        "field_target_lateness_us,cef_paint_before,cef_paint_after,"
         "publish_seq_before,publish_seq_after,delivery_kind,pump_active_us,"
         "paint_latency_us,deadline_miss,inflight_depth,paint_seq_delta,"
         "runtime_event_seq,runtime_event_age_us,"
@@ -79,7 +80,7 @@ void FrameLog::RecordTick(const FrameLogRecord& record) {
     char line[768];
     const int n = std::snprintf(
         line, sizeof(line),
-        "3,%llu,%llu,%llu,%llu,%llu,%llu,%.*s,%llu,%u,%u,%llu,%llu,%llu,%llu,%.*s,"
+        "4,%llu,%llu,%llu,%llu,%llu,%llu,%.*s,%llu,%u,%u,%d,%llu,%llu,%llu,%llu,%llu,%llu,%.*s,"
         "%llu,%llu,%d,%u,%u,%llu,%llu,%llu,%llu,%u,%llu,%llu,%llu,%llu,%llu,%llu\n",
         static_cast<unsigned long long>(record.unix_us),
         static_cast<unsigned long long>(record.mono_us),
@@ -92,6 +93,9 @@ void FrameLog::RecordTick(const FrameLogRecord& record) {
         static_cast<unsigned long long>(record.batch_id),
         record.batch_index,
         record.batch_size,
+        record.absolute_field_grid ? 1 : 0,
+        static_cast<unsigned long long>(record.field_target_offset_us),
+        static_cast<unsigned long long>(record.field_target_lateness_us),
         static_cast<unsigned long long>(record.cef_paint_before),
         static_cast<unsigned long long>(record.cef_paint_after),
         static_cast<unsigned long long>(record.publish_seq_before),

@@ -23,6 +23,7 @@ enum class DecklinkEventType : uint8_t {
     Schedule,
     Completion,
     InputOverwrite,
+    ReservoirUnderflow,
     ReferenceChange,
 };
 

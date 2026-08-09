@@ -13,6 +13,7 @@ const char* EventTypeName(DecklinkEventType type) {
         case DecklinkEventType::Schedule: return "schedule";
         case DecklinkEventType::Completion: return "completion";
         case DecklinkEventType::InputOverwrite: return "input_overwrite";
+        case DecklinkEventType::ReservoirUnderflow: return "reservoir_underflow";
         case DecklinkEventType::ReferenceChange: return "reference_change";
     }
     return "unknown";

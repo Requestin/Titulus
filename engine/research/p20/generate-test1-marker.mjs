@@ -32,11 +32,6 @@ function common(id, name, type, x, y, width, height, groupId = null) {
   };
 }
 
-function imageData(name, mime) {
-  const bytes = readFileSync(new URL(`../../../tests/files/${name}`, import.meta.url));
-  return `data:${mime};base64,${bytes.toString('base64')}`;
-}
-
 const textStyle = {
   fontFamily: 'Inter',
   fontSize: 48,
@@ -100,7 +95,7 @@ export function generateP20Test1MarkerTemplate() {
     },
     {
       ...common('p20-test1-image-1', 'Image 1', 'image', 1295, 34, 554, 624, groupB),
-      src: imageData('1.jpg', 'image/jpeg'), cornerRadius: 0, fit: 'contain',
+      src: '/uploads/p20-test1-1.jpg', cornerRadius: 0, fit: 'contain',
     },
     {
       ...common('p20-test1-image-mask', 'Mask 1', 'mask', 1290, 17, 566, 680, groupB),
@@ -114,11 +109,11 @@ export function generateP20Test1MarkerTemplate() {
     },
     {
       ...common('p20-test1-image-2', 'Image 2', 'image', 1100, 774, 809, 290),
-      src: imageData('2.png', 'image/png'), cornerRadius: 0, fit: 'cover',
+      src: '/uploads/p20-test1-2.png', cornerRadius: 0, fit: 'cover',
     },
     {
       ...common('p20-test1-image-3', 'Image 3', 'image', 13, 422, 382, 270),
-      src: imageData('3.jpg', 'image/jpeg'), cornerRadius: 0, fit: 'contain',
+      src: '/uploads/p20-test1-3.jpg', cornerRadius: 0, fit: 'contain',
     },
     {
       ...common('p20-test1-panel-c', 'Rectangle 2', 'rect', 120, 120, 480, 140, groupC),

@@ -51,6 +51,8 @@ void print_usage() {
         "  --keyer=external|internal|fill_only\n"
         "  --decklink-direct-paint  bypass FrameRing for DeckLink (research flag)\n"
         "  --decklink-token-armed-wait  wait on CEF paint, not publish progress\n"
+        "  --decklink-absolute-field-grid  schedule batch requests on 20ms targets\n"
+        "  --decklink-one-pair-reservoir  boundedly wait for a complete interlaced pair\n"
         "\n"
         "Layered compositor (Phase 19 Doc02, default off):\n"
         "  --layered-compositor     enable per-layer CEF snapshot + CPU mix path\n"
@@ -138,6 +140,12 @@ bool Config::Parse(int argc, char** argv) {
     if (const char* v = std::getenv("BG_P20_DECKLINK_TOKEN_ARMED_WAIT")) {
         decklink_token_armed_wait = std::atoi(v) != 0;
     }
+    if (const char* v = std::getenv("BG_P20_DECKLINK_ABSOLUTE_FIELD_GRID")) {
+        decklink_absolute_field_grid = std::atoi(v) != 0;
+    }
+    if (const char* v = std::getenv("BG_P20_DECKLINK_ONE_PAIR_RESERVOIR")) {
+        decklink_one_pair_reservoir = std::atoi(v) != 0;
+    }
     if (const char* v = std::getenv("BG_LAYERED_COMPOSITOR")) {
         layered_compositor = std::atoi(v) != 0;
     }
@@ -160,6 +168,14 @@ bool Config::Parse(int argc, char** argv) {
         }
         if (std::strcmp(arg, "--decklink-token-armed-wait") == 0) {
             decklink_token_armed_wait = true;
+            continue;
+        }
+        if (std::strcmp(arg, "--decklink-absolute-field-grid") == 0) {
+            decklink_absolute_field_grid = true;
+            continue;
+        }
+        if (std::strcmp(arg, "--decklink-one-pair-reservoir") == 0) {
+            decklink_one_pair_reservoir = true;
             continue;
         }
         if (std::strcmp(arg, "--layered-compositor") == 0) {
@@ -236,6 +252,25 @@ bool Config::Parse(int argc, char** argv) {
             "bg_engine: --decklink-token-armed-wait requires --consumer=decklink\n");
         return false;
     }
+    if (decklink_absolute_field_grid && consumer != ConsumerKind::Decklink) {
+        std::fprintf(
+            stderr,
+            "bg_engine: --decklink-absolute-field-grid requires --consumer=decklink\n");
+        return false;
+    }
+    if (decklink_one_pair_reservoir && consumer != ConsumerKind::Decklink) {
+        std::fprintf(
+            stderr,
+            "bg_engine: --decklink-one-pair-reservoir requires --consumer=decklink\n");
+        return false;
+    }
+    if (decklink_absolute_field_grid && decklink_one_pair_reservoir) {
+        std::fprintf(
+            stderr,
+            "bg_engine: --decklink-absolute-field-grid and "
+            "--decklink-one-pair-reservoir cannot be combined\n");
+        return false;
+    }
     if (consumer == ConsumerKind::Stream && stream_url.empty()) {
         std::fprintf(stderr, "bg_engine: stream consumer needs --stream-url=URL\n");
         return false;
@@ -246,11 +281,13 @@ bool Config::Parse(int argc, char** argv) {
 std::string Config::Describe() const {
     char buf[704];
     std::snprintf(buf, sizeof(buf),
-                  "name=%s %dx%d@%dfps consumer=%s direct_paint=%s token_wait=%s "
-                  "layered=%s cache=%s url=%s duration=%ds",
+                  "name=%s %dx%d@%dfps consumer=%s direct_paint=%s token_wait=%s field_grid=%s "
+                  "reservoir=%s layered=%s cache=%s url=%s duration=%ds",
                   name.c_str(), width, height, fps,
                   ConsumerLabel(consumer), decklink_direct_paint ? "on" : "off",
                   decklink_token_armed_wait ? "on" : "off",
+                  decklink_absolute_field_grid ? "on" : "off",
+                  decklink_one_pair_reservoir ? "on" : "off",
                   layered_compositor ? "on" : "off",
                   cache_dir.c_str(), url.c_str(), duration_sec);
     return buf;

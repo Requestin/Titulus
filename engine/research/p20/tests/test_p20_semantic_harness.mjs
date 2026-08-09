@@ -13,6 +13,9 @@ import {
   generateP20Test1MarkerTemplate,
 } from '../generate-test1-marker.mjs';
 import {
+  generateP20Test1VisualTemplate,
+} from '../generate-test1-visual.mjs';
+import {
   analyzeSemanticFields,
   assessSemanticAcceptance,
   parseCsv,
@@ -90,6 +93,18 @@ test('generates schema-valid complex test1 marker with clock, images, and 64 fie
   assert.deepEqual(validateTemplate(generated), { valid: true, errors: [] });
   assert.ok(generated.layers.find((layer) => layer.id === 'p20-test1-clock'));
   assert.equal(generated.layers.filter((layer) => layer.type === 'image').length, 3);
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(generated), 'utf8') <= 256 * 1024,
+    'marker TAKE must fit the control WebSocket payload limit',
+  );
+  assert.deepEqual(
+    generated.layers.filter((layer) => layer.type === 'image').map((layer) => layer.src),
+    [
+      '/uploads/p20-test1-1.jpg',
+      '/uploads/p20-test1-2.png',
+      '/uploads/p20-test1-3.jpg',
+    ],
+  );
   const semanticFrames = generated.timeline.keyframes.filter(
     (frame) => frame.layers['p20-test1-semantic-bar'],
   );
@@ -97,6 +112,27 @@ test('generates schema-valid complex test1 marker with clock, images, and 64 fie
   assert.equal(semanticFrames[0].layers['p20-test1-semantic-bar'].x, 144);
   assert.equal(semanticFrames[63].layers['p20-test1-semantic-bar'].x, 1656);
   assert.equal(semanticFrames[64].layers['p20-test1-semantic-bar'].x, 144);
+});
+
+test('generates a complex visual test1 without the semantic marker overlay', () => {
+  const generated = generateP20Test1VisualTemplate();
+  const checkedIn = JSON.parse(readFileSync(
+    new URL('../../../../tests/templates/p20-test1-visual.json', import.meta.url),
+    'utf8',
+  ));
+
+  assert.deepEqual(generated, checkedIn);
+  assert.deepEqual(validateTemplate(generated), { valid: true, errors: [] });
+  assert.equal(generated.name, 'p20-test1-visual');
+  assert.equal(generated.layers.filter((layer) => layer.type === 'image').length, 3);
+  assert.equal(
+    generated.layers.some((layer) => layer.id === 'p20-test1-semantic-bar'),
+    false,
+  );
+  assert.equal(
+    generated.timeline.directors.some((director) => director.id === 'p20-semantic-director'),
+    false,
+  );
 });
 
 test('requires capture-order field indexes and the semantic field CSV contract', () => {

@@ -6,6 +6,8 @@
 #include "../src/cef_paint_wait.h"
 #include "../src/decklink_provenance.h"
 #include "../src/decklink_event_log.h"
+#include "../src/field_grid_schedule.h"
+#include "../src/one_pair_reservoir.h"
 #include "../src/pacing_message_parser.h"
 
 #include <chrono>
@@ -92,6 +94,9 @@ TEST(FrameLogV2WritesDualClocksAndPacingColumns) {
             .batch_id = 3,
             .batch_index = 1,
             .batch_size = 2,
+            .absolute_field_grid = true,
+            .field_target_offset_us = 20'000,
+            .field_target_lateness_us = 400,
             .cef_paint_before = 40,
             .cef_paint_after = 41,
             .publish_seq_before = 50,
@@ -108,13 +113,14 @@ TEST(FrameLogV2WritesDualClocksAndPacingColumns) {
     std::filesystem::remove(path);
     CHECK(content.starts_with(
               "schema_version,unix_us,mono_us,interval_us,begin_frame_token,"
-              "cef_seq_at_send,publish_seq_at_send,wait_exit_reason,batch_id,"),
-          "v2 header must lead with explicit dual-clock columns");
+              "cef_seq_at_send,publish_seq_at_send,wait_exit_reason,batch_id,"
+              "batch_index,batch_size,absolute_field_grid,field_target_offset_us,"),
+          "v4 header must lead with explicit grid and provenance columns");
     CHECK(content.find(
-              "1725000000123456,123456,20000,7,40,50,cef_paint,3,1,2,40,41,50,51,"
+              "1725000000123456,123456,20000,7,40,50,cef_paint,3,1,2,1,20000,400,40,41,50,51,"
               "cef_forward")
               != std::string::npos,
-          "v2 record must preserve explicit provenance values");
+          "v4 record must preserve explicit grid and provenance values");
     CHECK(content.find("wall_clock_us") == std::string::npos,
           "steady-clock epoch must not be labelled wall clock");
 }
@@ -155,6 +161,73 @@ TEST(TokenArmedCefWaitIgnoresPublishOnlyProgressAndTimesOutBoundedly) {
     });
     CHECK(no_request == bg::CefPaintWaitDecision::NoRequest,
           "ticks without BeginFrame must not wait a full field");
+}
+
+TEST(FieldGridSeparatesTwoInterlacedRequestsByOnePhysicalField) {
+    constexpr auto first = bg::PlanFieldGridSlot({
+        .batch_index = 0,
+        .field_period_us = 20'000,
+    });
+    constexpr auto second = bg::PlanFieldGridSlot({
+        .batch_index = 1,
+        .field_period_us = 20'000,
+    });
+
+    CHECK(first.target_offset_us == 0, "first field must start at batch anchor");
+    CHECK(first.deadline_offset_us == 20'000, "first deadline must be one field later");
+    CHECK(second.target_offset_us == 20'000,
+          "second field must not start in the first field's leftover time");
+    CHECK(second.deadline_offset_us == 40'000,
+          "second field deadline must stay on the physical 20ms grid");
+}
+
+TEST(FieldGridFailsOpenWhenPreviousWorkAlreadyMissedItsTarget) {
+    constexpr auto slot = bg::PlanFieldGridSlot({
+        .batch_index = 1,
+        .field_period_us = 20'000,
+    });
+
+    CHECK(bg::FieldGridDelayUs(slot, 15'000) == 5'000,
+          "early second field must sleep only until its absolute target");
+    CHECK(bg::FieldGridDelayUs(slot, 20'000) == 0,
+          "on-target second field must not add delay");
+    CHECK(bg::FieldGridDelayUs(slot, 27'000) == 0,
+          "late work must fail open rather than wait for another grid period");
+    CHECK(bg::FieldGridLatenessUs(slot, 27'000) == 7'000,
+          "late work must expose its target lateness for frame evidence");
+}
+
+TEST(OnePairReservoirWaitsForExactlyOneFuturePairThenFailsOpen) {
+    CHECK(bg::DecideOnePairReservoir({
+              .enabled = true,
+              .queued_frames = 0,
+              .deadline_reached = false,
+          }) == bg::OnePairReservoirDecision::Wait,
+          "empty reservoir must wait before its bounded deadline");
+    CHECK(bg::DecideOnePairReservoir({
+              .enabled = true,
+              .queued_frames = 1,
+              .deadline_reached = false,
+          }) == bg::OnePairReservoirDecision::Wait,
+          "one pose must not be silently promoted into an interlaced pair");
+    CHECK(bg::DecideOnePairReservoir({
+              .enabled = true,
+              .queued_frames = 2,
+              .deadline_reached = false,
+          }) == bg::OnePairReservoirDecision::Ready,
+          "two queued poses must form the only ready reservoir pair");
+    CHECK(bg::DecideOnePairReservoir({
+              .enabled = true,
+              .queued_frames = 1,
+              .deadline_reached = true,
+          }) == bg::OnePairReservoirDecision::Underflow,
+          "deadline must fail open and expose the reservoir underflow");
+    CHECK(bg::DecideOnePairReservoir({
+              .enabled = false,
+              .queued_frames = 0,
+              .deadline_reached = false,
+          }) == bg::OnePairReservoirDecision::Bypass,
+          "disabled reservoir must leave existing DeckLink behaviour unchanged");
 }
 
 TEST(ParsesBoundedRuntimePacingEvent) {

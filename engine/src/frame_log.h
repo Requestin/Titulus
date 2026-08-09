@@ -48,8 +48,8 @@ enum class FrameWaitExitReason : uint8_t {
 
 std::string_view FrameWaitExitReasonName(FrameWaitExitReason reason) noexcept;
 
-// Schema v3 adds bounded CEF-wait provenance. A zero value
-// means "not observed by this producer", never an inferred identity.
+// Schema v4 adds absolute field-grid timing. A zero value means "not observed
+// by this producer", never an inferred identity.
 struct FrameLogRecord {
     uint64_t unix_us = 0;
     uint64_t mono_us = 0;
@@ -61,6 +61,9 @@ struct FrameLogRecord {
     uint64_t batch_id = 0;
     uint32_t batch_index = 0;
     uint32_t batch_size = 0;
+    bool absolute_field_grid = false;
+    uint64_t field_target_offset_us = 0;
+    uint64_t field_target_lateness_us = 0;
     uint64_t cef_paint_before = 0;
     uint64_t cef_paint_after = 0;
     uint64_t publish_seq_before = 0;

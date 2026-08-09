@@ -14,11 +14,14 @@ ENGINE_BIN="${ENGINE_BIN:-${ROOT}/engine/build/Release/bg_engine}"
 TEMPLATE="${ROOT}/tests/templates/p20-moving-bar.json"
 RUNTIME_BUNDLE="${ROOT}/backend/public/bg-runtime.js"
 TOKEN_FILE="${TOKEN_FILE:-/tmp/titulus-doc04-setup/token}"
+CONSUMER="decklink"
 LAYERED="off"
 RASTER_THREADS=3
 PACING_MODE="accumulator"
 PROVENANCE="on"
 TOKEN_ARMED_WAIT=0
+ABSOLUTE_FIELD_GRID=0
+ONE_PAIR_RESERVOIR=0
 LOOPBACK_CAPTURE_BIN=""
 LOOPBACK_INPUT_DEVICE=""
 LOOPBACK_OUTPUT_CHANNEL=""
@@ -38,9 +41,9 @@ usage() {
   cat <<'EOF'
 Usage: run-p20-cell.sh 1ch|3ch --channels=UUID[,UUID...] --out-dir=DIR [options]
 
-Default mode is a no-hardware dry-run: it validates the exact cell and writes
-root/chN manifests. Add --execute --confirm-decklink to launch the controlled
-DeckLink cell (start -> reference lock -> take -> warmup -> measure -> cleanup).
+Default mode is a dry-run: it validates the exact cell and writes root/chN
+manifests. DeckLink execution requires --execute --confirm-decklink; null
+execution needs only --execute.
 
 Options:
   --duration=SEC             Measurement seconds (default 60)
@@ -50,11 +53,14 @@ Options:
   --template=PATH            P20 marker template
   --runtime-bundle=PATH      Built browser runtime bundle
   --token-file=PATH          Control WebSocket token for --execute
+  --consumer=decklink|null   Render consumer (default decklink)
   --layered=off|on           Explicit compositor state (default off)
   --raster-threads=N         Explicit BG_NUM_RASTER_THREADS (default 3)
   --pacing-mode=MODE         accumulator|one-tick (default accumulator)
   --provenance=on|off        P20 runtime + DeckLink event logs (default on)
   --token-armed-wait         Complete waits only on post-send CEF paint
+  --absolute-field-grid      Place DeckLink batch requests on 20-ms field targets
+  --one-pair-reservoir       Boundedly wait for one complete interlaced pair
   --loopback-capture-bin=PATH  Observer capture binary (1ch only)
   --loopback-input-device=N    DeckLink input device for observer capture
   --loopback-output-channel=T  Safe output label recorded in capture CSV
@@ -90,11 +96,14 @@ for arg in "$@"; do
     --template=*) TEMPLATE="${arg#*=}" ;;
     --runtime-bundle=*) RUNTIME_BUNDLE="${arg#*=}" ;;
     --token-file=*) TOKEN_FILE="${arg#*=}" ;;
+    --consumer=*) CONSUMER="${arg#*=}" ;;
     --layered=*) LAYERED="${arg#*=}" ;;
     --raster-threads=*) RASTER_THREADS="${arg#*=}" ;;
     --pacing-mode=*) PACING_MODE="${arg#*=}" ;;
     --provenance=*) PROVENANCE="${arg#*=}" ;;
     --token-armed-wait) TOKEN_ARMED_WAIT=1 ;;
+    --absolute-field-grid) ABSOLUTE_FIELD_GRID=1 ;;
+    --one-pair-reservoir) ONE_PAIR_RESERVOIR=1 ;;
     --loopback-capture-bin=*) LOOPBACK_CAPTURE_BIN="${arg#*=}" ;;
     --loopback-input-device=*) LOOPBACK_INPUT_DEVICE="${arg#*=}" ;;
     --loopback-output-channel=*) LOOPBACK_OUTPUT_CHANNEL="${arg#*=}" ;;
@@ -112,6 +121,8 @@ done
 
 [[ -n "$CHANNELS" ]] || fail "--channels is required"
 [[ -n "$OUT_DIR" ]] || fail "--out-dir is required"
+[[ "$CONSUMER" == "decklink" || "$CONSUMER" == "null" ]] \
+  || fail "--consumer must be decklink|null"
 [[ "$LAYERED" == "off" || "$LAYERED" == "on" ]] || fail "--layered must be off|on"
 case "$PACING_MODE" in
   accumulator) PACING_MODE="accumulator" ;;
@@ -119,6 +130,19 @@ case "$PACING_MODE" in
   *) fail "--pacing-mode must be accumulator|one-tick" ;;
 esac
 [[ "$PROVENANCE" == "on" || "$PROVENANCE" == "off" ]] || fail "--provenance must be on|off"
+if (( ABSOLUTE_FIELD_GRID == 1 && TOKEN_ARMED_WAIT != 1 )); then
+  fail "--absolute-field-grid requires --token-armed-wait for the P20 one-factor A/B"
+fi
+if (( ONE_PAIR_RESERVOIR == 1 && TOKEN_ARMED_WAIT != 1 )); then
+  fail "--one-pair-reservoir requires --token-armed-wait for the P20 one-factor A/B"
+fi
+if (( ABSOLUTE_FIELD_GRID == 1 && ONE_PAIR_RESERVOIR == 1 )); then
+  fail "--absolute-field-grid and --one-pair-reservoir cannot be combined"
+fi
+if [[ "$CONSUMER" != "decklink" ]] \
+  && (( TOKEN_ARMED_WAIT == 1 || ABSOLUTE_FIELD_GRID == 1 || ONE_PAIR_RESERVOIR == 1 )); then
+  fail "DeckLink pacing flags require --consumer=decklink"
+fi
 [[ "$DURATION" =~ ^[0-9]+$ && "$DURATION" -ge 30 ]] || fail "--duration must be an integer >= 30"
 [[ "$WARMUP" =~ ^[0-9]+$ && "$WARMUP" -ge 10 ]] || fail "--warmup must be an integer >= 10"
 [[ "$RASTER_THREADS" =~ ^[1-9][0-9]*$ ]] || fail "--raster-threads must be a positive integer"
@@ -129,10 +153,11 @@ if [[ -n "$LOOPBACK_CAPTURE_BIN$LOOPBACK_INPUT_DEVICE$LOOPBACK_OUTPUT_CHANNEL$LO
     || fail "all loopback capture options must be supplied together"
   [[ "$LOOPBACK_INPUT_DEVICE" =~ ^[0-9]+$ ]] || fail "--loopback-input-device must be non-negative"
   [[ "$MODE" == "1ch" ]] || fail "integrated loopback capture currently requires 1ch mode"
+  [[ "$CONSUMER" == "decklink" ]] || fail "integrated loopback capture requires --consumer=decklink"
   LOOPBACK_ENABLED=1
 fi
 ENGINE_DURATION=$((WARMUP + DURATION + 60))
-if (( EXECUTE == 1 && CONFIRM_DECKLINK != 1 )); then
+if (( EXECUTE == 1 )) && [[ "$CONSUMER" == "decklink" ]] && (( CONFIRM_DECKLINK != 1 )); then
   fail "DeckLink execution requires --execute --confirm-decklink"
 fi
 [[ -f "$TEMPLATE" ]] || fail "missing template: $TEMPLATE"
@@ -223,11 +248,14 @@ export P20_ENGINE_SHA256="$ENGINE_SHA256"
 export P20_RUNTIME_SHA256="$RUNTIME_SHA256"
 export P20_TEMPLATE_SHA256="$TEMPLATE_SHA256"
 export P20_TEMPLATE_PATH="$TEMPLATE_PATH"
+export P20_CONSUMER="$CONSUMER"
 export P20_LAYERED_VALUE="$LAYERED_VALUE"
 export P20_RASTER_THREADS="$RASTER_THREADS"
 export P20_PACING_MODE="$PACING_MODE"
 export P20_PROVENANCE="$PROVENANCE"
 export P20_TOKEN_ARMED_WAIT="$TOKEN_ARMED_WAIT"
+export P20_ABSOLUTE_FIELD_GRID="$ABSOLUTE_FIELD_GRID"
+export P20_ONE_PAIR_RESERVOIR="$ONE_PAIR_RESERVOIR"
 export P20_LOOPBACK_ENABLED="$LOOPBACK_ENABLED"
 export P20_LOOPBACK_INPUT_DEVICE="$LOOPBACK_INPUT_DEVICE"
 export P20_LOOPBACK_OUTPUT_CHANNEL="$LOOPBACK_OUTPUT_CHANNEL"
@@ -253,10 +281,15 @@ const config = {
   durationSeconds: Number(process.env.P20_DURATION),
   warmupSeconds: Number(process.env.P20_WARMUP),
   engineDurationSeconds: Number(process.env.P20_ENGINE_DURATION),
-  modeSettings: { displayMode: 'HD1080i50', keyer: 'fill_only', fps: 50 },
+  consumer: process.env.P20_CONSUMER,
+  modeSettings: process.env.P20_CONSUMER === 'decklink'
+    ? { displayMode: 'HD1080i50', keyer: 'fill_only', fps: 50 }
+    : { fps: 50 },
   pacingMode: process.env.P20_PACING_MODE,
   provenance: process.env.P20_PROVENANCE,
   tokenArmedWait: process.env.P20_TOKEN_ARMED_WAIT === '1',
+  absoluteFieldGrid: process.env.P20_ABSOLUTE_FIELD_GRID === '1',
+  onePairReservoir: process.env.P20_ONE_PAIR_RESERVOIR === '1',
   loopback: process.env.P20_LOOPBACK_ENABLED === '1' ? {
     inputDeviceIndex: Number(process.env.P20_LOOPBACK_INPUT_DEVICE),
     outputChannel: process.env.P20_LOOPBACK_OUTPUT_CHANNEL,
@@ -300,7 +333,11 @@ const root = {
   label: process.env.P20_LABEL,
   configDigest,
   config,
-  execution: { mode: process.env.P20_EXECUTION_MODE, decklinkArmed: process.env.P20_EXECUTION_MODE === 'execute' },
+  execution: {
+    mode: process.env.P20_EXECUTION_MODE,
+    decklinkArmed: process.env.P20_EXECUTION_MODE === 'execute'
+      && config.consumer === 'decklink',
+  },
       artifacts: {
         processSnapshot: 'processes-at-start.txt',
         cadenceAnalysis: 'cadence-analysis.json',
@@ -327,7 +364,8 @@ for (let index = 0; index < config.channels.length; index += 1) {
     artifacts: {
       engineLog: 'engine.log',
       frameLog: 'frame.csv',
-      completionLog: config.provenance === 'on' ? 'decklink-completion.csv' : null,
+      completionLog: config.provenance === 'on' && config.consumer === 'decklink'
+        ? 'decklink-completion.csv' : null,
       cefCache: 'cef-cache',
     },
   };
@@ -345,15 +383,21 @@ for index in "${!CHANNEL_ARRAY[@]}"; do
     "--name=p20-${LABEL}-ch${number}"
     "--url=${url}"
     "--width=1920" "--height=1080" "--fps=50" "--duration=${ENGINE_DURATION}"
-    "--consumer=decklink"
-    "--device-index=${DEVICE_ARRAY[$index]}"
-    "--display-mode=HD1080i50" "--keyer=fill_only"
+    "--consumer=${CONSUMER}"
     "--cache-dir=${channel_dir}/cef-cache"
     "--frame-log=${channel_dir}/frame.csv"
   )
-  [[ "$PROVENANCE" == "on" ]] && cmd+=("--decklink-completion-log=${channel_dir}/decklink-completion.csv")
+  if [[ "$CONSUMER" == "decklink" ]]; then
+    cmd+=(
+      "--device-index=${DEVICE_ARRAY[$index]}"
+      "--display-mode=HD1080i50" "--keyer=fill_only"
+    )
+    [[ "$PROVENANCE" == "on" ]] && cmd+=("--decklink-completion-log=${channel_dir}/decklink-completion.csv")
+  fi
   (( LAYERED_VALUE == 1 )) && cmd+=(--layered-compositor)
   (( TOKEN_ARMED_WAIT == 1 )) && cmd+=(--decklink-token-armed-wait)
+  (( ABSOLUTE_FIELD_GRID == 1 )) && cmd+=(--decklink-absolute-field-grid)
+  (( ONE_PAIR_RESERVOIR == 1 )) && cmd+=(--decklink-one-pair-reservoir)
   printf '%s\0' "${cmd[@]}" | node -e '
     let data = ""; process.stdin.on("data", c => { data += c; });
     process.stdin.on("end", () => {
@@ -484,15 +528,21 @@ for index in "${!CHANNEL_ARRAY[@]}"; do
     "--name=p20-${LABEL}-ch${number}"
     "--url=${url}"
     "--width=1920" "--height=1080" "--fps=50" "--duration=${ENGINE_DURATION}"
-    "--consumer=decklink"
-    "--device-index=${DEVICE_ARRAY[$index]}"
-    "--display-mode=HD1080i50" "--keyer=fill_only"
+    "--consumer=${CONSUMER}"
     "--cache-dir=${channel_dir}/cef-cache"
     "--frame-log=${channel_dir}/frame.csv"
   )
-  [[ "$PROVENANCE" == "on" ]] && cmd+=("--decklink-completion-log=${channel_dir}/decklink-completion.csv")
+  if [[ "$CONSUMER" == "decklink" ]]; then
+    cmd+=(
+      "--device-index=${DEVICE_ARRAY[$index]}"
+      "--display-mode=HD1080i50" "--keyer=fill_only"
+    )
+    [[ "$PROVENANCE" == "on" ]] && cmd+=("--decklink-completion-log=${channel_dir}/decklink-completion.csv")
+  fi
   (( LAYERED_VALUE == 1 )) && cmd+=(--layered-compositor)
   (( TOKEN_ARMED_WAIT == 1 )) && cmd+=(--decklink-token-armed-wait)
+  (( ABSOLUTE_FIELD_GRID == 1 )) && cmd+=(--decklink-absolute-field-grid)
+  (( ONE_PAIR_RESERVOIR == 1 )) && cmd+=(--decklink-one-pair-reservoir)
   setsid env -u BG_LAYERED_COMPOSITOR -u BG_LAYERED_COMPOSITOR_ALLOWLIST -u BG_NUM_RASTER_THREADS \
     "BG_LAYERED_COMPOSITOR=${LAYERED_VALUE}" "BG_NUM_RASTER_THREADS=${RASTER_THREADS}" \
     taskset -c "${MASK_ARRAY[$index]}" "${cmd[@]}" >"$channel_dir/engine.log" 2>&1 &
@@ -503,15 +553,18 @@ for _ in $(seq 1 120); do
   ready=0
   for number in $(seq 1 "$COUNT"); do
     log="$RUN_DIR/ch${number}/engine.log"
-    if grep -q 'started mode=HD1080i50.*low_latency=yes' "$log" \
+    if [[ "$CONSUMER" == "decklink" ]] \
+      && grep -q 'started mode=HD1080i50.*low_latency=yes' "$log" \
       && grep -q 'reference signal locked' "$log"; then
+      ready=$((ready + 1))
+    elif [[ "$CONSUMER" == "null" ]] && grep -q 'browser created, loading' "$log"; then
       ready=$((ready + 1))
     fi
   done
   (( ready == COUNT )) && break
   sleep 1
 done
-(( ready == COUNT )) || fail "not all channels reached started+reference locked"
+(( ready == COUNT )) || fail "not all channels reached consumer readiness"
 
 TOKEN="$(<"$TOKEN_FILE")"
 for index in "${!CHANNEL_ARRAY[@]}"; do
@@ -575,6 +628,15 @@ manifest.measurement = {
 };
 writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
 NODE
+for number in $(seq 1 "$COUNT"); do
+  if rg --fixed-strings --quiet \
+      --regexp='bg_engine[cef]: renderer_terminated' \
+      "$RUN_DIR/ch${number}/engine.log"; then
+    RUN_COMPLETED=1
+    write_run_status "failed" "CEF renderer terminated"
+    fail "CEF renderer terminated in ch${number}; evidence is inconclusive"
+  fi
+done
 write_run_status "completed" "graceful"
 if (( LOOPBACK_ENABLED == 1 )); then
   node "$ROOT/engine/research/p20/lib/analyze-p20-evidence.mjs" \

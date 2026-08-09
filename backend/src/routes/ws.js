@@ -136,6 +136,12 @@ export function wsRouter(onAir, auth) {
 
       try {
         onAir.handleControlCommand(normalized.value);
+        ws.send(JSON.stringify({
+          type: 'ack',
+          command: normalized.value.type,
+          channelId: normalized.value.channelId,
+          templateId: normalized.value.templateId,
+        }));
       } catch (err) {
         // Keep WS hub alive on command processing errors; never crash backend
         // from a single malformed or failing control payload.
