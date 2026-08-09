@@ -74,3 +74,20 @@ test('rejects malformed provenance rows and source IDs lost without an overwrite
   });
   assert.match(report.errors.join('\n'), /source sequence gap/);
 });
+
+test('accepts source gaps only when matching input-overwrite events prove their loss', () => {
+  const report = analyzeP20M0({
+    eventRows: events([
+      '1,schedule,1,1,1,0,25000,2,2,10,11,10,11,pair,0,1',
+      '1,completion,1,2,2,0,0,0,0,0,0,0,0,starved,0,0',
+      '1,input_overwrite,0,3,3,0,0,0,0,12,0,0,0,starved,0,0',
+      '1,input_overwrite,0,4,4,0,0,0,0,13,0,0,0,starved,0,0',
+      '1,schedule,2,5,5,0,25000,2,2,14,15,14,15,pair,0,1',
+      '1,completion,2,6,6,0,0,0,0,0,0,0,0,starved,0,0',
+    ]),
+    engineLog: 'telemetry in=4 scheduled=2 late=0 dropped=0 flushed=0 overwrite=2 starved=0 pairs=2 singles=0 event_overflow=0\n',
+  });
+
+  assert.equal(report.healthy, true);
+  assert.equal(report.telemetry.overwrite, 2);
+});
