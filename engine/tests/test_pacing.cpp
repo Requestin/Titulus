@@ -4,6 +4,7 @@
 
 #include "../src/frame_log.h"
 #include "../src/decklink_provenance.h"
+#include "../src/decklink_event_log.h"
 #include "../src/pacing_message_parser.h"
 
 #include <chrono>
@@ -156,6 +157,35 @@ TEST(ClassifiesDecklinkWeaveProvenanceWithoutHardware) {
     CHECK(starved.mode == bg::WeaveProvenanceMode::Starved, "empty queue must starve");
     CHECK(starved.woven.field_a_seq == 10 && starved.woven.field_b_seq == 11,
           "starved output must preserve previous pair");
+}
+
+TEST(DecklinkEventLogWritesScheduleAndCompletionWithoutCallbackIo) {
+    const auto path = UniquePath("-decklink.csv");
+    {
+        bg::DecklinkEventLog log(path.string());
+        CHECK(log.enabled(), "event log failed to open");
+        CHECK(log.TryPush({
+            .type = bg::DecklinkEventType::Schedule,
+            .schedule_seq = 7,
+            .unix_us = 1'725'000'000'000'000ULL,
+            .mono_us = 100,
+            .woven = {.field_a_seq = 20, .field_b_seq = 21},
+        }), "schedule event unexpectedly overflowed");
+        CHECK(log.TryPush({
+            .type = bg::DecklinkEventType::Completion,
+            .schedule_seq = 7,
+            .unix_us = 1'725'000'000'040'000ULL,
+            .mono_us = 40'100,
+        }), "completion event unexpectedly overflowed");
+    }
+    const std::string content = ReadAll(path);
+    std::filesystem::remove(path);
+    CHECK(content.starts_with("schema_version,event,schedule_seq,unix_us,mono_us,"),
+          "event log header mismatch");
+    CHECK(content.find("schedule,7,1725000000000000,100") != std::string::npos,
+          "schedule row missing");
+    CHECK(content.find("completion,7,1725000000040000,40100") != std::string::npos,
+          "completion row missing");
 }
 
 int main() {
