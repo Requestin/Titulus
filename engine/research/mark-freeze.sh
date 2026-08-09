@@ -18,7 +18,8 @@ else
 fi
 
 printf '[mark-freeze] f=freeze; c=control; q=exit -> %s\n' "$out"
-while IFS= read -rsn1 input; do
+printf '[mark-freeze] keypress is echoed; each accepted mark prints its timestamp\n'
+while IFS= read -rn1 input; do
   if [[ "$input" == 'q' || "$input" == 'Q' ]]; then
     printf '\n[mark-freeze] exit\n'
     break
