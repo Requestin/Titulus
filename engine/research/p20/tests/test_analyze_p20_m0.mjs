@@ -19,6 +19,7 @@ function events(lines) {
 test('accepts contiguous schedule/completion provenance with a bounded shutdown tail', () => {
   const report = analyzeP20M0({
     eventRows: events([
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
       '1,schedule,1,1,1,0,25000,2,2,10,11,10,11,pair,0,1',
       '1,completion,1,2,2,0,0,0,0,0,0,0,0,starved,0,0',
       '1,schedule,2,3,3,0,25000,2,2,12,13,12,13,pair,0,1',
@@ -32,6 +33,7 @@ test('accepts contiguous schedule/completion provenance with a bounded shutdown 
   assert.equal(report.healthy, true);
   assert.equal(report.schedules, 4);
   assert.equal(report.completions, 2);
+  assert.equal(report.prerollCompletions, 1);
   assert.deepEqual(report.shutdownTail, [3, 4]);
   assert.deepEqual(report.errors, []);
 });
@@ -54,7 +56,7 @@ test('fails for an interior completion gap, nonzero delivery errors, or logger o
   assert.match(report.errors.join('\n'), /event_overflow=2/);
 });
 
-test('rejects malformed provenance rows and source IDs lost without an overwrite event', () => {
+test('rejects malformed provenance rows and non-adjacent woven pair source IDs', () => {
   assert.throws(
     () => events([
       '1,schedule,1,1',
@@ -67,12 +69,12 @@ test('rejects malformed provenance rows and source IDs lost without an overwrite
     eventRows: events([
       '1,schedule,1,1,1,0,25000,2,2,10,11,10,11,pair,0,1',
       '1,completion,1,2,2,0,0,0,0,0,0,0,0,starved,0,0',
-      '1,schedule,2,3,3,0,25000,2,2,14,15,14,15,pair,0,1',
+      '1,schedule,2,3,3,0,25000,2,2,14,16,14,16,pair,0,1',
       '1,completion,2,4,4,0,0,0,0,0,0,0,0,starved,0,0',
     ]),
     engineLog: 'telemetry in=2 scheduled=2 late=0 dropped=0 flushed=0 overwrite=0 starved=0 pairs=2 singles=0 event_overflow=0\n',
   });
-  assert.match(report.errors.join('\n'), /source sequence gap/);
+  assert.match(report.errors.join('\n'), /does not contain adjacent source IDs/);
 });
 
 test('accepts source gaps only when matching input-overwrite events prove their loss', () => {
@@ -90,4 +92,14 @@ test('accepts source gaps only when matching input-overwrite events prove their 
 
   assert.equal(report.healthy, true);
   assert.equal(report.telemetry.overwrite, 2);
+});
+
+test('rejects event rows whose clock order cannot support a timeline join', () => {
+  assert.throws(
+    () => events([
+      '1,schedule,1,10,20,0,25000,2,2,10,11,10,11,pair,0,1',
+      '1,completion,1,9,21,0,0,0,0,0,0,0,0,starved,0,0',
+    ]),
+    /unix_us is not non-decreasing/,
+  );
 });
