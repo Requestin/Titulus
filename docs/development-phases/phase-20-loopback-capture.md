@@ -120,6 +120,11 @@ decoded fields. L1 therefore remains FAIL/pending, not a short-smoke PASS.
 The unbounded serial-recovery experiment also froze the producer and has been
 reverted.
 
+После hardening clean token-armed wait A/B сохранил producer/delivery
+liveness, но не закрыл L1: control дал reverse+skip, treatment — один
+odd-field duplicate. Поэтому wait identity исправляется как provenance, а
+следующий cadence treatment проверяет отдельную absolute 20-ms field grid.
+
 ### L2 — one-channel A/B
 
 For each candidate cadence variant:

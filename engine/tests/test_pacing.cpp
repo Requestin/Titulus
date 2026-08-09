@@ -3,6 +3,7 @@
 // P20.1 RED/GREEN tests for the optional FrameLog v2 evidence schema.
 
 #include "../src/frame_log.h"
+#include "../src/cef_paint_wait.h"
 #include "../src/decklink_provenance.h"
 #include "../src/decklink_event_log.h"
 #include "../src/pacing_message_parser.h"
@@ -85,6 +86,9 @@ TEST(FrameLogV2WritesDualClocksAndPacingColumns) {
             .mono_us = 123'456ULL,
             .interval_us = 20'000,
             .begin_frame_token = 7,
+            .cef_seq_at_send = 40,
+            .publish_seq_at_send = 50,
+            .wait_exit_reason = bg::FrameWaitExitReason::CefPaint,
             .batch_id = 3,
             .batch_index = 1,
             .batch_size = 2,
@@ -103,13 +107,54 @@ TEST(FrameLogV2WritesDualClocksAndPacingColumns) {
     const std::string content = ReadAll(path);
     std::filesystem::remove(path);
     CHECK(content.starts_with(
-              "schema_version,unix_us,mono_us,interval_us,begin_frame_token,batch_id,"),
+              "schema_version,unix_us,mono_us,interval_us,begin_frame_token,"
+              "cef_seq_at_send,publish_seq_at_send,wait_exit_reason,batch_id,"),
           "v2 header must lead with explicit dual-clock columns");
-    CHECK(content.find("1725000000123456,123456,20000,7,3,1,2,40,41,50,51,cef_forward")
+    CHECK(content.find(
+              "1725000000123456,123456,20000,7,40,50,cef_paint,3,1,2,40,41,50,51,"
+              "cef_forward")
               != std::string::npos,
           "v2 record must preserve explicit provenance values");
     CHECK(content.find("wall_clock_us") == std::string::npos,
           "steady-clock epoch must not be labelled wall clock");
+}
+
+TEST(TokenArmedCefWaitIgnoresPublishOnlyProgressAndTimesOutBoundedly) {
+    const auto waiting = bg::DecideCefPaintWait({
+        .request_sent = true,
+        .cef_seq_at_send = 10,
+        .cef_seq_now = 10,
+        .deadline_reached = false,
+    });
+    CHECK(waiting == bg::CefPaintWaitDecision::Continue,
+          "unchanged CEF sequence must keep waiting regardless of publish progress");
+
+    const auto painted = bg::DecideCefPaintWait({
+        .request_sent = true,
+        .cef_seq_at_send = 10,
+        .cef_seq_now = 11,
+        .deadline_reached = false,
+    });
+    CHECK(painted == bg::CefPaintWaitDecision::PaintObserved,
+          "CEF sequence advance after send must satisfy token-armed wait");
+
+    const auto timeout = bg::DecideCefPaintWait({
+        .request_sent = true,
+        .cef_seq_at_send = 10,
+        .cef_seq_now = 10,
+        .deadline_reached = true,
+    });
+    CHECK(timeout == bg::CefPaintWaitDecision::Timeout,
+          "deadline must release wait without an unbounded recovery gate");
+
+    const auto no_request = bg::DecideCefPaintWait({
+        .request_sent = false,
+        .cef_seq_at_send = 0,
+        .cef_seq_now = 0,
+        .deadline_reached = false,
+    });
+    CHECK(no_request == bg::CefPaintWaitDecision::NoRequest,
+          "ticks without BeginFrame must not wait a full field");
 }
 
 TEST(ParsesBoundedRuntimePacingEvent) {

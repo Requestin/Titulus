@@ -10,6 +10,9 @@ import {
   generateP20MovingBarTemplate,
 } from '../generate-semantic-marker.mjs';
 import {
+  generateP20Test1MarkerTemplate,
+} from '../generate-test1-marker.mjs';
+import {
   analyzeSemanticFields,
   assessSemanticAcceptance,
   parseCsv,
@@ -74,6 +77,26 @@ test('classifies duplicate, skipped, reversed and undecodable semantic field IDs
     ['duplicate', 'skipped', 'reversed', 'undecodable'],
   );
   assert.equal(report.healthy, false);
+});
+
+test('generates schema-valid complex test1 marker with clock, images, and 64 field states', () => {
+  const generated = generateP20Test1MarkerTemplate();
+  const checkedIn = JSON.parse(readFileSync(
+    new URL('../../../../tests/templates/p20-test1-marker.json', import.meta.url),
+    'utf8',
+  ));
+
+  assert.deepEqual(generated, checkedIn);
+  assert.deepEqual(validateTemplate(generated), { valid: true, errors: [] });
+  assert.ok(generated.layers.find((layer) => layer.id === 'p20-test1-clock'));
+  assert.equal(generated.layers.filter((layer) => layer.type === 'image').length, 3);
+  const semanticFrames = generated.timeline.keyframes.filter(
+    (frame) => frame.layers['p20-test1-semantic-bar'],
+  );
+  assert.equal(semanticFrames.length, 65);
+  assert.equal(semanticFrames[0].layers['p20-test1-semantic-bar'].x, 144);
+  assert.equal(semanticFrames[63].layers['p20-test1-semantic-bar'].x, 1656);
+  assert.equal(semanticFrames[64].layers['p20-test1-semantic-bar'].x, 144);
 });
 
 test('requires capture-order field indexes and the semantic field CSV contract', () => {

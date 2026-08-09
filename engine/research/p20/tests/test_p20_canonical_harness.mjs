@@ -107,6 +107,46 @@ test('one-tick P20.3 cell is explicit in its digest and engine URL', () => {
   assert.notEqual(manifest(baseline).configDigest, manifestOneTick.configDigest);
 });
 
+test('token-armed CEF wait is opt-in and changes the canonical digest', () => {
+  const baseline = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-wait-control-'));
+  const treatment = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-wait-treatment-'));
+  runDryOneCell(baseline, ['--pacing-mode=one-tick']);
+  runDryOneCell(treatment, ['--pacing-mode=one-tick', '--token-armed-wait']);
+
+  const treatmentRoot = manifest(treatment);
+  const command = manifest(treatment, 'ch1/manifest.json').plannedCommand.join(' ');
+  assert.equal(manifest(baseline).config.tokenArmedWait, false);
+  assert.equal(treatmentRoot.config.tokenArmedWait, true);
+  assert.match(command, /--decklink-token-armed-wait/);
+  assert.notEqual(manifest(baseline).configDigest, treatmentRoot.configDigest);
+});
+
+test('complex test1 marker path and digest are explicit in canonical manifest', () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-test1-marker-'));
+  runDryOneCell(outDir, [
+    `--template=${new URL('../../../../tests/templates/p20-test1-marker.json', import.meta.url).pathname}`,
+  ]);
+  assert.equal(manifest(outDir).config.template.path, 'tests/templates/p20-test1-marker.json');
+});
+
+test('integrated 1ch loopback capture is bound to canonical run identity', () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-loopback-'));
+  runDryOneCell(outDir, [
+    '--loopback-capture-bin=/bin/true',
+    '--loopback-input-device=2',
+    '--loopback-output-channel=ch1',
+    '--loopback-capture-input=quad2-sdi6',
+  ]);
+  const root = manifest(outDir);
+  assert.deepEqual(root.config.loopback, {
+    inputDeviceIndex: 2,
+    outputChannel: 'ch1',
+    captureInput: 'quad2-sdi6',
+  });
+  assert.match(root.plannedCaptureCommand.join(' '), new RegExp(`--run-id=${root.runId}`));
+  assert.match(root.plannedCaptureCommand.join(' '), new RegExp(`--config-digest=${root.configDigest}`));
+});
+
 test('P20.1 provenance-off baseline keeps the common performance recorder only', () => {
   const off = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-provenance-off-'));
   runDryCell(off, ['--provenance=off']);
@@ -145,4 +185,5 @@ test('canonical harness has bounded process-group cleanup and records aborted ru
   assert.match(source, /flock -n/);
   assert.match(source, /runId/);
   assert.match(source, /output directory must be empty|refusing to reuse/i);
+  assert.match(source, /p20-take\.mjs/);
 });

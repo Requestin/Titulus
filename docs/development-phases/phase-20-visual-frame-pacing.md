@@ -204,6 +204,18 @@ third in a second pass.
 L0 и tooling smoke выполнены; formal L1 остаётся STOP до чистых повторяемых
 5–15-minute captures по joint liveness+delivery+semantic gate.
 
+### P20.3 token-armed wait checkpoint
+
+Legacy wait действительно использовал publish counter вместо post-send CEF
+paint. FrameLog v3 и opt-in token-armed wait исправляют эту provenance
+ошибку с bounded one-field timeout. Clean 60-s loopback A/B уменьшил timeout
+15→8, но control дал reverse+skip, а treatment — один odd-field duplicate.
+Оба варианта поэтому STOP; 5/15-minute promotion не запускался.
+
+Следующий фактор — absolute 20-ms field grid при неизменных token wait и
+4-ms pump slice. Подробности:
+[P20.3 token-armed wait evidence](../performance%20investigation/reports/p20-03-token-armed-wait.md).
+
 ### P20.3 — one-factor cadence A/B
 
 Only after P20.1/P20.2 baseline:

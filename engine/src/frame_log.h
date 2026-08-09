@@ -39,13 +39,25 @@ enum class FrameDeliveryKind : uint8_t {
 
 std::string_view FrameDeliveryKindName(FrameDeliveryKind kind) noexcept;
 
-// Schema v2 is intentionally wide before all producers are wired. A zero value
+enum class FrameWaitExitReason : uint8_t {
+    NoRequest,
+    LegacyPublish,
+    CefPaint,
+    Timeout,
+};
+
+std::string_view FrameWaitExitReasonName(FrameWaitExitReason reason) noexcept;
+
+// Schema v3 adds bounded CEF-wait provenance. A zero value
 // means "not observed by this producer", never an inferred identity.
 struct FrameLogRecord {
     uint64_t unix_us = 0;
     uint64_t mono_us = 0;
     uint64_t interval_us = 0;
     uint64_t begin_frame_token = 0;
+    uint64_t cef_seq_at_send = 0;
+    uint64_t publish_seq_at_send = 0;
+    FrameWaitExitReason wait_exit_reason = FrameWaitExitReason::NoRequest;
     uint64_t batch_id = 0;
     uint32_t batch_index = 0;
     uint32_t batch_size = 0;
