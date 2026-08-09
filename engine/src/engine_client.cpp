@@ -2,6 +2,7 @@
 
 #include "engine_client.h"
 
+#include "frame_log.h"
 #include "mixer/graph_message_parser.h"
 #include "mixer/render_graph_store.h"
 
@@ -135,6 +136,17 @@ bool EngineClient::OnConsoleMessage(CefRefPtr<CefBrowser>, cef_log_severity_t,
         return true;
     };
     if (capture_ack(kCaptureReady, true) || capture_ack(kCaptureError, false)) {
+        return true;
+    }
+    if (msg.rfind("BGPACING", 0) == 0) {
+        const auto parsed = ParsePacingMessage(msg);
+        if (parsed.status == PacingParseStatus::Ok) {
+            const FrameLogClockSample clocks = CaptureFrameLogClocks();
+            pacing_store_.Commit(
+                parsed.event, clocks.unix_us, clocks.mono_us);
+        } else {
+            pacing_malformed_count_.fetch_add(1, std::memory_order_relaxed);
+        }
         return true;
     }
     // Only surface opt-in runtime stats lines (channel.html emits these when

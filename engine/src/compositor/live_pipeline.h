@@ -68,6 +68,14 @@ struct PipelineStats {
     std::string last_fallback_reason;
 };
 
+struct PipelineProvenanceSnapshot {
+    PipelineMode mode = PipelineMode::Disabled;
+    uint64_t graph_revision = 0;
+    uint64_t state_revision = 0;
+    uint64_t compose_seq = 0;
+    uint64_t live_update_generation = 0;
+};
+
 class LivePipeline {
   public:
     LivePipeline() = default;
@@ -81,6 +89,15 @@ class LivePipeline {
 
     PipelineMode mode() const { return mode_; }
     const PipelineStats& stats() const { return stats_; }
+    PipelineProvenanceSnapshot provenance_snapshot() const {
+        return {
+            .mode = mode_,
+            .graph_revision = last_composed_graph_revision_,
+            .state_revision = last_composed_state_revision_,
+            .compose_seq = compose_seq_,
+            .live_update_generation = live_update_generation_,
+        };
+    }
     uint64_t ComposeLatencyPercentileUs(uint32_t percentile) const;
     bool enabled() const { return enabled_; }
     void set_enabled(bool on);
@@ -162,6 +179,9 @@ class LivePipeline {
     std::vector<std::string> pending_content_dirty_ids_;
     uint64_t live_update_generation_ = 0;
     uint64_t last_composed_live_update_generation_ = 0;
+    uint64_t last_composed_graph_revision_ = 0;
+    uint64_t last_composed_state_revision_ = 0;
+    uint64_t compose_seq_ = 0;
     int32_t last_incremental_width_ = 0;
     int32_t last_incremental_height_ = 0;
 
