@@ -85,7 +85,7 @@ test('mark-freeze writes unix_us header and captures freeze/control inputs', () 
   const dir = mkdtempSync(join(tmpdir(), 'titulus-mark-freeze-'));
   const output = join(dir, 'marks.csv');
   const result = spawnSync('bash', [marker.pathname, output], {
-    input: '\nc\n',
+    input: 'fcq',
     encoding: 'utf8',
   });
 
