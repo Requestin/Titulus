@@ -17,13 +17,19 @@ else
   fi
 fi
 
-printf '[mark-freeze] Enter=freeze; c+Enter=control; Ctrl-C=exit -> %s\n' "$out"
-while IFS= read -r input; do
+printf '[mark-freeze] f=freeze; c=control; q=exit -> %s\n' "$out"
+while IFS= read -rsn1 input; do
+  if [[ "$input" == 'q' || "$input" == 'Q' ]]; then
+    printf '\n[mark-freeze] exit\n'
+    break
+  fi
   unix_us="$(date +%s%6N)"
   if [[ "$input" == 'c' || "$input" == 'C' ]]; then
     event='control'
-  else
+  elif [[ "$input" == 'f' || "$input" == 'F' || "$input" == $'\n' || "$input" == $'\r' ]]; then
     event='freeze'
+  else
+    continue
   fi
   printf '%s,%s,\n' "$unix_us" "$event" >> "$out"
   printf '[mark-freeze] %s @ %s\n' "$event" "$unix_us"

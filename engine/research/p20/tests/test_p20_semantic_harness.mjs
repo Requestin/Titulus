@@ -39,6 +39,10 @@ test('generates the deterministic P20 semantic marker v1 and checks in its schem
   assert.ok(bar);
   assert.equal(bar.transform.height, 720);
   assert.equal(bar.transform.y, 180);
+  const clock = generated.layers.find((layer) => layer.id === 'p20-marker-clock');
+  assert.ok(clock);
+  assert.equal(clock.type, 'clock');
+  assert.equal(clock.format, 'HH:mm:ss');
 
   const states = generated.timeline.keyframes.map((keyframe) => (
     keyframe.layers['p20-semantic-bar'].x
