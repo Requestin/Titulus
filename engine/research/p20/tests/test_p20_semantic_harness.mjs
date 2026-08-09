@@ -11,6 +11,7 @@ import {
 } from '../generate-semantic-marker.mjs';
 import {
   analyzeSemanticFields,
+  assessSemanticAcceptance,
   parseCsv,
 } from '../lib/analyze-semantic-fields.mjs';
 
@@ -92,6 +93,21 @@ test('requires capture-order field indexes and the semantic field CSV contract',
     ].join('\n'))),
     /requires output_channel/,
   );
+});
+
+test('strict semantic acceptance rejects empty and anomalous captures', () => {
+  const empty = analyzeSemanticFields(parseCsv([
+    'unix_us,output_channel,capture_input,field_index,semantic_id,field_parity,expected_parity,frame_hash',
+  ].join('\n')));
+  const anomalous = analyzeSemanticFields(parseCsv(readFileSync(
+    fixture('p20-semantic-anomalies.csv'),
+    'utf8',
+  )));
+
+  assert.equal(assessSemanticAcceptance(empty).healthy, false);
+  assert.match(assessSemanticAcceptance(empty).errors.join('\n'), /no field rows|no decoded fields/);
+  assert.equal(assessSemanticAcceptance(anomalous).healthy, false);
+  assert.match(assessSemanticAcceptance(anomalous).errors.join('\n'), /duplicate=1/);
 });
 
 test('safe pacing harness writes a dry-run manifest without launching hardware', () => {

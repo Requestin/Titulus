@@ -125,3 +125,53 @@ test('requires three preroll completions and a graceful marker for a shutdown ta
   assert.match(report.errors.join('\n'), /expected 3 preroll completions/);
   assert.match(report.errors.join('\n'), /graceful shutdown marker/);
 });
+
+test('rejects a frozen producer even when DeckLink completions are error-free', () => {
+  const report = analyzeP20M0({
+    eventRows: events([
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
+      '1,schedule,1,10,10,0,25000,0,0,0,0,0,0,starved,0,1',
+      '1,completion,1,11,11,0,0,0,0,0,0,0,0,starved,0,1',
+    ]),
+    engineLog: [
+      'frames=0',
+      'telemetry5s in_fps=0.0 out_fps=25.0 queue=0 d_pairs=0 d_singles=0 d_starved=125 d_late=0 d_dropped=0 d_flushed=0 d_overwritten=0 ref=locked',
+      'telemetry in=0 scheduled=1 late=0 dropped=0 flushed=0 overwrite=0 starved=1 pairs=0 singles=0 event_overflow=0',
+    ].join('\n'),
+    measurementStartUnixUs: 5,
+  });
+
+  assert.equal(report.healthy, false);
+  assert.equal(report.renderLiveness.healthy, false);
+  assert.equal(report.cadenceHealth.healthy, false);
+  assert.match(report.errors.join('\n'), /render produced zero frames|measurement contains starved schedule/);
+});
+
+test('separates startup starvation from strict measurement cadence health', () => {
+  const report = analyzeP20M0({
+    eventRows: events([
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
+      '1,schedule,1,2,2,0,25000,0,0,0,0,0,0,starved,0,1',
+      '1,completion,1,3,3,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,schedule,2,10,10,0,25000,2,2,10,11,10,11,pair,0,1',
+      '1,completion,2,11,11,0,0,0,0,0,0,0,0,starved,0,1',
+    ]),
+    engineLog: [
+      'frames=2',
+      'telemetry in=2 scheduled=2 late=0 dropped=0 flushed=0 overwrite=0 starved=1 pairs=1 singles=0 event_overflow=0',
+    ].join('\n'),
+    measurementStartUnixUs: 5,
+  });
+
+  assert.equal(report.healthy, true);
+  assert.equal(report.renderLiveness.healthy, true);
+  assert.deepEqual(report.cadenceHealth.measurementModes, {
+    pair: 1,
+    single: 0,
+    starved: 0,
+  });
+});

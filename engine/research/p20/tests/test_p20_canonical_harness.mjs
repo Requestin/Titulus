@@ -136,3 +136,10 @@ test('canonical cell rejects an unsafe duplicate CPU assignment before execution
     /overlap|unsafe/i,
   );
 });
+
+test('canonical harness has bounded process-group cleanup and records aborted runs', () => {
+  const source = readFileSync(harness, 'utf8');
+  assert.match(source, /kill -KILL -- "-\$pid"/);
+  assert.match(source, /run-status\.json/);
+  assert.match(source, /remaining CEF\/engine process group|remaining engine process/i);
+});
