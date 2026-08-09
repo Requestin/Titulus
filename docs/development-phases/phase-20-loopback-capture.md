@@ -1,7 +1,7 @@
 # Phase 20 — SDI Loopback Capture Protocol
 
-**Статус:** L0 PASS; L1 tooling operational, formal on-wire cadence baseline
-pending after evidence-gate hardening.
+**Статус:** L0 PASS; L1 smoke PASS on i7-14700KF; formal repeatable
+zero-anomaly on-wire cadence evidence deferred after visual Phase 20 closure.
 **Goal:** measure the signal that leaves DeckLink, without substituting
 render-side averages for on-wire temporal evidence.
 
@@ -124,6 +124,14 @@ reverted.
 liveness, но не закрыл L1: control дал reverse+skip, treatment — один
 odd-field duplicate. Поэтому wait identity исправляется как provenance, а
 следующий cadence treatment проверяет отдельную absolute 20-ms field grid.
+
+**2026-08-10 i7 smoke:** после переноса Quad 2 30-second `p20-moving-bar`
+loopback `port 5/device 1 → port 6/device 2` прошёл joint evidence: 1,500
+decoded fields, continuous reference и zero measurement `single`/`overwrite`.
+Это подтверждает connector mapping, driver, CEF/DeckLink setup и L1 tooling
+на новом host. Не следует расширять этот результат до strict L1 certification:
+repeatable 5–15-minute zero duplicate/skip/reversal capture не запускался и
+отложен вместе с formal on-wire claim.
 
 ### L2 — one-channel A/B
 

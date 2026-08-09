@@ -28,4 +28,4 @@
 | 17 | [phase-17-raster-latency.md](phase-17-raster-latency.md) | DONE |
 | 18 | [phase-18-true-50p-pipeline.md](phase-18-true-50p-pipeline.md) | DONE |
 | 19 | [phase-19-cost-model.md](phase-19-cost-model.md) | DONE |
-| 20 | [phase-20-visual-frame-pacing.md](phase-20-visual-frame-pacing.md) | IN PROGRESS — P20.2 loopback |
+| 20 | [phase-20-visual-frame-pacing.md](phase-20-visual-frame-pacing.md) | DONE — visual acceptance; strict SDI semantic evidence deferred |

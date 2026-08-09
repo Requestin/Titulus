@@ -4,9 +4,10 @@ alwaysApply: true
 ---
 # План разработки
 
-**Снимок:** август 2026. `main` содержит Phase 20 P20.1/M0 и internal
-one-tick evidence (PR #94/#95); P20.2 loopback выявил on-wire anomalies и
-остаётся в работе. Детали — `docs/development-phases/`.
+**Снимок:** август 2026. Phase 20 закрыта по visual acceptance после
+cross-host validation на i7-14700KF: complex `test1` не показал замеченных
+оператором фризов в 1ch/3ch SDI runs. Строгая on-wire zero-anomaly semantic
+certification сознательно отложена; детали — `docs/development-phases/`.
 
 ## Фазы (кратко)
 
@@ -32,7 +33,7 @@ one-tick evidence (PR #94/#95); P20.2 loopback выявил on-wire anomalies и
 | 17 | Raster pool vs latency | DONE (PR #60) | phase-17-raster-latency.md |
 | 18 | True 50p progressive pipeline | DONE (потолок задокументирован) | phase-18-true-50p-pipeline.md |
 | 19 | Style Guide + cost model | DONE: Doc02 audit-recovery K2 PASS (PR #84) | phase-19-cost-model.md |
-| 20 | Visual frame pacing + microfreeze | IN PROGRESS | phase-20-visual-frame-pacing.md |
+| 20 | Visual frame pacing + microfreeze | DONE (visual; strict SDI semantic evidence deferred) | phase-20-visual-frame-pacing.md |
 
 ## Последний milestone в main
 
@@ -43,19 +44,19 @@ hardening are implemented. Global flag stays OFF; opt-in is the explicit
 template-id allowlist. Final 15m 1ch and 60m 3ch soaks pass at 50.0 fps with
 zero DeckLink delivery errors.
 
-Phase 20 P20.1/M0 instrumentation готово: FrameLog v2, runtime/DeckLink
-provenance, semantic marker, operator marks и joint analysis. Internal
-`one_tick` устранил `(2,0)` logical cadence, но loopback L1 и complex `test1`
-доказали, что residual on-wire duplicates и визуальные микрофризы остаются.
+Phase 20 завершила visual scope: `one_tick` устранил `(2,0)` logical cadence,
+а i7-14700KF снизил residual queue pressure настолько, что оператор не увидел
+фризов на complex `test1` в 5m 1ch и 15m 3ch SDI validation. 3ch telemetry
+имела zero late/drop/flush; редкие `single`/`overwrite` не объявлены
+погрешностью и не продвигают strict on-wire gate. Отчёт:
+`docs/performance investigation/reports/p20-06-i7-14700k-visual-closure.md`.
 
-## Следующие задачи
+## Отложенная строгая SDI-проверка
 
-- Phase 20 P20.2 — merge hardened loopback tooling and obtain repeatable clean
-  5–15-minute semantic-field evidence.
-- Phase 20 P20.3 — correct BeginFrame/CEF-paint wait identity, then test the
-  absolute 20-ms field grid as a separate factor.
-- Phase 20 P20.4/P20.5 — calibrate residual microfreeze detector on
-  `p20-test1-marker`, select a causal mitigation and complete 3ch visual soaks.
+Если будущая фаза потребует формальный zero-error on-wire claim, открыть
+отдельную задачу: repeatable 5–15-minute semantic capture с zero
+duplicate/skip/reversal и zero steady-state `single`/`overwrite`, затем 3ch
+60-minute soak. Это не является блокером закрытой visual Phase 20.
 
 ## Как обновлять этот файл
 
