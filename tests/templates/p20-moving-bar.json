@@ -1,0 +1,950 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "2c286517-b9b0-4b44-a335-7a12405c2001",
+  "name": "p20-moving-bar",
+  "description": "P20 semantic marker v1: independently decodable full-height field residue.",
+  "tags": [
+    "p20",
+    "semantic-marker",
+    "loopback",
+    "interlace"
+  ],
+  "metadata": {
+    "category": "p20-semantic-marker-v1",
+    "safeTitle": "P20 moving semantic bar",
+    "notes": "Decode each field independently: residue = (bar_left_px - 144) / 24, range 0..63. The 720px opaque bar crosses both scanline parities; capture analysis reconstructs monotonic semantic IDs from consecutive residues."
+  },
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "#000000"
+  },
+  "variables": [],
+  "groups": [],
+  "layers": [
+    {
+      "id": "p20-marker-background",
+      "name": "P20 marker contrast field",
+      "type": "rect",
+      "visible": true,
+      "locked": true,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": {
+        "x": 120,
+        "y": 120,
+        "width": 1680,
+        "height": 840,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      },
+      "groupId": null,
+      "fill": "#101820",
+      "cornerRadius": 0,
+      "borderColor": "#000000",
+      "borderWidth": 0
+    },
+    {
+      "id": "p20-marker-track",
+      "name": "Semantic residue track",
+      "type": "rect",
+      "visible": true,
+      "locked": true,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": {
+        "x": 144,
+        "y": 180,
+        "width": 1536,
+        "height": 720,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      },
+      "groupId": null,
+      "fill": "#202c34",
+      "cornerRadius": 0,
+      "borderColor": "#000000",
+      "borderWidth": 0
+    },
+    {
+      "id": "p20-semantic-bar",
+      "name": "Semantic residue bar",
+      "type": "rect",
+      "visible": true,
+      "locked": true,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": {
+        "x": 144,
+        "y": 180,
+        "width": 18,
+        "height": 720,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      },
+      "groupId": null,
+      "fill": "#00ff7f",
+      "cornerRadius": 0,
+      "borderColor": "#000000",
+      "borderWidth": 0
+    },
+    {
+      "id": "p20-marker-title",
+      "name": "Marker title",
+      "type": "text",
+      "visible": true,
+      "locked": true,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": {
+        "x": 144,
+        "y": 132,
+        "width": 850,
+        "height": 42,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      },
+      "groupId": null,
+      "content": "P20 SEMANTIC MARKER v1",
+      "style": {
+        "fontFamily": "Arial",
+        "fontSize": 28,
+        "fontWeight": "700",
+        "fill": "#ffffff",
+        "align": "left",
+        "lineHeight": 1,
+        "letterSpacing": 0,
+        "strokeColor": "#000000",
+        "strokeWidth": 2,
+        "dropShadow": false,
+        "dropShadowBlur": 0,
+        "dropShadowColor": "#000000",
+        "dropShadowDistance": 0
+      }
+    },
+    {
+      "id": "p20-marker-decoder",
+      "name": "Marker decoder",
+      "type": "text",
+      "visible": true,
+      "locked": true,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": {
+        "x": 144,
+        "y": 912,
+        "width": 1100,
+        "height": 34,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      },
+      "groupId": null,
+      "content": "FIELD RESIDUE = (BAR X - 144) / 24  |  MOD 64",
+      "style": {
+        "fontFamily": "Arial",
+        "fontSize": 28,
+        "fontWeight": "700",
+        "fill": "#ffffff",
+        "align": "left",
+        "lineHeight": 1,
+        "letterSpacing": 0,
+        "strokeColor": "#000000",
+        "strokeWidth": 2,
+        "dropShadow": false,
+        "dropShadowBlur": 0,
+        "dropShadowColor": "#000000",
+        "dropShadowDistance": 0
+      }
+    }
+  ],
+  "rootStack": [
+    {
+      "kind": "layer",
+      "id": "p20-marker-background"
+    },
+    {
+      "kind": "layer",
+      "id": "p20-marker-track"
+    },
+    {
+      "kind": "layer",
+      "id": "p20-semantic-bar"
+    },
+    {
+      "kind": "layer",
+      "id": "p20-marker-title"
+    },
+    {
+      "kind": "layer",
+      "id": "p20-marker-decoder"
+    }
+  ],
+  "groupStacks": {},
+  "timeline": {
+    "fps": 50,
+    "durationFrames": 64,
+    "playbackMode": "infinite",
+    "directors": [
+      {
+        "id": "p20-semantic-director",
+        "name": "P20 semantic field residue",
+        "durationFrames": 64,
+        "offsetFrames": 0,
+        "autostart": true,
+        "loop": true,
+        "swing": false
+      }
+    ],
+    "trackDirectors": {
+      "p20-semantic-bar": "p20-semantic-director"
+    },
+    "keyframes": [
+      {
+        "id": "p20-semantic-frame-00",
+        "frame": 0,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 144
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-01",
+        "frame": 1,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 168
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-02",
+        "frame": 2,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 192
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-03",
+        "frame": 3,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 216
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-04",
+        "frame": 4,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 240
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-05",
+        "frame": 5,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 264
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-06",
+        "frame": 6,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 288
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-07",
+        "frame": 7,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 312
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-08",
+        "frame": 8,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 336
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-09",
+        "frame": 9,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 360
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-10",
+        "frame": 10,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 384
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-11",
+        "frame": 11,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 408
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-12",
+        "frame": 12,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 432
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-13",
+        "frame": 13,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 456
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-14",
+        "frame": 14,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 480
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-15",
+        "frame": 15,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 504
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-16",
+        "frame": 16,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 528
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-17",
+        "frame": 17,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 552
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-18",
+        "frame": 18,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 576
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-19",
+        "frame": 19,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 600
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-20",
+        "frame": 20,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 624
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-21",
+        "frame": 21,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 648
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-22",
+        "frame": 22,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 672
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-23",
+        "frame": 23,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 696
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-24",
+        "frame": 24,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 720
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-25",
+        "frame": 25,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 744
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-26",
+        "frame": 26,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 768
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-27",
+        "frame": 27,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 792
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-28",
+        "frame": 28,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 816
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-29",
+        "frame": 29,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 840
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-30",
+        "frame": 30,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 864
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-31",
+        "frame": 31,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 888
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-32",
+        "frame": 32,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 912
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-33",
+        "frame": 33,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 936
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-34",
+        "frame": 34,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 960
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-35",
+        "frame": 35,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 984
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-36",
+        "frame": 36,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1008
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-37",
+        "frame": 37,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1032
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-38",
+        "frame": 38,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1056
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-39",
+        "frame": 39,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1080
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-40",
+        "frame": 40,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1104
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-41",
+        "frame": 41,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1128
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-42",
+        "frame": 42,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1152
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-43",
+        "frame": 43,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1176
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-44",
+        "frame": 44,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1200
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-45",
+        "frame": 45,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1224
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-46",
+        "frame": 46,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1248
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-47",
+        "frame": 47,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1272
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-48",
+        "frame": 48,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1296
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-49",
+        "frame": 49,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1320
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-50",
+        "frame": 50,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1344
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-51",
+        "frame": 51,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1368
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-52",
+        "frame": 52,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1392
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-53",
+        "frame": 53,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1416
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-54",
+        "frame": 54,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1440
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-55",
+        "frame": 55,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1464
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-56",
+        "frame": 56,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1488
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-57",
+        "frame": 57,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1512
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-58",
+        "frame": 58,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1536
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-59",
+        "frame": 59,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1560
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-60",
+        "frame": 60,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1584
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-61",
+        "frame": 61,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1608
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-62",
+        "frame": 62,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1632
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-63",
+        "frame": 63,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 1656
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "p20-semantic-frame-64",
+        "frame": 64,
+        "layers": {
+          "p20-semantic-bar": {
+            "x": 144
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      }
+    ],
+    "actions": []
+  }
+}
