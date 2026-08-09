@@ -55,6 +55,8 @@ engine/research/p20/build/decklink_field_capture \
   --field-order=tff \
   --output-channel=ch1 \
   --capture-input=quad2-sdi6 \
+  --run-id=1786295873864572-cbca9810b1de \
+  --config-digest=cbca9810b1de4c46a0e65b196a926bc3999730b029bd9f7e3399230abda20674 \
   --summary=/mnt/titulus-tmpfs/p20-loopback/L1-YYYYMMDDTHHMMSSZ/capture-summary.json \
   --csv=/mnt/titulus-tmpfs/p20-loopback/L1-YYYYMMDDTHHMMSSZ/capture-fields.csv
 ```
@@ -64,7 +66,8 @@ The tool starts input streams only after the selected device reports
 or connector/profile setup are active. It has no raw-frame output path.
 Any no-source frame, invalid frame, write/flush failure or empty capture makes
 the process exit nonzero. `--summary` writes the same counters as bounded JSON
-and refuses to overwrite an existing path.
+and refuses to overwrite an existing path. Its `runId` and `configDigest` must
+come from the canonical cell manifest; the joint gate rejects mismatches.
 
 ## CSV contract
 
@@ -112,6 +115,7 @@ DeckLink event logs:
 node engine/research/p20/lib/analyze-p20-evidence.mjs \
   --run-dir=/path/to/p20-cell \
   --capture=/path/to/capture-fields.csv \
+  --capture-summary=/path/to/capture-summary.json \
   --channel=1 \
   --output-channel=ch1 \
   --capture-input=quad2-sdi6 \

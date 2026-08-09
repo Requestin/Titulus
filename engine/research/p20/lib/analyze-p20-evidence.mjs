@@ -49,6 +49,7 @@ export function analyzeP20Evidence({
   minFields = 1,
   metadataReport = { errors: [], healthy: true },
   captureBinding = { errors: [], healthy: true },
+  captureSummaryReport = { errors: [], healthy: true },
 }) {
   if (!m0Report || typeof m0Report !== 'object') throw new Error('m0Report is required');
   const semantic = assessSemanticAcceptance(semanticReport, { minFields });
@@ -72,6 +73,7 @@ export function analyzeP20Evidence({
   const errors = [
     ...metadataReport.errors,
     ...captureBinding.errors,
+    ...captureSummaryReport.errors,
     ...(m0Report.errors ?? []),
     ...semantic.errors,
     ...frameLiveness.errors,
@@ -81,6 +83,7 @@ export function analyzeP20Evidence({
     planes: {
       metadata: metadataReport,
       captureBinding,
+      captureSummary: captureSummaryReport,
       logger,
       delivery,
       producer,
@@ -91,6 +94,7 @@ export function analyzeP20Evidence({
     errors: [...new Set(errors)],
     healthy: metadataReport.healthy
       && captureBinding.healthy
+      && captureSummaryReport.healthy
       && logger.healthy
       && delivery.healthy
       && producer.healthy
@@ -114,6 +118,18 @@ export function validateRunMetadata({ manifest, channelManifest, runStatus }) {
     errors.push('root manifest config digest is missing');
   } else if (channelManifest?.configDigest !== manifest.configDigest) {
     errors.push('channel manifest config digest differs from root manifest');
+  }
+  if (typeof manifest?.runId !== 'string' || manifest.runId.length === 0) {
+    errors.push('root manifest run ID is missing');
+  } else if (channelManifest?.runId !== manifest.runId || runStatus?.runId !== manifest.runId) {
+    errors.push('run ID differs across manifest, channel, and status');
+  }
+  if (runStatus?.configDigest !== manifest?.configDigest) {
+    errors.push('run status config digest differs from manifest');
+  }
+  if (runStatus?.measurement?.startUnixUs !== startUnixUs
+      || runStatus?.measurement?.endUnixUs !== endUnixUs) {
+    errors.push('run status measurement bounds differ from manifest');
   }
   return { errors, healthy: errors.length === 0 };
 }
@@ -157,6 +173,28 @@ export function validateCaptureBinding(rows, {
   };
 }
 
+export function validateCaptureSummary(summary, {
+  runId,
+  configDigest,
+  fields,
+}) {
+  const errors = [];
+  if (summary?.schemaVersion !== 'p20-field-capture-summary-v1') {
+    errors.push('capture summary schema is invalid');
+  }
+  if (summary?.runId !== runId) errors.push('capture summary run ID differs from manifest');
+  if (summary?.configDigest !== configDigest) {
+    errors.push('capture summary config digest differs from manifest');
+  }
+  if (summary?.fields !== fields) errors.push('capture summary field count differs from CSV rows');
+  for (const name of ['noSource', 'invalid', 'writeFailures']) {
+    if (summary?.[name] !== 0) errors.push(`capture summary ${name}=${summary?.[name]}`);
+  }
+  if (summary?.csvFlush !== true) errors.push('capture summary CSV flush failed');
+  if (summary?.healthy !== true) errors.push('capture summary is not healthy');
+  return { errors, healthy: errors.length === 0 };
+}
+
 function frameRowsInMeasurement(rows, measurement) {
   if (!measurement) return rows;
   return rows.filter((row) => {
@@ -172,6 +210,7 @@ export function main(argv = process.argv.slice(2)) {
     allowed: new Set([
       'run-dir',
       'capture',
+      'capture-summary',
       'channel',
       'output-channel',
       'capture-input',
@@ -181,10 +220,11 @@ export function main(argv = process.argv.slice(2)) {
     ]),
     boolean: new Set(['help']),
   });
-  if (!opts['run-dir'] || !opts.capture || !opts['output-channel']
+  if (!opts['run-dir'] || !opts.capture || !opts['capture-summary'] || !opts['output-channel']
       || !opts['capture-input'] || opts.help) {
     process.stderr.write(
       'Usage: analyze-p20-evidence.mjs --run-dir=DIR --capture=fields.csv '
+      + '--capture-summary=summary.json '
       + '--output-channel=TOKEN --capture-input=TOKEN '
       + '[--channel=N] [--min-fields=N] [--out=report.json]\n',
     );
@@ -215,6 +255,12 @@ export function main(argv = process.argv.slice(2)) {
     captureInput: opts['capture-input'],
   });
   const semanticReport = analyzeSemanticFields(captureRows);
+  const captureSummary = JSON.parse(readFileSync(opts['capture-summary'], 'utf8'));
+  const captureSummaryReport = validateCaptureSummary(captureSummary, {
+    runId: manifest.runId,
+    configDigest: manifest.configDigest,
+    fields: captureRows.length,
+  });
   const allFrameRows = parseCsv(readFileSync(join(channelDir, 'frame.csv'), 'utf8'));
   const report = analyzeP20Evidence({
     m0Report,
@@ -223,6 +269,7 @@ export function main(argv = process.argv.slice(2)) {
     minFields: Number(opts['min-fields'] ?? 1),
     metadataReport,
     captureBinding,
+    captureSummaryReport,
   });
   report.capture = {
     sha256: createHash('sha256').update(captureText).digest('hex'),

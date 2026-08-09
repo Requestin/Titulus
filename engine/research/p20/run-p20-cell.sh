@@ -152,7 +152,12 @@ for index in "${!MASK_ARRAY[@]}"; do
   done
 done
 
-mkdir -p "$OUT_DIR"
+if [[ -e "$OUT_DIR" ]]; then
+  [[ -d "$OUT_DIR" ]] || fail "--out-dir exists and is not a directory"
+  [[ -z "$(ls -A -- "$OUT_DIR")" ]] || fail "output directory must be empty; refusing to reuse artifacts"
+else
+  mkdir -p "$OUT_DIR"
+fi
 RUN_DIR="$(cd "$OUT_DIR" && pwd)"
 for index in $(seq 1 "$COUNT"); do
   mkdir -p "$RUN_DIR/ch${index}/cef-cache"
@@ -235,16 +240,19 @@ CONFIG_DIGEST="$(node -e 'console.log(require(process.argv[1]).configDigest)' "$
 EXECUTION_MODE="dry_run"
 (( EXECUTE == 1 )) && EXECUTION_MODE="execute"
 CREATED_UNIX_US="$(date -u +%s%6N)"
+RUN_ID="${CREATED_UNIX_US}-${CONFIG_DIGEST:0:12}"
 export P20_RUN_DIR="$RUN_DIR"
 export P20_CONFIG_DIGEST="$CONFIG_DIGEST"
 export P20_EXECUTION_MODE="$EXECUTION_MODE"
 export P20_CREATED_UNIX_US="$CREATED_UNIX_US"
+export P20_RUN_ID="$RUN_ID"
 export P20_LABEL="$LABEL"
 node - <<'NODE'
 import { readFileSync, writeFileSync } from 'node:fs';
 const { config, configDigest } = JSON.parse(readFileSync(`${process.env.P20_RUN_DIR}/config.json`, 'utf8'));
 const root = {
   schemaVersion: 'p20-canonical-cell-v1',
+  runId: process.env.P20_RUN_ID,
   createdUnixUs: Number(process.env.P20_CREATED_UNIX_US),
   label: process.env.P20_LABEL,
   configDigest,
@@ -257,6 +265,7 @@ for (let index = 0; index < config.channels.length; index += 1) {
   const number = index + 1;
   const channel = {
     schemaVersion: 'p20-canonical-channel-v1',
+      runId: process.env.P20_RUN_ID,
     configDigest,
     execution: root.execution,
     channel: {
@@ -330,13 +339,24 @@ write_run_status() {
   local outcome="$1"
   local reason="$2"
   P20_RUN_OUTCOME="$outcome" P20_RUN_REASON="$reason" P20_RUN_STATUS_PATH="$RUN_DIR/run-status.json" \
+  P20_RUN_ID="$RUN_ID" P20_CONFIG_DIGEST="$CONFIG_DIGEST" \
+  P20_STATUS_START="${MEASURE_START_UNIX_US:-0}" P20_STATUS_END="${MEASURE_END_UNIX_US:-0}" \
     node - <<'NODE'
-import { writeFileSync } from 'node:fs';
-writeFileSync(process.env.P20_RUN_STATUS_PATH, `${JSON.stringify({
+import { renameSync, writeFileSync } from 'node:fs';
+const path = process.env.P20_RUN_STATUS_PATH;
+const temporary = `${path}.${process.pid}.tmp`;
+writeFileSync(temporary, `${JSON.stringify({
   schemaVersion: 'p20-run-status-v1',
+  runId: process.env.P20_RUN_ID,
+  configDigest: process.env.P20_CONFIG_DIGEST,
   outcome: process.env.P20_RUN_OUTCOME,
   reason: process.env.P20_RUN_REASON,
+  measurement: {
+    startUnixUs: Number(process.env.P20_STATUS_START),
+    endUnixUs: Number(process.env.P20_STATUS_END),
+  },
 }, null, 2)}\n`);
+renameSync(temporary, path);
 NODE
 }
 
@@ -375,6 +395,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+write_run_status "running" "engines starting"
 ps -eo pid=,ppid=,pgid=,comm=,args= >"$RUN_DIR/processes-at-start.txt"
 
 for index in "${!CHANNEL_ARRAY[@]}"; do

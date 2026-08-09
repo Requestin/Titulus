@@ -45,6 +45,8 @@ struct Options {
     FieldOrder field_order = FieldOrder::TopFieldFirst;
     std::string output_channel = "unknown";
     std::string capture_input = "decklink-2";
+    std::string run_id;
+    std::string config_digest;
     std::filesystem::path csv_path;
     std::filesystem::path summary_path;
 };
@@ -84,6 +86,8 @@ void PrintUsage(FILE* stream) {
         "  --field-order=tff|bff     Emit field order (default: tff)\n"
         "  --output-channel=TOKEN    Safe CSV token (default: unknown)\n"
         "  --capture-input=TOKEN     Safe CSV token (default: decklink-2)\n"
+        "  --run-id=TOKEN            Canonical run identity for summary binding\n"
+        "  --config-digest=TOKEN      Canonical config digest for summary binding\n"
         "  --csv=PATH                New output CSV; existing files are refused\n"
         "  --summary=PATH            Optional exclusive JSON summary output\n"
         "  --help\n");
@@ -145,6 +149,18 @@ std::optional<Options> ParseOptions(int argc, char* argv[]) {
                 return std::nullopt;
             }
             options.capture_input = value;
+        } else if (name == "run-id") {
+            if (!IsSafeCsvToken(value)) {
+                std::fprintf(stderr, "[p20-field-capture] --run-id is not a safe token\n");
+                return std::nullopt;
+            }
+            options.run_id = value;
+        } else if (name == "config-digest") {
+            if (!IsSafeCsvToken(value)) {
+                std::fprintf(stderr, "[p20-field-capture] --config-digest is not a safe token\n");
+                return std::nullopt;
+            }
+            options.config_digest = value;
         } else if (name == "csv") {
             if (value.empty()) {
                 std::fprintf(stderr, "[p20-field-capture] --csv requires a path\n");
@@ -166,6 +182,13 @@ std::optional<Options> ParseOptions(int argc, char* argv[]) {
 
     if (options.csv_path.empty()) {
         std::fprintf(stderr, "[p20-field-capture] --csv is required\n");
+        return std::nullopt;
+    }
+    if (!options.summary_path.empty()
+        && (options.run_id.empty() || options.config_digest.empty())) {
+        std::fprintf(
+            stderr,
+            "[p20-field-capture] --summary requires --run-id and --config-digest\n");
         return std::nullopt;
     }
     return options;
@@ -427,6 +450,11 @@ class CaptureSession {
                 descriptor,
                 "{\n"
                 "  \"schemaVersion\": \"p20-field-capture-summary-v1\",\n"
+                "  \"runId\": \"%s\",\n"
+                "  \"configDigest\": \"%s\",\n"
+                "  \"outputChannel\": \"%s\",\n"
+                "  \"captureInput\": \"%s\",\n"
+                "  \"deviceIndex\": %d,\n"
                 "  \"fields\": %llu,\n"
                 "  \"containers\": %llu,\n"
                 "  \"noSource\": %llu,\n"
@@ -435,6 +463,11 @@ class CaptureSession {
                 "  \"csvFlush\": %s,\n"
                 "  \"healthy\": %s\n"
                 "}\n",
+                options_.run_id.c_str(),
+                options_.config_digest.c_str(),
+                options_.output_channel.c_str(),
+                options_.capture_input.c_str(),
+                options_.device_index,
                 static_cast<unsigned long long>(fields),
                 static_cast<unsigned long long>(containers),
                 static_cast<unsigned long long>(no_source),

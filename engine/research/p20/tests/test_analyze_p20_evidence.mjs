@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   analyzeP20Evidence,
   validateCaptureBinding,
+  validateCaptureSummary,
   validateRunMetadata,
 } from '../lib/analyze-p20-evidence.mjs';
 
@@ -68,12 +69,18 @@ test('joint evidence fails a frozen frame stream or semantic anomaly despite hea
 test('run metadata requires completed execution, measurement bounds, and matching digest', () => {
   const valid = {
     manifest: {
+      runId: 'run-1',
       configDigest: 'abc',
       execution: { mode: 'execute' },
       measurement: { startUnixUs: 100, endUnixUs: 200 },
     },
-    channelManifest: { configDigest: 'abc' },
-    runStatus: { outcome: 'completed' },
+    channelManifest: { runId: 'run-1', configDigest: 'abc' },
+    runStatus: {
+      outcome: 'completed',
+      runId: 'run-1',
+      configDigest: 'abc',
+      measurement: { startUnixUs: 100, endUnixUs: 200 },
+    },
   };
   assert.equal(validateRunMetadata(valid).healthy, true);
   assert.equal(validateRunMetadata({
@@ -109,4 +116,27 @@ test('capture binding requires one expected stream fully inside measurement wind
     [...rows, { ...rows[1], unix_us: '201' }],
     expected,
   ).healthy, false);
+});
+
+test('capture summary must be healthy, complete, and bound to the same run', () => {
+  const expected = {
+    runId: 'run-1',
+    configDigest: 'abc',
+    fields: 100,
+  };
+  const summary = {
+    schemaVersion: 'p20-field-capture-summary-v1',
+    runId: 'run-1',
+    configDigest: 'abc',
+    fields: 100,
+    noSource: 0,
+    invalid: 0,
+    writeFailures: 0,
+    csvFlush: true,
+    healthy: true,
+  };
+  assert.equal(validateCaptureSummary(summary, expected).healthy, true);
+  assert.equal(validateCaptureSummary({ ...summary, noSource: 1 }, expected).healthy, false);
+  assert.equal(validateCaptureSummary({ ...summary, runId: 'other' }, expected).healthy, false);
+  assert.equal(validateCaptureSummary({ ...summary, fields: 99 }, expected).healthy, false);
 });

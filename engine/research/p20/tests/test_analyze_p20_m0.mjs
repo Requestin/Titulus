@@ -136,6 +136,7 @@ test('rejects a frozen producer even when DeckLink completions are error-free', 
       '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
       '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
       '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
+      '1,reference_change,0,4,4,0,0,0,0,0,0,0,0,starved,0,1',
       '1,schedule,1,10,10,0,25000,0,0,0,0,0,0,starved,0,1',
       '1,completion,1,11,11,0,0,0,0,0,0,0,0,starved,0,1',
     ]),
@@ -163,6 +164,7 @@ test('separates startup starvation from strict measurement cadence health', () =
       '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
       '1,schedule,1,2,2,0,25000,0,0,0,0,0,0,starved,0,1',
       '1,completion,1,3,3,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,reference_change,0,4,4,0,0,0,0,0,0,0,0,starved,0,1',
       '1,schedule,2,10,10,0,25000,2,2,10,11,10,11,pair,0,1',
       '1,completion,2,11,11,0,0,0,0,0,0,0,0,starved,0,1',
     ]),
@@ -188,6 +190,7 @@ test('fails reference unlock inside measurement and ignores post-measure tail an
       '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
       '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
       '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,reference_change,0,4,4,0,0,0,0,0,0,0,0,starved,0,1',
       '1,schedule,1,10,10,0,25000,2,2,10,11,10,11,pair,0,1',
       '1,reference_change,0,11,11,0,0,0,0,0,0,0,0,starved,0,0',
       '1,completion,1,12,12,0,0,0,0,0,0,0,0,starved,0,1',
@@ -206,4 +209,26 @@ test('fails reference unlock inside measurement and ignores post-measure tail an
     single: 0,
     starved: 0,
   });
+});
+
+test('strict measurement requires a known locked reference and complete event rows', () => {
+  const noInitialLock = analyzeP20M0({
+    eventRows: events([
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,schedule,1,10,10,0,25000,2,2,10,11,10,11,pair,0,1',
+      '1,completion,1,11,11,0,0,0,0,0,0,0,0,starved,0,1',
+    ]),
+    engineLog: 'telemetry in=2 scheduled=1 late=0 dropped=0 flushed=0 overwrite=0 starved=0 pairs=1 singles=0 event_overflow=0\n',
+    measurementStartUnixUs: 5,
+    measurementEndUnixUs: 20,
+  });
+  assert.equal(noInitialLock.deliveryHealth.healthy, false);
+  assert.match(noInitialLock.deliveryHealth.errors.join('\n'), /reference state at measurement start is unknown/);
+
+  assert.throws(
+    () => parseDecklinkEvents(`${header}\n1,schedule,1,10`),
+    /incomplete DeckLink event row/,
+  );
 });

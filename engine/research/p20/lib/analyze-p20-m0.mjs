@@ -33,10 +33,7 @@ function parseCsv(text) {
   for (let index = 0; index < lines.length; index += 1) {
     const cells = lines[index].split(',');
     if (cells.length < headers.length) {
-      if (index !== lines.length - 1) {
-        throw new Error(`incomplete DeckLink event row before EOF at row ${index + 2}`);
-      }
-      continue;
+      throw new Error(`incomplete DeckLink event row at row ${index + 2}`);
     }
     if (cells.length > headers.length) throw new Error(`DeckLink event row ${index + 2} has extra fields`);
     rows.push(Object.fromEntries(headers.map((header, cell) => [header, cells[cell] ?? ''])));
@@ -259,6 +256,15 @@ export function analyzeP20M0({
     measurementEndUnixUs,
   );
   if (measuredRows) {
+    const referenceBeforeMeasurement = eventRows.filter(
+      (row) => row.event === 'reference_change'
+        && positive(row, 'unix_us') <= measurementStartUnixUs,
+    ).at(-1);
+    if (!referenceBeforeMeasurement) {
+      deliveryErrors.push('reference state at measurement start is unknown');
+    } else if (positive(referenceBeforeMeasurement, 'reference_state') !== 1) {
+      deliveryErrors.push('reference is unlocked at measurement start');
+    }
     const unlocks = measuredRows.filter(
       (row) => row.event === 'reference_change' && positive(row, 'reference_state') !== 1,
     );

@@ -143,4 +143,6 @@ test('canonical harness has bounded process-group cleanup and records aborted ru
   assert.match(source, /run-status\.json/);
   assert.match(source, /remaining CEF\/engine process group|remaining engine process/i);
   assert.match(source, /flock -n/);
+  assert.match(source, /runId/);
+  assert.match(source, /output directory must be empty|refusing to reuse/i);
 });
