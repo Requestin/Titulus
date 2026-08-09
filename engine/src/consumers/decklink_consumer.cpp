@@ -423,7 +423,7 @@ struct DecklinkConsumer::Impl {
                 counters,
                 sizeof(counters),
                 "telemetry in=%llu scheduled=%llu late=%llu dropped=%llu flushed=%llu "
-                "overwrite=%llu starved=%llu pairs=%llu singles=%llu",
+                "overwrite=%llu starved=%llu pairs=%llu singles=%llu event_overflow=%llu",
                 static_cast<unsigned long long>(frames_in_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(scheduled_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(late_.load(std::memory_order_relaxed)),
@@ -432,7 +432,9 @@ struct DecklinkConsumer::Impl {
                 static_cast<unsigned long long>(frames_overwritten_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(starved_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(pairs_.load(std::memory_order_relaxed)),
-                static_cast<unsigned long long>(singles_.load(std::memory_order_relaxed)));
+                static_cast<unsigned long long>(singles_.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(
+                    event_log_ ? event_log_->overflow_count() : 0));
             log_msg(label_, counters);
         }
 
@@ -800,7 +802,7 @@ struct DecklinkConsumer::Impl {
             "d_pairs=%llu d_singles=%llu d_starved=%llu "
             "d_late=%llu d_dropped=%llu d_flushed=%llu d_overwritten=%llu "
             "ref=%s | totals in=%llu completed=%llu pairs=%llu singles=%llu starved=%llu "
-            "late=%llu dropped=%llu flushed=%llu",
+            "late=%llu dropped=%llu flushed=%llu event_overflow=%llu",
             static_cast<double>(in - prev_in_) / sec,
             static_cast<double>(completed - prev_completed_) / sec,
             queue_depth,
@@ -819,7 +821,9 @@ struct DecklinkConsumer::Impl {
             static_cast<unsigned long long>(starved),
             static_cast<unsigned long long>(late),
             static_cast<unsigned long long>(dropped),
-            static_cast<unsigned long long>(flushed));
+            static_cast<unsigned long long>(flushed),
+            static_cast<unsigned long long>(
+                event_log_ ? event_log_->overflow_count() : 0));
         log_msg(label_, buf);
 
         char stage_buf[360];
