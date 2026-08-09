@@ -3,6 +3,7 @@
 // P20.1 RED/GREEN tests for the optional FrameLog v2 evidence schema.
 
 #include "../src/frame_log.h"
+#include "../src/pacing_message_parser.h"
 
 #include <chrono>
 #include <cstdio>
@@ -107,6 +108,35 @@ TEST(FrameLogV2WritesDualClocksAndPacingColumns) {
           "v2 record must preserve explicit provenance values");
     CHECK(content.find("wall_clock_us") == std::string::npos,
           "steady-clock epoch must not be labelled wall clock");
+}
+
+TEST(ParsesBoundedRuntimePacingEvent) {
+    const auto parsed = bg::ParsePacingMessage(
+        "BGPACING v1 ev=7,raf=11,rperf=22000,runix=1725000000000000,"
+        "rdelta=20000,ticks=2,lf_before=100,lf_after=102,active=1,valid=1,"
+        "template=template-1,graph=3,state=9");
+    CHECK(parsed.status == bg::PacingParseStatus::Ok, "valid pacing message rejected");
+    CHECK(parsed.event.runtime_event_seq == 7, "runtime event sequence mismatch");
+    CHECK(parsed.event.ticks_per_raf == 2, "tick count mismatch");
+    CHECK(parsed.event.logical_frame_before == 100, "logical frame before mismatch");
+    CHECK(parsed.event.logical_frame_after == 102, "logical frame after mismatch");
+    CHECK(parsed.event.identity_valid, "identity validity mismatch");
+    CHECK(parsed.event.template_id == "template-1", "template id mismatch");
+}
+
+TEST(RejectsDuplicateOrInvalidRuntimePacingFields) {
+    const auto duplicate = bg::ParsePacingMessage(
+        "BGPACING v1 ev=1,ev=2,raf=1,rperf=1,runix=1,rdelta=1,ticks=1,"
+        "lf_before=0,lf_after=1,active=1,valid=0,template=-,graph=0,state=0");
+    CHECK(duplicate.status == bg::PacingParseStatus::Malformed,
+          "duplicate pacing field accepted");
+
+    const auto invalid = bg::ParsePacingMessage(
+        "BGPACING v1 ev=1,raf=1,rperf=1,runix=1,rdelta=1,ticks=1,"
+        "lf_before=0,lf_after=1,active=1,valid=1,template=invalid space,"
+        "graph=0,state=0");
+    CHECK(invalid.status == bg::PacingParseStatus::Malformed,
+          "unsafe template identifier accepted");
 }
 
 int main() {
