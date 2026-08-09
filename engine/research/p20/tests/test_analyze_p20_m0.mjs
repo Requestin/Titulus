@@ -29,7 +29,7 @@ test('accepts contiguous schedule/completion provenance with a bounded shutdown 
       '1,schedule,3,5,5,0,25000,2,2,14,15,14,15,pair,0,1',
       '1,schedule,4,6,6,0,25000,2,2,16,17,16,17,pair,0,1',
     ]),
-    engineLog: 'telemetry in=99 scheduled=99 late=0 dropped=0 flushed=0 overwrite=0 starved=0 pairs=99 singles=0 event_overflow=0\nduration reached, shutting down\n',
+    engineLog: 'telemetry in=99 scheduled=7 late=0 dropped=0 flushed=0 overwrite=0 starved=0 pairs=99 singles=0 event_overflow=0\nduration reached, shutting down\n',
   });
 
   assert.equal(report.healthy, true);
@@ -54,7 +54,7 @@ test('fails for an interior completion gap, nonzero delivery errors, or logger o
       '1,schedule,3,4,4,0,25000,2,2,14,15,14,15,pair,0,1',
       '1,completion,3,5,5,0,0,0,0,0,0,0,0,starved,0,0',
     ]),
-    engineLog: 'telemetry in=99 scheduled=99 late=1 dropped=0 flushed=0 overwrite=0 starved=0 pairs=99 singles=0 event_overflow=2\n',
+    engineLog: 'telemetry in=99 scheduled=6 late=1 dropped=0 flushed=0 overwrite=0 starved=0 pairs=99 singles=0 event_overflow=2\n',
   });
 
   assert.equal(report.healthy, false);
@@ -99,7 +99,7 @@ test('accepts source gaps only when matching input-overwrite events prove their 
       '1,schedule,2,5,5,0,25000,2,2,14,15,14,15,pair,0,1',
       '1,completion,2,6,6,0,0,0,0,0,0,0,0,starved,0,0',
     ]),
-    engineLog: 'telemetry in=4 scheduled=2 late=0 dropped=0 flushed=0 overwrite=2 starved=0 pairs=2 singles=0 event_overflow=0\n',
+    engineLog: 'telemetry in=4 scheduled=5 late=0 dropped=0 flushed=0 overwrite=2 starved=0 pairs=2 singles=0 event_overflow=0\n',
   });
 
   assert.equal(report.healthy, true);
@@ -122,7 +122,7 @@ test('requires three preroll completions and a graceful marker for a shutdown ta
       '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,0',
       '1,schedule,1,2,2,0,25000,2,2,10,11,10,11,pair,0,1',
     ]),
-    engineLog: 'telemetry in=1 scheduled=1 late=0 dropped=0 flushed=0 overwrite=0 starved=0 pairs=1 singles=0 event_overflow=0\n',
+    engineLog: 'telemetry in=1 scheduled=2 late=0 dropped=0 flushed=0 overwrite=0 starved=0 pairs=1 singles=0 event_overflow=0\n',
   });
 
   assert.equal(report.healthy, false);
@@ -143,7 +143,7 @@ test('rejects a frozen producer even when DeckLink completions are error-free', 
     engineLog: [
       'frames=0',
       'telemetry5s in_fps=0.0 out_fps=25.0 queue=0 d_pairs=0 d_singles=0 d_starved=125 d_late=0 d_dropped=0 d_flushed=0 d_overwritten=0 ref=locked',
-      'telemetry in=0 scheduled=1 late=0 dropped=0 flushed=0 overwrite=0 starved=1 pairs=0 singles=0 event_overflow=0',
+      'telemetry in=0 scheduled=4 late=0 dropped=0 flushed=0 overwrite=0 starved=1 pairs=0 singles=0 event_overflow=0',
     ].join('\n'),
     measurementStartUnixUs: 5,
   });
@@ -170,7 +170,7 @@ test('separates startup starvation from strict measurement cadence health', () =
     ]),
     engineLog: [
       'frames=2',
-      'telemetry in=2 scheduled=2 late=0 dropped=0 flushed=0 overwrite=0 starved=1 pairs=1 singles=0 event_overflow=0',
+      'telemetry in=2 scheduled=5 late=0 dropped=0 flushed=0 overwrite=0 starved=1 pairs=1 singles=0 event_overflow=0',
     ].join('\n'),
     measurementStartUnixUs: 5,
   });
@@ -197,7 +197,7 @@ test('fails reference unlock inside measurement and ignores post-measure tail an
       '1,schedule,2,30,30,0,25000,0,0,0,0,0,0,starved,0,0',
       '1,completion,2,31,31,0,0,0,0,0,0,0,0,starved,0,0',
     ]),
-    engineLog: 'telemetry in=2 scheduled=2 late=0 dropped=0 flushed=0 overwrite=0 starved=1 pairs=1 singles=0 event_overflow=0\n',
+    engineLog: 'telemetry in=2 scheduled=5 late=0 dropped=0 flushed=0 overwrite=0 starved=1 pairs=1 singles=0 event_overflow=0\n',
     measurementStartUnixUs: 5,
     measurementEndUnixUs: 20,
   });
@@ -220,7 +220,7 @@ test('strict measurement requires a known locked reference and complete event ro
       '1,schedule,1,10,10,0,25000,2,2,10,11,10,11,pair,0,1',
       '1,completion,1,11,11,0,0,0,0,0,0,0,0,starved,0,1',
     ]),
-    engineLog: 'telemetry in=2 scheduled=1 late=0 dropped=0 flushed=0 overwrite=0 starved=0 pairs=1 singles=0 event_overflow=0\n',
+    engineLog: 'telemetry in=2 scheduled=4 late=0 dropped=0 flushed=0 overwrite=0 starved=0 pairs=1 singles=0 event_overflow=0\n',
     measurementStartUnixUs: 5,
     measurementEndUnixUs: 20,
   });
@@ -231,4 +231,19 @@ test('strict measurement requires a known locked reference and complete event ro
     () => parseDecklinkEvents(`${header}\n1,schedule,1,10`),
     /incomplete DeckLink event row/,
   );
+});
+
+test('rejects a complete-looking event CSV truncated before telemetry schedule total', () => {
+  const report = analyzeP20M0({
+    eventRows: events([
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,schedule,1,2,2,0,25000,2,2,10,11,10,11,pair,0,1',
+      '1,completion,1,3,3,0,0,0,0,0,0,0,0,starved,0,1',
+    ]),
+    engineLog: 'telemetry in=2 scheduled=100 late=0 dropped=0 flushed=0 overwrite=0 starved=0 pairs=1 singles=0 event_overflow=0\n',
+  });
+  assert.equal(report.loggerIntegrity.healthy, false);
+  assert.match(report.loggerIntegrity.errors.join('\n'), /scheduled telemetry=100 differs from event rows=4/);
 });

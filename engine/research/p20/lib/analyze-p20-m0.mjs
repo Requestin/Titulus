@@ -224,6 +224,12 @@ export function analyzeP20M0({
 
   loggerErrors.push(...validateScheduleSources(schedules));
   const telemetry = finalTelemetry(engineLog);
+  const scheduledEventRows = schedules.length + prerollCompletions.length;
+  if (telemetry.scheduled !== scheduledEventRows) {
+    loggerErrors.push(
+      `scheduled telemetry=${telemetry.scheduled} differs from event rows=${scheduledEventRows}`,
+    );
+  }
   const deliveryErrors = [];
   for (const name of ['late', 'dropped', 'flushed', 'eventOverflow']) {
     const value = telemetry[name];
