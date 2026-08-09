@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +11,7 @@ import {
 } from '../generate-semantic-marker.mjs';
 import {
   analyzeSemanticFields,
+  assessSemanticAcceptance,
   parseCsv,
 } from '../lib/analyze-semantic-fields.mjs';
 
@@ -92,6 +93,36 @@ test('requires capture-order field indexes and the semantic field CSV contract',
     ].join('\n'))),
     /requires output_channel/,
   );
+});
+
+test('strict semantic acceptance rejects empty and anomalous captures', () => {
+  const empty = analyzeSemanticFields(parseCsv([
+    'unix_us,output_channel,capture_input,field_index,semantic_id,field_parity,expected_parity,frame_hash',
+  ].join('\n')));
+  const anomalous = analyzeSemanticFields(parseCsv(readFileSync(
+    fixture('p20-semantic-anomalies.csv'),
+    'utf8',
+  )));
+
+  assert.equal(assessSemanticAcceptance(empty).healthy, false);
+  assert.match(assessSemanticAcceptance(empty).errors.join('\n'), /no field rows|no decoded fields/);
+  assert.equal(assessSemanticAcceptance(anomalous).healthy, false);
+  assert.match(assessSemanticAcceptance(anomalous).errors.join('\n'), /duplicate=1/);
+});
+
+test('strict semantic CLI preserves following min-fields option and exits nonzero', () => {
+  const analyzer = new URL('../lib/analyze-semantic-fields.mjs', import.meta.url);
+  const result = spawnSync(process.execPath, [
+    analyzer.pathname,
+    `--in=${fixture('p20-semantic-anomalies.csv')}`,
+    '--strict',
+    '--min-fields=100',
+  ], { encoding: 'utf8' });
+
+  assert.equal(result.status, 2);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.acceptance.minFields, 100);
+  assert.match(report.acceptance.errors.join('\n'), /expected at least 100/);
 });
 
 test('safe pacing harness writes a dry-run manifest without launching hardware', () => {

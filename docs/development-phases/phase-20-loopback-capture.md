@@ -1,6 +1,7 @@
 # Phase 20 — SDI Loopback Capture Protocol
 
-**Статус:** planned; execute only after P20.1 semantic field marker exists.
+**Статус:** L0 PASS; L1 tooling operational, formal on-wire cadence baseline
+pending after evidence-gate hardening.
 **Goal:** measure the signal that leaves DeckLink, without substituting
 render-side averages for on-wire temporal evidence.
 
@@ -26,7 +27,9 @@ path.
 | Format | HD1080i50, BGRA scheduled output |
 | Timing | LES DG-14B (or equivalent) remains connected to Reference In |
 | Outputs under test | three concurrent DeckLink channels |
-| Free SDI connectors | five according to current lab inventory |
+| Physical connector map | Reference In = port 1; output device 1 = port 5; device 2 = port 7; device 3 = port 9 |
+| Active loopback | output port 5 (`device-index=1`) → input port 6 (`device-index=2`) |
+| Free SDI connectors | ports 2, 3, 4 and 8; port 6 is the active capture input |
 | Available cable topology | two output→input pairs at once; third can be tested in a second pass |
 | Optional independent capture | DeckLink Studio 2 can be installed later |
 
@@ -63,9 +66,8 @@ Perform this section with engines stopped and record it in the run manifest:
    connector labels, configured directions, active profile and supported
    HD1080i50 input mode.
 3. Map each Titulus `device-index` to its physical output with a static
-   color/label test. Existing documentation only guarantees the observed
-   mapping `device-index=1 → SDI #3`; it does not guarantee the rest after a
-   profile change.
+   color/label test. The 2026-08-09 map is device 1→port 5, device 2→port 7,
+   device 3→port 9; revalidate it after any profile change.
 4. Assign one unused Quad 2 SDI connector to input only if the discovered
    active profile supports simultaneous input/output. Save a screenshot or
    textual record of the assignment.
@@ -91,6 +93,11 @@ With one generator/output and one capture input:
 
 No cadence conclusion is valid at L0.
 
+**2026-08-09 result:** Quad 2 Full Duplex exposed `HD1080i50` input on
+`device-index=2`; SDK TestPattern from output port 5 to input port 6 produced
+250/250 valid captured frames. This is L0 PASS. Static content could not prove
+dominance, so TFF/BFF was decided later by the semantic marker.
+
 ### L1 — semantic-field smoke
 
 Run one Titulus channel with the P20 moving-bar/frame-ID pattern for 20–30 s.
@@ -103,6 +110,15 @@ Pass:
 - all fields decode;
 - expected marker and dominance are identified;
 - tooling detects injected synthetic duplicate/reverse fixtures offline.
+
+**2026-08-09 checkpoint:** streaming field capture decodes the marker after
+acquiring the DeckLink input buffer with `StartAccess`. TFF preserves temporal
+order; the BFF control produces systematic reverse/skip and is rejected.
+Short TFF captures can be clean, but the five-minute one-tick/1-ms-slice run
+contained 71 duplicate, one skipped and one reversed field among 14,998
+decoded fields. L1 therefore remains FAIL/pending, not a short-smoke PASS.
+The unbounded serial-recovery experiment also froze the producer and has been
+reverted.
 
 ### L2 — one-channel A/B
 
@@ -137,8 +153,13 @@ For every captured field produce:
 
 ```text
 unix_us,output_channel,capture_input,field_index,semantic_id,
-semantic_delta,field_parity,expected_parity,order_ok,frame_hash
+field_parity,expected_parity,frame_hash
 ```
+
+`semantic_delta` and `order_ok` are derived by the offline analyser from
+consecutive `semantic_id` values; they are deliberately not callback CSV
+columns. The L1 probe contract and its safe-label rules are documented in
+[`engine/research/p20/README-decklink-field-capture.md`](../../engine/research/p20/README-decklink-field-capture.md).
 
 Classify:
 
@@ -180,6 +201,12 @@ P20.2 passes only when all decoded post-warm-up fields have strictly monotonic
 semantic IDs with delta `+1`, no reversed pair and continuous reference lock.
 Duplicates, skips or undecodable fields are failures requiring attribution
 before changing defaults.
+
+The verdict is conjunctive: logger integrity, render liveness, DeckLink
+delivery, schedule cadence and semantic-field acceptance must all pass.
+`late/drop/flush=0` alone is explicitly insufficient because scheduled output
+can complete normally while the producer is frozen and the consumer repeats
+stale fields.
 
 Rollback is operational: stop engines cleanly, remove loopback cable, restore
 the saved Desktop Video connector/profile assignment, reconnect monitors, then

@@ -100,6 +100,18 @@ CEF/publish 49.971 Hz, ch2/ch3 — 49.948/49.797 poses/s. Следователь
 cadence, а не DeckLink drop. Подробные артефакты, правило graceful teardown и
 границы вывода — в [P20.1 M0 readiness evidence](../performance%20investigation/reports/p20-01-m0-readiness.md).
 
+### P20.2 L0/L1 checkpoint — 2026-08-09
+
+Quad 2 loopback `output port 5/device 1 → input port 6/device 2` работает:
+L0 захватил 250/250 валидных `HD1080i50` frames, streaming probe декодирует
+semantic marker, а BFF control однозначно подтверждает TFF dominance.
+
+On-wire cadence пока не прошла gate. Пяти-минутный one-tick run с 1-ms pump
+slice дал 71 duplicate, один skip и один reverse среди 14,998 decoded fields,
+несмотря на zero DeckLink late/drop/flush. Наивный serial recovery затем
+вызвал реальный стоп-кадр и был откатан. Подробности:
+[P20.2 L0/L1 evidence](../performance%20investigation/reports/p20-02-loopback-l0-l1.md).
+
 ## 4. Рабочие гипотезы
 
 ### H20.1 — batch cadence в decklink-driven path
@@ -158,9 +170,9 @@ flowchart LR
    captured field semantic ID and field order.
 
 Timestamps use both monotonic µs (durations) and Unix realtime µs
-(cross-process correlation). Existing `FrameLog` calls a `steady_clock`
-epoch `wall_clock_us`; it must not be used to join `date`, GC or operator
-marks until this is corrected.
+(cross-process correlation). FrameLog v2 уже исправил прежнее неверное
+обозначение steady-clock epoch как wall clock; внешние joins используют только
+явный `unix_us`.
 
 ## 6. Work packages
 
@@ -188,6 +200,9 @@ Follow [phase-20-loopback-capture.md](phase-20-loopback-capture.md). Keep
 Reference In connected; confirm mapping/profile while engines are stopped;
 run one-channel smoke first; then validate two channels in parallel and the
 third in a second pass.
+
+L0 и tooling smoke выполнены; formal L1 остаётся STOP до чистых повторяемых
+5–15-minute captures по joint liveness+delivery+semantic gate.
 
 ### P20.3 — one-factor cadence A/B
 

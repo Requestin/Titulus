@@ -1,6 +1,7 @@
 # Phase 20 — Residual Microfreeze Evidence and Elimination
 
-**Статус:** P20.1 provenance/M0 PASS; loopback L0/L1 and M1 pending.
+**Статус:** P20.1 provenance/M0 PASS; loopback L0 PASS, L1 STOP/pending;
+M1 pending.
 **Supersedes as an execution checklist:** the plan-only portions of
 [06-microfreeze-elimination.md](../performance%20investigation/06-microfreeze-elimination.md).
 **Does not supersede:** its historical observations, safety constraints and
@@ -37,8 +38,8 @@ Completed:
 Not completed:
 
 - historical Phase 14 was intentionally skipped;
-- P20.1 has not yet proved semantic field order after the SDI wire; only
-  loopback L1 can do that;
+- loopback подтвердил TFF и обнаружил реальные on-wire duplicate/skip/reverse,
+  но чистый 5–15-minute L1 PASS ещё не получен;
 - V8 MemoryReducer, THP/khugepaged and DeckLink-driver A/Bs were never
   causally ranked;
 - `telemetry5s` remains insufficient for 50–200 ms events.

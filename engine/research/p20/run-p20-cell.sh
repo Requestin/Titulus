@@ -152,7 +152,12 @@ for index in "${!MASK_ARRAY[@]}"; do
   done
 done
 
-mkdir -p "$OUT_DIR"
+if [[ -e "$OUT_DIR" ]]; then
+  [[ -d "$OUT_DIR" ]] || fail "--out-dir exists and is not a directory"
+  [[ -z "$(ls -A -- "$OUT_DIR")" ]] || fail "output directory must be empty; refusing to reuse artifacts"
+else
+  mkdir -p "$OUT_DIR"
+fi
 RUN_DIR="$(cd "$OUT_DIR" && pwd)"
 for index in $(seq 1 "$COUNT"); do
   mkdir -p "$RUN_DIR/ch${index}/cef-cache"
@@ -235,16 +240,19 @@ CONFIG_DIGEST="$(node -e 'console.log(require(process.argv[1]).configDigest)' "$
 EXECUTION_MODE="dry_run"
 (( EXECUTE == 1 )) && EXECUTION_MODE="execute"
 CREATED_UNIX_US="$(date -u +%s%6N)"
+RUN_ID="${CREATED_UNIX_US}-${CONFIG_DIGEST:0:12}"
 export P20_RUN_DIR="$RUN_DIR"
 export P20_CONFIG_DIGEST="$CONFIG_DIGEST"
 export P20_EXECUTION_MODE="$EXECUTION_MODE"
 export P20_CREATED_UNIX_US="$CREATED_UNIX_US"
+export P20_RUN_ID="$RUN_ID"
 export P20_LABEL="$LABEL"
 node - <<'NODE'
 import { readFileSync, writeFileSync } from 'node:fs';
 const { config, configDigest } = JSON.parse(readFileSync(`${process.env.P20_RUN_DIR}/config.json`, 'utf8'));
 const root = {
   schemaVersion: 'p20-canonical-cell-v1',
+  runId: process.env.P20_RUN_ID,
   createdUnixUs: Number(process.env.P20_CREATED_UNIX_US),
   label: process.env.P20_LABEL,
   configDigest,
@@ -257,6 +265,7 @@ for (let index = 0; index < config.channels.length; index += 1) {
   const number = index + 1;
   const channel = {
     schemaVersion: 'p20-canonical-channel-v1',
+      runId: process.env.P20_RUN_ID,
     configDigest,
     execution: root.execution,
     channel: {
@@ -315,26 +324,78 @@ if (( EXECUTE == 0 )); then
   exit 0
 fi
 
-if [[ -e "$LOCK" ]]; then
-  owner="$(<"$LOCK" 2>/dev/null || true)"
-  [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null && fail "another canonical run owns $LOCK (pid=$owner)"
-  rm -f "$LOCK"
-fi
+exec {LOCK_FD}>"$LOCK"
+flock -n "$LOCK_FD" || fail "another canonical run owns $LOCK"
 if pgrep -f "${ROOT}/engine/(build/Release/bg_engine|run-channel.sh)" >/dev/null; then
   pgrep -af "${ROOT}/engine/(build/Release/bg_engine|run-channel.sh)" >&2 || true
   fail "pre-existing Titulus engine process detected"
 fi
 
-printf '%s\n' "$$" >"$LOCK"
+printf '%s\n' "$$" >&"$LOCK_FD"
 PIDS=()
-cleanup() {
-  set +e
-  for pid in "${PIDS[@]:-}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
-  for pid in "${PIDS[@]:-}"; do wait "$pid" 2>/dev/null || true; done
-  [[ "$(<"$LOCK" 2>/dev/null || true)" == "$$" ]] && rm -f "$LOCK"
-  return 0
+RUN_COMPLETED=0
+
+write_run_status() {
+  local outcome="$1"
+  local reason="$2"
+  P20_RUN_OUTCOME="$outcome" P20_RUN_REASON="$reason" P20_RUN_STATUS_PATH="$RUN_DIR/run-status.json" \
+  P20_RUN_ID="$RUN_ID" P20_CONFIG_DIGEST="$CONFIG_DIGEST" \
+  P20_STATUS_START="${MEASURE_START_UNIX_US:-0}" P20_STATUS_END="${MEASURE_END_UNIX_US:-0}" \
+    node - <<'NODE'
+import { renameSync, writeFileSync } from 'node:fs';
+const path = process.env.P20_RUN_STATUS_PATH;
+const temporary = `${path}.${process.pid}.tmp`;
+writeFileSync(temporary, `${JSON.stringify({
+  schemaVersion: 'p20-run-status-v1',
+  runId: process.env.P20_RUN_ID,
+  configDigest: process.env.P20_CONFIG_DIGEST,
+  outcome: process.env.P20_RUN_OUTCOME,
+  reason: process.env.P20_RUN_REASON,
+  measurement: {
+    startUnixUs: Number(process.env.P20_STATUS_START),
+    endUnixUs: Number(process.env.P20_STATUS_END),
+  },
+}, null, 2)}\n`);
+renameSync(temporary, path);
+NODE
 }
-trap cleanup EXIT INT TERM
+
+cleanup() {
+  local exit_status=$?
+  local pid
+  set +e
+  for pid in "${PIDS[@]:-}"; do
+    kill -TERM -- "-$pid" 2>/dev/null || true
+  done
+  for _ in $(seq 1 40); do
+    local alive=0
+    for pid in "${PIDS[@]:-}"; do
+      pgrep -g "$pid" >/dev/null 2>&1 && alive=1
+    done
+    (( alive == 0 )) && break
+    sleep 0.25
+  done
+  for pid in "${PIDS[@]:-}"; do
+    if pgrep -g "$pid" >/dev/null 2>&1; then
+      kill -KILL -- "-$pid" 2>/dev/null || true
+    fi
+  done
+  for pid in "${PIDS[@]:-}"; do wait "$pid" 2>/dev/null || true; done
+  for pid in "${PIDS[@]:-}"; do
+    if pgrep -g "$pid" >/dev/null 2>&1; then
+      printf '[p20-cell] remaining CEF/engine process group pgid=%s after KILL\n' "$pid" >&2
+      exit_status=1
+    fi
+  done
+  if (( RUN_COMPLETED == 0 )); then
+    write_run_status "aborted" "exit_status=${exit_status}"
+  fi
+  return "$exit_status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+write_run_status "running" "engines starting"
 ps -eo pid=,ppid=,pgid=,comm=,args= >"$RUN_DIR/processes-at-start.txt"
 
 for index in "${!CHANNEL_ARRAY[@]}"; do
@@ -402,8 +463,13 @@ status=0
 for pid in "${PIDS[@]}"; do
   wait "$pid" || status=1
 done
-PIDS=()
 (( status == 0 )) || fail "one or more engines failed before graceful completion"
+for pid in "${PIDS[@]}"; do
+  if pgrep -g "$pid" >/dev/null 2>&1; then
+    fail "remaining CEF/engine process group pgid=$pid after graceful engine exit"
+  fi
+done
+PIDS=()
 ps -eo pid=,ppid=,pgid=,comm=,args= >"$RUN_DIR/processes-at-stop.txt"
 export P20_MEASURE_START_UNIX_US="$MEASURE_START_UNIX_US"
 export P20_MEASURE_END_UNIX_US="$MEASURE_END_UNIX_US"
@@ -418,4 +484,6 @@ manifest.measurement = {
 };
 writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
 NODE
+RUN_COMPLETED=1
+write_run_status "completed" "graceful"
 printf '[p20-cell] completed: %s\n' "$RUN_DIR"

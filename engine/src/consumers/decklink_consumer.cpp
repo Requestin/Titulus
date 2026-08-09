@@ -16,6 +16,7 @@
 #include <cstring>
 #include <deque>
 #include <dlfcn.h>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -552,6 +553,7 @@ struct DecklinkConsumer::Impl {
         } else if (result == bmdOutputFrameFlushed) {
             flushed_.fetch_add(1, std::memory_order_relaxed);
         }
+        MaybeLogReferenceTransition();
 
         // Recycle the displayed frame's storage: every frame we schedule is our
         // OwnedDecklinkFrame, so steal its buffer instead of allocating a fresh
@@ -705,6 +707,26 @@ struct DecklinkConsumer::Impl {
     // in_fps < channel fps means the render plane starves the consumer and the
     // output repeats/mixes fields — the exact signal we need for diagnosing
     // torn output (Phase 10).
+    void MaybeLogReferenceTransition() {
+        if (!event_log_ || !event_log_->enabled() || !output_) return;
+        BMDReferenceStatus status = bmdReferenceUnlocked;
+        int32_t reference_state = -2;
+        if (output_->GetReferenceStatus(&status) == S_OK) {
+            if (status & bmdReferenceNotSupportedByHardware) reference_state = -1;
+            else if (status & bmdReferenceLocked) reference_state = 1;
+            else reference_state = 0;
+        }
+        if (reference_state == last_reference_event_state_) return;
+        last_reference_event_state_ = reference_state;
+        const FrameLogClockSample clocks = CaptureFrameLogClocks();
+        event_log_->TryPush({
+            .type = DecklinkEventType::ReferenceChange,
+            .unix_us = clocks.unix_us,
+            .mono_us = clocks.mono_us,
+            .reference_state = reference_state,
+        });
+    }
+
     void MaybeLogTelemetry() {
         const auto now = std::chrono::steady_clock::now();
         if (telemetry_last_.time_since_epoch().count() == 0) {
@@ -736,9 +758,13 @@ struct DecklinkConsumer::Impl {
         const char* ref = "n/a";
         BMDReferenceStatus status = bmdReferenceUnlocked;
         if (output_ && output_->GetReferenceStatus(&status) == S_OK) {
-            if (status & bmdReferenceNotSupportedByHardware) ref = "unsupported";
-            else if (status & bmdReferenceLocked)            ref = "locked";
-            else                                             ref = "UNLOCKED";
+            if (status & bmdReferenceNotSupportedByHardware) {
+                ref = "unsupported";
+            } else if (status & bmdReferenceLocked) {
+                ref = "locked";
+            } else {
+                ref = "UNLOCKED";
+            }
         }
 
         // Per-output-frame time budget in microseconds (e.g. 40000us at 25Hz
@@ -1284,6 +1310,7 @@ struct DecklinkConsumer::Impl {
 
     // Telemetry window state (touched only on the completion callback thread).
     std::chrono::steady_clock::time_point telemetry_last_{};
+    int32_t last_reference_event_state_ = std::numeric_limits<int32_t>::min();
     uint64_t prev_in_ = 0, prev_completed_ = 0, prev_late_ = 0,
              prev_dropped_ = 0, prev_flushed_ = 0, prev_overwritten_ = 0,
              prev_starved_ = 0, prev_pairs_ = 0, prev_singles_ = 0,

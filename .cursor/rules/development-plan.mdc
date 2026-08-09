@@ -4,9 +4,9 @@ alwaysApply: true
 ---
 # План разработки
 
-**Снимок:** август 2026. `main` содержит закрытый Phase 19 Doc02 (PR #84);
-Phase 20 начинает evidence-first работу над визуальной плавностью. Детали —
-`docs/development-phases/`.
+**Снимок:** август 2026. `main` содержит Phase 20 P20.1/M0 и internal
+one-tick evidence (PR #94/#95); P20.2 loopback выявил on-wire anomalies и
+остаётся в работе. Детали — `docs/development-phases/`.
 
 ## Фазы (кратко)
 
@@ -43,18 +43,19 @@ hardening are implemented. Global flag stays OFF; opt-in is the explicit
 template-id allowlist. Final 15m 1ch and 60m 3ch soaks pass at 50.0 fps with
 zero DeckLink delivery errors.
 
-This is a throughput and delivery-health result, not a subjective visual-pacing
-sign-off. Visual runs on 2026-08-09 exposed bursty render delivery and visible
-judder despite those averages; Phase 20 owns the proof and remediation.
+Phase 20 P20.1/M0 instrumentation готово: FrameLog v2, runtime/DeckLink
+provenance, semantic marker, operator marks и joint analysis. Internal
+`one_tick` устранил `(2,0)` logical cadence, но loopback L1 и complex `test1`
+доказали, что residual on-wire duplicates и визуальные микрофризы остаются.
 
 ## Следующие задачи
 
-- Phase 20 P20.0/P20.1 — establish semantic frame/field evidence and an
-  operator-correlated hitch detector before changing pacing.
-- Phase 20 P20.2 — validate SDI cadence with a reference-preserving Quad 2
-  loopback; do not infer on-wire temporal order from averages.
-- Phase 20 P20.3–P20.5 — run one-factor cadence A/B, then isolate residual
-  microfreezes and complete 1ch/3ch visual soaks.
+- Phase 20 P20.2 — merge hardened loopback tooling and obtain repeatable clean
+  5–15-minute semantic-field evidence.
+- Phase 20 P20.3 — correct BeginFrame/CEF-paint wait identity, then test the
+  absolute 20-ms field grid as a separate factor.
+- Phase 20 P20.4/P20.5 — calibrate residual microfreeze detector on
+  `p20-test1-marker`, select a causal mitigation and complete 3ch visual soaks.
 
 ## Как обновлять этот файл
 

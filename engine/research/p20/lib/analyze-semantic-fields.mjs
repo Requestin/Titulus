@@ -8,6 +8,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { parseStrictOptions } from './cli-options.mjs';
 
 const REQUIRED_COLUMNS = [
   'unix_us',
@@ -240,31 +241,54 @@ export function analyzeSemanticFields(rows) {
   };
 }
 
-function options(argv) {
-  const result = {};
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (!arg.startsWith('--')) continue;
-    const [key, attached] = arg.slice(2).split(/=(.*)/s, 2);
-    result[key] = attached ?? argv[index + 1];
-    if (attached === undefined) index += 1;
+export function assessSemanticAcceptance(report, { minFields = 1 } = {}) {
+  if (!report || typeof report !== 'object') throw new Error('semantic report is required');
+  if (!Number.isSafeInteger(minFields) || minFields < 1) {
+    throw new Error('minFields must be a positive safe integer');
   }
-  return result;
+  const errors = [];
+  if (report.fieldRows < minFields) {
+    errors.push(report.fieldRows === 0
+      ? 'capture has no field rows'
+      : `capture has ${report.fieldRows} fields, expected at least ${minFields}`);
+  }
+  if ((report.totals?.decoded ?? 0) < minFields) {
+    errors.push(report.totals?.decoded === 0
+      ? 'capture has no decoded fields'
+      : `capture has ${report.totals.decoded} decoded fields, expected at least ${minFields}`);
+  }
+  for (const name of ['duplicate', 'skipped', 'reversed', 'undecodable', 'parityMismatch']) {
+    const value = report.totals?.[name] ?? 0;
+    if (value !== 0) errors.push(`${name}=${value}`);
+  }
+  return {
+    minFields,
+    errors,
+    healthy: errors.length === 0,
+  };
 }
 
 export function main(argv = process.argv.slice(2)) {
-  const opts = options(argv);
+  const opts = parseStrictOptions(argv, {
+    allowed: new Set(['in', 'out', 'strict', 'min-fields', 'help']),
+    boolean: new Set(['strict', 'help']),
+  });
   if (!opts.in || opts.help) {
     process.stderr.write(
-      'Usage: analyze-semantic-fields.mjs --in=capture-fields.csv [--out=analysis.json]\n',
+      'Usage: analyze-semantic-fields.mjs --in=capture-fields.csv '
+      + '[--strict] [--min-fields=N] [--out=analysis.json]\n',
     );
     return opts.help ? 0 : 1;
   }
   const report = analyzeSemanticFields(parseCsv(readFileSync(opts.in, 'utf8')));
-  const output = `${JSON.stringify(report, null, 2)}\n`;
+  const strict = opts.strict !== undefined;
+  const minFields = opts['min-fields'] === undefined ? 1 : Number(opts['min-fields']);
+  const acceptance = assessSemanticAcceptance(report, { minFields });
+  const outputReport = strict ? { ...report, acceptance } : report;
+  const output = `${JSON.stringify(outputReport, null, 2)}\n`;
   if (opts.out) writeFileSync(opts.out, output);
   process.stdout.write(output);
-  return 0;
+  return strict && !acceptance.healthy ? 2 : 0;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
