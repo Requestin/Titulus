@@ -16,7 +16,8 @@ namespace bg {
 // - Controlled restart request (exit 42) on profile-change events
 class DecklinkConsumer final : public Consumer {
   public:
-    DecklinkConsumer(int device_index, std::string display_mode, KeyerMode keyer_mode);
+    DecklinkConsumer(int device_index, std::string display_mode, KeyerMode keyer_mode,
+                     std::string completion_log_path);
     ~DecklinkConsumer() override;
 
     bool Start(int width, int height, int fps) override;
