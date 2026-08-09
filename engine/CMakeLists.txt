@@ -63,6 +63,8 @@ set(BG_SOURCES
   src/config.cpp
   src/stats.cpp
   src/frame_log.cpp
+  src/decklink_event_log.cpp
+  src/decklink_provenance.cpp
   src/pacing_message_parser.cpp
 )
 set(BG_HEADERS
@@ -71,6 +73,8 @@ set(BG_HEADERS
   src/config.h
   src/stats.h
   src/frame_log.h
+  src/decklink_event_log.h
+  src/decklink_provenance.h
   src/pacing_message_parser.h
   src/frame_ring.h
   src/message_pump.h

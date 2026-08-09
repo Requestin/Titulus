@@ -299,7 +299,9 @@ std::unique_ptr<bg::Consumer> make_consumer() {
             return std::make_unique<bg::PreviewWriter>(cfg.preview_out, cfg.preview_fps);
         case bg::ConsumerKind::Decklink:
 #if defined(BG_ENABLE_DECKLINK)
-            return std::make_unique<bg::DecklinkConsumer>(cfg.device_index, cfg.display_mode, cfg.keyer);
+            return std::make_unique<bg::DecklinkConsumer>(
+                cfg.device_index, cfg.display_mode, cfg.keyer,
+                cfg.decklink_completion_log);
 #else
             std::fprintf(stderr, "bg_engine: consumer '%s' not built into this binary; "
                                  "using null.\n", bg::ConsumerLabel(cfg.consumer));

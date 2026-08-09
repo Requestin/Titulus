@@ -1,6 +1,9 @@
 #include "consumers/decklink_consumer.h"
 
 #include "aligned_buffer.h"
+#include "decklink_event_log.h"
+#include "decklink_provenance.h"
+#include "frame_log.h"
 #include "simd_copy.h"
 
 #include "DeckLinkAPI.h"
@@ -61,8 +64,10 @@ struct BufferedFrame {
 
 class OwnedDecklinkFrame final : public IDeckLinkVideoFrame, public IDeckLinkVideoBuffer {
   public:
-    OwnedDecklinkFrame(int width, int height, int row_bytes, AlignedBuffer&& data)
-        : width_(width), height_(height), row_bytes_(row_bytes), data_(std::move(data)) {}
+    OwnedDecklinkFrame(int width, int height, int row_bytes, AlignedBuffer&& data,
+                       uint64_t schedule_seq)
+        : width_(width), height_(height), row_bytes_(row_bytes), data_(std::move(data)),
+          schedule_seq_(schedule_seq) {}
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID* ppv) override {
         if (!ppv) return E_INVALIDARG;
@@ -114,6 +119,7 @@ class OwnedDecklinkFrame final : public IDeckLinkVideoFrame, public IDeckLinkVid
     // storage so the next ScheduleVideoBuffer() reuses it instead of a fresh
     // 8MB allocation every 20-40ms (allocation jitter on the playback path).
     AlignedBuffer TakeBuffer() { return std::move(data_); }
+    uint64_t schedule_seq() const { return schedule_seq_; }
     HRESULT GetSize(uint64_t* size) override {
         if (!size) return E_INVALIDARG;
         *size = data_.size();
@@ -128,15 +134,18 @@ class OwnedDecklinkFrame final : public IDeckLinkVideoFrame, public IDeckLinkVid
     int height_ = 0;
     int row_bytes_ = 0;
     AlignedBuffer data_;
+    uint64_t schedule_seq_ = 0;
 };
 
 }  // namespace
 
 struct DecklinkConsumer::Impl {
-    explicit Impl(int device_index, std::string display_mode, KeyerMode keyer_mode)
+    explicit Impl(int device_index, std::string display_mode, KeyerMode keyer_mode,
+                  std::string completion_log_path)
         : device_index_(device_index),
           display_mode_name_(std::move(display_mode)),
-          keyer_mode_(keyer_mode) {}
+          keyer_mode_(keyer_mode),
+          event_log_(std::make_unique<DecklinkEventLog>(completion_log_path)) {}
 
     class OutputCallback final : public IDeckLinkVideoOutputCallback {
       public:
@@ -533,6 +542,16 @@ struct DecklinkConsumer::Impl {
         // ~8MB block per output frame (malloc jitter on the playback path).
         if (completed_frame) {
             auto* owned = static_cast<OwnedDecklinkFrame*>(completed_frame);
+            if (event_log_ && event_log_->enabled()) {
+                const FrameLogClockSample clocks = CaptureFrameLogClocks();
+                event_log_->TryPush({
+                    .type = DecklinkEventType::Completion,
+                    .schedule_seq = owned->schedule_seq(),
+                    .unix_us = clocks.unix_us,
+                    .mono_us = clocks.mono_us,
+                    .result = static_cast<int32_t>(result),
+                });
+            }
             RecycleBuffer(owned->TakeBuffer());
         }
 
@@ -548,6 +567,7 @@ struct DecklinkConsumer::Impl {
         BufferedFrame f1;
         {
             std::lock_guard<std::mutex> lock(queue_mu_);
+            const size_t queue_depth_before = frame_queue_.size();
             if (!frame_queue_.empty()) {
                 f0 = std::move(frame_queue_.front());
                 frame_queue_.pop_front();
@@ -558,7 +578,11 @@ struct DecklinkConsumer::Impl {
                     fresh = 2;
                 }
             }
+            last_queue_depth_before_ = queue_depth_before;
         }
+
+        const WeaveProvenanceDecision provenance = DecideWeaveProvenance(
+            fresh, f0.seq, f1.seq, {field_a_seq_, field_b_seq_});
 
         if (interlaced_) {
             if (fresh == 2 && f0.bytes.size() == frame_bytes_ && f1.bytes.size() == frame_bytes_) {
@@ -566,6 +590,8 @@ struct DecklinkConsumer::Impl {
                 RecycleInputBuffer(std::move(field_b_));
                 field_a_ = std::move(f0.bytes);
                 field_b_ = std::move(f1.bytes);
+                field_a_seq_ = provenance.woven.field_a_seq;
+                field_b_seq_ = provenance.woven.field_b_seq;
                 single_alias_ = false;
                 pairs_.fetch_add(1, std::memory_order_relaxed);
             } else if (fresh >= 1 && f0.bytes.size() == frame_bytes_) {
@@ -580,6 +606,8 @@ struct DecklinkConsumer::Impl {
                 // fields. Keep one owner in field_a_ and let weave read it for
                 // A and B instead of cloning another 8MB input buffer.
                 field_a_ = std::move(f0.bytes);
+                field_a_seq_ = provenance.woven.field_a_seq;
+                field_b_seq_ = provenance.woven.field_b_seq;
                 single_alias_ = true;
                 alias_singles_.fetch_add(1, std::memory_order_relaxed);
                 singles_.fetch_add(1, std::memory_order_relaxed);
@@ -597,9 +625,27 @@ struct DecklinkConsumer::Impl {
             }
         }
 
-        if (!ScheduleWovenOutput(next_display_time_)) {
+        const uint64_t schedule_seq = ++next_schedule_seq_;
+        const BMDTimeValue display_time = next_display_time_;
+        if (!ScheduleWovenOutput(display_time, schedule_seq)) {
             dropped_.fetch_add(1, std::memory_order_relaxed);
             return E_FAIL;
+        }
+        if (event_log_ && event_log_->enabled()) {
+            const FrameLogClockSample clocks = CaptureFrameLogClocks();
+            event_log_->TryPush({
+                .type = DecklinkEventType::Schedule,
+                .schedule_seq = schedule_seq,
+                .unix_us = clocks.unix_us,
+                .mono_us = clocks.mono_us,
+                .display_time = display_time,
+                .time_scale = time_scale_,
+                .queue_depth_before = static_cast<uint32_t>(last_queue_depth_before_),
+                .fresh_count = static_cast<uint32_t>(fresh),
+                .popped = {.field_a_seq = f0.seq, .field_b_seq = f1.seq},
+                .woven = provenance.woven,
+                .weave_mode = provenance.mode,
+            });
         }
         next_display_time_ += frame_duration_;
 
@@ -1013,7 +1059,7 @@ struct DecklinkConsumer::Impl {
     // Weave field_a_/field_b_ (or copy field_a_ for progressive) directly into
     // a recycled output buffer with the SDK row stride, and schedule it. One
     // pass replaces the old WeaveFields + repack copy chain.
-    bool ScheduleWovenOutput(BMDTimeValue display_time) {
+    bool ScheduleWovenOutput(BMDTimeValue display_time, uint64_t schedule_seq) {
         if (!output_) return false;
 
         const auto t_weave0 = std::chrono::steady_clock::now();
@@ -1052,7 +1098,8 @@ struct DecklinkConsumer::Impl {
             std::memory_order_relaxed);
 
         const auto t_sched0 = std::chrono::steady_clock::now();
-        auto* frame = new OwnedDecklinkFrame(width_, height_, row_bytes_, std::move(out));
+        auto* frame = new OwnedDecklinkFrame(
+            width_, height_, row_bytes_, std::move(out), schedule_seq);
         const HRESULT hr = output_->ScheduleVideoFrame(
             frame, display_time, frame_duration_, time_scale_);
         frame->Release();
@@ -1097,7 +1144,8 @@ struct DecklinkConsumer::Impl {
             }
         }
 
-        auto* frame = new OwnedDecklinkFrame(width_, height_, row_bytes_, std::move(packed));
+        auto* frame = new OwnedDecklinkFrame(
+            width_, height_, row_bytes_, std::move(packed), 0);
         const HRESULT hr = output_->ScheduleVideoFrame(
             frame, display_time, frame_duration_, time_scale_);
         frame->Release();
@@ -1130,6 +1178,8 @@ struct DecklinkConsumer::Impl {
     bool interlaced_ = false;
     bool upper_field_first_ = true;
     bool low_latency_applied_ = false;
+    std::unique_ptr<DecklinkEventLog> event_log_;
+    uint64_t next_schedule_seq_ = 0;
 
     IDeckLink* device_ = nullptr;
     IDeckLinkOutput* output_ = nullptr;
@@ -1154,6 +1204,9 @@ struct DecklinkConsumer::Impl {
     // progressive field_a_ holds the whole frame.
     AlignedBuffer field_a_;
     AlignedBuffer field_b_;
+    uint64_t field_a_seq_ = 0;
+    uint64_t field_b_seq_ = 0;
+    size_t last_queue_depth_before_ = 0;
     // Interlaced singles: field_a_ is intentionally reused for both fields;
     // field_b_ stays empty and must not be recycled/owned twice.
     bool single_alias_ = false;
@@ -1222,8 +1275,12 @@ struct DecklinkConsumer::Impl {
     ProfileCallback profile_callback_{this};
 };
 
-DecklinkConsumer::DecklinkConsumer(int device_index, std::string display_mode, KeyerMode keyer_mode)
-    : impl_(std::make_unique<Impl>(device_index, std::move(display_mode), keyer_mode)) {}
+DecklinkConsumer::DecklinkConsumer(int device_index, std::string display_mode,
+                                   KeyerMode keyer_mode,
+                                   std::string completion_log_path)
+    : impl_(std::make_unique<Impl>(
+        device_index, std::move(display_mode), keyer_mode,
+        std::move(completion_log_path))) {}
 
 DecklinkConsumer::~DecklinkConsumer() = default;
 

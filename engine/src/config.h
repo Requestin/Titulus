@@ -73,6 +73,10 @@ struct Config {
     // production decklink/browser paths).
     std::string frame_log;
 
+    // P20.1: full schedule/completion provenance. Empty keeps the DeckLink
+    // callback path unchanged.
+    std::string decklink_completion_log;
+
     // Phase 19 doc 03: DeckLink-only fast path. Deliver an OnPaint buffer
     // synchronously into DecklinkConsumer::OnFrame, which immediately copies
     // it into owned queue storage. This eliminates the intermediate FrameRing
