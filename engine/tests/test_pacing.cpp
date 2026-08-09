@@ -3,6 +3,7 @@
 // P20.1 RED/GREEN tests for the optional FrameLog v2 evidence schema.
 
 #include "../src/frame_log.h"
+#include "../src/decklink_provenance.h"
 #include "../src/pacing_message_parser.h"
 
 #include <chrono>
@@ -137,6 +138,24 @@ TEST(RejectsDuplicateOrInvalidRuntimePacingFields) {
         "graph=0,state=0");
     CHECK(invalid.status == bg::PacingParseStatus::Malformed,
           "unsafe template identifier accepted");
+}
+
+TEST(ClassifiesDecklinkWeaveProvenanceWithoutHardware) {
+    const bg::WeaveProvenancePair previous{.field_a_seq = 10, .field_b_seq = 11};
+    const auto pair = bg::DecideWeaveProvenance(2, 20, 21, previous);
+    CHECK(pair.mode == bg::WeaveProvenanceMode::Pair, "two fresh frames must pair");
+    CHECK(pair.woven.field_a_seq == 20 && pair.woven.field_b_seq == 21,
+          "pair source order mismatch");
+
+    const auto single = bg::DecideWeaveProvenance(1, 30, 0, previous);
+    CHECK(single.mode == bg::WeaveProvenanceMode::Single, "one fresh frame must alias");
+    CHECK(single.woven.field_a_seq == 30 && single.woven.field_b_seq == 30,
+          "single alias identity mismatch");
+
+    const auto starved = bg::DecideWeaveProvenance(0, 0, 0, previous);
+    CHECK(starved.mode == bg::WeaveProvenanceMode::Starved, "empty queue must starve");
+    CHECK(starved.woven.field_a_seq == 10 && starved.woven.field_b_seq == 11,
+          "starved output must preserve previous pair");
 }
 
 int main() {

@@ -105,6 +105,7 @@ add_test(NAME live_pipeline_unit COMMAND test_live_pipeline)
 
 add_executable(test_pacing
   test_pacing.cpp
+  ../src/decklink_provenance.cpp
   ../src/frame_log.cpp
   ../src/pacing_message_parser.cpp
 )
