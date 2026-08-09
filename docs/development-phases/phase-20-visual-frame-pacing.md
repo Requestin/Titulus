@@ -58,7 +58,32 @@ Phase 20 — установить, на каком участке temporal path 
 Следовательно, Phase 20 не отменяет K2 PASS: он добавляет отсутствующую
 visual-pacing acceptance plane.
 
-## 3. Рабочие гипотезы
+## 3. Evidence checkpoint — canonical cadence (2026-08-09)
+
+P20.1 provenance and detector tooling реализованы: FrameLog v2 соединяет
+BeginFrame/CEF paint/runtime rAF/logical frame/compose provenance; marker и
+`analyze-p20-cadence.mjs` отделяют logical pose rate от CEF/publish rate.
+
+Canonical 3ch matrix воспроизвела исходную асимметрию без смены шаблона:
+
+- A: ch1/ch3 около 50 poses/s, ch2 25.320 poses/s при CEF/publish около
+  50 Hz на всех каналах;
+- B (swap CPU masks): 25-pose attractor перешёл вместе с mask;
+- C (swap DeckLink devices) не дал device-only объяснения;
+- D (start stagger 0/5/10 ms) сменил выбранные channels/доли attractor.
+
+Следовательно, wall-time accumulator может выдавать `(2,0)` logical cadence
+при здоровой delivery telemetry; topology и startup phase влияют на выбор
+аттрактора. Детали, config digests и raw artifacts зафиксированы в
+[P20 canonical cadence evidence](../performance%20investigation/reports/p20-canonical-cadence.md).
+
+P20.3 dev-only `pacing_mode=one_tick` теперь выполняет ровно один logical tick
+на BeginFrame. На fresh canonical A/B: accumulator дал 49.909/32.676/43.409
+poses/s, а one-tick — 49.982/49.966/49.994 poses/s с `(1,1)=1.0000` и
+`(2,0)=0.0000` на всех трёх каналах. Это internal provenance pass, не
+заменяющий P20.2 loopback и visual/microfreeze acceptance.
+
+## 4. Рабочие гипотезы
 
 ### H20.1 — batch cadence в decklink-driven path
 
@@ -89,7 +114,7 @@ loopback она не считается доказанной.
 V8 MemoryReducer, THP/khugepaged, scheduler и DeckLink driver остаются
 **непроверенными**, а не подтверждёнными гипотезами.
 
-## 4. Дизайн доказательств
+## 5. Дизайн доказательств
 
 ```mermaid
 flowchart LR
@@ -120,7 +145,7 @@ Timestamps use both monotonic µs (durations) and Unix realtime µs
 epoch `wall_clock_us`; it must not be used to join `date`, GC or operator
 marks until this is corrected.
 
-## 5. Work packages
+## 6. Work packages
 
 ### P20.0 — baseline and terminology
 
@@ -182,14 +207,14 @@ average FPS.
 | Soak | 1ch 10–15 min detector+loopback, 3ch 15 min, final 3ch 60 min |
 | Visual review | no systematic perceived 25–30 fps segments on `test1` |
 
-## 6. Rollback
+## 7. Rollback
 
 Instrumentation is opt-in and must have no hot-path work when disabled.
 Every cadence A/B ships behind an explicit dev flag, with baseline as default
 until loopback evidence passes. Revert a selected PR or unset its flag, restart
 the affected engine supervisor tree, then perform a 15-minute baseline smoke.
 
-## 7. Out of scope
+## 8. Out of scope
 
 - GPU renderer, alternative runtime and CasparCG runtime are prohibited.
 - Average `in_fps` alone, JPEG preview and visual judgment alone are not

@@ -11,6 +11,7 @@
     channel=<uuid>     channel id (default "default")
     engine=1           fixed-step playback at engine_fps (host ticks ChannelClient)
     engine_fps=50      fixed tick rate (channel fps)
+    pacing_mode=one_tick  P20.3 experiment: one logical tick per BeginFrame
     w=1920&h=1080      canvas size (stage is sized to this; CEF renders it 1:1)
     backend=host:port  WebSocket backend override (else page origin)
     hud=1              debug overlay (fps + WS status + active count)
@@ -71,6 +72,10 @@
     var channelId = qs.get('channel') || 'default';
     var engineMode = qs.get('engine') === '1' && qs.get('preview') !== '1';
     var engineFps = parseInt(qs.get('engine_fps') || '50', 10) || 50;
+    // P20.3 dev experiment. The default keeps prior wall-time accumulator
+    // behaviour; one_tick is intentionally URL-visible and harness-recorded.
+    var fixedPacingMode = qs.get('pacing_mode') === 'one_tick'
+      ? 'one_tick' : 'accumulator';
     var canvasW = parseInt(qs.get('w') || '1920', 10) || 1920;
     var canvasH = parseInt(qs.get('h') || '1080', 10) || 1080;
     var backend = qs.get('backend') || '';
@@ -152,12 +157,7 @@
     // lockstep with whatever actually drives rAF (bg_engine's BeginFrame in
     // engine mode; the display's vsync in plain browser preview — see the
     // 'raf' playbackMode branch above, untouched by this).
-    var tickAccumMs = 0;
-    var lastTickT = null;
-    var tickStepMs = 1000 / engineFps;
-    // Cap catch-up debt so a stall (tab backgrounded, debugger pause) can't
-    // fire a runaway burst of ticks once rAF resumes.
-    var maxTickDebtMs = tickStepMs * 4;
+    var fixedPacingState = { accumulatedMs: 0, lastTickMs: null };
 
     // --- Perpetual rAF heartbeat (§10) ------------------------------------
     // CEF OSR paints only on real compositor damage. The old sub-pixel opacity
@@ -190,14 +190,11 @@
       var ticksThisRaf = 0;
       var identityBefore = pacingOn ? client.getPacingIdentity() : null;
       if (engineMode) {
-        if (lastTickT === null) lastTickT = t;
-        tickAccumMs += t - lastTickT;
-        lastTickT = t;
-        if (tickAccumMs > maxTickDebtMs) tickAccumMs = maxTickDebtMs;
-        while (tickAccumMs >= tickStepMs) {
+        ticksThisRaf = BG.nextFixedTickCount(
+          fixedPacingState, t, engineFps, fixedPacingMode
+        );
+        for (var tickIndex = 0; tickIndex < ticksThisRaf; tickIndex++) {
           client.tick();
-          tickAccumMs -= tickStepMs;
-          ticksThisRaf++;
         }
       }
 
