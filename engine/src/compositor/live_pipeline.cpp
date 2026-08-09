@@ -136,6 +136,8 @@ void LivePipeline::set_enabled(bool on) {
         pending_content_dirty_ids_.clear();
         live_update_generation_ = 0;
         last_composed_live_update_generation_ = 0;
+        last_composed_graph_revision_ = 0;
+        last_composed_state_revision_ = 0;
     }
 }
 
@@ -935,6 +937,9 @@ bool LivePipeline::ComposeInternal(
         last_incremental_height_ = dst_h;
         pending_content_dirty_ids_.clear();
     }
+    last_composed_graph_revision_ = snap->graph_revision;
+    last_composed_state_revision_ = snap->state_revision;
+    ++compose_seq_;
     ++stats_.composed_frames;
     return true;
 }

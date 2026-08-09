@@ -80,6 +80,10 @@
     // forwards to its log. Aggregates RenderStats deltas across frames so we
     // can see how many DOM writes per frame the template actually costs.
     var statsOn = qs.get('stats') === '1';
+    // P20.1 provenance is opt-in. It records the runtime's own rAF/timeline
+    // state, not a claim that a console event acknowledges a particular paint.
+    var pacingOn = engineMode && qs.get('pacing') === '1'
+      && typeof BG.encodePacingEvent === 'function';
 
     var stage = document.getElementById('stage');
     var hud = document.getElementById('hud');
@@ -176,11 +180,15 @@
 
     var frameCount = 0;
     var lastHudPaint = 0;
+    var pacingEventSeq = 0;
+    var lastPacingT = null;
     function heartbeat(t) {
       frameCount++;
       beacon.style.background =
         (frameCount & 1) ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)';
 
+      var ticksThisRaf = 0;
+      var identityBefore = pacingOn ? client.getPacingIdentity() : null;
       if (engineMode) {
         if (lastTickT === null) lastTickT = t;
         tickAccumMs += t - lastTickT;
@@ -189,7 +197,32 @@
         while (tickAccumMs >= tickStepMs) {
           client.tick();
           tickAccumMs -= tickStepMs;
+          ticksThisRaf++;
         }
+      }
+
+      if (pacingOn) {
+        var identityAfter = client.getPacingIdentity();
+        var identityValid = identityBefore.identityValid
+          && identityAfter.identityValid
+          && identityBefore.templateId === identityAfter.templateId;
+        var line = BG.encodePacingEvent({
+          runtimeEventSeq: ++pacingEventSeq,
+          rafSeq: frameCount,
+          runtimePerfUs: Math.round(t * 1000),
+          runtimeUnixUs: Date.now() * 1000,
+          rafDeltaUs: lastPacingT === null ? 0 : Math.round((t - lastPacingT) * 1000),
+          ticksPerRaf: ticksThisRaf,
+          logicalFrameBefore: identityValid ? identityBefore.logicalFrame : 0,
+          logicalFrameAfter: identityValid ? identityAfter.logicalFrame : 0,
+          activeCount: identityAfter.activeCount,
+          identityValid: identityValid,
+          templateId: identityValid ? identityAfter.templateId : null,
+          graphRevision: identityValid ? identityAfter.graphRevision : 0,
+          stateRevision: identityValid ? identityAfter.stateRevision : 0
+        });
+        if (line) console.log(line);
+        lastPacingT = t;
       }
 
       if (hudOn && t - lastHudPaint > 250) {

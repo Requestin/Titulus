@@ -63,6 +63,7 @@ set(BG_SOURCES
   src/config.cpp
   src/stats.cpp
   src/frame_log.cpp
+  src/pacing_message_parser.cpp
 )
 set(BG_HEADERS
   src/engine_app.h
@@ -70,6 +71,7 @@ set(BG_HEADERS
   src/config.h
   src/stats.h
   src/frame_log.h
+  src/pacing_message_parser.h
   src/frame_ring.h
   src/message_pump.h
   src/consumers/consumer.h

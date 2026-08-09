@@ -13,6 +13,7 @@
 #define BG_ENGINE_ENGINE_CLIENT_H
 
 #include "frame_ring.h"
+#include "pacing_message_parser.h"
 #include "include/cef_client.h"
 #include "mixer/render_graph_store.h"
 #include "compositor/live_pipeline.h"
@@ -86,6 +87,12 @@ class EngineClient : public CefClient,
     uint64_t cef_paint_seq() const {
         return cef_paint_seq_.load(std::memory_order_acquire);
     }
+    RuntimePacingSnapshot pacing_snapshot() const {
+        return pacing_store_.Snapshot();
+    }
+    uint64_t pacing_malformed_count() const {
+        return pacing_malformed_count_.load(std::memory_order_acquire);
+    }
 
     // Browser handle for the main pump. Set on OnAfterCreated, cleared on
     // OnBeforeClose; both run on the CEF UI thread, which IS the main thread
@@ -104,6 +111,8 @@ class EngineClient : public CefClient,
     compositor::LivePipeline* live_pipeline_ = nullptr;
     std::atomic<bool> closing_{false};
     std::atomic<uint64_t> cef_paint_seq_{0};
+    RuntimePacingStore pacing_store_;
+    std::atomic<uint64_t> pacing_malformed_count_{0};
     CefRefPtr<CefBrowser> browser_;
 };
 

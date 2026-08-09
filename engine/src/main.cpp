@@ -97,6 +97,8 @@ std::unique_ptr<bg::Consumer> consumer;
 std::unique_ptr<bg::FrameLog> frame_log;
 std::atomic<bool> browser_ready{false};
 std::atomic<uint64_t> paint_seq{0};
+std::atomic<bg::FrameDeliveryKind> last_publish_kind{
+    bg::FrameDeliveryKind::None};
 // Track the previous paint sequence so we only record a stat / deliver a frame
 // when OnPaint actually produced new pixels (DEVELOPMENT_PROMPT §9.7).
 uint64_t last_delivered_seq = 0;
@@ -177,9 +179,35 @@ void LogLayeredStats() {
             ? "none" : layered.last_fallback_reason));
 }
 
+void PopulateRuntimeProvenance(
+    bg::FrameLogRecord* record,
+    const bg::RuntimePacingSnapshot& runtime) {
+    if (!record || !runtime.present) return;
+    record->runtime_event_seq = runtime.event.runtime_event_seq;
+    record->runtime_event_age_us = record->mono_us >= runtime.host_mono_us
+        ? record->mono_us - runtime.host_mono_us
+        : 0;
+    record->raf_seq = runtime.event.raf_seq;
+    record->raf_delta_us = runtime.event.raf_delta_us;
+    record->ticks_per_raf = runtime.event.ticks_per_raf;
+    record->logical_frame_before = runtime.event.logical_frame_before;
+    record->logical_frame_after = runtime.event.logical_frame_after;
+    record->graph_rev = runtime.event.graph_revision;
+    record->state_rev = runtime.event.state_revision;
+}
+
+void PopulateComposeProvenance(bg::FrameLogRecord* record) {
+    if (!record || !g_live_pipeline) return;
+    const auto compose = g_live_pipeline->provenance_snapshot();
+    record->compose_seq = compose.compose_seq;
+    record->live_update_generation = compose.live_update_generation;
+    if (record->graph_rev == 0) record->graph_rev = compose.graph_revision;
+    if (record->state_rev == 0) record->state_rev = compose.state_revision;
+}
+
 // Publish a composed frame into the FrameRing and bump paint_seq. Returns true
 // when a frame was published.
-bool TryPublishComposedFrame() {
+bool TryPublishComposedFrame(bg::FrameDeliveryKind delivery_kind) {
     if (!g_live_pipeline || !g_live_pipeline->PrefersComposedOutput()) return false;
     if (cfg.decklink_direct_paint && consumer &&
         browser_ready.load(std::memory_order_acquire)) {
@@ -191,6 +219,7 @@ bool TryPublishComposedFrame() {
         const uint64_t seq = paint_seq.fetch_add(1, std::memory_order_release) + 1;
         const bg::Frame frame{compose_buf.data(), cfg.width, cfg.height, seq};
         consumer->OnFrame(frame);
+        last_publish_kind.store(delivery_kind, std::memory_order_release);
         return true;
     }
     if (!ring.UpdateLatest(cfg.width, cfg.height, [](uint8_t* destination) {
@@ -200,6 +229,7 @@ bool TryPublishComposedFrame() {
         return false;
     }
     paint_seq.fetch_add(1, std::memory_order_release);
+    last_publish_kind.store(delivery_kind, std::memory_order_release);
     return true;
 }
 
@@ -211,7 +241,7 @@ bool TryPublishReusableLiveFrameAfterMiss(uint64_t observed_seq) {
         || observed_seq != last_delivered_seq
         || !g_live_pipeline
         || !g_live_pipeline->HasReusableLiveFrame()
-        || !TryPublishComposedFrame()) {
+        || !TryPublishComposedFrame(bg::FrameDeliveryKind::Reuse)) {
         return false;
     }
     g_live_pipeline->RecordReusedLiveFrame();
@@ -222,7 +252,7 @@ void on_paint(const uint8_t* bgra, int width, int height) {
     // Doc02 PR5: when the live pipeline consumed a live-overlay paint, EngineClient
     // still forwards here with a null buffer as a "compose opportunity" signal.
     if (bgra == nullptr) {
-        TryPublishComposedFrame();
+        TryPublishComposedFrame(bg::FrameDeliveryKind::LiveCompose);
         return;
     }
     const size_t bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
@@ -236,6 +266,8 @@ void on_paint(const uint8_t* bgra, int width, int height) {
         const bg::Frame frame{bgra, width, height, seq};
         consumer->OnFrame(frame);
         consumer->RecordDirectDelivery(bytes);
+        last_publish_kind.store(bg::FrameDeliveryKind::CefForward,
+                                std::memory_order_release);
         return;
     }
 
@@ -249,6 +281,8 @@ void on_paint(const uint8_t* bgra, int width, int height) {
         consumer->RecordRingCopy(us, bytes);
     }
     paint_seq.fetch_add(1, std::memory_order_release);
+    last_publish_kind.store(bg::FrameDeliveryKind::CefForward,
+                            std::memory_order_release);
 }
 
 void on_ready(bool /*ready*/) {
@@ -377,6 +411,8 @@ int main(int argc, char** argv) {
     const uint64_t expected_us = pump.target_interval_us();
     const auto start = std::chrono::steady_clock::now();
     uint64_t last_stats_report = 0;
+    uint64_t next_begin_frame_token = 0;
+    uint64_t next_batch_id = 0;
     int exit_code = 0;
 
     // Watchdog state: a single Invalidate if paints stall (see below). A
@@ -413,20 +449,28 @@ int main(int argc, char** argv) {
         while (true) {
             const int requested_ticks = consumer->WaitForTick(kFallbackTimeoutUs);
             const int run_ticks = requested_ticks > 0 ? requested_ticks : 1;
+            const uint64_t batch_id = ++next_batch_id;
 
             for (int t = 0; t < run_ticks; ++t) {
                 const auto tick_start = std::chrono::steady_clock::now();
                 const auto tick_deadline = tick_start + std::chrono::microseconds(expected_us);
+                const uint64_t publish_seq_before =
+                    paint_seq.load(std::memory_order_acquire);
+                const uint64_t cef_paint_before = client->cef_paint_seq();
+                uint64_t begin_frame_token = 0;
 
                 if (browser_ready.load(std::memory_order_acquire)) {
                     if (g_live_pipeline) g_live_pipeline->OnTick();
                     // Cache-only compose: publish without waiting for CEF paint.
                     if (g_live_pipeline && g_live_pipeline->PrefersComposedOutput()
                         && !g_live_pipeline->NeedsLivePaint()) {
-                        TryPublishComposedFrame();
+                        TryPublishComposedFrame(bg::FrameDeliveryKind::CacheCompose);
                     }
                     if (CefRefPtr<CefBrowser> b = client->browser()) {
-                        if (auto host = b->GetHost()) host->SendExternalBeginFrame();
+                        if (auto host = b->GetHost()) {
+                            begin_frame_token = ++next_begin_frame_token;
+                            host->SendExternalBeginFrame();
+                        }
                     }
                 }
 
@@ -467,6 +511,7 @@ int main(int argc, char** argv) {
                 TryPublishReusableLiveFrameAfterMiss(
                     paint_seq.load(std::memory_order_acquire));
                 const uint64_t cur_seq = paint_seq.load(std::memory_order_acquire);
+                const uint64_t cef_paint_after = client->cef_paint_seq();
                 const bool got_new_paint = cur_seq != last_delivered_seq;
                 auto delivery_time = std::chrono::steady_clock::now();
                 uint64_t interval_us = 0;
@@ -492,18 +537,28 @@ int main(int argc, char** argv) {
                     const uint64_t paint_latency_us = std::chrono::duration_cast<
                         std::chrono::microseconds>(delivery_time - tick_start).count();
                     const bg::FrameLogClockSample clocks = bg::CaptureFrameLogClocks();
-                    frame_log->RecordTick({
+                    bg::FrameLogRecord record{
                         .unix_us = clocks.unix_us,
                         .mono_us = clocks.mono_us,
                         .interval_us = interval_us,
+                        .begin_frame_token = begin_frame_token,
+                        .batch_id = batch_id,
+                        .batch_index = static_cast<uint32_t>(t),
+                        .batch_size = static_cast<uint32_t>(run_ticks),
+                        .cef_paint_before = cef_paint_before,
+                        .cef_paint_after = cef_paint_after,
+                        .publish_seq_before = publish_seq_before,
                         .publish_seq_after = cur_seq,
-                        .delivery_kind = got_new_paint
-                            ? bg::FrameDeliveryKind::CefForward
+                        .delivery_kind = cur_seq != publish_seq_before
+                            ? last_publish_kind.load(std::memory_order_acquire)
                             : bg::FrameDeliveryKind::None,
                         .pump_active_us = pump_active_us,
                         .paint_latency_us = paint_latency_us,
-                        .deadline_miss = !got_new_paint,
-                    });
+                        .deadline_miss = cef_paint_after == cef_paint_before,
+                    };
+                    PopulateRuntimeProvenance(&record, client->pacing_snapshot());
+                    PopulateComposeProvenance(&record);
+                    frame_log->RecordTick(record);
                 }
 
                 if (browser_ready.load(std::memory_order_acquire)) {
@@ -578,7 +633,11 @@ int main(int argc, char** argv) {
     // Main loop: pump CEF, deliver latest frame to consumer, record cadence.
     while (true) {
         const auto tick_start = std::chrono::steady_clock::now();
-        const uint64_t seq_at_tick_start = paint_seq.load(std::memory_order_acquire);
+        const uint64_t publish_seq_before = paint_seq.load(std::memory_order_acquire);
+        const uint64_t seq_at_tick_start = publish_seq_before;
+        const uint64_t cef_paint_before = client->cef_paint_seq();
+        const uint64_t batch_id = ++next_batch_id;
+        uint64_t begin_frame_token = 0;
         int inflight_depth = 0;
 
         // Drive the compositor: one (or two, under pipeline probe) external
@@ -588,11 +647,13 @@ int main(int argc, char** argv) {
             if (g_live_pipeline) g_live_pipeline->OnTick();
             if (CefRefPtr<CefBrowser> b = client->browser()) {
                 if (auto host = b->GetHost()) {
+                    begin_frame_token = ++next_begin_frame_token;
                     host->SendExternalBeginFrame();
                     inflight_depth = 1;
                     if (pipeline_probe) {
                         // Second BeginFrame WITHOUT waiting for the first
                         // OnPaint — the whole point of the probe.
+                        ++next_begin_frame_token;
                         host->SendExternalBeginFrame();
                         inflight_depth = 2;
                     }
@@ -606,7 +667,7 @@ int main(int argc, char** argv) {
         // of a stale frame before the live paint lands).
         if (g_live_pipeline && g_live_pipeline->PrefersComposedOutput()
             && !g_live_pipeline->NeedsLivePaint()) {
-            TryPublishComposedFrame();
+            TryPublishComposedFrame(bg::FrameDeliveryKind::CacheCompose);
         }
 
         // Phase 17 P0: see the decklink-driven branch above for rationale.
@@ -743,27 +804,34 @@ int main(int argc, char** argv) {
         if (frame_log && frame_log->enabled()) {
             const uint64_t paint_latency_us = std::chrono::duration_cast<
                 std::chrono::microseconds>(delivery_time - tick_start).count();
-            const bool delivered = got_new_paint || reused_live_frame
-                || (pipeline_probe && seq_after_sleep != seq_at_tick_start);
             const bg::FrameLogClockSample clocks = bg::CaptureFrameLogClocks();
-            frame_log->RecordTick({
+            bg::FrameLogRecord record{
                 .unix_us = clocks.unix_us,
                 .mono_us = clocks.mono_us,
                 .interval_us = interval_us,
+                .begin_frame_token = begin_frame_token,
+                .batch_id = batch_id,
+                .batch_index = 0,
+                .batch_size = 1,
+                .cef_paint_before = cef_paint_before,
+                .cef_paint_after = client->cef_paint_seq(),
+                .publish_seq_before = publish_seq_before,
                 .publish_seq_after = (pipeline_probe || reused_live_frame)
                     ? seq_after_sleep
                     : cur_seq,
-                .delivery_kind = reused_live_frame
-                    ? bg::FrameDeliveryKind::Reuse
-                    : (got_new_paint ? bg::FrameDeliveryKind::CefForward
-                                     : bg::FrameDeliveryKind::None),
+                .delivery_kind = seq_after_sleep != publish_seq_before
+                    ? last_publish_kind.load(std::memory_order_acquire)
+                    : bg::FrameDeliveryKind::None,
                 .pump_active_us = pump_active_us,
                 .paint_latency_us = paint_latency_us,
-                .deadline_miss = !delivered,
+                .deadline_miss = client->cef_paint_seq() == cef_paint_before,
                 .inflight_depth = static_cast<uint32_t>(inflight_depth),
                 .paint_seq_delta = static_cast<uint32_t>(
                     pipeline_probe ? paint_seq_delta_final : paint_seq_delta),
-            });
+            };
+            PopulateRuntimeProvenance(&record, client->pacing_snapshot());
+            PopulateComposeProvenance(&record);
+            frame_log->RecordTick(record);
         }
     }
     }  // decklink_driven / self-timer loop selection
