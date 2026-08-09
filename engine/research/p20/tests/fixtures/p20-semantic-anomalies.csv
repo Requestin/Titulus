@@ -1,0 +1,7 @@
+frame_hash,expected_parity,semantic_id,field_index,capture_input,unix_us,field_parity,output_channel
+aa,odd,40,1,in1,1725000000000000,odd,ch1
+bb,even,41,2,in1,1725000000020000,even,ch1
+cc,odd,41,3,in1,1725000000040000,odd,ch1
+dd,even,44,4,in1,1725000000060000,even,ch1
+ee,odd,43,5,in1,1725000000080000,odd,ch1
+ff,even,,6,in1,1725000000100000,even,ch1
