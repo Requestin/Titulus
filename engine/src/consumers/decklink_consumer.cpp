@@ -553,6 +553,7 @@ struct DecklinkConsumer::Impl {
         } else if (result == bmdOutputFrameFlushed) {
             flushed_.fetch_add(1, std::memory_order_relaxed);
         }
+        MaybeLogReferenceTransition();
 
         // Recycle the displayed frame's storage: every frame we schedule is our
         // OwnedDecklinkFrame, so steal its buffer instead of allocating a fresh
@@ -706,6 +707,26 @@ struct DecklinkConsumer::Impl {
     // in_fps < channel fps means the render plane starves the consumer and the
     // output repeats/mixes fields — the exact signal we need for diagnosing
     // torn output (Phase 10).
+    void MaybeLogReferenceTransition() {
+        if (!event_log_ || !event_log_->enabled() || !output_) return;
+        BMDReferenceStatus status = bmdReferenceUnlocked;
+        int32_t reference_state = -2;
+        if (output_->GetReferenceStatus(&status) == S_OK) {
+            if (status & bmdReferenceNotSupportedByHardware) reference_state = -1;
+            else if (status & bmdReferenceLocked) reference_state = 1;
+            else reference_state = 0;
+        }
+        if (reference_state == last_reference_event_state_) return;
+        last_reference_event_state_ = reference_state;
+        const FrameLogClockSample clocks = CaptureFrameLogClocks();
+        event_log_->TryPush({
+            .type = DecklinkEventType::ReferenceChange,
+            .unix_us = clocks.unix_us,
+            .mono_us = clocks.mono_us,
+            .reference_state = reference_state,
+        });
+    }
+
     void MaybeLogTelemetry() {
         const auto now = std::chrono::steady_clock::now();
         if (telemetry_last_.time_since_epoch().count() == 0) {
@@ -735,30 +756,14 @@ struct DecklinkConsumer::Impl {
         }
 
         const char* ref = "n/a";
-        int32_t reference_state = -2;
         BMDReferenceStatus status = bmdReferenceUnlocked;
         if (output_ && output_->GetReferenceStatus(&status) == S_OK) {
             if (status & bmdReferenceNotSupportedByHardware) {
                 ref = "unsupported";
-                reference_state = -1;
             } else if (status & bmdReferenceLocked) {
                 ref = "locked";
-                reference_state = 1;
             } else {
                 ref = "UNLOCKED";
-                reference_state = 0;
-            }
-        }
-        if (reference_state != last_reference_event_state_) {
-            last_reference_event_state_ = reference_state;
-            if (event_log_ && event_log_->enabled()) {
-                const FrameLogClockSample clocks = CaptureFrameLogClocks();
-                event_log_->TryPush({
-                    .type = DecklinkEventType::ReferenceChange,
-                    .unix_us = clocks.unix_us,
-                    .mono_us = clocks.mono_us,
-                    .reference_state = reference_state,
-                });
             }
         }
 

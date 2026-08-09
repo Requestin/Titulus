@@ -99,13 +99,14 @@ test('run metadata requires completed execution, measurement bounds, and matchin
 
 test('capture binding requires one expected stream fully inside measurement window', () => {
   const rows = [
-    { unix_us: '110', output_channel: 'ch1', capture_input: 'port6' },
-    { unix_us: '190', output_channel: 'ch1', capture_input: 'port6' },
+    { unix_us: '102', output_channel: 'ch1', capture_input: 'port6' },
+    { unix_us: '198', output_channel: 'ch1', capture_input: 'port6' },
   ];
   const expected = {
     measurement: { startUnixUs: 100, endUnixUs: 200 },
     outputChannel: 'ch1',
     captureInput: 'port6',
+    coverageToleranceUs: 5,
   };
   assert.equal(validateCaptureBinding(rows, expected).healthy, true);
   assert.equal(validateCaptureBinding(
@@ -114,6 +115,10 @@ test('capture binding requires one expected stream fully inside measurement wind
   ).healthy, false);
   assert.equal(validateCaptureBinding(
     [...rows, { ...rows[1], unix_us: '201' }],
+    expected,
+  ).healthy, false);
+  assert.equal(validateCaptureBinding(
+    [{ ...rows[0], unix_us: '110' }, { ...rows[1], unix_us: '190' }],
     expected,
   ).healthy, false);
 });

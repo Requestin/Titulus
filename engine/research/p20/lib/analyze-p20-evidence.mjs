@@ -138,6 +138,7 @@ export function validateCaptureBinding(rows, {
   measurement,
   outputChannel,
   captureInput,
+  coverageToleranceUs = 100_000,
 }) {
   const errors = [];
   if (!Array.isArray(rows) || rows.length === 0) errors.push('capture has no rows');
@@ -163,6 +164,13 @@ export function validateCaptureBinding(rows, {
     }
   }
   if (streams.size !== 1) errors.push(`capture contains ${streams.size} streams, expected exactly one`);
+  if (Number.isFinite(firstUnixUs)
+      && firstUnixUs > measurement.startUnixUs + coverageToleranceUs) {
+    errors.push(`capture starts ${firstUnixUs - measurement.startUnixUs}us after measurement`);
+  }
+  if (lastUnixUs && lastUnixUs < measurement.endUnixUs - coverageToleranceUs) {
+    errors.push(`capture ends ${measurement.endUnixUs - lastUnixUs}us before measurement`);
+  }
   return {
     outputChannel,
     captureInput,
@@ -262,11 +270,16 @@ export function main(argv = process.argv.slice(2)) {
     fields: captureRows.length,
   });
   const allFrameRows = parseCsv(readFileSync(join(channelDir, 'frame.csv'), 'utf8'));
+  const expectedFields = Math.max(
+    1,
+    Math.floor((manifest.measurement.endUnixUs - manifest.measurement.startUnixUs) / 20_000) - 4,
+  );
+  const requestedMinFields = Number(opts['min-fields'] ?? expectedFields);
   const report = analyzeP20Evidence({
     m0Report,
     semanticReport,
     frameRows: frameRowsInMeasurement(allFrameRows, manifest.measurement),
-    minFields: Number(opts['min-fields'] ?? 1),
+    minFields: Math.max(requestedMinFields, expectedFields),
     metadataReport,
     captureBinding,
     captureSummaryReport,
