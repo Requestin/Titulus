@@ -149,7 +149,7 @@ export function validateCaptureBinding(rows, {
   measurement,
   outputChannel,
   captureInput,
-  coverageToleranceUs = 100_000,
+  coverageToleranceUs = 250_000,
 }) {
   const errors = [];
   if (!Array.isArray(rows) || rows.length === 0) errors.push('capture has no rows');

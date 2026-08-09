@@ -158,3 +158,16 @@ test('capture summary must be healthy, complete, and bound to the same run', () 
   assert.equal(validateCaptureSummary({ ...summary, runId: 'other' }, expected).healthy, false);
   assert.equal(validateCaptureSummary({ ...summary, fields: 99 }, expected).healthy, false);
 });
+
+test('default capture coverage tolerates bounded observer startup and shutdown skew', () => {
+  const measurement = { startUnixUs: 1_000_000, endUnixUs: 61_000_000 };
+  const report = validateCaptureBinding([
+    { unix_us: '1002000', output_channel: 'ch1', capture_input: 'port6' },
+    { unix_us: '60890000', output_channel: 'ch1', capture_input: 'port6' },
+  ], {
+    measurement,
+    outputChannel: 'ch1',
+    captureInput: 'port6',
+  });
+  assert.equal(report.healthy, true);
+});
