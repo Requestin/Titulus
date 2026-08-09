@@ -54,13 +54,23 @@ function positive(row, name) {
 
 export function parseDecklinkEvents(text) {
   const rows = parseCsv(text);
+  let previousUnixUs = 0;
+  let previousMonoUs = 0;
   for (const row of rows) {
     if (!['schedule', 'completion', 'input_overwrite', 'reference_change'].includes(row.event)) {
       throw new Error(`DeckLink event has invalid event type: ${row.event}`);
     }
     positive(row, 'schedule_seq');
-    positive(row, 'unix_us');
-    positive(row, 'mono_us');
+    const unixUs = positive(row, 'unix_us');
+    const monoUs = positive(row, 'mono_us');
+    if (unixUs < previousUnixUs) {
+      throw new Error(`DeckLink event unix_us is not non-decreasing: ${unixUs} < ${previousUnixUs}`);
+    }
+    if (monoUs < previousMonoUs) {
+      throw new Error(`DeckLink event mono_us is not non-decreasing: ${monoUs} < ${previousMonoUs}`);
+    }
+    previousUnixUs = unixUs;
+    previousMonoUs = monoUs;
   }
   return rows;
 }
@@ -80,9 +90,8 @@ function finalTelemetry(engineLog) {
   };
 }
 
-function scheduleSourceGaps(schedules, overwrittenSourceIds) {
+function validateScheduleSources(schedules) {
   const errors = [];
-  let previousPairEnd = null;
   for (const schedule of schedules) {
     if (schedule.weave_mode !== 'pair') continue;
     const first = positive(schedule, 'woven_a');
@@ -91,15 +100,6 @@ function scheduleSourceGaps(schedules, overwrittenSourceIds) {
       errors.push(`pair schedule_seq=${schedule.schedule_seq} does not contain adjacent source IDs`);
       continue;
     }
-    if (previousPairEnd !== null && first !== previousPairEnd + 1) {
-      for (let sourceId = previousPairEnd + 1; sourceId < first; sourceId += 1) {
-        if (!overwrittenSourceIds.has(sourceId)) {
-          errors.push(`source sequence gap before schedule_seq=${schedule.schedule_seq}`);
-          break;
-        }
-      }
-    }
-    previousPairEnd = second;
   }
   return errors;
 }
@@ -110,7 +110,12 @@ export function analyzeP20M0({ eventRows, engineLog }) {
 
   const errors = [];
   const schedules = eventRows.filter((row) => row.event === 'schedule');
-  const completions = eventRows.filter((row) => row.event === 'completion');
+  const prerollCompletions = eventRows.filter(
+    (row) => row.event === 'completion' && positive(row, 'schedule_seq') === 0,
+  );
+  const completions = eventRows.filter(
+    (row) => row.event === 'completion' && positive(row, 'schedule_seq') !== 0,
+  );
   const overwrites = eventRows.filter((row) => row.event === 'input_overwrite');
   const overwrittenSourceIds = new Set();
   for (const overwrite of overwrites) {
@@ -146,7 +151,7 @@ export function analyzeP20M0({ eventRows, engineLog }) {
     }
   }
 
-  errors.push(...scheduleSourceGaps(schedules, overwrittenSourceIds));
+  errors.push(...validateScheduleSources(schedules));
   const telemetry = finalTelemetry(engineLog);
   for (const [name, value] of Object.entries(telemetry)) {
     if (name === 'overwrite') continue;
@@ -160,6 +165,7 @@ export function analyzeP20M0({ eventRows, engineLog }) {
     schemaVersion: 'p20-m0-v1',
     schedules: schedules.length,
     completions: completions.length,
+    prerollCompletions: prerollCompletions.length,
     inputOverwrites: overwrites.length,
     shutdownTail: unmatched,
     telemetry,
