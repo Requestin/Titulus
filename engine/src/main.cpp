@@ -10,6 +10,7 @@
 
 #include "config.h"
 #include "cef_paint_wait.h"
+#include "field_grid_schedule.h"
 #include "engine_app.h"
 #include "engine_client.h"
 #include "consumers/consumer.h"
@@ -302,7 +303,7 @@ std::unique_ptr<bg::Consumer> make_consumer() {
 #if defined(BG_ENABLE_DECKLINK)
             return std::make_unique<bg::DecklinkConsumer>(
                 cfg.device_index, cfg.display_mode, cfg.keyer,
-                cfg.decklink_completion_log);
+                cfg.decklink_completion_log, cfg.decklink_one_pair_reservoir);
 #else
             std::fprintf(stderr, "bg_engine: consumer '%s' not built into this binary; "
                                  "using null.\n", bg::ConsumerLabel(cfg.consumer));
@@ -453,10 +454,36 @@ int main(int argc, char** argv) {
             const int requested_ticks = consumer->WaitForTick(kFallbackTimeoutUs);
             const int run_ticks = requested_ticks > 0 ? requested_ticks : 1;
             const uint64_t batch_id = ++next_batch_id;
+            const auto batch_anchor = std::chrono::steady_clock::now();
 
             for (int t = 0; t < run_ticks; ++t) {
+                const bg::FieldGridSlot field_grid_slot =
+                    cfg.decklink_absolute_field_grid
+                    ? bg::PlanFieldGridSlot({
+                        .batch_index = static_cast<uint32_t>(t),
+                        .field_period_us = static_cast<int64_t>(expected_us),
+                    })
+                    : bg::FieldGridSlot{};
+                if (cfg.decklink_absolute_field_grid) {
+                    const auto now = std::chrono::steady_clock::now();
+                    const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                        now - batch_anchor).count();
+                    const int64_t delay_us = bg::FieldGridDelayUs(field_grid_slot, elapsed_us);
+                    if (delay_us > 0) {
+                        std::this_thread::sleep_for(std::chrono::microseconds(delay_us));
+                    }
+                }
                 const auto tick_start = std::chrono::steady_clock::now();
-                const auto tick_deadline = tick_start + std::chrono::microseconds(expected_us);
+                const auto tick_deadline = cfg.decklink_absolute_field_grid
+                    ? batch_anchor + std::chrono::microseconds(field_grid_slot.deadline_offset_us)
+                    : tick_start + std::chrono::microseconds(expected_us);
+                const auto elapsed_at_start_us =
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        tick_start - batch_anchor).count();
+                const uint64_t field_target_lateness_us = cfg.decklink_absolute_field_grid
+                    ? static_cast<uint64_t>(
+                        bg::FieldGridLatenessUs(field_grid_slot, elapsed_at_start_us))
+                    : 0;
                 const uint64_t publish_seq_before =
                     paint_seq.load(std::memory_order_acquire);
                 const uint64_t cef_paint_before = client->cef_paint_seq();
@@ -585,6 +612,11 @@ int main(int argc, char** argv) {
                         .batch_id = batch_id,
                         .batch_index = static_cast<uint32_t>(t),
                         .batch_size = static_cast<uint32_t>(run_ticks),
+                        .absolute_field_grid = cfg.decklink_absolute_field_grid,
+                        .field_target_offset_us = cfg.decklink_absolute_field_grid
+                            ? static_cast<uint64_t>(field_grid_slot.target_offset_us)
+                            : 0,
+                        .field_target_lateness_us = field_target_lateness_us,
                         .cef_paint_before = cef_paint_before,
                         .cef_paint_after = cef_paint_after,
                         .publish_seq_before = publish_seq_before,

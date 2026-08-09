@@ -184,6 +184,27 @@ test('separates startup starvation from strict measurement cadence health', () =
   });
 });
 
+test('fails strict cadence when the bounded reservoir reports underflow', () => {
+  const report = analyzeP20M0({
+    eventRows: events([
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,reference_change,0,4,4,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,reservoir_underflow,0,10,10,0,0,1,1,0,0,0,0,starved,0,1',
+      '1,schedule,1,11,11,0,25000,1,1,10,10,10,10,single,0,1',
+      '1,completion,1,12,12,0,0,0,0,0,0,0,0,starved,0,1',
+    ]),
+    engineLog: 'telemetry in=2 scheduled=4 late=0 dropped=0 flushed=0 overwrite=0 starved=0 pairs=1 singles=1 reservoir_underflow=1 event_overflow=0\n',
+    measurementStartUnixUs: 5,
+    measurementEndUnixUs: 20,
+  });
+
+  assert.equal(report.cadenceHealth.healthy, false);
+  assert.equal(report.cadenceHealth.measurementReservoirUnderflows, 1);
+  assert.match(report.errors.join('\n'), /reservoir_underflow=1/);
+});
+
 test('fails reference unlock inside measurement and ignores post-measure tail anomalies', () => {
   const report = analyzeP20M0({
     eventRows: events([

@@ -115,6 +115,18 @@ void EngineClient::OnLoadError(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>,
                  failedUrl.ToString().c_str());
 }
 
+void EngineClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
+                                             TerminationStatus status,
+                                             int error_code,
+                                             const CefString& error_string) {
+    const int browser_id = browser ? browser->GetIdentifier() : -1;
+    std::fprintf(stderr,
+                 "bg_engine[cef]: renderer_terminated browser=%d status=%d "
+                 "error_code=%d error=%s\n",
+                 browser_id, static_cast<int>(status), error_code,
+                 error_string.ToString().c_str());
+}
+
 bool EngineClient::OnConsoleMessage(CefRefPtr<CefBrowser>, cef_log_severity_t,
                                     const CefString& message, const CefString&,
                                     int) {

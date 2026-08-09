@@ -4,6 +4,7 @@
 #include "decklink_event_log.h"
 #include "decklink_provenance.h"
 #include "frame_log.h"
+#include "one_pair_reservoir.h"
 #include "simd_copy.h"
 
 #include "DeckLinkAPI.h"
@@ -142,10 +143,11 @@ class OwnedDecklinkFrame final : public IDeckLinkVideoFrame, public IDeckLinkVid
 
 struct DecklinkConsumer::Impl {
     explicit Impl(int device_index, std::string display_mode, KeyerMode keyer_mode,
-                  std::string completion_log_path)
+                  std::string completion_log_path, bool one_pair_reservoir)
         : device_index_(device_index),
           display_mode_name_(std::move(display_mode)),
           keyer_mode_(keyer_mode),
+          one_pair_reservoir_(one_pair_reservoir),
           event_log_(std::make_unique<DecklinkEventLog>(completion_log_path)) {}
 
     class OutputCallback final : public IDeckLinkVideoOutputCallback {
@@ -398,6 +400,7 @@ struct DecklinkConsumer::Impl {
         // Wake a blocked WaitForTick() so main.cpp's decklink-driven loop
         // notices shutdown instead of waiting out its fallback timeout.
         tick_cv_.notify_all();
+        queue_cv_.notify_all();
 
         if (profile_manager_) {
             profile_manager_->SetCallback(nullptr);
@@ -424,7 +427,8 @@ struct DecklinkConsumer::Impl {
                 counters,
                 sizeof(counters),
                 "telemetry in=%llu scheduled=%llu late=%llu dropped=%llu flushed=%llu "
-                "overwrite=%llu starved=%llu pairs=%llu singles=%llu event_overflow=%llu",
+                "overwrite=%llu starved=%llu pairs=%llu singles=%llu "
+                "reservoir_underflow=%llu event_overflow=%llu",
                 static_cast<unsigned long long>(frames_in_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(scheduled_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(late_.load(std::memory_order_relaxed)),
@@ -434,6 +438,8 @@ struct DecklinkConsumer::Impl {
                 static_cast<unsigned long long>(starved_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(pairs_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(singles_.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(
+                    reservoir_underflows_.load(std::memory_order_relaxed)),
                 static_cast<unsigned long long>(
                     event_log_ ? event_log_->overflow_count() : 0));
             log_msg(label_, counters);
@@ -490,7 +496,10 @@ struct DecklinkConsumer::Impl {
         {
             std::lock_guard<std::mutex> lock(queue_mu_);
             frames_in_.fetch_add(1, std::memory_order_relaxed);
-            if (frame_queue_.size() >= kMaxQueuedFrames) {
+            const size_t queue_limit = one_pair_reservoir_
+                ? kOnePairReservoirFrames
+                : kMaxQueuedFrames;
+            if (frame_queue_.size() >= queue_limit) {
                 overwritten = std::move(frame_queue_.front());
                 frame_queue_.pop_front();
                 have_overwritten = true;
@@ -513,6 +522,7 @@ struct DecklinkConsumer::Impl {
             }
             RecycleInputBuffer(std::move(overwritten.bytes));
         }
+        queue_cv_.notify_one();
 
         RecordStageTime(copy_us_sum_, copy_us_max_, copy_us_count_, t_total);
     }
@@ -583,8 +593,27 @@ struct DecklinkConsumer::Impl {
         size_t fresh = 0;
         BufferedFrame f0;
         BufferedFrame f1;
+        bool reservoir_underflow = false;
         {
-            std::lock_guard<std::mutex> lock(queue_mu_);
+            std::unique_lock<std::mutex> lock(queue_mu_);
+            if (one_pair_reservoir_ && interlaced_) {
+                const auto initial = DecideOnePairReservoir({
+                    .enabled = true,
+                    .queued_frames = frame_queue_.size(),
+                    .deadline_reached = false,
+                });
+                if (initial == OnePairReservoirDecision::Wait) {
+                    queue_cv_.wait_for(lock, std::chrono::microseconds(kReservoirWaitUs), [&] {
+                        return frame_queue_.size() >= kOnePairReservoirFrames
+                            || !running_.load(std::memory_order_acquire);
+                    });
+                }
+                reservoir_underflow = DecideOnePairReservoir({
+                    .enabled = true,
+                    .queued_frames = frame_queue_.size(),
+                    .deadline_reached = true,
+                }) == OnePairReservoirDecision::Underflow;
+            }
             const size_t queue_depth_before = frame_queue_.size();
             if (!frame_queue_.empty()) {
                 f0 = std::move(frame_queue_.front());
@@ -597,6 +626,18 @@ struct DecklinkConsumer::Impl {
                 }
             }
             last_queue_depth_before_ = queue_depth_before;
+        }
+        if (reservoir_underflow) {
+            reservoir_underflows_.fetch_add(1, std::memory_order_relaxed);
+            if (event_log_ && event_log_->enabled()) {
+                const FrameLogClockSample clocks = CaptureFrameLogClocks();
+                event_log_->TryPush({
+                    .type = DecklinkEventType::ReservoirUnderflow,
+                    .unix_us = clocks.unix_us,
+                    .mono_us = clocks.mono_us,
+                    .fresh_count = static_cast<uint32_t>(fresh),
+                });
+            }
         }
 
         const WeaveProvenanceDecision provenance = DecideWeaveProvenance(
@@ -1207,6 +1248,8 @@ struct DecklinkConsumer::Impl {
     // frames_overwritten dropping the intermediate field needed for d_pairs.
     // (Depth 2 = 40ms was enough pre-18; depth 4 / 80ms predates 11.2.)
     static constexpr size_t kMaxQueuedFrames = 3;
+    static constexpr size_t kOnePairReservoirFrames = 2;
+    static constexpr int64_t kReservoirWaitUs = 4'000;
     static constexpr size_t kMaxRecycledBuffers = 8;
 
     int device_index_ = -1;
@@ -1222,6 +1265,7 @@ struct DecklinkConsumer::Impl {
     bool interlaced_ = false;
     bool upper_field_first_ = true;
     bool low_latency_applied_ = false;
+    bool one_pair_reservoir_ = false;
     std::unique_ptr<DecklinkEventLog> event_log_;
     uint64_t next_schedule_seq_ = 0;
 
@@ -1240,6 +1284,7 @@ struct DecklinkConsumer::Impl {
     BMDTimeValue next_display_time_ = 0;
 
     std::mutex queue_mu_;
+    std::condition_variable queue_cv_;
     std::deque<BufferedFrame> frame_queue_;
     AlignedBuffer black_frame_;
 
@@ -1282,6 +1327,7 @@ struct DecklinkConsumer::Impl {
     std::atomic<uint64_t> starved_{0};  // queue empty on pull -> full-frame repeat
     std::atomic<uint64_t> pairs_{0};    // interlaced: 2 fresh fields woven
     std::atomic<uint64_t> singles_{0};  // interlaced: 1 fresh frame duplicated to both fields
+    std::atomic<uint64_t> reservoir_underflows_{0};
     std::atomic<uint64_t> alias_singles_{0};
 
     // Stage-time telemetry (Phase 11.1): microsecond sum/max/count per stage,
@@ -1322,10 +1368,11 @@ struct DecklinkConsumer::Impl {
 
 DecklinkConsumer::DecklinkConsumer(int device_index, std::string display_mode,
                                    KeyerMode keyer_mode,
-                                   std::string completion_log_path)
+                                   std::string completion_log_path,
+                                   bool one_pair_reservoir)
     : impl_(std::make_unique<Impl>(
         device_index, std::move(display_mode), keyer_mode,
-        std::move(completion_log_path))) {}
+        std::move(completion_log_path), one_pair_reservoir)) {}
 
 DecklinkConsumer::~DecklinkConsumer() = default;
 

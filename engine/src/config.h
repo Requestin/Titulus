@@ -87,6 +87,15 @@ struct Config {
     // observed after SendExternalBeginFrame, never from publish/reuse progress.
     bool decklink_token_armed_wait = false;
 
+    // P20.3 research: place the two 1080i50 requests from a completion batch
+    // on absolute 20-ms field targets instead of sequentially packing them.
+    // Development-only; default remains the established packing behaviour.
+    bool decklink_absolute_field_grid = false;
+
+    // P20.3 fallback research: hold at most one ready interlaced pair and
+    // boundedly wait for its second pose before declaring an underflow.
+    bool decklink_one_pair_reservoir = false;
+
     // Phase 19 Doc02 PR5: full-path layered compositor. When true, the engine
     // captures per-layer CEF snapshots (via DOM visibility filters), caches
     // cacheable sources, and publishes composed frames through FrameRing

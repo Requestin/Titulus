@@ -216,6 +216,39 @@ paint. FrameLog v3 и opt-in token-armed wait исправляют эту proven
 4-ms pump slice. Подробности:
 [P20.3 token-armed wait evidence](../performance%20investigation/reports/p20-03-token-armed-wait.md).
 
+### P20.3 absolute field-grid checkpoint
+
+Dev-only `--decklink-absolute-field-grid` разделил два requests одной 1080i50
+batch на fixed slots `0/20 ms`, сохранив `one_tick`, token-armed wait и 4-ms
+slice. FrameLog v4 фиксирует target offset и fail-open lateness.
+
+Clean 60-s loopback показал improvement, но не PASS: control имел 3 overwrite
+и 3 semantic skip, treatment — zero overwrite, но 1 steady-state `single`
+schedule и 1 odd-field duplicate. Все остальные health planes были PASS.
+Так как treatment не достиг zero-anomaly gate, 5/15-minute promotion и
+default change не выполняются. Следующий изолированный кандидат — bounded
+one-pair reservoir; grid и reservoir не будут активны вместе.
+
+Подробности:
+[P20.3 absolute field-grid evidence](../performance%20investigation/reports/p20-04-absolute-field-grid.md).
+
+### P20.3 one-pair reservoir checkpoint
+
+После grid STOP проверен единственный bounded fallback:
+`--decklink-one-pair-reservoir`. Он ограничивает очередь двумя future poses и
+ждёт вторую не более 4 ms; каждый fail-open становится явным
+`reservoir_underflow` и автоматически FAIL.
+
+Clean 60-s loopback также STOP: 1,497 pair, 3 single, 3 underflow и 3
+semantic duplicate при zero late/drop/flush и здоровых остальных planes.
+Следовательно ни grid, ни reservoir не переходят к 5/15-minute promotion и
+не меняют default. Новые pacing retries запрещены: дальнейшая работа
+переходит к M1/M2 detector/causality, не смешивая системные факторы с
+неподтверждёнными timing-патчами.
+
+Подробности:
+[P20.3 one-pair reservoir evidence](../performance%20investigation/reports/p20-05-one-pair-reservoir.md).
+
 ### P20.3 — one-factor cadence A/B
 
 Only after P20.1/P20.2 baseline:

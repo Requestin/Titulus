@@ -17,7 +17,7 @@ namespace bg {
 class DecklinkConsumer final : public Consumer {
   public:
     DecklinkConsumer(int device_index, std::string display_mode, KeyerMode keyer_mode,
-                     std::string completion_log_path);
+                     std::string completion_log_path, bool one_pair_reservoir);
     ~DecklinkConsumer() override;
 
     bool Start(int width, int height, int fps) override;

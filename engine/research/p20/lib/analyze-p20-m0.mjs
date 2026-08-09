@@ -55,7 +55,7 @@ export function parseDecklinkEvents(text) {
   let previousUnixUs = 0;
   let previousMonoUs = 0;
   for (const row of rows) {
-    if (!['schedule', 'completion', 'input_overwrite', 'reference_change'].includes(row.event)) {
+    if (!['schedule', 'completion', 'input_overwrite', 'reservoir_underflow', 'reference_change'].includes(row.event)) {
       throw new Error(`DeckLink event has invalid event type: ${row.event}`);
     }
     positive(row, 'schedule_seq');
@@ -75,7 +75,7 @@ export function parseDecklinkEvents(text) {
 
 function finalTelemetry(engineLog) {
   const matches = [...engineLog.matchAll(
-    /telemetry in=(\d+) scheduled=(\d+) late=(\d+) dropped=(\d+) flushed=(\d+) overwrite=(\d+) starved=(\d+) pairs=(\d+) singles=(\d+) event_overflow=(\d+)/g,
+    /telemetry in=(\d+) scheduled=(\d+) late=(\d+) dropped=(\d+) flushed=(\d+) overwrite=(\d+) starved=(\d+) pairs=(\d+) singles=(\d+)(?: reservoir_underflow=(\d+))? event_overflow=(\d+)/g,
   )];
   if (matches.length === 0) throw new Error('engine log has no final DeckLink telemetry');
   const match = matches.at(-1);
@@ -89,7 +89,8 @@ function finalTelemetry(engineLog) {
     starved: Number(match[7]),
     pairs: Number(match[8]),
     singles: Number(match[9]),
-    eventOverflow: Number(match[10]),
+    reservoirUnderflow: Number(match[10] ?? 0),
+    eventOverflow: Number(match[11] ?? match[10]),
   };
 }
 
@@ -144,6 +145,9 @@ function measurementCadence(eventRows, measurementStartUnixUs, measurementEndUni
   const measurementOverwrites = rows.filter(
     (row) => row.event === 'input_overwrite',
   ).length;
+  const measurementReservoirUnderflows = rows.filter(
+    (row) => row.event === 'reservoir_underflow',
+  ).length;
   const errors = [];
   if (schedules.length === 0) errors.push('measurement contains no schedule events');
   if (measurementModes.single > 0) {
@@ -155,10 +159,14 @@ function measurementCadence(eventRows, measurementStartUnixUs, measurementEndUni
   if (measurementOverwrites > 0) {
     errors.push(`measurement contains input_overwrite=${measurementOverwrites}`);
   }
+  if (measurementReservoirUnderflows > 0) {
+    errors.push(`measurement contains reservoir_underflow=${measurementReservoirUnderflows}`);
+  }
   return {
     evaluated: true,
     measurementModes,
     measurementOverwrites,
+    measurementReservoirUnderflows,
     errors,
     healthy: errors.length === 0,
   };
@@ -182,6 +190,7 @@ export function analyzeP20M0({
     (row) => row.event === 'completion' && positive(row, 'schedule_seq') !== 0,
   );
   const overwrites = eventRows.filter((row) => row.event === 'input_overwrite');
+  const reservoirUnderflows = eventRows.filter((row) => row.event === 'reservoir_underflow');
   const overwrittenSourceIds = new Set();
   for (const overwrite of overwrites) {
     const sourceId = positive(overwrite, 'popped_a');
@@ -242,6 +251,12 @@ export function analyzeP20M0({
       `overwrite telemetry=${telemetry.overwrite} differs from input_overwrite events=${overwrites.length}`,
     );
   }
+  if (telemetry.reservoirUnderflow !== reservoirUnderflows.length) {
+    loggerErrors.push(
+      'reservoir_underflow telemetry='
+      + `${telemetry.reservoirUnderflow} differs from event rows=${reservoirUnderflows.length}`,
+    );
+  }
   const livenessErrors = [];
   if (telemetry.in === 0) livenessErrors.push('render produced zero frames');
   if (telemetry.pairs === 0) livenessErrors.push('render produced zero complete field pairs');
@@ -297,6 +312,7 @@ export function analyzeP20M0({
     completions: completions.length,
     prerollCompletions: prerollCompletions.length,
     inputOverwrites: overwrites.length,
+    reservoirUnderflows: reservoirUnderflows.length,
     shutdownTail: unmatched,
     telemetry,
     loggerIntegrity,

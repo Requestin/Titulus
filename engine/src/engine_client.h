@@ -15,6 +15,7 @@
 #include "frame_ring.h"
 #include "pacing_message_parser.h"
 #include "include/cef_client.h"
+#include "include/cef_request_handler.h"
 #include "mixer/render_graph_store.h"
 #include "compositor/live_pipeline.h"
 
@@ -28,7 +29,8 @@ class EngineClient : public CefClient,
                      public CefRenderHandler,
                      public CefLifeSpanHandler,
                      public CefLoadHandler,
-                     public CefDisplayHandler {
+                     public CefDisplayHandler,
+                     public CefRequestHandler {
   public:
     using OnPaintFn  = std::function<void(const uint8_t* bgra, int width, int height)>;
     using OnReadyFn  = std::function<void(bool ready)>;
@@ -55,6 +57,7 @@ class EngineClient : public CefClient,
     CefRefPtr<CefLifeSpanHandler>  GetLifeSpanHandler() override  { return this; }
     CefRefPtr<CefLoadHandler>      GetLoadHandler() override      { return this; }
     CefRefPtr<CefDisplayHandler>   GetDisplayHandler() override   { return this; }
+    CefRefPtr<CefRequestHandler>   GetRequestHandler() override   { return this; }
 
     // CefDisplayHandler — forward only page console messages tagged with the
     // "BGSTATS" marker to stderr (Phase 19 doc 01 runtime instrumentation).
@@ -81,6 +84,13 @@ class EngineClient : public CefClient,
     void OnLoadError(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                      ErrorCode errorCode, const CefString& errorText,
                      const CefString& failedUrl) override;
+
+    // CefRequestHandler — surface renderer death with browser identity and
+    // Chromium's termination status so the canonical harness can fail closed.
+    void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
+                                   TerminationStatus status,
+                                   int error_code,
+                                   const CefString& error_string) override;
 
     bool closing() const { return closing_.load(std::memory_order_acquire); }
     void set_closing()   { closing_.store(true, std::memory_order_release); }

@@ -121,6 +121,87 @@ test('token-armed CEF wait is opt-in and changes the canonical digest', () => {
   assert.notEqual(manifest(baseline).configDigest, treatmentRoot.configDigest);
 });
 
+test('absolute field grid is opt-in and changes canonical engine command', () => {
+  const control = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-grid-control-'));
+  const treatment = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-grid-treatment-'));
+  runDryOneCell(control, ['--pacing-mode=one-tick', '--token-armed-wait']);
+  runDryOneCell(treatment, [
+    '--pacing-mode=one-tick',
+    '--token-armed-wait',
+    '--absolute-field-grid',
+  ]);
+
+  const root = manifest(treatment);
+  const command = manifest(treatment, 'ch1/manifest.json').plannedCommand.join(' ');
+  assert.equal(manifest(control).config.absoluteFieldGrid, false);
+  assert.equal(root.config.absoluteFieldGrid, true);
+  assert.match(command, /--decklink-absolute-field-grid/);
+  assert.notEqual(manifest(control).configDigest, root.configDigest);
+});
+
+test('absolute field grid rejects an invalid stacked treatment', () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-grid-invalid-'));
+  assert.throws(
+    () => runDryOneCell(outDir, ['--absolute-field-grid']),
+    /requires --token-armed-wait/i,
+  );
+});
+
+test('one-pair reservoir is opt-in and excludes absolute field grid', () => {
+  const treatment = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-reservoir-'));
+  runDryOneCell(treatment, [
+    '--pacing-mode=one-tick',
+    '--token-armed-wait',
+    '--one-pair-reservoir',
+  ]);
+
+  const root = manifest(treatment);
+  const command = manifest(treatment, 'ch1/manifest.json').plannedCommand.join(' ');
+  assert.equal(root.config.onePairReservoir, true);
+  assert.match(command, /--decklink-one-pair-reservoir/);
+  assert.throws(
+    () => runDryOneCell(
+      mkdtempSync(join(tmpdir(), 'titulus-p20-cell-reservoir-invalid-')),
+      ['--token-armed-wait', '--absolute-field-grid', '--one-pair-reservoir'],
+    ),
+    /cannot be combined/i,
+  );
+});
+
+test('null M2 cell excludes DeckLink-only hardware and pacing flags', () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-null-m2-'));
+  runDryOneCell(outDir, [
+    '--consumer=null',
+    '--pacing-mode=one-tick',
+    '--provenance=on',
+  ]);
+
+  const root = manifest(outDir);
+  const command = manifest(outDir, 'ch1/manifest.json').plannedCommand.join(' ');
+  assert.equal(root.config.consumer, 'null');
+  assert.equal(root.execution.decklinkArmed, false);
+  assert.match(command, /--consumer=null/);
+  assert.doesNotMatch(command, /--device-index=|--display-mode=|--decklink-completion-log=|--decklink-token-armed-wait/);
+});
+
+test('null M2 cell rejects a DeckLink-only token wait', () => {
+  assert.throws(
+    () => runDryOneCell(
+      mkdtempSync(join(tmpdir(), 'titulus-p20-cell-null-invalid-')),
+      ['--consumer=null', '--token-armed-wait'],
+    ),
+    /require.*--consumer=decklink/i,
+  );
+});
+
+test('null execution does not evaluate the consumer name arithmetically', () => {
+  const source = readFileSync(harness, 'utf8');
+  assert.match(
+    source,
+    /if \(\( EXECUTE == 1 \)\) && \[\[ "\$CONSUMER" == "decklink" \]\]/,
+  );
+});
+
 test('complex test1 marker path and digest are explicit in canonical manifest', () => {
   const outDir = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-test1-marker-'));
   runDryOneCell(outDir, [
@@ -186,4 +267,10 @@ test('canonical harness has bounded process-group cleanup and records aborted ru
   assert.match(source, /runId/);
   assert.match(source, /output directory must be empty|refusing to reuse/i);
   assert.match(source, /p20-take\.mjs/);
+});
+
+test('canonical evidence rejects a confirmed CEF renderer termination', () => {
+  const source = readFileSync(harness, 'utf8');
+  assert.match(source, /renderer_terminated/);
+  assert.match(source, /CEF renderer terminated/);
 });
