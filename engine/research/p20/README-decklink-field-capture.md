@@ -25,6 +25,22 @@ ctest --test-dir engine/research/p20/build --output-on-failure
 
 The unit test is synthetic and does not enumerate or open DeckLink hardware.
 
+For an existing SDK Capture raw UYVY artifact, the offline fallback reads one
+frame at a time (it does not allocate the whole multi-gigabyte file):
+
+```bash
+node engine/research/p20/decode-uyvy-fields.mjs \
+  --in=/path/to/capture.uyvy \
+  --out=/path/to/capture-fields.csv \
+  --output-channel=ch1 \
+  --capture-input=quad2-sdi6 \
+  --start-unix-us=1725000000000000 \
+  --tff
+```
+
+`--start-unix-us` is the capture's known first-field timestamp. Do not use the
+default zero origin for joins with engine or operator evidence.
+
 ## Controlled L1 invocation
 
 `--csv` is required and the probe refuses to overwrite an existing file.
@@ -74,3 +90,29 @@ Analyse the resulting CSV with the existing
 `engine/research/p20/lib/analyze-semantic-fields.mjs`; undecodable IDs,
 duplicates, skipped IDs, reversed IDs and parity mismatches are failures for
 the L1 smoke, not healthy output.
+
+Use strict mode for a gate:
+
+```bash
+node engine/research/p20/lib/analyze-semantic-fields.mjs \
+  --in=/path/to/capture-fields.csv \
+  --strict \
+  --min-fields=14900 \
+  --out=/path/to/semantic-analysis.json
+```
+
+For a completed canonical cell, combine semantic output with the frame and
+DeckLink event logs:
+
+```bash
+node engine/research/p20/lib/analyze-p20-evidence.mjs \
+  --run-dir=/path/to/p20-cell \
+  --capture=/path/to/capture-fields.csv \
+  --channel=1 \
+  --min-fields=14900 \
+  --out=/path/to/joint-evidence.json
+```
+
+The joint verifier fails unless logger integrity, render liveness, DeckLink
+delivery/cadence, frame-sequence progress and semantic-field acceptance all
+pass. A clean completion result with a frozen producer is not healthy output.

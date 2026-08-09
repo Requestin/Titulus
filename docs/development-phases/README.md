@@ -22,3 +22,10 @@
 | 11 | [phase-11-casparcg-parity.md](phase-11-casparcg-parity.md) | DONE (PR #56) |
 | 12 | [phase-12-blink-pipeline.md](phase-12-blink-pipeline.md) | DONE |
 | 13 | [phase-13-documentation.md](phase-13-documentation.md) | DONE |
+| 14 | archived microfreeze plan | SKIPPED intentionally |
+| 15 | [phase-15-transform-optimization.md](phase-15-transform-optimization.md) | DONE |
+| 16 | [phase-16-performance-matrix.md](phase-16-performance-matrix.md) | DONE |
+| 17 | [phase-17-raster-latency.md](phase-17-raster-latency.md) | DONE |
+| 18 | [phase-18-true-50p-pipeline.md](phase-18-true-50p-pipeline.md) | DONE |
+| 19 | [phase-19-cost-model.md](phase-19-cost-model.md) | DONE |
+| 20 | [phase-20-visual-frame-pacing.md](phase-20-visual-frame-pacing.md) | IN PROGRESS — P20.2 loopback |
