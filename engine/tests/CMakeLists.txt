@@ -102,3 +102,18 @@ target_compile_options(test_live_pipeline PRIVATE
 )
 
 add_test(NAME live_pipeline_unit COMMAND test_live_pipeline)
+
+add_executable(test_pacing
+  test_pacing.cpp
+  ../src/frame_log.cpp
+)
+
+target_include_directories(test_pacing PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/../src"
+)
+
+target_compile_options(test_pacing PRIVATE
+  -Wall -Wextra -Wno-unused-parameter
+)
+
+add_test(NAME pacing_frame_log_unit COMMAND test_pacing)

@@ -491,10 +491,19 @@ int main(int argc, char** argv) {
                 if (frame_log && frame_log->enabled()) {
                     const uint64_t paint_latency_us = std::chrono::duration_cast<
                         std::chrono::microseconds>(delivery_time - tick_start).count();
-                    const uint64_t wall_clock_us = std::chrono::duration_cast<
-                        std::chrono::microseconds>(delivery_time.time_since_epoch()).count();
-                    frame_log->RecordTick(wall_clock_us, interval_us, cur_seq, pump_active_us,
-                                          paint_latency_us, got_new_paint ? 0 : 1);
+                    const bg::FrameLogClockSample clocks = bg::CaptureFrameLogClocks();
+                    frame_log->RecordTick({
+                        .unix_us = clocks.unix_us,
+                        .mono_us = clocks.mono_us,
+                        .interval_us = interval_us,
+                        .publish_seq_after = cur_seq,
+                        .delivery_kind = got_new_paint
+                            ? bg::FrameDeliveryKind::CefForward
+                            : bg::FrameDeliveryKind::None,
+                        .pump_active_us = pump_active_us,
+                        .paint_latency_us = paint_latency_us,
+                        .deadline_miss = !got_new_paint,
+                    });
                 }
 
                 if (browser_ready.load(std::memory_order_acquire)) {
@@ -734,17 +743,27 @@ int main(int argc, char** argv) {
         if (frame_log && frame_log->enabled()) {
             const uint64_t paint_latency_us = std::chrono::duration_cast<
                 std::chrono::microseconds>(delivery_time - tick_start).count();
-            const uint64_t wall_clock_us = std::chrono::duration_cast<
-                std::chrono::microseconds>(delivery_time.time_since_epoch()).count();
             const bool delivered = got_new_paint || reused_live_frame
                 || (pipeline_probe && seq_after_sleep != seq_at_tick_start);
-            frame_log->RecordTick(wall_clock_us, interval_us,
-                                  (pipeline_probe || reused_live_frame)
-                                      ? seq_after_sleep : cur_seq,
-                                  pump_active_us, paint_latency_us,
-                                  delivered ? 0 : 1,
-                                  inflight_depth,
-                                  pipeline_probe ? paint_seq_delta_final : paint_seq_delta);
+            const bg::FrameLogClockSample clocks = bg::CaptureFrameLogClocks();
+            frame_log->RecordTick({
+                .unix_us = clocks.unix_us,
+                .mono_us = clocks.mono_us,
+                .interval_us = interval_us,
+                .publish_seq_after = (pipeline_probe || reused_live_frame)
+                    ? seq_after_sleep
+                    : cur_seq,
+                .delivery_kind = reused_live_frame
+                    ? bg::FrameDeliveryKind::Reuse
+                    : (got_new_paint ? bg::FrameDeliveryKind::CefForward
+                                     : bg::FrameDeliveryKind::None),
+                .pump_active_us = pump_active_us,
+                .paint_latency_us = paint_latency_us,
+                .deadline_miss = !delivered,
+                .inflight_depth = static_cast<uint32_t>(inflight_depth),
+                .paint_seq_delta = static_cast<uint32_t>(
+                    pipeline_probe ? paint_seq_delta_final : paint_seq_delta),
+            });
         }
     }
     }  // decklink_driven / self-timer loop selection
