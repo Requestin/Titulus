@@ -266,6 +266,12 @@ test('canonical cell records a host-derived CPU plan instead of a Ryzen-only all
   assert.doesNotMatch(readFileSync(harness, 'utf8'), /SAFE_MASKS=/);
 });
 
+test('DeckLink readiness accepts a locked reference reported in telemetry', () => {
+  const source = readFileSync(harness, 'utf8');
+  assert.match(source, /started mode=HD1080i50.*low_latency=yes/);
+  assert.match(source, /ref=locked/);
+});
+
 test('canonical cell rejects an unsafe duplicate CPU assignment before execution', () => {
   const outDir = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-invalid-'));
   assert.throws(

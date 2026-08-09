@@ -602,7 +602,7 @@ for _ in $(seq 1 120); do
     log="$RUN_DIR/ch${number}/engine.log"
     if [[ "$CONSUMER" == "decklink" ]] \
       && grep -q 'started mode=HD1080i50.*low_latency=yes' "$log" \
-      && grep -q 'reference signal locked' "$log"; then
+      && grep -Eq 'reference signal locked|ref=locked' "$log"; then
       ready=$((ready + 1))
     elif [[ "$CONSUMER" == "null" ]] && grep -q 'browser created, loading' "$log"; then
       ready=$((ready + 1))
