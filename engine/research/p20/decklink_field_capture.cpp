@@ -421,9 +421,14 @@ class CaptureSession {
             }
             void* bytes = nullptr;
             uint64_t buffer_size = 0;
+            if (video_buffer.get()->StartAccess(bmdBufferAccessRead) != S_OK) {
+                invalid_frames_.fetch_add(1, std::memory_order_relaxed);
+                return S_OK;
+            }
             const HRESULT get_bytes = video_buffer.get()->GetBytes(&bytes);
             if (get_bytes != S_OK || video_buffer.get()->GetSize(&buffer_size) != S_OK ||
                 bytes == nullptr || video_frame->GetRowBytes() < kWidth * 2) {
+                video_buffer.get()->EndAccess(bmdBufferAccessRead);
                 invalid_frames_.fetch_add(1, std::memory_order_relaxed);
                 return S_OK;
             }
@@ -432,6 +437,7 @@ class CaptureSession {
             const auto byte_count =
                 static_cast<size_t>(row_bytes) * static_cast<size_t>(kHeight);
             if (buffer_size < byte_count) {
+                video_buffer.get()->EndAccess(bmdBufferAccessRead);
                 invalid_frames_.fetch_add(1, std::memory_order_relaxed);
                 return S_OK;
             }
@@ -454,9 +460,11 @@ class CaptureSession {
                     callback_failures_.fetch_add(1, std::memory_order_relaxed);
                     stop_requested_.store(true, std::memory_order_release);
                     wait_cv_.notify_all();
+                    video_buffer.get()->EndAccess(bmdBufferAccessRead);
                     return E_FAIL;
                 }
             }
+            video_buffer.get()->EndAccess(bmdBufferAccessRead);
             containers_.fetch_add(1, std::memory_order_relaxed);
         } catch (...) {
             callback_failures_.fetch_add(1, std::memory_order_relaxed);
