@@ -36,6 +36,8 @@ test('accepts contiguous schedule/completion provenance with a bounded shutdown 
   assert.equal(report.schedules, 4);
   assert.equal(report.completions, 2);
   assert.equal(report.prerollCompletions, 3);
+  assert.equal(report.loggerIntegrity.healthy, true);
+  assert.equal(report.deliveryHealth.healthy, true);
   assert.deepEqual(report.shutdownTail, [3, 4]);
   assert.deepEqual(report.errors, []);
 });
@@ -56,6 +58,8 @@ test('fails for an interior completion gap, nonzero delivery errors, or logger o
   });
 
   assert.equal(report.healthy, false);
+  assert.equal(report.loggerIntegrity.healthy, false);
+  assert.equal(report.deliveryHealth.healthy, false);
   assert.match(report.errors.join('\n'), /missing completion for schedule_seq=2/);
   assert.match(report.errors.join('\n'), /late=1/);
   assert.match(report.errors.join('\n'), /event_overflow=2/);
@@ -144,6 +148,8 @@ test('rejects a frozen producer even when DeckLink completions are error-free', 
   });
 
   assert.equal(report.healthy, false);
+  assert.equal(report.loggerIntegrity.healthy, true);
+  assert.equal(report.deliveryHealth.healthy, true);
   assert.equal(report.renderLiveness.healthy, false);
   assert.equal(report.cadenceHealth.healthy, false);
   assert.match(report.errors.join('\n'), /render produced zero frames|measurement contains starved schedule/);
