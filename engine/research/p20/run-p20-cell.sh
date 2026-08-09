@@ -21,6 +21,9 @@ PROVENANCE="on"
 CPU_MASKS="0,6,1,7;2,8,3,9;4,10,5,11"
 DEVICE_INDEXES="1,2,3"
 START_OFFSETS_MS="0,0,0"
+CPU_MASKS_EXPLICIT=0
+DEVICE_INDEXES_EXPLICIT=0
+START_OFFSETS_EXPLICIT=0
 LABEL="canonical"
 EXECUTE=0
 CONFIRM_DECKLINK=0
@@ -81,9 +84,9 @@ for arg in "$@"; do
     --raster-threads=*) RASTER_THREADS="${arg#*=}" ;;
     --pacing-mode=*) PACING_MODE="${arg#*=}" ;;
     --provenance=*) PROVENANCE="${arg#*=}" ;;
-    --cpu-masks=*) CPU_MASKS="${arg#*=}" ;;
-    --device-indexes=*) DEVICE_INDEXES="${arg#*=}" ;;
-    --start-offsets-ms=*) START_OFFSETS_MS="${arg#*=}" ;;
+    --cpu-masks=*) CPU_MASKS="${arg#*=}"; CPU_MASKS_EXPLICIT=1 ;;
+    --device-indexes=*) DEVICE_INDEXES="${arg#*=}"; DEVICE_INDEXES_EXPLICIT=1 ;;
+    --start-offsets-ms=*) START_OFFSETS_MS="${arg#*=}"; START_OFFSETS_EXPLICIT=1 ;;
     --label=*) LABEL="${arg#*=}" ;;
     --execute) EXECUTE=1 ;;
     --confirm-decklink) CONFIRM_DECKLINK=1 ;;
@@ -115,12 +118,17 @@ if (( EXECUTE == 1 )); then
   [[ -s "$TOKEN_FILE" ]] || fail "missing token file: $TOKEN_FILE"
 fi
 
+COUNT=1
+[[ "$MODE" == "3ch" ]] && COUNT=3
+if (( COUNT == 1 )); then
+  (( CPU_MASKS_EXPLICIT == 1 )) || CPU_MASKS="${CPU_MASKS%%;*}"
+  (( DEVICE_INDEXES_EXPLICIT == 1 )) || DEVICE_INDEXES="${DEVICE_INDEXES%%,*}"
+  (( START_OFFSETS_EXPLICIT == 1 )) || START_OFFSETS_MS="${START_OFFSETS_MS%%,*}"
+fi
 IFS=',' read -r -a CHANNEL_ARRAY <<< "$CHANNELS"
 IFS=';' read -r -a MASK_ARRAY <<< "$CPU_MASKS"
 IFS=',' read -r -a DEVICE_ARRAY <<< "$DEVICE_INDEXES"
 IFS=',' read -r -a OFFSET_ARRAY <<< "$START_OFFSETS_MS"
-COUNT=1
-[[ "$MODE" == "3ch" ]] && COUNT=3
 (( ${#CHANNEL_ARRAY[@]} == COUNT )) || fail "$MODE requires exactly $COUNT channel ids"
 (( ${#MASK_ARRAY[@]} == COUNT )) || fail "$MODE requires exactly $COUNT CPU masks"
 (( ${#DEVICE_ARRAY[@]} == COUNT )) || fail "$MODE requires exactly $COUNT device indexes"

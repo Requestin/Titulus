@@ -31,6 +31,22 @@ function runDryCell(outDir, extra = []) {
   });
 }
 
+function runDryOneCell(outDir, extra = []) {
+  return execFileSync('bash', [
+    harness.pathname,
+    '1ch',
+    '--channels=00000000-0000-4000-8000-000000000001',
+    `--out-dir=${outDir}`,
+    '--duration=30',
+    '--warmup=10',
+    ...extra,
+  ], {
+    cwd: repoRoot.pathname,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+}
+
 function manifest(outDir, name = 'manifest.json') {
   return JSON.parse(readFileSync(join(outDir, name), 'utf8'));
 }
@@ -101,6 +117,16 @@ test('P20.1 provenance-off baseline keeps the common performance recorder only',
   assert.match(root.config.url, /pacing=0/);
   assert.match(channel.plannedCommand.join(' '), /--frame-log=/);
   assert.doesNotMatch(channel.plannedCommand.join(' '), /--decklink-completion-log=/);
+});
+
+test('canonical 1ch defaults to the first physical-safe map entry', () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-one-channel-'));
+  runDryOneCell(outDir);
+
+  const root = manifest(outDir);
+  assert.deepEqual(root.config.cpuMasks, ['0,6,1,7']);
+  assert.deepEqual(root.config.deviceIndexes, [1]);
+  assert.deepEqual(root.config.startOffsetsMs, [0]);
 });
 
 test('canonical cell rejects an unsafe duplicate CPU assignment before execution', () => {
