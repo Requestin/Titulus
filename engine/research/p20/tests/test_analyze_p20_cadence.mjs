@@ -63,7 +63,7 @@ test('fails closed for missing or contradictory runtime provenance', () => {
   );
 
   const contradictory = parseFrameLogCsv(fixture('p20-cadence-clean-11.csv'));
-  contradictory[1].ticks_per_raf = '2';
+  contradictory.splice(1, 0, { ...contradictory[0], ticks_per_raf: '2' });
   assert.throws(
     () => analyzeP20Cadence(contradictory),
     /contradictory duplicate runtime_event_seq/,
