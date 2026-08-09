@@ -77,16 +77,21 @@ export function parseDecklinkEvents(text) {
 
 function finalTelemetry(engineLog) {
   const matches = [...engineLog.matchAll(
-    /telemetry in=\d+ scheduled=\d+ late=(\d+) dropped=(\d+) flushed=(\d+) overwrite=(\d+).*?event_overflow=(\d+)/g,
+    /telemetry in=(\d+) scheduled=(\d+) late=(\d+) dropped=(\d+) flushed=(\d+) overwrite=(\d+) starved=(\d+) pairs=(\d+) singles=(\d+) event_overflow=(\d+)/g,
   )];
   if (matches.length === 0) throw new Error('engine log has no final DeckLink telemetry');
   const match = matches.at(-1);
   return {
-    late: Number(match[1]),
-    dropped: Number(match[2]),
-    flushed: Number(match[3]),
-    overwrite: Number(match[4]),
-    eventOverflow: Number(match[5]),
+    in: Number(match[1]),
+    scheduled: Number(match[2]),
+    late: Number(match[3]),
+    dropped: Number(match[4]),
+    flushed: Number(match[5]),
+    overwrite: Number(match[6]),
+    starved: Number(match[7]),
+    pairs: Number(match[8]),
+    singles: Number(match[9]),
+    eventOverflow: Number(match[10]),
   };
 }
 
@@ -104,11 +109,57 @@ function validateScheduleSources(schedules) {
   return errors;
 }
 
-export function analyzeP20M0({ eventRows, engineLog }) {
+function measurementCadence(eventRows, measurementStartUnixUs) {
+  if (measurementStartUnixUs === undefined || measurementStartUnixUs === null) {
+    return {
+      evaluated: false,
+      measurementModes: null,
+      measurementOverwrites: null,
+      errors: [],
+      healthy: true,
+    };
+  }
+  if (!Number.isSafeInteger(measurementStartUnixUs) || measurementStartUnixUs < 0) {
+    throw new Error('measurementStartUnixUs must be a non-negative safe integer');
+  }
+  const measurementRows = eventRows.filter(
+    (row) => positive(row, 'unix_us') >= measurementStartUnixUs,
+  );
+  const schedules = measurementRows.filter((row) => row.event === 'schedule');
+  const measurementModes = { pair: 0, single: 0, starved: 0 };
+  for (const schedule of schedules) {
+    if (Object.hasOwn(measurementModes, schedule.weave_mode)) {
+      measurementModes[schedule.weave_mode] += 1;
+    }
+  }
+  const measurementOverwrites = measurementRows.filter(
+    (row) => row.event === 'input_overwrite',
+  ).length;
+  const errors = [];
+  if (schedules.length === 0) errors.push('measurement contains no schedule events');
+  if (measurementModes.single > 0) {
+    errors.push(`measurement contains single schedule=${measurementModes.single}`);
+  }
+  if (measurementModes.starved > 0) {
+    errors.push(`measurement contains starved schedule=${measurementModes.starved}`);
+  }
+  if (measurementOverwrites > 0) {
+    errors.push(`measurement contains input_overwrite=${measurementOverwrites}`);
+  }
+  return {
+    evaluated: true,
+    measurementModes,
+    measurementOverwrites,
+    errors,
+    healthy: errors.length === 0,
+  };
+}
+
+export function analyzeP20M0({ eventRows, engineLog, measurementStartUnixUs }) {
   if (!Array.isArray(eventRows)) throw new Error('eventRows must be a parsed DeckLink event CSV array');
   if (typeof engineLog !== 'string') throw new Error('engineLog must be a string');
 
-  const errors = [];
+  const loggerErrors = [];
   const schedules = eventRows.filter((row) => row.event === 'schedule');
   const prerollCompletions = eventRows.filter(
     (row) => row.event === 'completion' && positive(row, 'schedule_seq') === 0,
@@ -120,23 +171,23 @@ export function analyzeP20M0({ eventRows, engineLog }) {
   const overwrittenSourceIds = new Set();
   for (const overwrite of overwrites) {
     const sourceId = positive(overwrite, 'popped_a');
-    if (sourceId === 0) errors.push('input_overwrite without popped_a source ID');
+    if (sourceId === 0) loggerErrors.push('input_overwrite without popped_a source ID');
     if (overwrittenSourceIds.has(sourceId)) {
-      errors.push(`duplicate input_overwrite source_id=${sourceId}`);
+      loggerErrors.push(`duplicate input_overwrite source_id=${sourceId}`);
     }
     overwrittenSourceIds.add(sourceId);
   }
   const scheduleBySeq = new Map();
   for (const schedule of schedules) {
     const seq = positive(schedule, 'schedule_seq');
-    if (scheduleBySeq.has(seq)) errors.push(`duplicate schedule_seq=${seq}`);
+    if (scheduleBySeq.has(seq)) loggerErrors.push(`duplicate schedule_seq=${seq}`);
     scheduleBySeq.set(seq, schedule);
   }
   const completed = new Set();
   for (const completion of completions) {
     const seq = positive(completion, 'schedule_seq');
-    if (!scheduleBySeq.has(seq)) errors.push(`completion without schedule_seq=${seq}`);
-    if (completed.has(seq)) errors.push(`duplicate completion for schedule_seq=${seq}`);
+    if (!scheduleBySeq.has(seq)) loggerErrors.push(`completion without schedule_seq=${seq}`);
+    if (completed.has(seq)) loggerErrors.push(`duplicate completion for schedule_seq=${seq}`);
     completed.add(seq);
   }
 
@@ -147,25 +198,54 @@ export function analyzeP20M0({ eventRows, engineLog }) {
     const expectedTail = scheduleSeqs.slice(scheduleSeqs.indexOf(firstUnmatched));
     if (unmatched.length > 3 || expectedTail.length !== unmatched.length
         || !expectedTail.every((seq, index) => seq === unmatched[index])) {
-      for (const seq of unmatched) errors.push(`missing completion for schedule_seq=${seq}`);
+      for (const seq of unmatched) loggerErrors.push(`missing completion for schedule_seq=${seq}`);
     }
   }
   if (prerollCompletions.length !== 3) {
-    errors.push(`expected 3 preroll completions, got ${prerollCompletions.length}`);
+    loggerErrors.push(`expected 3 preroll completions, got ${prerollCompletions.length}`);
   }
   if (unmatched.length > 0 && !engineLog.includes('duration reached, shutting down')) {
-    errors.push('shutdown tail lacks graceful shutdown marker');
+    loggerErrors.push('shutdown tail lacks graceful shutdown marker');
   }
 
-  errors.push(...validateScheduleSources(schedules));
+  loggerErrors.push(...validateScheduleSources(schedules));
   const telemetry = finalTelemetry(engineLog);
-  for (const [name, value] of Object.entries(telemetry)) {
-    if (name === 'overwrite') continue;
-    if (value !== 0) errors.push(`${name === 'eventOverflow' ? 'event_overflow' : name}=${value}`);
+  const deliveryErrors = [];
+  for (const name of ['late', 'dropped', 'flushed', 'eventOverflow']) {
+    const value = telemetry[name];
+    if (value !== 0) {
+      deliveryErrors.push(`${name === 'eventOverflow' ? 'event_overflow' : name}=${value}`);
+    }
   }
   if (telemetry.overwrite !== overwrites.length) {
-    errors.push(`overwrite telemetry=${telemetry.overwrite} differs from input_overwrite events=${overwrites.length}`);
+    loggerErrors.push(
+      `overwrite telemetry=${telemetry.overwrite} differs from input_overwrite events=${overwrites.length}`,
+    );
   }
+  const livenessErrors = [];
+  if (telemetry.in === 0) livenessErrors.push('render produced zero frames');
+  if (telemetry.pairs === 0) livenessErrors.push('render produced zero complete field pairs');
+  const renderLiveness = {
+    framesIn: telemetry.in,
+    pairs: telemetry.pairs,
+    errors: livenessErrors,
+    healthy: livenessErrors.length === 0,
+  };
+  const cadenceHealth = measurementCadence(eventRows, measurementStartUnixUs);
+  const loggerIntegrity = {
+    errors: loggerErrors,
+    healthy: loggerErrors.length === 0,
+  };
+  const deliveryHealth = {
+    errors: deliveryErrors,
+    healthy: deliveryErrors.length === 0,
+  };
+  const errors = [
+    ...loggerErrors,
+    ...deliveryErrors,
+    ...livenessErrors,
+    ...cadenceHealth.errors,
+  ];
 
   return {
     schemaVersion: 'p20-m0-v1',
@@ -175,6 +255,10 @@ export function analyzeP20M0({ eventRows, engineLog }) {
     inputOverwrites: overwrites.length,
     shutdownTail: unmatched,
     telemetry,
+    loggerIntegrity,
+    deliveryHealth,
+    renderLiveness,
+    cadenceHealth,
     errors: [...new Set(errors)],
     healthy: errors.length === 0,
   };
@@ -195,12 +279,19 @@ function options(argv) {
 export function main(argv = process.argv.slice(2)) {
   const opts = options(argv);
   if (!opts.events || !opts['engine-log'] || opts.help) {
-    process.stderr.write('Usage: analyze-p20-m0.mjs --events=decklink.csv --engine-log=engine.log [--out=report.json]\n');
+    process.stderr.write(
+      'Usage: analyze-p20-m0.mjs --events=decklink.csv --engine-log=engine.log '
+      + '[--measurement-start-unix-us=N] [--out=report.json]\n',
+    );
     return opts.help ? 0 : 1;
   }
+  const measurementStartUnixUs = opts['measurement-start-unix-us'] === undefined
+    ? undefined
+    : Number(opts['measurement-start-unix-us']);
   const report = analyzeP20M0({
     eventRows: parseDecklinkEvents(readFileSync(opts.events, 'utf8')),
     engineLog: readFileSync(opts['engine-log'], 'utf8'),
+    measurementStartUnixUs,
   });
   const output = `${JSON.stringify(report, null, 2)}\n`;
   if (opts.out) writeFileSync(opts.out, output);

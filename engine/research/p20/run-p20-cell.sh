@@ -327,14 +327,58 @@ fi
 
 printf '%s\n' "$$" >"$LOCK"
 PIDS=()
-cleanup() {
-  set +e
-  for pid in "${PIDS[@]:-}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
-  for pid in "${PIDS[@]:-}"; do wait "$pid" 2>/dev/null || true; done
-  [[ "$(<"$LOCK" 2>/dev/null || true)" == "$$" ]] && rm -f "$LOCK"
-  return 0
+RUN_COMPLETED=0
+
+write_run_status() {
+  local outcome="$1"
+  local reason="$2"
+  P20_RUN_OUTCOME="$outcome" P20_RUN_REASON="$reason" P20_RUN_STATUS_PATH="$RUN_DIR/run-status.json" \
+    node - <<'NODE'
+import { writeFileSync } from 'node:fs';
+writeFileSync(process.env.P20_RUN_STATUS_PATH, `${JSON.stringify({
+  schemaVersion: 'p20-run-status-v1',
+  outcome: process.env.P20_RUN_OUTCOME,
+  reason: process.env.P20_RUN_REASON,
+}, null, 2)}\n`);
+NODE
 }
-trap cleanup EXIT INT TERM
+
+cleanup() {
+  local exit_status=$?
+  local pid
+  set +e
+  for pid in "${PIDS[@]:-}"; do
+    kill -TERM -- "-$pid" 2>/dev/null || true
+  done
+  for _ in $(seq 1 40); do
+    local alive=0
+    for pid in "${PIDS[@]:-}"; do
+      pgrep -g "$pid" >/dev/null 2>&1 && alive=1
+    done
+    (( alive == 0 )) && break
+    sleep 0.25
+  done
+  for pid in "${PIDS[@]:-}"; do
+    if pgrep -g "$pid" >/dev/null 2>&1; then
+      kill -KILL -- "-$pid" 2>/dev/null || true
+    fi
+  done
+  for pid in "${PIDS[@]:-}"; do wait "$pid" 2>/dev/null || true; done
+  for pid in "${PIDS[@]:-}"; do
+    if pgrep -g "$pid" >/dev/null 2>&1; then
+      printf '[p20-cell] remaining CEF/engine process group pgid=%s after KILL\n' "$pid" >&2
+      exit_status=1
+    fi
+  done
+  if (( RUN_COMPLETED == 0 )); then
+    write_run_status "aborted" "exit_status=${exit_status}"
+  fi
+  [[ "$(<"$LOCK" 2>/dev/null || true)" == "$$" ]] && rm -f "$LOCK"
+  return "$exit_status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 ps -eo pid=,ppid=,pgid=,comm=,args= >"$RUN_DIR/processes-at-start.txt"
 
 for index in "${!CHANNEL_ARRAY[@]}"; do
@@ -402,8 +446,13 @@ status=0
 for pid in "${PIDS[@]}"; do
   wait "$pid" || status=1
 done
-PIDS=()
 (( status == 0 )) || fail "one or more engines failed before graceful completion"
+for pid in "${PIDS[@]}"; do
+  if pgrep -g "$pid" >/dev/null 2>&1; then
+    fail "remaining CEF/engine process group pgid=$pid after graceful engine exit"
+  fi
+done
+PIDS=()
 ps -eo pid=,ppid=,pgid=,comm=,args= >"$RUN_DIR/processes-at-stop.txt"
 export P20_MEASURE_START_UNIX_US="$MEASURE_START_UNIX_US"
 export P20_MEASURE_END_UNIX_US="$MEASURE_END_UNIX_US"
@@ -418,4 +467,6 @@ manifest.measurement = {
 };
 writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
 NODE
+RUN_COMPLETED=1
+write_run_status "completed" "graceful"
 printf '[p20-cell] completed: %s\n' "$RUN_DIR"
