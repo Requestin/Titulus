@@ -1,0 +1,6 @@
+unix_us,mono_us,runtime_event_seq,raf_seq,ticks_per_raf,logical_frame_after,cef_paint_after,publish_seq_after
+1000000,500000,1,1,1,10,100,200
+1020000,520000,2,2,1,11,101,201
+1040000,540000,3,3,1,12,102,202
+1060000,560000,4,4,1,13,103,203
+1080000,580000,5,5,1,14,104,204
