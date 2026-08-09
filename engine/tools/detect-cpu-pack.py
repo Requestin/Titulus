@@ -91,25 +91,39 @@ def choose_ccx(available: list[Core], count: int) -> list[Core]:
     return available[:count]
 
 
+def select_eligible_cores(cores: list[Core], core_class: str) -> tuple[list[Core], str]:
+    smt_cores = [core for core in cores if len(core.cpus) > 1]
+    single_thread_cores = [core for core in cores if len(core.cpus) == 1]
+    if core_class == "smt":
+        if not smt_cores:
+            raise ValueError("SMT core class requested but the host has no SMT cores")
+        return smt_cores, "smt"
+    if core_class == "auto" and smt_cores and single_thread_cores:
+        return smt_cores, "smt"
+    return cores, "all"
+
+
 def plan(
     topology: dict[str, Any],
     channels: int,
     cores_per_channel: int,
     house_cores: int,
     pack: str,
+    core_class: str,
 ) -> dict[str, Any]:
     cores = make_cores(topology)
+    eligible_cores, selected_core_class = select_eligible_cores(cores, core_class)
     if channels <= 0 or cores_per_channel <= 0 or house_cores < 0:
         raise ValueError("channels, cores-per-channel and house-cores must be valid")
-    if house_cores + channels * cores_per_channel > len(cores):
+    if house_cores + channels * cores_per_channel > len(eligible_cores):
         raise ValueError(
             "capacity shortfall: "
-            f"{len(cores)} physical cores cannot satisfy "
+            f"{len(eligible_cores)} eligible physical cores cannot satisfy "
             f"{house_cores} house + {channels} x {cores_per_channel} channel cores"
         )
 
-    house = cores[:house_cores]
-    available = cores[house_cores:]
+    house = eligible_cores[:house_cores]
+    available = eligible_cores[house_cores:]
     assignments: list[list[Core]] = []
     for _ in range(channels):
         picked = (
@@ -140,6 +154,8 @@ def plan(
     return {
         "phys_cores": len(cores),
         "logical_cpus": sum(len(core.cpus) for core in cores),
+        "core_class": selected_core_class,
+        "eligible_phys_cores": len(eligible_cores),
         "house": [cpu for core in house for cpu in core.cpus],
         "pack": pack,
         "channels": channel_data,
@@ -153,6 +169,7 @@ def main() -> int:
     parser.add_argument("--cores-per-channel", type=int, default=2)
     parser.add_argument("--house-cores", type=int, default=0)
     parser.add_argument("--pack", choices=("sequential", "ccx"), default="sequential")
+    parser.add_argument("--core-class", choices=("auto", "all", "smt"), default="auto")
     parser.add_argument("--topology-fixture", type=Path)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
@@ -168,6 +185,7 @@ def main() -> int:
             args.cores_per_channel,
             args.house_cores,
             args.pack,
+            args.core_class,
         )
     except (OSError, ValueError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
         print(f"detect-cpu-pack: {error}", file=sys.stderr)
@@ -178,7 +196,8 @@ def main() -> int:
     else:
         print(
             f"pack={result['pack']} physical={result['phys_cores']} "
-            f"logical={result['logical_cpus']} house={result['house']}"
+            f"logical={result['logical_cpus']} core_class={result['core_class']} "
+            f"house={result['house']}"
         )
         for channel in result["channels"]:
             print(

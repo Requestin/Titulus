@@ -26,7 +26,10 @@ LOOPBACK_CAPTURE_BIN=""
 LOOPBACK_INPUT_DEVICE=""
 LOOPBACK_OUTPUT_CHANNEL=""
 LOOPBACK_CAPTURE_INPUT=""
-CPU_MASKS="0,6,1,7;2,8,3,9;4,10,5,11"
+CPU_PLANNER="${ROOT}/engine/tools/detect-cpu-pack.py"
+CPU_MASKS=""
+CPU_CORE_CLASS="auto"
+CPU_PACK="sequential"
 DEVICE_INDEXES="1,2,3"
 START_OFFSETS_MS="0,0,0"
 CPU_MASKS_EXPLICIT=0
@@ -65,7 +68,9 @@ Options:
   --loopback-input-device=N    DeckLink input device for observer capture
   --loopback-output-channel=T  Safe output label recorded in capture CSV
   --loopback-capture-input=T   Safe physical input label recorded in capture CSV
-  --cpu-masks=A;B;C          Safe-mask permutation for the selected channels
+  --cpu-masks=A;B;C          Explicit permutation from the host-derived CPU plan
+  --cpu-core-class=MODE      auto|all|smt (default auto; auto selects P-cores on hybrid CPUs)
+  --cpu-pack=MODE            sequential|ccx (default sequential)
   --device-indexes=A,B,C     Device-index permutation for selected channels
   --start-offsets-ms=A,B,C   Controlled spawn offsets (0/5/10 for matrix D)
   --label=NAME               Evidence label (does not affect config digest)
@@ -109,6 +114,8 @@ for arg in "$@"; do
     --loopback-output-channel=*) LOOPBACK_OUTPUT_CHANNEL="${arg#*=}" ;;
     --loopback-capture-input=*) LOOPBACK_CAPTURE_INPUT="${arg#*=}" ;;
     --cpu-masks=*) CPU_MASKS="${arg#*=}"; CPU_MASKS_EXPLICIT=1 ;;
+    --cpu-core-class=*) CPU_CORE_CLASS="${arg#*=}" ;;
+    --cpu-pack=*) CPU_PACK="${arg#*=}" ;;
     --device-indexes=*) DEVICE_INDEXES="${arg#*=}"; DEVICE_INDEXES_EXPLICIT=1 ;;
     --start-offsets-ms=*) START_OFFSETS_MS="${arg#*=}"; START_OFFSETS_EXPLICIT=1 ;;
     --label=*) LABEL="${arg#*=}" ;;
@@ -130,6 +137,10 @@ case "$PACING_MODE" in
   *) fail "--pacing-mode must be accumulator|one-tick" ;;
 esac
 [[ "$PROVENANCE" == "on" || "$PROVENANCE" == "off" ]] || fail "--provenance must be on|off"
+[[ "$CPU_CORE_CLASS" == "auto" || "$CPU_CORE_CLASS" == "all" || "$CPU_CORE_CLASS" == "smt" ]] \
+  || fail "--cpu-core-class must be auto|all|smt"
+[[ "$CPU_PACK" == "sequential" || "$CPU_PACK" == "ccx" ]] \
+  || fail "--cpu-pack must be sequential|ccx"
 if (( ABSOLUTE_FIELD_GRID == 1 && TOKEN_ARMED_WAIT != 1 )); then
   fail "--absolute-field-grid requires --token-armed-wait for the P20 one-factor A/B"
 fi
@@ -171,29 +182,45 @@ fi
 
 COUNT=1
 [[ "$MODE" == "3ch" ]] && COUNT=3
+[[ -f "$CPU_PLANNER" ]] || fail "missing CPU planner: $CPU_PLANNER"
+CPU_PLAN_JSON="$(LC_ALL=C python3 "$CPU_PLANNER" \
+  --channels "$COUNT" \
+  --cores-per-channel 2 \
+  --house-cores 0 \
+  --pack "$CPU_PACK" \
+  --core-class "$CPU_CORE_CLASS" \
+  --json)" || fail "host-derived CPU plan failed"
+PLANNED_MASKS="$(node -e \
+  'process.stdout.write(JSON.parse(process.argv[1]).channels.map((channel) => channel.cpus).join(";"))' \
+  "$CPU_PLAN_JSON")"
+if (( CPU_MASKS_EXPLICIT == 0 )); then
+  CPU_MASKS="$PLANNED_MASKS"
+fi
 if (( COUNT == 1 )); then
-  (( CPU_MASKS_EXPLICIT == 1 )) || CPU_MASKS="${CPU_MASKS%%;*}"
   (( DEVICE_INDEXES_EXPLICIT == 1 )) || DEVICE_INDEXES="${DEVICE_INDEXES%%,*}"
   (( START_OFFSETS_EXPLICIT == 1 )) || START_OFFSETS_MS="${START_OFFSETS_MS%%,*}"
 fi
 IFS=',' read -r -a CHANNEL_ARRAY <<< "$CHANNELS"
 IFS=';' read -r -a MASK_ARRAY <<< "$CPU_MASKS"
+IFS=';' read -r -a PLANNED_MASK_ARRAY <<< "$PLANNED_MASKS"
 IFS=',' read -r -a DEVICE_ARRAY <<< "$DEVICE_INDEXES"
 IFS=',' read -r -a OFFSET_ARRAY <<< "$START_OFFSETS_MS"
 (( ${#CHANNEL_ARRAY[@]} == COUNT )) || fail "$MODE requires exactly $COUNT channel ids"
 (( ${#MASK_ARRAY[@]} == COUNT )) || fail "$MODE requires exactly $COUNT CPU masks"
+(( ${#PLANNED_MASK_ARRAY[@]} == COUNT )) || fail "host-derived CPU plan returned an invalid channel count"
 (( ${#DEVICE_ARRAY[@]} == COUNT )) || fail "$MODE requires exactly $COUNT device indexes"
 (( ${#OFFSET_ARRAY[@]} == COUNT )) || fail "$MODE requires exactly $COUNT start offsets"
 
-SAFE_MASKS=("0,6,1,7" "2,8,3,9" "4,10,5,11")
 SAFE_DEVICES=(1 2 3)
 for index in "${!MASK_ARRAY[@]}"; do
   mask="${MASK_ARRAY[$index]}"
   offset="${OFFSET_ARRAY[$index]}"
   [[ "$offset" =~ ^[0-9]+$ ]] || fail "invalid start offset: $offset"
-  if [[ ! " ${SAFE_MASKS[*]} " == *" ${mask} "* ]]; then
-    fail "unsafe CPU mask outside canonical physical-safe set: $mask"
-  fi
+  mask_in_plan=0
+  for planned_mask in "${PLANNED_MASK_ARRAY[@]}"; do
+    [[ "$mask" == "$planned_mask" ]] && mask_in_plan=1
+  done
+  (( mask_in_plan == 1 )) || fail "CPU mask is outside the host-derived CPU plan: $mask"
   if [[ ! " ${SAFE_DEVICES[*]} " == *" ${DEVICE_ARRAY[$index]} "* ]]; then
     fail "unsafe device index outside canonical set: ${DEVICE_ARRAY[$index]}"
   fi
@@ -230,6 +257,10 @@ ENGINE_SHA256="$(sha256sum "$ENGINE_BIN" 2>/dev/null | awk '{print $1}' || true)
 RUNTIME_SHA256="$(sha256sum "$RUNTIME_BUNDLE" | awk '{print $1}')"
 TEMPLATE_SHA256="$(sha256sum "$TEMPLATE" | awk '{print $1}')"
 TEMPLATE_PATH="$(realpath --relative-to="$ROOT" "$TEMPLATE")"
+HOST_NAME="$(hostname)"
+HOST_KERNEL="$(uname -r)"
+HOST_CPU_MODEL="$(LC_ALL=C lscpu | awk -F: '$1 == "Model name" {sub(/^[[:space:]]+/, "", $2); print $2; exit}')"
+HOST_LSCPU_SHA256="$(LC_ALL=C lscpu --json | sha256sum | awk '{print $1}')"
 LAYERED_VALUE=0
 [[ "$LAYERED" == "on" ]] && LAYERED_VALUE=1
 PACING_QUERY=0
@@ -249,6 +280,9 @@ export P20_RUNTIME_SHA256="$RUNTIME_SHA256"
 export P20_TEMPLATE_SHA256="$TEMPLATE_SHA256"
 export P20_TEMPLATE_PATH="$TEMPLATE_PATH"
 export P20_CONSUMER="$CONSUMER"
+export P20_CPU_PLAN_JSON="$CPU_PLAN_JSON"
+export P20_CPU_CORE_CLASS="$CPU_CORE_CLASS"
+export P20_CPU_PACK="$CPU_PACK"
 export P20_LAYERED_VALUE="$LAYERED_VALUE"
 export P20_RASTER_THREADS="$RASTER_THREADS"
 export P20_PACING_MODE="$PACING_MODE"
@@ -265,6 +299,10 @@ export P20_URL_PATTERN="$URL_PATTERN"
 export P20_DURATION="$DURATION"
 export P20_WARMUP="$WARMUP"
 export P20_ENGINE_DURATION="$ENGINE_DURATION"
+export P20_HOST_NAME="$HOST_NAME"
+export P20_HOST_KERNEL="$HOST_KERNEL"
+export P20_HOST_CPU_MODEL="$HOST_CPU_MODEL"
+export P20_HOST_LSCPU_SHA256="$HOST_LSCPU_SHA256"
 node - <<'NODE'
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -274,6 +312,9 @@ const config = {
   mode: process.env.P20_MODE,
   channels: JSON.parse(process.env.P20_CHANNELS_JSON),
   cpuMasks: JSON.parse(process.env.P20_MASKS_JSON),
+  cpuCoreClass: process.env.P20_CPU_CORE_CLASS,
+  cpuPack: process.env.P20_CPU_PACK,
+  cpuPlan: JSON.parse(process.env.P20_CPU_PLAN_JSON),
   deviceIndexes: JSON.parse(process.env.P20_DEVICES_JSON),
   startOffsetsMs: JSON.parse(process.env.P20_OFFSETS_JSON),
   backendUrl: process.env.P20_BACKEND_URL,
@@ -333,6 +374,12 @@ const root = {
   label: process.env.P20_LABEL,
   configDigest,
   config,
+  host: {
+    name: process.env.P20_HOST_NAME,
+    kernel: process.env.P20_HOST_KERNEL,
+    cpuModel: process.env.P20_HOST_CPU_MODEL || null,
+    lscpuSha256: process.env.P20_HOST_LSCPU_SHA256,
+  },
   execution: {
     mode: process.env.P20_EXECUTION_MODE,
     decklinkArmed: process.env.P20_EXECUTION_MODE === 'execute'

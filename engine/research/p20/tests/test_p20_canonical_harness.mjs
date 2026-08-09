@@ -250,6 +250,22 @@ test('canonical 1ch defaults to the first physical-safe map entry', () => {
   assert.deepEqual(root.config.startOffsetsMs, [0]);
 });
 
+test('canonical cell records a host-derived CPU plan instead of a Ryzen-only allowlist', () => {
+  const outDir = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-cpu-plan-'));
+  runDryCell(outDir);
+
+  const root = manifest(outDir);
+  assert.equal(root.config.cpuCoreClass, 'auto');
+  assert.equal(root.config.cpuPlan.channels.length, 3);
+  assert.deepEqual(
+    root.config.cpuPlan.channels.map((channel) => channel.cpus),
+    root.config.cpuMasks,
+  );
+  assert.equal(root.host.kernel.length > 0, true);
+  assert.match(root.host.lscpuSha256, /^[a-f0-9]{64}$/);
+  assert.doesNotMatch(readFileSync(harness, 'utf8'), /SAFE_MASKS=/);
+});
+
 test('canonical cell rejects an unsafe duplicate CPU assignment before execution', () => {
   const outDir = mkdtempSync(join(tmpdir(), 'titulus-p20-cell-invalid-'));
   assert.throws(

@@ -30,6 +30,23 @@ def topology(core_count: int = 6, smt: bool = True) -> dict[str, object]:
     }
 
 
+def hybrid_topology() -> dict[str, object]:
+    cpus = []
+    for core in range(8):
+        cpus.extend(
+            [
+                {"cpu": core * 2, "core": core, "socket": 0, "node": 0},
+                {"cpu": core * 2 + 1, "core": core, "socket": 0, "node": 0},
+            ]
+        )
+    for core in range(8, 20):
+        cpus.append({"cpu": core + 8, "core": core, "socket": 0, "node": 0})
+    return {
+        "cpus": cpus,
+        "l3_domains": [{"cpus": list(range(28))}],
+    }
+
+
 class DetectCpuPackTests(unittest.TestCase):
     def invoke(self, fixture: dict[str, object], *args: str) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as tmp:
@@ -87,6 +104,22 @@ class DetectCpuPackTests(unittest.TestCase):
             ["0,1", "2,3", "4,5"],
         )
         self.assertEqual([channel["raster_threads"] for channel in plan["channels"]], [1, 1, 1])
+
+    def test_auto_core_class_uses_smt_p_cores_on_a_hybrid_host(self) -> None:
+        result = self.invoke(hybrid_topology(), "--channels", "3", "--core-class", "auto")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan["core_class"], "smt")
+        self.assertEqual(plan["eligible_phys_cores"], 8)
+        self.assertEqual(
+            [channel["cpus"] for channel in plan["channels"]],
+            ["0,1,2,3", "4,5,6,7", "8,9,10,11"],
+        )
+
+    def test_smt_core_class_fails_when_the_host_has_no_smt_cores(self) -> None:
+        result = self.invoke(topology(smt=False), "--channels", "1", "--core-class", "smt")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("smt", result.stderr.lower())
 
 
 if __name__ == "__main__":
