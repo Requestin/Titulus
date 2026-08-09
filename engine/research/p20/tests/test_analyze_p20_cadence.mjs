@@ -56,6 +56,20 @@ test('excludes startup rows before the supplied measurement boundary', () => {
   assert.equal(report.logicalMotion.poseRate, 50);
 });
 
+test('excludes controlled shutdown rows after the supplied measurement end', () => {
+  const rows = parseFrameLogCsv(fixture('p20-cadence-mixed-warmup.csv'));
+  const report = analyzeP20Cadence(rows, {
+    warmupUnixUs: 1_040_000,
+    measurementEndUnixUs: 1_100_000,
+  });
+
+  assert.equal(report.measuredRows, 3);
+  assert.equal(report.runtimeEvents, 3);
+  assert.equal(report.measurement.startUnixUs, 1_040_000);
+  assert.equal(report.measurement.endUnixUs, 1_080_000);
+  assert.equal(report.logicalMotion.poseRate, 50);
+});
+
 test('discards only an incomplete final CSV row from controlled shutdown', () => {
   const rows = parseFrameLogCsv(
     `${fixture('p20-cadence-clean-11.csv').trim()}\n2,1100000,600000,0,6`,
