@@ -4,7 +4,9 @@ alwaysApply: true
 ---
 # План разработки
 
-**Снимок:** июль 2026. `main` содержит Phase 0–18 (после PR #61). Детали — `docs/development-phases/`.
+**Снимок:** август 2026. `main` содержит закрытый Phase 19 Doc02 (PR #84);
+Phase 20 начинает evidence-first работу над визуальной плавностью. Детали —
+`docs/development-phases/`.
 
 ## Фазы (кратко)
 
@@ -29,21 +31,30 @@ alwaysApply: true
 | 16 | Performance matrix + layer promotion | DONE | phase-16-performance-matrix.md |
 | 17 | Raster pool vs latency | DONE (PR #60) | phase-17-raster-latency.md |
 | 18 | True 50p progressive pipeline | DONE (потолок задокументирован) | phase-18-true-50p-pipeline.md |
-| 19 | Style Guide + cost model | в процессе; Doc02 audit-recovery K2 PASS | phase-19-cost-model.md |
+| 19 | Style Guide + cost model | DONE: Doc02 audit-recovery K2 PASS (PR #84) | phase-19-cost-model.md |
+| 20 | Visual frame pacing + microfreeze | IN PROGRESS | phase-20-visual-frame-pacing.md |
 
 ## Последний milestone в main
 
-Phase 19 Doc02 audit recovery **K2 PASS**: fresh ABBA gives 1ch 50.0 fps and
-3ch 50.0/50.0/50.0, worst paired uplift 1.5748× with zero
+Phase 19 Doc02 audit recovery **K2 PASS** (PR #84): fresh ABBA gives 1ch 50.0
+fps and 3ch 50.0/50.0/50.0, worst paired uplift 1.5748× with zero
 late/drop/flush/unlock. PR7 AVX2, PR8 dirty/cache/ownership and PR9 allowlist
-hardening are implemented. Global flag stays OFF; production opt-in is explicit
+hardening are implemented. Global flag stays OFF; opt-in is the explicit
 template-id allowlist. Final 15m 1ch and 60m 3ch soaks pass at 50.0 fps with
-zero delivery errors.
+zero DeckLink delivery errors.
+
+This is a throughput and delivery-health result, not a subjective visual-pacing
+sign-off. Visual runs on 2026-08-09 exposed bursty render delivery and visible
+judder despite those averages; Phase 20 owns the proof and remediation.
 
 ## Следующие задачи
 
-- Завершить Doc02 review и merge
-- Phase 19 — расширение allowlist/style-guide после operator sign-off
+- Phase 20 P20.0/P20.1 — establish semantic frame/field evidence and an
+  operator-correlated hitch detector before changing pacing.
+- Phase 20 P20.2 — validate SDI cadence with a reference-preserving Quad 2
+  loopback; do not infer on-wire temporal order from averages.
+- Phase 20 P20.3–P20.5 — run one-factor cadence A/B, then isolate residual
+  microfreezes and complete 1ch/3ch visual soaks.
 
 ## Как обновлять этот файл
 
