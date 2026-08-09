@@ -181,3 +181,29 @@ test('separates startup starvation from strict measurement cadence health', () =
     starved: 0,
   });
 });
+
+test('fails reference unlock inside measurement and ignores post-measure tail anomalies', () => {
+  const report = analyzeP20M0({
+    eventRows: events([
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,completion,0,1,1,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,schedule,1,10,10,0,25000,2,2,10,11,10,11,pair,0,1',
+      '1,reference_change,0,11,11,0,0,0,0,0,0,0,0,starved,0,0',
+      '1,completion,1,12,12,0,0,0,0,0,0,0,0,starved,0,1',
+      '1,schedule,2,30,30,0,25000,0,0,0,0,0,0,starved,0,0',
+      '1,completion,2,31,31,0,0,0,0,0,0,0,0,starved,0,0',
+    ]),
+    engineLog: 'telemetry in=2 scheduled=2 late=0 dropped=0 flushed=0 overwrite=0 starved=1 pairs=1 singles=0 event_overflow=0\n',
+    measurementStartUnixUs: 5,
+    measurementEndUnixUs: 20,
+  });
+
+  assert.equal(report.deliveryHealth.healthy, false);
+  assert.match(report.deliveryHealth.errors.join('\n'), /reference unlock/);
+  assert.deepEqual(report.cadenceHealth.measurementModes, {
+    pair: 1,
+    single: 0,
+    starved: 0,
+  });
+});

@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import {
   analyzeP20Evidence,
+  validateCaptureBinding,
+  validateRunMetadata,
 } from '../lib/analyze-p20-evidence.mjs';
 
 function healthyM0() {
@@ -61,4 +63,50 @@ test('joint evidence fails a frozen frame stream or semantic anomaly despite hea
   assert.equal(report.planes.frameLiveness.healthy, false);
   assert.match(report.errors.join('\n'), /duplicate=1/);
   assert.match(report.errors.join('\n'), /CEF paint sequence did not advance/);
+});
+
+test('run metadata requires completed execution, measurement bounds, and matching digest', () => {
+  const valid = {
+    manifest: {
+      configDigest: 'abc',
+      execution: { mode: 'execute' },
+      measurement: { startUnixUs: 100, endUnixUs: 200 },
+    },
+    channelManifest: { configDigest: 'abc' },
+    runStatus: { outcome: 'completed' },
+  };
+  assert.equal(validateRunMetadata(valid).healthy, true);
+  assert.equal(validateRunMetadata({
+    ...valid,
+    runStatus: { outcome: 'aborted' },
+  }).healthy, false);
+  assert.equal(validateRunMetadata({
+    ...valid,
+    manifest: { ...valid.manifest, execution: { mode: 'dry_run' } },
+  }).healthy, false);
+  assert.equal(validateRunMetadata({
+    ...valid,
+    channelManifest: { configDigest: 'def' },
+  }).healthy, false);
+});
+
+test('capture binding requires one expected stream fully inside measurement window', () => {
+  const rows = [
+    { unix_us: '110', output_channel: 'ch1', capture_input: 'port6' },
+    { unix_us: '190', output_channel: 'ch1', capture_input: 'port6' },
+  ];
+  const expected = {
+    measurement: { startUnixUs: 100, endUnixUs: 200 },
+    outputChannel: 'ch1',
+    captureInput: 'port6',
+  };
+  assert.equal(validateCaptureBinding(rows, expected).healthy, true);
+  assert.equal(validateCaptureBinding(
+    [{ ...rows[0], output_channel: 'other' }, rows[1]],
+    expected,
+  ).healthy, false);
+  assert.equal(validateCaptureBinding(
+    [...rows, { ...rows[1], unix_us: '201' }],
+    expected,
+  ).healthy, false);
 });
