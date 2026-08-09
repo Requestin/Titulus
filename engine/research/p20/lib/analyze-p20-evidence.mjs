@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { parseStrictOptions } from './cli-options.mjs';
 
 import {
   analyzeP20M0,
@@ -45,6 +47,8 @@ export function analyzeP20Evidence({
   semanticReport,
   frameRows,
   minFields = 1,
+  metadataReport = { errors: [], healthy: true },
+  captureBinding = { errors: [], healthy: true },
 }) {
   if (!m0Report || typeof m0Report !== 'object') throw new Error('m0Report is required');
   const semantic = assessSemanticAcceptance(semanticReport, { minFields });
@@ -66,6 +70,8 @@ export function analyzeP20Evidence({
     healthy: m0Report.healthy === true,
   };
   const errors = [
+    ...metadataReport.errors,
+    ...captureBinding.errors,
     ...(m0Report.errors ?? []),
     ...semantic.errors,
     ...frameLiveness.errors,
@@ -73,6 +79,8 @@ export function analyzeP20Evidence({
   return {
     schemaVersion: 'p20-joint-evidence-v1',
     planes: {
+      metadata: metadataReport,
+      captureBinding,
       logger,
       delivery,
       producer,
@@ -81,7 +89,9 @@ export function analyzeP20Evidence({
       frameLiveness,
     },
     errors: [...new Set(errors)],
-    healthy: logger.healthy
+    healthy: metadataReport.healthy
+      && captureBinding.healthy
+      && logger.healthy
       && delivery.healthy
       && producer.healthy
       && decklinkCadence.healthy
@@ -90,16 +100,61 @@ export function analyzeP20Evidence({
   };
 }
 
-function options(argv) {
-  const result = {};
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (!arg.startsWith('--')) continue;
-    const [key, attached] = arg.slice(2).split(/=(.*)/s, 2);
-    result[key] = attached ?? argv[index + 1];
-    if (attached === undefined) index += 1;
+export function validateRunMetadata({ manifest, channelManifest, runStatus }) {
+  const errors = [];
+  if (manifest?.execution?.mode !== 'execute') errors.push('run execution mode is not execute');
+  if (runStatus?.outcome !== 'completed') errors.push('run outcome is not completed');
+  const startUnixUs = manifest?.measurement?.startUnixUs;
+  const endUnixUs = manifest?.measurement?.endUnixUs;
+  if (!Number.isSafeInteger(startUnixUs) || !Number.isSafeInteger(endUnixUs)
+      || endUnixUs <= startUnixUs) {
+    errors.push('run measurement window is invalid');
   }
-  return result;
+  if (typeof manifest?.configDigest !== 'string' || manifest.configDigest.length === 0) {
+    errors.push('root manifest config digest is missing');
+  } else if (channelManifest?.configDigest !== manifest.configDigest) {
+    errors.push('channel manifest config digest differs from root manifest');
+  }
+  return { errors, healthy: errors.length === 0 };
+}
+
+export function validateCaptureBinding(rows, {
+  measurement,
+  outputChannel,
+  captureInput,
+}) {
+  const errors = [];
+  if (!Array.isArray(rows) || rows.length === 0) errors.push('capture has no rows');
+  const streams = new Set();
+  let firstUnixUs = Number.POSITIVE_INFINITY;
+  let lastUnixUs = 0;
+  for (const row of rows ?? []) {
+    const output = String(row.output_channel ?? '');
+    const input = String(row.capture_input ?? '');
+    streams.add(`${output}\0${input}`);
+    if (output !== outputChannel || input !== captureInput) {
+      errors.push(`capture stream ${output}/${input} differs from expected ${outputChannel}/${captureInput}`);
+    }
+    const unixUs = Number(row.unix_us);
+    if (!Number.isSafeInteger(unixUs)) {
+      errors.push('capture row has invalid unix_us');
+      continue;
+    }
+    firstUnixUs = Math.min(firstUnixUs, unixUs);
+    lastUnixUs = Math.max(lastUnixUs, unixUs);
+    if (unixUs < measurement.startUnixUs || unixUs > measurement.endUnixUs) {
+      errors.push(`capture timestamp ${unixUs} is outside measurement window`);
+    }
+  }
+  if (streams.size !== 1) errors.push(`capture contains ${streams.size} streams, expected exactly one`);
+  return {
+    outputChannel,
+    captureInput,
+    firstUnixUs: Number.isFinite(firstUnixUs) ? firstUnixUs : null,
+    lastUnixUs: lastUnixUs || null,
+    errors: [...new Set(errors)],
+    healthy: errors.length === 0,
+  };
 }
 
 function frameRowsInMeasurement(rows, measurement) {
@@ -113,10 +168,24 @@ function frameRowsInMeasurement(rows, measurement) {
 }
 
 export function main(argv = process.argv.slice(2)) {
-  const opts = options(argv);
-  if (!opts['run-dir'] || !opts.capture || opts.help) {
+  const opts = parseStrictOptions(argv, {
+    allowed: new Set([
+      'run-dir',
+      'capture',
+      'channel',
+      'output-channel',
+      'capture-input',
+      'min-fields',
+      'out',
+      'help',
+    ]),
+    boolean: new Set(['help']),
+  });
+  if (!opts['run-dir'] || !opts.capture || !opts['output-channel']
+      || !opts['capture-input'] || opts.help) {
     process.stderr.write(
       'Usage: analyze-p20-evidence.mjs --run-dir=DIR --capture=fields.csv '
+      + '--output-channel=TOKEN --capture-input=TOKEN '
       + '[--channel=N] [--min-fields=N] [--out=report.json]\n',
     );
     return opts.help ? 0 : 1;
@@ -128,20 +197,37 @@ export function main(argv = process.argv.slice(2)) {
   const runDir = opts['run-dir'];
   const channelDir = join(runDir, `ch${channel}`);
   const manifest = JSON.parse(readFileSync(join(runDir, 'manifest.json'), 'utf8'));
+  const channelManifest = JSON.parse(readFileSync(join(channelDir, 'manifest.json'), 'utf8'));
+  const runStatus = JSON.parse(readFileSync(join(runDir, 'run-status.json'), 'utf8'));
+  const metadataReport = validateRunMetadata({ manifest, channelManifest, runStatus });
   const measurementStartUnixUs = manifest.measurement?.startUnixUs;
   const m0Report = analyzeP20M0({
     eventRows: parseDecklinkEvents(readFileSync(join(channelDir, 'decklink-completion.csv'), 'utf8')),
     engineLog: readFileSync(join(channelDir, 'engine.log'), 'utf8'),
     measurementStartUnixUs,
+    measurementEndUnixUs: manifest.measurement?.endUnixUs,
   });
-  const semanticReport = analyzeSemanticFields(parseCsv(readFileSync(opts.capture, 'utf8')));
+  const captureText = readFileSync(opts.capture, 'utf8');
+  const captureRows = parseCsv(captureText);
+  const captureBinding = validateCaptureBinding(captureRows, {
+    measurement: manifest.measurement,
+    outputChannel: opts['output-channel'],
+    captureInput: opts['capture-input'],
+  });
+  const semanticReport = analyzeSemanticFields(captureRows);
   const allFrameRows = parseCsv(readFileSync(join(channelDir, 'frame.csv'), 'utf8'));
   const report = analyzeP20Evidence({
     m0Report,
     semanticReport,
     frameRows: frameRowsInMeasurement(allFrameRows, manifest.measurement),
     minFields: Number(opts['min-fields'] ?? 1),
+    metadataReport,
+    captureBinding,
   });
+  report.capture = {
+    sha256: createHash('sha256').update(captureText).digest('hex'),
+    path: opts.capture,
+  };
   const output = `${JSON.stringify(report, null, 2)}\n`;
   if (opts.out) writeFileSync(opts.out, output);
   process.stdout.write(output);

@@ -16,6 +16,7 @@
 #include <cstring>
 #include <deque>
 #include <dlfcn.h>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -734,11 +735,31 @@ struct DecklinkConsumer::Impl {
         }
 
         const char* ref = "n/a";
+        int32_t reference_state = -2;
         BMDReferenceStatus status = bmdReferenceUnlocked;
         if (output_ && output_->GetReferenceStatus(&status) == S_OK) {
-            if (status & bmdReferenceNotSupportedByHardware) ref = "unsupported";
-            else if (status & bmdReferenceLocked)            ref = "locked";
-            else                                             ref = "UNLOCKED";
+            if (status & bmdReferenceNotSupportedByHardware) {
+                ref = "unsupported";
+                reference_state = -1;
+            } else if (status & bmdReferenceLocked) {
+                ref = "locked";
+                reference_state = 1;
+            } else {
+                ref = "UNLOCKED";
+                reference_state = 0;
+            }
+        }
+        if (reference_state != last_reference_event_state_) {
+            last_reference_event_state_ = reference_state;
+            if (event_log_ && event_log_->enabled()) {
+                const FrameLogClockSample clocks = CaptureFrameLogClocks();
+                event_log_->TryPush({
+                    .type = DecklinkEventType::ReferenceChange,
+                    .unix_us = clocks.unix_us,
+                    .mono_us = clocks.mono_us,
+                    .reference_state = reference_state,
+                });
+            }
         }
 
         // Per-output-frame time budget in microseconds (e.g. 40000us at 25Hz
@@ -1284,6 +1305,7 @@ struct DecklinkConsumer::Impl {
 
     // Telemetry window state (touched only on the completion callback thread).
     std::chrono::steady_clock::time_point telemetry_last_{};
+    int32_t last_reference_event_state_ = std::numeric_limits<int32_t>::min();
     uint64_t prev_in_ = 0, prev_completed_ = 0, prev_late_ = 0,
              prev_dropped_ = 0, prev_flushed_ = 0, prev_overwritten_ = 0,
              prev_starved_ = 0, prev_pairs_ = 0, prev_singles_ = 0,

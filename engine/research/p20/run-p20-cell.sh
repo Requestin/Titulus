@@ -315,17 +315,14 @@ if (( EXECUTE == 0 )); then
   exit 0
 fi
 
-if [[ -e "$LOCK" ]]; then
-  owner="$(<"$LOCK" 2>/dev/null || true)"
-  [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null && fail "another canonical run owns $LOCK (pid=$owner)"
-  rm -f "$LOCK"
-fi
+exec {LOCK_FD}>"$LOCK"
+flock -n "$LOCK_FD" || fail "another canonical run owns $LOCK"
 if pgrep -f "${ROOT}/engine/(build/Release/bg_engine|run-channel.sh)" >/dev/null; then
   pgrep -af "${ROOT}/engine/(build/Release/bg_engine|run-channel.sh)" >&2 || true
   fail "pre-existing Titulus engine process detected"
 fi
 
-printf '%s\n' "$$" >"$LOCK"
+printf '%s\n' "$$" >&"$LOCK_FD"
 PIDS=()
 RUN_COMPLETED=0
 
@@ -373,7 +370,6 @@ cleanup() {
   if (( RUN_COMPLETED == 0 )); then
     write_run_status "aborted" "exit_status=${exit_status}"
   fi
-  [[ "$(<"$LOCK" 2>/dev/null || true)" == "$$" ]] && rm -f "$LOCK"
   return "$exit_status"
 }
 trap cleanup EXIT

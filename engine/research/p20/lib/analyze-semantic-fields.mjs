@@ -8,6 +8,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { parseStrictOptions } from './cli-options.mjs';
 
 const REQUIRED_COLUMNS = [
   'unix_us',
@@ -267,24 +268,11 @@ export function assessSemanticAcceptance(report, { minFields = 1 } = {}) {
   };
 }
 
-function options(argv) {
-  const result = {};
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (!arg.startsWith('--')) continue;
-    if (arg === '--strict' || arg === '--help') {
-      result[arg.slice(2)] = true;
-      continue;
-    }
-    const [key, attached] = arg.slice(2).split(/=(.*)/s, 2);
-    result[key] = attached ?? argv[index + 1];
-    if (attached === undefined) index += 1;
-  }
-  return result;
-}
-
 export function main(argv = process.argv.slice(2)) {
-  const opts = options(argv);
+  const opts = parseStrictOptions(argv, {
+    allowed: new Set(['in', 'out', 'strict', 'min-fields', 'help']),
+    boolean: new Set(['strict', 'help']),
+  });
   if (!opts.in || opts.help) {
     process.stderr.write(
       'Usage: analyze-semantic-fields.mjs --in=capture-fields.csv '

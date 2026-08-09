@@ -142,4 +142,5 @@ test('canonical harness has bounded process-group cleanup and records aborted ru
   assert.match(source, /kill -KILL -- "-\$pid"/);
   assert.match(source, /run-status\.json/);
   assert.match(source, /remaining CEF\/engine process group|remaining engine process/i);
+  assert.match(source, /flock -n/);
 });

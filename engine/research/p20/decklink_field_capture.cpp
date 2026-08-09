@@ -11,13 +11,14 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
+#include <fcntl.h>
 #include <limits>
 #include <mutex>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <unistd.h>
 
 namespace {
 
@@ -45,6 +46,7 @@ struct Options {
     std::string output_channel = "unknown";
     std::string capture_input = "decklink-2";
     std::filesystem::path csv_path;
+    std::filesystem::path summary_path;
 };
 
 bool IsSafeCsvToken(std::string_view value) {
@@ -83,6 +85,7 @@ void PrintUsage(FILE* stream) {
         "  --output-channel=TOKEN    Safe CSV token (default: unknown)\n"
         "  --capture-input=TOKEN     Safe CSV token (default: decklink-2)\n"
         "  --csv=PATH                New output CSV; existing files are refused\n"
+        "  --summary=PATH            Optional exclusive JSON summary output\n"
         "  --help\n");
 }
 
@@ -148,6 +151,12 @@ std::optional<Options> ParseOptions(int argc, char* argv[]) {
                 return std::nullopt;
             }
             options.csv_path = std::string{value};
+        } else if (name == "summary") {
+            if (value.empty()) {
+                std::fprintf(stderr, "[p20-field-capture] --summary requires a path\n");
+                return std::nullopt;
+            }
+            options.summary_path = std::string{value};
         } else {
             std::fprintf(stderr, "[p20-field-capture] unknown option: %.*s\n",
                          static_cast<int>(name.size()), name.data());
@@ -198,26 +207,23 @@ class ComRef final {
 
 class CsvWriter {
   public:
-    bool OpenNew(const std::filesystem::path& path) {
-        std::error_code error;
-        if (std::filesystem::exists(path, error)) {
-            std::fprintf(stderr, "[p20-field-capture] refusing to overwrite CSV: %s\n",
-                         path.c_str());
-            return false;
-        }
-        if (error) {
-            std::fprintf(stderr, "[p20-field-capture] cannot inspect CSV path: %s\n",
-                         error.message().c_str());
-            return false;
-        }
+    ~CsvWriter() {
+        if (file_ != nullptr) std::fclose(file_);
+    }
 
-        stream_.open(path, std::ios::out | std::ios::binary);
-        if (!stream_.is_open()) {
+    bool OpenNew(const std::filesystem::path& path) {
+        const int descriptor = open(
+            path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+        if (descriptor < 0) {
             std::fprintf(stderr, "[p20-field-capture] cannot open CSV: %s\n", path.c_str());
             return false;
         }
-        stream_ << kCsvHeader;
-        return static_cast<bool>(stream_);
+        file_ = fdopen(descriptor, "wb");
+        if (file_ == nullptr) {
+            close(descriptor);
+            return false;
+        }
+        return std::fputs(kCsvHeader.data(), file_) >= 0;
     }
 
     bool Write(
@@ -229,21 +235,29 @@ class CsvWriter {
         FieldParity field_parity,
         FieldParity expected_parity,
         std::string_view frame_hash) {
-        stream_ << unix_us << ',' << output_channel << ',' << capture_input << ','
-                << field_index << ',';
-        if (semantic_id) stream_ << *semantic_id;
-        stream_ << ',' << FieldParityName(field_parity) << ','
-                << FieldParityName(expected_parity) << ',' << frame_hash << '\n';
-        return static_cast<bool>(stream_);
+        const int prefix = std::fprintf(
+            file_, "%llu,%.*s,%.*s,%llu,",
+            static_cast<unsigned long long>(unix_us),
+            static_cast<int>(output_channel.size()), output_channel.data(),
+            static_cast<int>(capture_input.size()), capture_input.data(),
+            static_cast<unsigned long long>(field_index));
+        if (prefix < 0) return false;
+        if (semantic_id && std::fprintf(file_, "%lld", static_cast<long long>(*semantic_id)) < 0) {
+            return false;
+        }
+        return std::fprintf(
+            file_, ",%s,%s,%.*s\n",
+            FieldParityName(field_parity),
+            FieldParityName(expected_parity),
+            static_cast<int>(frame_hash.size()), frame_hash.data()) >= 0;
     }
 
     bool Flush() {
-        stream_.flush();
-        return static_cast<bool>(stream_);
+        return file_ != nullptr && std::fflush(file_) == 0;
     }
 
   private:
-    std::ofstream stream_;
+    std::FILE* file_ = nullptr;
 };
 
 class CaptureSession;
@@ -380,18 +394,57 @@ class CaptureSession {
         }
     }
 
-    void PrintSummary() {
+    bool PrintSummary() {
         const bool flushed = writer_.Flush();
+        const uint64_t fields = fields_.load(std::memory_order_relaxed);
+        const uint64_t containers = containers_.load(std::memory_order_relaxed);
+        const uint64_t no_source = no_source_frames_.load(std::memory_order_relaxed);
+        const uint64_t invalid = invalid_frames_.load(std::memory_order_relaxed);
+        const uint64_t write_failures = callback_failures_.load(std::memory_order_relaxed);
+        bool healthy = fields > 0 && containers > 0 && no_source == 0 && invalid == 0
+            && write_failures == 0 && flushed;
         std::fprintf(
             stderr,
             "[p20-field-capture] fields=%llu containers=%llu no_source=%llu "
             "invalid=%llu write_failures=%llu csv_flush=%s\n",
-            static_cast<unsigned long long>(fields_.load(std::memory_order_relaxed)),
-            static_cast<unsigned long long>(containers_.load(std::memory_order_relaxed)),
-            static_cast<unsigned long long>(no_source_frames_.load(std::memory_order_relaxed)),
-            static_cast<unsigned long long>(invalid_frames_.load(std::memory_order_relaxed)),
-            static_cast<unsigned long long>(callback_failures_.load(std::memory_order_relaxed)),
+            static_cast<unsigned long long>(fields),
+            static_cast<unsigned long long>(containers),
+            static_cast<unsigned long long>(no_source),
+            static_cast<unsigned long long>(invalid),
+            static_cast<unsigned long long>(write_failures),
             flushed ? "ok" : "failed");
+        if (!options_.summary_path.empty()) {
+            const int descriptor = open(
+                options_.summary_path.c_str(),
+                O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+                0600);
+            if (descriptor < 0) {
+                std::fprintf(stderr, "[p20-field-capture] cannot create summary: %s\n",
+                             options_.summary_path.c_str());
+                return false;
+            }
+            const int result = dprintf(
+                descriptor,
+                "{\n"
+                "  \"schemaVersion\": \"p20-field-capture-summary-v1\",\n"
+                "  \"fields\": %llu,\n"
+                "  \"containers\": %llu,\n"
+                "  \"noSource\": %llu,\n"
+                "  \"invalid\": %llu,\n"
+                "  \"writeFailures\": %llu,\n"
+                "  \"csvFlush\": %s,\n"
+                "  \"healthy\": %s\n"
+                "}\n",
+                static_cast<unsigned long long>(fields),
+                static_cast<unsigned long long>(containers),
+                static_cast<unsigned long long>(no_source),
+                static_cast<unsigned long long>(invalid),
+                static_cast<unsigned long long>(write_failures),
+                flushed ? "true" : "false",
+                healthy ? "true" : "false");
+            if (close(descriptor) != 0 || result < 0) healthy = false;
+        }
+        return healthy;
     }
 
     HRESULT OnFrame(IDeckLinkVideoInputFrame* video_frame) noexcept {
@@ -554,6 +607,6 @@ int main(int argc, char* argv[]) {
 
     const int wait_result = session.WaitForDuration();
     session.Stop();
-    session.PrintSummary();
-    return wait_result;
+    const bool capture_healthy = session.PrintSummary();
+    return wait_result == 0 && capture_healthy ? 0 : 1;
 }

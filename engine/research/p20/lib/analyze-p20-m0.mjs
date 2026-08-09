@@ -8,6 +8,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { parseStrictOptions } from './cli-options.mjs';
 
 const REQUIRED_COLUMNS = [
   'event',
@@ -109,7 +110,23 @@ function validateScheduleSources(schedules) {
   return errors;
 }
 
-function measurementCadence(eventRows, measurementStartUnixUs) {
+function measurementRows(eventRows, measurementStartUnixUs, measurementEndUnixUs) {
+  if (measurementStartUnixUs === undefined || measurementStartUnixUs === null) return null;
+  if (!Number.isSafeInteger(measurementStartUnixUs) || measurementStartUnixUs < 0) {
+    throw new Error('measurementStartUnixUs must be a non-negative safe integer');
+  }
+  const endUnixUs = measurementEndUnixUs ?? Number.MAX_SAFE_INTEGER;
+  if (!Number.isSafeInteger(endUnixUs)
+      || endUnixUs <= measurementStartUnixUs) {
+    throw new Error('measurementEndUnixUs must be greater than measurementStartUnixUs');
+  }
+  return eventRows.filter((row) => {
+    const unixUs = positive(row, 'unix_us');
+    return unixUs >= measurementStartUnixUs && unixUs <= endUnixUs;
+  });
+}
+
+function measurementCadence(eventRows, measurementStartUnixUs, measurementEndUnixUs) {
   if (measurementStartUnixUs === undefined || measurementStartUnixUs === null) {
     return {
       evaluated: false,
@@ -119,20 +136,15 @@ function measurementCadence(eventRows, measurementStartUnixUs) {
       healthy: true,
     };
   }
-  if (!Number.isSafeInteger(measurementStartUnixUs) || measurementStartUnixUs < 0) {
-    throw new Error('measurementStartUnixUs must be a non-negative safe integer');
-  }
-  const measurementRows = eventRows.filter(
-    (row) => positive(row, 'unix_us') >= measurementStartUnixUs,
-  );
-  const schedules = measurementRows.filter((row) => row.event === 'schedule');
+  const rows = measurementRows(eventRows, measurementStartUnixUs, measurementEndUnixUs);
+  const schedules = rows.filter((row) => row.event === 'schedule');
   const measurementModes = { pair: 0, single: 0, starved: 0 };
   for (const schedule of schedules) {
     if (Object.hasOwn(measurementModes, schedule.weave_mode)) {
       measurementModes[schedule.weave_mode] += 1;
     }
   }
-  const measurementOverwrites = measurementRows.filter(
+  const measurementOverwrites = rows.filter(
     (row) => row.event === 'input_overwrite',
   ).length;
   const errors = [];
@@ -155,7 +167,12 @@ function measurementCadence(eventRows, measurementStartUnixUs) {
   };
 }
 
-export function analyzeP20M0({ eventRows, engineLog, measurementStartUnixUs }) {
+export function analyzeP20M0({
+  eventRows,
+  engineLog,
+  measurementStartUnixUs,
+  measurementEndUnixUs,
+}) {
   if (!Array.isArray(eventRows)) throw new Error('eventRows must be a parsed DeckLink event CSV array');
   if (typeof engineLog !== 'string') throw new Error('engineLog must be a string');
 
@@ -231,7 +248,22 @@ export function analyzeP20M0({ eventRows, engineLog, measurementStartUnixUs }) {
     errors: livenessErrors,
     healthy: livenessErrors.length === 0,
   };
-  const cadenceHealth = measurementCadence(eventRows, measurementStartUnixUs);
+  const cadenceHealth = measurementCadence(
+    eventRows,
+    measurementStartUnixUs,
+    measurementEndUnixUs,
+  );
+  const measuredRows = measurementRows(
+    eventRows,
+    measurementStartUnixUs,
+    measurementEndUnixUs,
+  );
+  if (measuredRows) {
+    const unlocks = measuredRows.filter(
+      (row) => row.event === 'reference_change' && positive(row, 'reference_state') !== 1,
+    );
+    if (unlocks.length > 0) deliveryErrors.push(`reference unlock events=${unlocks.length}`);
+  }
   const loggerIntegrity = {
     errors: loggerErrors,
     healthy: loggerErrors.length === 0,
@@ -264,34 +296,37 @@ export function analyzeP20M0({ eventRows, engineLog, measurementStartUnixUs }) {
   };
 }
 
-function options(argv) {
-  const result = {};
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (!arg.startsWith('--')) continue;
-    const [key, attached] = arg.slice(2).split(/=(.*)/s, 2);
-    result[key] = attached ?? argv[index + 1];
-    if (attached === undefined) index += 1;
-  }
-  return result;
-}
-
 export function main(argv = process.argv.slice(2)) {
-  const opts = options(argv);
+  const opts = parseStrictOptions(argv, {
+    allowed: new Set([
+      'events',
+      'engine-log',
+      'measurement-start-unix-us',
+      'measurement-end-unix-us',
+      'out',
+      'help',
+    ]),
+    boolean: new Set(['help']),
+  });
   if (!opts.events || !opts['engine-log'] || opts.help) {
     process.stderr.write(
       'Usage: analyze-p20-m0.mjs --events=decklink.csv --engine-log=engine.log '
-      + '[--measurement-start-unix-us=N] [--out=report.json]\n',
+      + '[--measurement-start-unix-us=N --measurement-end-unix-us=N] '
+      + '[--out=report.json]\n',
     );
     return opts.help ? 0 : 1;
   }
   const measurementStartUnixUs = opts['measurement-start-unix-us'] === undefined
     ? undefined
     : Number(opts['measurement-start-unix-us']);
+  const measurementEndUnixUs = opts['measurement-end-unix-us'] === undefined
+    ? undefined
+    : Number(opts['measurement-end-unix-us']);
   const report = analyzeP20M0({
     eventRows: parseDecklinkEvents(readFileSync(opts.events, 'utf8')),
     engineLog: readFileSync(opts['engine-log'], 'utf8'),
     measurementStartUnixUs,
+    measurementEndUnixUs,
   });
   const output = `${JSON.stringify(report, null, 2)}\n`;
   if (opts.out) writeFileSync(opts.out, output);

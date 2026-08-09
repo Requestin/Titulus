@@ -55,12 +55,16 @@ engine/research/p20/build/decklink_field_capture \
   --field-order=tff \
   --output-channel=ch1 \
   --capture-input=quad2-sdi6 \
+  --summary=/mnt/titulus-tmpfs/p20-loopback/L1-YYYYMMDDTHHMMSSZ/capture-summary.json \
   --csv=/mnt/titulus-tmpfs/p20-loopback/L1-YYYYMMDDTHHMMSSZ/capture-fields.csv
 ```
 
 The tool starts input streams only after the selected device reports
 `HD1080i50` UYVY support without conversion. Do not run it while output engines
 or connector/profile setup are active. It has no raw-frame output path.
+Any no-source frame, invalid frame, write/flush failure or empty capture makes
+the process exit nonzero. `--summary` writes the same counters as bounded JSON
+and refuses to overwrite an existing path.
 
 ## CSV contract
 
@@ -109,6 +113,8 @@ node engine/research/p20/lib/analyze-p20-evidence.mjs \
   --run-dir=/path/to/p20-cell \
   --capture=/path/to/capture-fields.csv \
   --channel=1 \
+  --output-channel=ch1 \
+  --capture-input=quad2-sdi6 \
   --min-fields=14900 \
   --out=/path/to/joint-evidence.json
 ```
