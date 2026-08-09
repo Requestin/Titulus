@@ -4,7 +4,9 @@ import test from 'node:test';
 import {
   encodePacingEvent,
   PACING_HEADER,
+  selectPacingIdentity,
   type PacingEvent,
+  type PacingIdentityCandidate,
 } from '../src/pacingProtocol.js';
 
 function event(overrides: Partial<PacingEvent> = {}): PacingEvent {
@@ -52,4 +54,30 @@ test('rejects unsafe or out-of-range event fields', () => {
   assert.equal(encodePacingEvent(event({ templateId: 'bad template' })), null);
   assert.equal(encodePacingEvent(event({ ticksPerRaf: 5 })), null);
   assert.equal(encodePacingEvent(event({ runtimeEventSeq: -1 })), null);
+});
+
+test('marks zero and multiple active templates as ambiguous', () => {
+  const candidate: PacingIdentityCandidate = {
+    templateId: 'template-1',
+    logicalFrame: 42,
+    graphRevision: 3,
+    stateRevision: 9,
+  };
+  assert.deepEqual(selectPacingIdentity([]), {
+    activeCount: 0,
+    identityValid: false,
+    templateId: null,
+    logicalFrame: 0,
+    graphRevision: 0,
+    stateRevision: 0,
+  });
+  assert.equal(selectPacingIdentity([candidate, candidate]).identityValid, false);
+  assert.deepEqual(selectPacingIdentity([candidate]), {
+    activeCount: 1,
+    identityValid: true,
+    templateId: 'template-1',
+    logicalFrame: 42,
+    graphRevision: 3,
+    stateRevision: 9,
+  });
 });
