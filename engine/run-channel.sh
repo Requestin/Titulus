@@ -11,6 +11,7 @@ ENGINE_BIN="${ENGINE_BIN:-${ROOT}/engine/build/Release/bg_engine}"
 BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:3001}"
 CACHE_ROOT="${CACHE_ROOT:-/tmp/titulus-engines}"
 CORES="${CORES:-}"          # e.g. "0-1" for taskset
+PACING_MODE="${TITULUS_PACING_MODE:-accumulator}"
 DRY_RUN="${DRY_RUN:-0}"
 
 usage() {
@@ -28,10 +29,11 @@ Optional:
   --keyer=MODE         external|internal|fill_only (default external)
   --stream-url=URL     For stream output
   --cores=RANGE        taskset core range (e.g. 0-1)
+  --pacing-mode=MODE   accumulator|one_tick (DeckLink only)
   --dry-run            Print command, do not run
   --help
 
-Environment: ENGINE_BIN, BACKEND_URL, CACHE_ROOT, DRY_RUN
+Environment: ENGINE_BIN, BACKEND_URL, CACHE_ROOT, TITULUS_PACING_MODE, DRY_RUN
 EOF
 }
 
@@ -55,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     --keyer=*)        KEYER="${1#*=}" ;;
     --stream-url=*)   STREAM_URL="${1#*=}" ;;
     --cores=*)        CORES="${1#*=}" ;;
+    --pacing-mode=*)  PACING_MODE="${1#*=}" ;;
     --remote-debugging-port=*) REMOTE_DEBUGGING_PORT="${1#*=}" ;;
     --dry-run)        DRY_RUN=1 ;;
     -h|--help)        usage; exit 0 ;;
@@ -67,6 +70,13 @@ if [[ -z "$CH_ID" || -z "$CH_NAME" ]]; then
   echo "run-channel.sh: --id and --name required" >&2
   exit 1
 fi
+case "$PACING_MODE" in
+  accumulator|one_tick) ;;
+  *)
+    echo "run-channel.sh: --pacing-mode must be accumulator or one_tick" >&2
+    exit 1
+    ;;
+esac
 
 if [[ ! -x "$ENGINE_BIN" && "$DRY_RUN" != "1" ]]; then
   echo "run-channel.sh: bg_engine not found at $ENGINE_BIN" >&2
@@ -107,6 +117,11 @@ else
 fi
 
 PAGE_URL="http://${BACKEND_HOST}/channel.html?channel=${CH_ID}&engine=1&engine_fps=50&w=1920&h=1080"
+# `one_tick` is a DeckLink visual-cadence control. Browser and stream retain
+# their existing rAF/self-timer behavior even if the supervisor inherits it.
+if [[ "$OUTPUT_MODE" == "decklink" && "$PACING_MODE" == "one_tick" ]]; then
+  PAGE_URL+="&pacing_mode=one_tick"
+fi
 CACHE_DIR="${CACHE_ROOT}/cache-${CH_ID}"
 mkdir -p "$CACHE_DIR"
 
@@ -170,7 +185,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
   exit 0
 fi
 
-echo "[run-channel] ${CH_NAME} (${CH_ID}) mode=${OUTPUT_MODE} consumer=${CONSUMER} cores=${CORES:-all} cache=${CACHE_DIR}"
+echo "[run-channel] ${CH_NAME} (${CH_ID}) mode=${OUTPUT_MODE} consumer=${CONSUMER} pacing=${PACING_MODE} cores=${CORES:-all} cache=${CACHE_DIR}"
 
 while true; do
   set +e

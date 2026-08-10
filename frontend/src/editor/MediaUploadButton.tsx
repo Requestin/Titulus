@@ -12,8 +12,13 @@ export function MediaUploadButton({
   onUploaded: (url: string) => void;
   label?: string;
 }) {
-  const { upload, uploading } = useUpload();
+  const {
+    upload, uploading, uploadStatus, uploadProfile,
+  } = useUpload();
   const ref = useRef<HTMLInputElement>(null);
+  const statusLabel = uploadStatus === 'pending' || uploadStatus === 'processing'
+    ? `Processing ${uploadProfile ?? 'playback media'}…`
+    : label;
   return (
     <>
       <input
@@ -31,7 +36,7 @@ export function MediaUploadButton({
       />
       <Button size="sm" variant="neutral" className="w-full" disabled={uploading} onClick={() => ref.current?.click()}>
         {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Upload className="h-4 w-4" aria-hidden />}
-        {label}
+        {statusLabel}
       </Button>
     </>
   );

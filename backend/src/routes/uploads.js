@@ -82,6 +82,7 @@ export function uploadsRouter(media, uploadsDir) {
       const statusCode = job.status === 'error' ? 422 : 201;
       res.status(statusCode).json({
         jobId: job.id, status: job.status, url: job.url, posterUrl: job.posterUrl, type: job.type,
+        profile: job.profile ?? null, hasAlpha: job.hasAlpha ?? false,
         error: job.error || null,
       });
     });

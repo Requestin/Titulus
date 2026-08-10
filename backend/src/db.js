@@ -120,6 +120,31 @@ CREATE TABLE IF NOT EXISTS audit_events (
   details     TEXT NOT NULL DEFAULT '{}',
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Durable upload source + playback derivative state. A renderer stores only
+-- the ready playback URL, but the source and job metadata must survive a
+-- backend restart so transcodes can be recovered safely.
+CREATE TABLE IF NOT EXISTS media_assets (
+  id                TEXT PRIMARY KEY,
+  type              TEXT NOT NULL CHECK (type IN ('image', 'video')),
+  status            TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'ready', 'error')),
+  original_name     TEXT NOT NULL,
+  source_mime       TEXT NOT NULL,
+  source_size_bytes INTEGER NOT NULL DEFAULT 0,
+  source_filename   TEXT NOT NULL,
+  playback_filename TEXT NOT NULL,
+  poster_filename   TEXT NOT NULL,
+  profile           TEXT NOT NULL DEFAULT '',
+  has_alpha         INTEGER NOT NULL DEFAULT 0,
+  probe_json        TEXT NOT NULL DEFAULT '{}',
+  attempts          INTEGER NOT NULL DEFAULT 0,
+  max_attempts      INTEGER NOT NULL DEFAULT 0,
+  error_json        TEXT,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS media_assets_status_idx ON media_assets(status, updated_at);
 `;
 
 /**
@@ -641,6 +666,106 @@ export const auditDao = (db) => ({
         created_at: row.created_at,
       };
     });
+  },
+});
+
+// ---------------------------------------------------------------------------
+// media assets (durable upload/transcode state)
+// ---------------------------------------------------------------------------
+
+function parseMediaJson(value, fallback) {
+  if (!value) return fallback;
+  try { return JSON.parse(value); } catch { return fallback; }
+}
+
+function mediaAssetFromRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    type: row.type,
+    status: row.status,
+    originalName: row.original_name,
+    sourceMime: row.source_mime,
+    sourceSizeBytes: row.source_size_bytes,
+    src: `/uploads/${row.source_filename}`,
+    url: `/uploads/${row.playback_filename}`,
+    posterUrl: `/uploads/${row.poster_filename}`,
+    profile: row.profile || null,
+    hasAlpha: Boolean(row.has_alpha),
+    probe: parseMediaJson(row.probe_json, {}),
+    attempts: row.attempts,
+    maxAttempts: row.max_attempts,
+    error: parseMediaJson(row.error_json, null),
+  };
+}
+
+export const mediaAssetsDao = (db) => ({
+  create(asset) {
+    db.prepare(
+      `INSERT INTO media_assets (
+        id, type, status, original_name, source_mime, source_size_bytes,
+        source_filename, playback_filename, poster_filename, profile, has_alpha,
+        probe_json, attempts, max_attempts, error_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      asset.id,
+      asset.type,
+      asset.status,
+      asset.originalName,
+      asset.sourceMime,
+      asset.sourceSizeBytes,
+      asset.sourceFilename,
+      asset.playbackFilename,
+      asset.posterFilename,
+      asset.profile ?? '',
+      asset.hasAlpha ? 1 : 0,
+      JSON.stringify(asset.probe ?? {}),
+      asset.attempts ?? 0,
+      asset.maxAttempts ?? 0,
+      asset.error ? JSON.stringify(asset.error) : null,
+    );
+    return this.get(asset.id);
+  },
+  get(id) {
+    return mediaAssetFromRow(
+      db.prepare('SELECT * FROM media_assets WHERE id = ?').get(id),
+    );
+  },
+  record(id) {
+    return db.prepare('SELECT * FROM media_assets WHERE id = ?').get(id) ?? null;
+  },
+  update(asset) {
+    db.prepare(
+      `UPDATE media_assets
+       SET status = ?, profile = ?, has_alpha = ?, probe_json = ?, attempts = ?,
+           max_attempts = ?, error_json = ?, updated_at = datetime('now')
+       WHERE id = ?`,
+    ).run(
+      asset.status,
+      asset.profile ?? '',
+      asset.hasAlpha ? 1 : 0,
+      JSON.stringify(asset.probe ?? {}),
+      asset.attempts ?? 0,
+      asset.maxAttempts ?? 0,
+      asset.error ? JSON.stringify(asset.error) : null,
+      asset.id,
+    );
+    return this.get(asset.id);
+  },
+  setPlaybackFilename(id, playbackFilename) {
+    db.prepare(
+      `UPDATE media_assets
+       SET playback_filename = ?, updated_at = datetime('now')
+       WHERE id = ?`,
+    ).run(playbackFilename, id);
+    return this.get(id);
+  },
+  recoverableRecords() {
+    return db.prepare(
+      `SELECT * FROM media_assets
+       WHERE type = 'video' AND status IN ('pending', 'processing')
+       ORDER BY updated_at ASC, id ASC`,
+    ).all();
   },
 });
 

@@ -22,6 +22,15 @@ log() { printf '[dev-start] %s\n' "$*"; }
 
 DEFAULT_ENGINE_BIN="$ROOT/engine/build/Release/bg_engine"
 ENGINE_BIN="${ENGINE_BIN:-$DEFAULT_ENGINE_BIN}"
+DEV_PACING_MODE="${TITULUS_DEV_PACING_MODE:-one_tick}"
+
+case "$DEV_PACING_MODE" in
+  accumulator|one_tick) ;;
+  *)
+    log "ERROR: TITULUS_DEV_PACING_MODE must be accumulator or one_tick"
+    exit 1
+    ;;
+esac
 
 mkdir -p "$PID_DIR" "$DATA_DIR/uploads"
 
@@ -154,8 +163,9 @@ done
 
 # Render engines (needs bg_engine binary + channels in Settings) ------------
 if [[ -x "$ENGINE_BIN" ]]; then
-  log "starting run-engines.sh (BACKEND_URL=http://${CONNECT_HOST}:${BE_PORT}) ..."
-  BACKEND_URL="http://${CONNECT_HOST}:${BE_PORT}" ENGINE_BIN="$ENGINE_BIN" \
+  log "starting run-engines.sh (BACKEND_URL=http://${CONNECT_HOST}:${BE_PORT}, DeckLink pacing=${DEV_PACING_MODE}) ..."
+  setsid env BACKEND_URL="http://${CONNECT_HOST}:${BE_PORT}" ENGINE_BIN="$ENGINE_BIN" \
+    TITULUS_PACING_MODE="$DEV_PACING_MODE" \
     "$ROOT/engine/run-engines.sh" > "$LOG_DIR/engines.log" 2>&1 &
   echo $! > "$PID_DIR/engines.pid"
 else
