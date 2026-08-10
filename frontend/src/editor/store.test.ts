@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createDefaultTemplate } from '@runtime';
-import { createLayer } from './factories';
+import { createDefaultTemplate, createDefaultTransform } from '@runtime';
+import { createLayer, LAYER_DEFAULT_DIMENSIONS, LAYER_TYPES } from './factories';
+import { affineFromTransform, multiplyAffine } from './transformMath';
 import { useEditor } from './store';
 
 function loadAnimatedRectangle() {
@@ -50,4 +51,89 @@ test('resetting a tracked opacity only writes the current keyframe', () => {
   assert.equal(updated.layers.find((item) => item.id === id)!.opacity, 0.42);
   assert.equal(current.layers[id]?.opacity, 1);
   assert.equal(updated.timeline.keyframes[0]!.layers[id]?.opacity, 0.2);
+});
+
+test('reparenting a layer preserves its world geometry at the current playhead', () => {
+  const template = createDefaultTemplate();
+  const layer = createLayer('rect', 'Rectangle');
+  layer.id = 'rectangle';
+  layer.transform.x = 320;
+  layer.transform.y = 180;
+  const group = {
+    id: 'group',
+    name: 'Group',
+    parentId: null,
+    visible: true,
+    locked: false,
+    transform: {
+      ...createDefaultTransform(120, 80),
+      width: 1,
+      height: 1,
+      rotation: 20,
+      scaleX: 1.5,
+      scaleY: 1.5,
+    },
+  };
+  template.layers.push(layer);
+  template.groups.push(group);
+  template.rootStack.push({ kind: 'layer', id: layer.id }, { kind: 'group', id: group.id });
+  useEditor.getState().load(template);
+
+  const worldBefore = affineFromTransform(layer.transform);
+  useEditor.getState().setLayerGroup(layer.id, group.id);
+
+  const updated = useEditor.getState().template!;
+  const reparented = updated.layers.find((item) => item.id === layer.id)!;
+  const parent = updated.groups.find((item) => item.id === group.id)!;
+  const worldAfter = multiplyAffine(affineFromTransform(parent.transform), affineFromTransform(reparented.transform));
+  for (const key of ['a', 'b', 'c', 'd', 'e', 'f'] as const) {
+    assert.ok(Math.abs(worldBefore[key] - worldAfter[key]) < 1e-8, key);
+  }
+});
+
+test('deleting a group reparents its children without moving them', () => {
+  const template = createDefaultTemplate();
+  const layer = createLayer('rect', 'Rectangle');
+  layer.id = 'rectangle';
+  layer.groupId = 'group';
+  const group = {
+    id: 'group',
+    name: 'Group',
+    parentId: null,
+    visible: true,
+    locked: false,
+    transform: {
+      ...createDefaultTransform(90, 40),
+      width: 1,
+      height: 1,
+      rotation: -15,
+      scaleX: 1.2,
+      scaleY: 1.2,
+    },
+  };
+  template.layers.push(layer);
+  template.groups.push(group);
+  template.rootStack.push({ kind: 'group', id: group.id });
+  template.groupStacks[group.id] = [{ kind: 'layer', id: layer.id }];
+  useEditor.getState().load(template);
+  const worldBefore = multiplyAffine(affineFromTransform(group.transform), affineFromTransform(layer.transform));
+
+  useEditor.getState().select({ kind: 'group', id: group.id });
+  useEditor.getState().deleteSelected();
+
+  const updated = useEditor.getState().template!;
+  const released = updated.layers.find((item) => item.id === layer.id)!;
+  assert.equal(released.groupId, null);
+  const worldAfter = affineFromTransform(released.transform);
+  for (const key of ['a', 'b', 'c', 'd', 'e', 'f'] as const) {
+    assert.ok(Math.abs(worldBefore[key] - worldAfter[key]) < 1e-8, key);
+  }
+});
+
+test('each layer type exposes its own size reset defaults', () => {
+  for (const type of LAYER_TYPES) {
+    const layer = createLayer(type, type);
+    assert.equal(layer.transform.width, LAYER_DEFAULT_DIMENSIONS[type].width);
+    assert.equal(layer.transform.height, LAYER_DEFAULT_DIMENSIONS[type].height);
+  }
 });

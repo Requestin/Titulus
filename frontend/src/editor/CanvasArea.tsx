@@ -2,16 +2,18 @@
 //
 // WYSIWYG canvas. Renders the editable template with the SAME @runtime
 // TemplateRenderer that drives air output, then overlays selection + drag/resize
-// handles. Live drag manipulates the DOM directly and commits one undoable
-// transform on pointer-up (so a drag is a single history step).
+// handles. Live drag uses TemplateRenderer's temporary preview path and commits
+// one undoable transform on pointer-up (so a drag is a single history step).
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
+import {
+  ancestorMatrix, canvasDeltaToParent, dragTransform, type AffineMatrix, type DragMode,
+} from './transformMath';
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
-type DragMode = 'move' | Handle;
 
 interface Box {
   left: number;
@@ -29,8 +31,8 @@ interface DragState {
   mode: DragMode;
   startPX: number;
   startPY: number;
-  start: Pick<Transform, 'x' | 'y' | 'width' | 'height'>;
-  el: HTMLElement | null;
+  start: Transform;
+  parentMatrix: AffineMatrix;
   moved: boolean;
 }
 
@@ -53,25 +55,6 @@ const HANDLE_POS: Record<Handle, string> = {
   sw: 'left-0 bottom-0 -translate-x-1/2 translate-y-1/2',
   w: 'left-0 top-1/2 -translate-x-1/2 -translate-y-1/2',
 };
-
-function computeDrag(
-  mode: DragMode,
-  start: DragState['start'],
-  dx: number,
-  dy: number,
-): Pick<Transform, 'x' | 'y' | 'width' | 'height'> {
-  let { x, y, width, height } = start;
-  if (mode === 'move') {
-    return { x: x + dx, y: y + dy, width, height };
-  }
-  if (mode.includes('e')) width = start.width + dx;
-  if (mode.includes('s')) height = start.height + dy;
-  if (mode.includes('w')) { x = start.x + dx; width = start.width - dx; }
-  if (mode.includes('n')) { y = start.y + dy; height = start.height - dy; }
-  width = Math.max(8, width);
-  height = Math.max(8, height);
-  return { x, y, width, height };
-}
 
 export function CanvasArea() {
   const template = useEditor((s) => s.template);
@@ -246,7 +229,8 @@ export function CanvasArea() {
   }, [playing, setPlayhead, setPlaying]);
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
-    if (!template) return;
+    const currentTemplate = useEditor.getState().template;
+    if (!currentTemplate) return;
     const target = e.target as HTMLElement;
     const sel = useEditor.getState().selection;
 
@@ -271,62 +255,87 @@ export function CanvasArea() {
     }
     if (!id) return;
 
-    const layer = template.layers.find((l) => l.id === id);
+    const layer = currentTemplate.layers.find((l) => l.id === id);
     if (!layer || layer.locked) return;
+    const { playhead: currentPlayhead, activeDirectorId } = useEditor.getState();
+    const start = effectiveTransform(
+      currentTemplate,
+      layer.transform,
+      { kind: 'layer', id: layer.id },
+      currentPlayhead,
+      activeDirectorId,
+    );
+    const parentMatrix = ancestorMatrix(
+      currentTemplate,
+      layer.groupId,
+      (group) => effectiveTransform(
+        currentTemplate,
+        group.transform,
+        { kind: 'group', id: group.id },
+        currentPlayhead,
+        activeDirectorId,
+      ),
+    );
 
     dragRef.current = {
       id,
       mode,
       startPX: e.clientX,
       startPY: e.clientY,
-      start: {
-        x: layer.transform.x,
-        y: layer.transform.y,
-        width: layer.transform.width,
-        height: layer.transform.height,
-      },
-      el: stageRef.current?.querySelector(`[data-layer-id="${id}"]`) as HTMLElement | null,
+      start,
+      parentMatrix,
       moved: false,
     };
     wrapRef.current?.setPointerCapture(e.pointerId);
     e.preventDefault();
   }
 
-  function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
-    const d = dragRef.current;
-    if (!d) return;
-    // Ignore sub-pixel jitter so a select-click never moves the layer.
-    if (!d.moved && Math.hypot(e.clientX - d.startPX, e.clientY - d.startPY) < 3) return;
-    d.moved = true;
-    const dx = (e.clientX - d.startPX) / zoom;
-    const dy = (e.clientY - d.startPY) / zoom;
-    const layer = template?.layers.find((l) => l.id === d.id);
-    const partial = computeDrag(d.mode, d.start, dx, dy);
-    if (d.el && layer) {
-      const at = applyTransform({ ...layer.transform, ...partial }, undefined);
-      d.el.style.left = `${at.left}px`;
-      d.el.style.top = `${at.top}px`;
-      d.el.style.width = `${at.width}px`;
-      d.el.style.height = `${at.height}px`;
-      const next = overlayForTransform(layer.id, { ...layer.transform, ...partial });
-      if (next) setOverlay(next);
+  function previewForPointer(drag: DragState, e: ReactPointerEvent<HTMLDivElement>) {
+    const canvasDelta = {
+      x: (e.clientX - drag.startPX) / zoom,
+      y: (e.clientY - drag.startPY) / zoom,
+    };
+    const parentDelta = canvasDeltaToParent(drag.parentMatrix, canvasDelta);
+    let partial = dragTransform(drag.mode, drag.start, parentDelta);
+    if (gridSnap) {
+      const snap = (value: number) => Math.round(value / gridSize) * gridSize;
+      partial = {
+        x: snap(partial.x),
+        y: snap(partial.y),
+        width: snap(partial.width),
+        height: snap(partial.height),
+      };
     }
+    return partial;
+  }
+
+  function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    // Ignore sub-pixel jitter so a select-click never moves the layer.
+    if (!drag.moved && Math.hypot(e.clientX - drag.startPX, e.clientY - drag.startPY) < 3) return;
+    drag.moved = true;
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    const partial = previewForPointer(drag, e);
+    renderer.previewLayerTransform(drag.id, { ...drag.start, ...partial });
+    recomputeBox();
   }
 
   function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
-    const d = dragRef.current;
+    const drag = dragRef.current;
     dragRef.current = null;
-    if (!d) return;
+    if (!drag) return;
     wrapRef.current?.releasePointerCapture(e.pointerId);
-    if (!d.moved) return; // pure select-click: no transform commit
-    const dx = (e.clientX - d.startPX) / zoom;
-    const dy = (e.clientY - d.startPY) / zoom;
-    let t = computeDrag(d.mode, d.start, dx, dy);
-    if (gridSnap) {
-      const snap = (n: number) => Math.round(n / gridSize) * gridSize;
-      t = { x: snap(t.x), y: snap(t.y), width: snap(t.width), height: snap(t.height) };
-    }
-    updateTransform(d.id, t);
+    if (!drag.moved) return; // pure select-click: no transform commit
+    updateTransform(drag.id, previewForPointer(drag, e));
+  }
+
+  function cancelDrag() {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    rendererRef.current?.clearEditorTransformPreview();
+    recomputeBox();
   }
 
   if (!template) {
@@ -345,6 +354,8 @@ export function CanvasArea() {
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={cancelDrag}
+          onLostPointerCapture={cancelDrag}
         >
           {/* Transparency checkerboard (only when canvas bg is transparent). */}
           {transparent && (

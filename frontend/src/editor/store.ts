@@ -14,6 +14,8 @@ import type {
 import { ANIMATABLE_PROPS, createDefaultTransform } from '@runtime';
 import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
+import { effectiveTransform } from './effectiveValues';
+import { ancestorMatrix, reparentTransform } from './transformMath';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
 export type Target = { kind: 'layer' | 'group'; id: string };
@@ -56,8 +58,8 @@ function hasAnimatedProp(t: Template, target: Target, prop: AnimatableProp): boo
   });
 }
 
-/** Keep keyframes at the current playhead in sync when base props are edited. */
-function syncAnimatedPropsAtPlayhead(
+/** Write only tracked values into a keyframe at the current playhead. */
+function writeTrackedPropsAtPlayhead(
   t: Template,
   target: Target,
   values: Partial<Record<AnimatableProp, number>>,
@@ -72,13 +74,65 @@ function syncAnimatedPropsAtPlayhead(
   }
 }
 
-function animatableFromTransformPartial(partial: Partial<Transform>): Partial<Record<AnimatableProp, number>> {
-  const out: Partial<Record<AnimatableProp, number>> = {};
-  for (const key of Object.keys(partial)) {
-    if (!ANIMATABLE_SET.has(key) || key === 'opacity') continue;
-    out[key as AnimatableProp] = (partial as Record<string, number>)[key];
+function editTransformAtPlayhead(
+  t: Template,
+  target: Target,
+  partial: Partial<Transform>,
+  localFrame: number,
+): void {
+  const entity = target.kind === 'layer'
+    ? t.layers.find((item) => item.id === target.id)
+    : t.groups.find((item) => item.id === target.id);
+  if (!entity) return;
+  for (const [key, value] of Object.entries(partial) as [keyof Transform, number][]) {
+    if (value === undefined) continue;
+    if (ANIMATABLE_SET.has(key) && hasAnimatedProp(t, target, key as AnimatableProp)) {
+      writeTrackedPropsAtPlayhead(t, target, { [key]: value } as Partial<Record<AnimatableProp, number>>, localFrame);
+    } else {
+      entity.transform[key] = value;
+    }
   }
-  return out;
+}
+
+function editOpacityAtPlayhead(t: Template, id: string, opacity: number, localFrame: number): void {
+  const target: Target = { kind: 'layer', id };
+  if (hasAnimatedProp(t, target, 'opacity')) {
+    writeTrackedPropsAtPlayhead(t, target, { opacity }, localFrame);
+    return;
+  }
+  const layer = t.layers.find((item) => item.id === id);
+  if (layer) layer.opacity = opacity;
+}
+
+/**
+ * Keep an entry in the same world-space position while changing its parent.
+ * The transform model represents translate/rotate/scale (not skew), which is
+ * exact for the editor's normal group hierarchy.
+ */
+export function reparentTargetAtPlayhead(
+  t: Template,
+  target: Target,
+  newParentId: string | null,
+  localFrame: number,
+  directorId: string,
+): void {
+  const entity = target.kind === 'layer'
+    ? t.layers.find((item) => item.id === target.id)
+    : t.groups.find((item) => item.id === target.id);
+  if (!entity) return;
+  const effective = effectiveTransform(t, entity.transform, target, localFrame, directorId);
+  const oldParentId = target.kind === 'layer'
+    ? (entity as Layer).groupId
+    : (entity as import('@runtime').LayerGroup).parentId;
+  const resolveGroupTransform = (group: import('@runtime').LayerGroup) =>
+    effectiveTransform(t, group.transform, { kind: 'group', id: group.id }, localFrame, directorId);
+  const oldParentMatrix = ancestorMatrix(t, oldParentId, resolveGroupTransform);
+  const newParentMatrix = ancestorMatrix(
+    t,
+    newParentId,
+    resolveGroupTransform,
+  );
+  editTransformAtPlayhead(t, target, reparentTransform(effective, newParentMatrix, oldParentMatrix), localFrame);
 }
 
 interface EditorState {
@@ -198,29 +252,12 @@ export const useEditor = create<EditorState>()(
 
       setLayerOpacity: (id, opacity) =>
         get().patch((t) => {
-          const l = t.layers.find((x) => x.id === id);
-          if (!l) return;
-          l.opacity = Math.min(1, Math.max(0, opacity));
-          syncAnimatedPropsAtPlayhead(
-            t,
-            { kind: 'layer', id },
-            { opacity: l.opacity },
-            get().playhead,
-          );
+          editOpacityAtPlayhead(t, id, Math.min(1, Math.max(0, opacity)), get().playhead);
         }),
 
       updateTransform: (id, partial, kind = 'layer') =>
         get().patch((t) => {
-          const target =
-            kind === 'layer' ? t.layers.find((x) => x.id === id) : t.groups.find((x) => x.id === id);
-          if (!target) return;
-          Object.assign(target.transform, partial);
-          syncAnimatedPropsAtPlayhead(
-            t,
-            { kind, id },
-            animatableFromTransformPartial(partial),
-            get().playhead,
-          );
+          editTransformAtPlayhead(t, { kind, id }, partial, get().playhead);
         }),
 
       setName: (name) => get().patch((t) => { t.name = name; }),
@@ -268,7 +305,16 @@ export const useEditor = create<EditorState>()(
             for (const c of children) {
               if (c.kind === 'layer') {
                 const l = t.layers.find((x) => x.id === c.id);
-                if (l) l.groupId = null;
+                if (l) {
+                  reparentTargetAtPlayhead(t, c, null, get().playhead, get().activeDirectorId);
+                  l.groupId = null;
+                }
+              } else {
+                const g = t.groups.find((x) => x.id === c.id);
+                if (g) {
+                  reparentTargetAtPlayhead(t, c, null, get().playhead, get().activeDirectorId);
+                  g.parentId = null;
+                }
               }
               t.rootStack.push(c);
             }
@@ -301,6 +347,7 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => {
           const l = t.layers.find((x) => x.id === layerId);
           if (!l) return;
+          reparentTargetAtPlayhead(t, { kind: 'layer', id: layerId }, groupId, get().playhead, get().activeDirectorId);
           l.groupId = groupId;
           removeEntryEverywhere(t, layerId);
           addEntry(t, { kind: 'layer', id: layerId }, groupId);

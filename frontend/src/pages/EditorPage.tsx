@@ -16,6 +16,8 @@ import { LayersPanel } from '@/editor/panels/LayersPanel';
 import { PropertiesPanel } from '@/editor/panels/PropertiesPanel';
 import { VariablesPanel } from '@/editor/panels/VariablesPanel';
 import { TimelinePanel } from '@/editor/panels/TimelinePanel';
+import { effectiveTransform } from '@/editor/effectiveValues';
+import { ancestorMatrix, canvasDeltaToParent } from '@/editor/transformMath';
 
 export function EditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -149,14 +151,37 @@ export function EditorPage() {
       if (typing) return;
       const sel = useEditor.getState().selection;
       if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); useEditor.getState().deleteSelected(); return; }
-      if (sel?.kind === 'layer') {
+      if (sel) {
         const t = useEditor.getState().template;
-        const l = t?.layers.find((x) => x.id === sel.id);
-        if (!l) return;
+        const entity = sel.kind === 'layer'
+          ? t?.layers.find((item) => item.id === sel.id)
+          : t?.groups.find((item) => item.id === sel.id);
+        if (!t || !entity || entity.locked) return;
+        const parentId = sel.kind === 'layer'
+          ? (entity as import('@runtime').Layer).groupId
+          : (entity as import('@runtime').LayerGroup).parentId;
         const step = e.shiftKey ? 10 : 1;
         const move = (dx: number, dy: number) => {
           e.preventDefault();
-          useEditor.getState().updateTransform(sel.id, { x: l.transform.x + dx, y: l.transform.y + dy });
+          const state = useEditor.getState();
+          const effective = effectiveTransform(t, entity.transform, sel, state.playhead, state.activeDirectorId);
+          const parentMatrix = ancestorMatrix(
+            t,
+            parentId,
+            (group) => effectiveTransform(
+              t,
+              group.transform,
+              { kind: 'group', id: group.id },
+              state.playhead,
+              state.activeDirectorId,
+            ),
+          );
+          const localDelta = canvasDeltaToParent(parentMatrix, { x: dx, y: dy });
+          state.updateTransform(
+            sel.id,
+            { x: effective.x + localDelta.x, y: effective.y + localDelta.y },
+            sel.kind,
+          );
         };
         if (e.key === 'ArrowLeft') move(-step, 0);
         else if (e.key === 'ArrowRight') move(step, 0);
