@@ -31,6 +31,10 @@ cd frontend && npm install && cd ..
 фиксирует persistent data, DeckLink/CEF build, `one_tick`, reverse proxy и
 acceptance checks.
 
+Если сервер уже работает на Phase 10–12 и данные можно заменить пустым
+состоянием, начните с `docs/UPGRADE_FROM_PHASE_10_12_FRESH.md`, а не с
+in-place `git pull`.
+
 | Сервис | URL |
 |---|---|
 | UI | http://127.0.0.1:3011 |
