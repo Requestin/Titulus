@@ -69,9 +69,6 @@ export function CanvasArea() {
   const setPlaying = useEditor((s) => s.setPlaying);
   const select = useEditor((s) => s.select);
   const updateTransform = useEditor((s) => s.updateTransform);
-  const transformPreviews = useEditor((s) => s.transformPreviews);
-  const setTransformPreview = useEditor((s) => s.setTransformPreview);
-  const clearTransformPreview = useEditor((s) => s.clearTransformPreview);
 
   function globalFrame(local: number): number {
     const st = useEditor.getState();
@@ -183,17 +180,6 @@ export function CanvasArea() {
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template, zoom, cw, ch]);
-
-  // Re-apply transient gesture state after React commits. This makes the
-  // renderer preview win over any synchronous canvas/layout work caused by the
-  // inspector's live values, while keeping the template itself untouched.
-  useLayoutEffect(() => {
-    const renderer = rendererRef.current;
-    if (!renderer) return;
-    for (const [id, transform] of Object.entries(transformPreviews)) {
-      renderer.previewLayerTransform(id, transform);
-    }
-  }, [transformPreviews]);
 
   useLayoutEffect(() => {
     recomputeBox();
@@ -335,7 +321,6 @@ export function CanvasArea() {
     if (!renderer) return;
     const partial = previewForPointer(drag, e);
     drag.preview = { ...drag.start, ...partial };
-    setTransformPreview(drag.id, drag.preview);
     renderer.previewLayerTransform(drag.id, drag.preview);
     const layer = useEditor.getState().template?.layers.find((item) => item.id === drag.id);
     if (layer?.type === 'mask') {
@@ -353,15 +338,12 @@ export function CanvasArea() {
     wrapRef.current?.releasePointerCapture(e.pointerId);
     if (!drag.moved) return; // pure select-click: no transform commit
     updateTransform(drag.id, previewForPointer(drag, e));
-    clearTransformPreview(drag.id);
   }
 
   function cancelDrag() {
-    const drag = dragRef.current;
-    if (!drag) return;
+    if (!dragRef.current) return;
     dragRef.current = null;
     rendererRef.current?.clearEditorTransformPreview();
-    clearTransformPreview(drag.id);
     recomputeBox();
   }
 

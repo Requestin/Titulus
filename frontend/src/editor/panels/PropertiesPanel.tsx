@@ -25,9 +25,6 @@ export function PropertiesPanel() {
   const activeDirectorId = useEditor((s) => s.activeDirectorId);
   const setLayerGroup = useEditor((s) => s.setLayerGroup);
   const patch = useEditor((s) => s.patch);
-  const transformPreview = useEditor((s) =>
-    selection ? s.transformPreviews[selection.id] : undefined,
-  );
 
   if (!template || !selection) {
     return (
@@ -52,7 +49,7 @@ export function PropertiesPanel() {
         <TransformSection
           id={g.id}
           kind="group"
-          t={transformPreview ?? effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
+          t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
           updateTransform={updateTransform}
         />
       </div>
@@ -101,7 +98,7 @@ export function PropertiesPanel() {
       <TransformSection
         id={layer.id}
         kind="layer"
-        t={transformPreview ?? effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
+        t={effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
         layerType={layer.type}
         updateTransform={updateTransform}
       />
