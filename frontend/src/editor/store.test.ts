@@ -53,6 +53,24 @@ test('resetting a tracked opacity only writes the current keyframe', () => {
   assert.equal(updated.timeline.keyframes[0]!.layers[id]?.opacity, 0.2);
 });
 
+test('gesture preview is transient and never mutates the saved template', () => {
+  const { id } = loadAnimatedRectangle();
+  const initialTemplate = useEditor.getState().template;
+
+  useEditor.getState().setTransformPreview(id, {
+    ...initialTemplate!.layers.find((item) => item.id === id)!.transform,
+    x: 480,
+    y: 320,
+  });
+
+  assert.equal(useEditor.getState().transformPreviews[id]?.x, 480);
+  assert.equal(useEditor.getState().template, initialTemplate);
+  assert.equal(useEditor.getState().dirty, false);
+
+  useEditor.getState().clearTransformPreview(id);
+  assert.equal(useEditor.getState().transformPreviews[id], undefined);
+});
+
 test('reparenting a layer preserves its world geometry at the current playhead', () => {
   const template = createDefaultTemplate();
   const layer = createLayer('rect', 'Rectangle');
