@@ -26,6 +26,11 @@ cd frontend && npm install && cd ..
 ./dev-stop.sh
 ```
 
+Для нового DeckLink-тестового сервера не используйте этот быстрый путь как
+полный rollout: следуйте `docs/DEPLOYMENT_DECKLINK_TEST_SERVER.md`. Он
+фиксирует persistent data, DeckLink/CEF build, `one_tick`, reverse proxy и
+acceptance checks.
+
 | Сервис | URL |
 |---|---|
 | UI | http://127.0.0.1:3011 |
