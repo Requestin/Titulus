@@ -139,8 +139,6 @@ interface EditorState {
   template: Template | null;
   selection: Selection;
   dirty: boolean;
-  /** Ephemeral pointer-gesture values; never serialized or added to undo history. */
-  transformPreviews: Record<string, Transform>;
   zoom: number;
   gridSnap: boolean;
   gridSize: number;
@@ -155,8 +153,6 @@ interface EditorState {
   updateLayer: (id: string, mutator: (l: Layer) => void) => void;
   setLayerOpacity: (id: string, opacity: number) => void;
   updateTransform: (id: string, partial: Partial<Transform>, kind?: 'layer' | 'group') => void;
-  setTransformPreview: (id: string, transform: Transform) => void;
-  clearTransformPreview: (id: string) => void;
   setName: (name: string) => void;
   setCanvas: (partial: Partial<Template['canvas']>) => void;
   addLayer: (type: LayerType) => void;
@@ -217,7 +213,6 @@ export const useEditor = create<EditorState>()(
       template: null,
       selection: null,
       dirty: false,
-      transformPreviews: {},
       zoom: 0.45,
       gridSnap: false,
       gridSize: 8,
@@ -230,7 +225,6 @@ export const useEditor = create<EditorState>()(
           template: t,
           selection: null,
           dirty: false,
-          transformPreviews: {},
           playhead: 0,
           playing: false,
           activeDirectorId: t.timeline.directors[0]?.id ?? 'default',
@@ -264,18 +258,6 @@ export const useEditor = create<EditorState>()(
       updateTransform: (id, partial, kind = 'layer') =>
         get().patch((t) => {
           editTransformAtPlayhead(t, { kind, id }, partial, get().playhead);
-        }),
-
-      setTransformPreview: (id, transform) =>
-        set((state) => ({
-          transformPreviews: { ...state.transformPreviews, [id]: transform },
-        })),
-
-      clearTransformPreview: (id) =>
-        set((state) => {
-          if (!(id in state.transformPreviews)) return state;
-          const { [id]: _discarded, ...transformPreviews } = state.transformPreviews;
-          return { transformPreviews };
         }),
 
       setName: (name) => get().patch((t) => { t.name = name; }),
