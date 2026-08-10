@@ -8,10 +8,12 @@ import type { Layer, Variable, VariableBinding, BlendMode } from '@runtime';
 import { anchorCompensatedUpdate } from '@runtime';
 import { useEditor } from '../store';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
+import { gesturePreviewStore } from '../gesturePreview';
 import { MediaUploadButton } from '../MediaUploadButton';
 import { Field, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { LAYER_DEFAULT_DIMENSIONS } from '../factories';
+import { useStore } from 'zustand';
 
 const BLEND_MODES: BlendMode[] = ['normal', 'multiply', 'screen', 'add', 'overlay', 'darken', 'lighten'];
 
@@ -25,6 +27,7 @@ export function PropertiesPanel() {
   const activeDirectorId = useEditor((s) => s.activeDirectorId);
   const setLayerGroup = useEditor((s) => s.setLayerGroup);
   const patch = useEditor((s) => s.patch);
+  const gesturePreview = useStore(gesturePreviewStore, (s) => s.preview);
 
   if (!template || !selection) {
     return (
@@ -49,7 +52,9 @@ export function PropertiesPanel() {
         <TransformSection
           id={g.id}
           kind="group"
-          t={effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
+          t={gesturePreview?.id === g.id && gesturePreview.kind === 'group'
+            ? gesturePreview.transform
+            : effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
           updateTransform={updateTransform}
         />
       </div>
@@ -98,7 +103,9 @@ export function PropertiesPanel() {
       <TransformSection
         id={layer.id}
         kind="layer"
-        t={effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
+        t={gesturePreview?.id === layer.id && gesturePreview.kind === 'layer'
+          ? gesturePreview.transform
+          : effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
         layerType={layer.type}
         updateTransform={updateTransform}
       />
