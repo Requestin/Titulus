@@ -9,18 +9,30 @@ import { toast } from '@/core/toast';
 
 export function useUpload() {
   const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<'pending' | 'processing' | 'ready' | 'error' | null>(null);
+  const [uploadProfile, setUploadProfile] = useState<string | null>(null);
 
   const upload = useCallback(async (file: File): Promise<string | null> => {
     setUploading(true);
+    setUploadStatus('pending');
+    setUploadProfile(null);
     try {
       const res = await api.uploads.upload(file);
+      setUploadStatus(res.status);
+      setUploadProfile(res.profile);
       if (res.status === 'ready') return res.url;
+      if (res.status === 'error') {
+        toast.error(`Transcode failed: ${res.error?.message ?? 'unknown error'}`);
+        return null;
+      }
       for (let i = 0; i < 180; i++) {
         await new Promise((r) => setTimeout(r, 1000));
         const job = await api.uploads.job(res.jobId);
+        setUploadStatus(job.status);
+        setUploadProfile(job.profile ?? null);
         if (job.status === 'ready') return job.url;
         if (job.status === 'error') {
-          toast.error(`Transcode failed: ${job.error ?? 'unknown error'}`);
+          toast.error(`Transcode failed: ${job.error?.message ?? 'unknown error'}`);
           return null;
         }
       }
@@ -34,5 +46,5 @@ export function useUpload() {
     }
   }, []);
 
-  return { upload, uploading };
+  return { upload, uploading, uploadStatus, uploadProfile };
 }

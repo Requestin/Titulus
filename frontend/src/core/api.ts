@@ -60,7 +60,20 @@ export interface UploadJob {
   src?: string;
   url: string;
   posterUrl: string;
-  error: string | null;
+  profile?: string | null;
+  hasAlpha?: boolean;
+  probe?: {
+    codec?: string;
+    width?: number;
+    height?: number;
+    fps?: number;
+  };
+  error: {
+    code: string;
+    message: string;
+    details?: string;
+    retriable?: boolean;
+  } | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -252,7 +265,16 @@ export const api = {
     upload: (file: File) => {
       const fd = new FormData();
       fd.append('file', file);
-      return req<{ jobId: string; status: UploadJob['status']; url: string; posterUrl: string; type: UploadJob['type'] }>(
+      return req<{
+        jobId: string;
+        status: UploadJob['status'];
+        url: string;
+        posterUrl: string;
+        type: UploadJob['type'];
+        profile: string | null;
+        hasAlpha: boolean;
+        error: UploadJob['error'];
+      }>(
         '/api/uploads',
         { method: 'POST', body: fd },
       );

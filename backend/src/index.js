@@ -86,7 +86,7 @@ const audit = createAudit(db);
 app.locals.audit = audit;
 const onAir = new OnAirManager(db);
 app.locals.onAir = onAir;
-const media = new MediaJobs(UPLOADS_DIR);
+const media = new MediaJobs(db, UPLOADS_DIR);
 app.locals.media = media;
 
 // ---------------------------------------------------------------------------
