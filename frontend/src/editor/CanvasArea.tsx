@@ -33,6 +33,7 @@ interface DragState {
   startPY: number;
   start: Transform;
   parentMatrix: AffineMatrix;
+  preview: Transform;
   moved: boolean;
 }
 
@@ -284,6 +285,7 @@ export function CanvasArea() {
       startPY: e.clientY,
       start,
       parentMatrix,
+      preview: start,
       moved: false,
     };
     wrapRef.current?.setPointerCapture(e.pointerId);
@@ -318,8 +320,15 @@ export function CanvasArea() {
     const renderer = rendererRef.current;
     if (!renderer) return;
     const partial = previewForPointer(drag, e);
-    renderer.previewLayerTransform(drag.id, { ...drag.start, ...partial });
-    recomputeBox();
+    drag.preview = { ...drag.start, ...partial };
+    renderer.previewLayerTransform(drag.id, drag.preview);
+    const layer = useEditor.getState().template?.layers.find((item) => item.id === drag.id);
+    if (layer?.type === 'mask') {
+      const next = overlayForTransform(drag.id, drag.preview);
+      if (next) setOverlay(next);
+    } else {
+      recomputeBox();
+    }
   }
 
   function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {

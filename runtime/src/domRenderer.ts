@@ -215,9 +215,18 @@ export class TemplateRenderer {
    * update separately on pointer-up.
    */
   previewLayerTransform(layerId: string, transform: Transform): void {
-    if (!this.template?.layers.some((layer) => layer.id === layerId)) return;
+    if (!this.template || !this.norm) return;
+    const layer = this.template.layers.find((item) => item.id === layerId);
+    if (!layer) return;
     this.editorTransformPreview.set(layerId, transform);
-    this.applyState(this.frame);
+    // Pointer gestures can arrive at display refresh rate. Re-rendering every
+    // layer and repainting all content here makes the preview lag behind the
+    // pointer, while this layer-only path keeps the runtime style cache and
+    // composited transform model authoritative.
+    this.applyLayerState(layer, transform);
+    if (layer.type === 'mask') {
+      this.applyMaskScopes(this.lastTimelineSample ?? sampleAt(this.norm, this.frame));
+    }
   }
 
   /** Discard any uncommitted editor gesture and restore the current timeline frame. */
