@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
+import { clearGesturePreview, scheduleGesturePreview } from './gesturePreview';
 import {
   ancestorMatrix, canvasDeltaToParent, dragTransform, type AffineMatrix, type DragMode,
 } from './transformMath';
@@ -93,6 +94,7 @@ export function CanvasArea() {
     return () => {
       r.destroy();
       rendererRef.current = null;
+      clearGesturePreview();
     };
   }, []);
 
@@ -177,11 +179,13 @@ export function CanvasArea() {
     r.syncTemplate(template, resolveVariableMap(template));
     r.resize(cw * zoom, ch * zoom);
     r.seek(globalFrame(useEditor.getState().playhead));
+    clearGesturePreview();
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template, zoom, cw, ch]);
 
   useLayoutEffect(() => {
+    clearGesturePreview();
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection]);
@@ -288,6 +292,7 @@ export function CanvasArea() {
       preview: start,
       moved: false,
     };
+    clearGesturePreview();
     wrapRef.current?.setPointerCapture(e.pointerId);
     e.preventDefault();
   }
@@ -322,6 +327,7 @@ export function CanvasArea() {
     const partial = previewForPointer(drag, e);
     drag.preview = { ...drag.start, ...partial };
     renderer.previewLayerTransform(drag.id, drag.preview);
+    scheduleGesturePreview({ id: drag.id, kind: 'layer', transform: drag.preview });
     const layer = useEditor.getState().template?.layers.find((item) => item.id === drag.id);
     if (layer?.type === 'mask') {
       const next = overlayForTransform(drag.id, drag.preview);
@@ -336,14 +342,15 @@ export function CanvasArea() {
     dragRef.current = null;
     if (!drag) return;
     wrapRef.current?.releasePointerCapture(e.pointerId);
-    if (!drag.moved) return; // pure select-click: no transform commit
-    updateTransform(drag.id, previewForPointer(drag, e));
+    if (drag.moved) updateTransform(drag.id, previewForPointer(drag, e));
+    clearGesturePreview();
   }
 
   function cancelDrag() {
     if (!dragRef.current) return;
     dragRef.current = null;
     rendererRef.current?.clearEditorTransformPreview();
+    clearGesturePreview();
     recomputeBox();
   }
 
