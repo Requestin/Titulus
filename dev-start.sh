@@ -26,7 +26,10 @@ ENGINE_BIN="${ENGINE_BIN:-$DEFAULT_ENGINE_BIN}"
 mkdir -p "$PID_DIR" "$DATA_DIR/uploads"
 
 port_busy() {
-  ss -ltn 2>/dev/null | awk -v p=":$1" '$4 ~ p {exit 0} END {exit 1}'
+  ss -ltn 2>/dev/null | awk -v port="$1" '
+    $4 ~ (":" port "$") { found = 1 }
+    END { exit found ? 0 : 1 }
+  '
 }
 
 if port_busy "$FE_PORT"; then
