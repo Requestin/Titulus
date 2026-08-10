@@ -19,7 +19,7 @@ import {
   Plus, FolderPlus, CheckSquare,
 } from 'lucide-react';
 import type { LayerType, RootStackEntry, Template } from '@runtime';
-import { useEditor } from '../store';
+import { reparentTargetAtPlayhead, useEditor } from '../store';
 import { LAYER_TYPES, LAYER_LABEL } from '../factories';
 import { cn } from '@/lib/cn';
 
@@ -108,13 +108,20 @@ function removeMovingEntries(t: Template, keys: Set<EntryKey>): void {
 }
 
 function updateParents(t: Template, entries: RootStackEntry[], targetContainerId: string | null): void {
+  const { playhead, activeDirectorId } = useEditor.getState();
   for (const entry of entries) {
     if (entry.kind === 'layer') {
       const layer = t.layers.find((l) => l.id === entry.id);
-      if (layer) layer.groupId = targetContainerId;
+      if (layer) {
+        reparentTargetAtPlayhead(t, entry, targetContainerId, playhead, activeDirectorId);
+        layer.groupId = targetContainerId;
+      }
     } else {
       const group = t.groups.find((g) => g.id === entry.id);
-      if (group) group.parentId = targetContainerId;
+      if (group) {
+        reparentTargetAtPlayhead(t, entry, targetContainerId, playhead, activeDirectorId);
+        group.parentId = targetContainerId;
+      }
     }
   }
 }

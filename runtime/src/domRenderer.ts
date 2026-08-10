@@ -19,7 +19,7 @@
 // filter chains / backdrop-filter. Alpha: native CSS opacity + transparent canvas.
 
 import type {
-  Template, Layer, LayerGroup, AnimatableValues,
+  Template, Layer, LayerGroup, AnimatableValues, Transform,
 } from './schema.js';
 import { resolveBinding } from './schema.js';
 import { applyTransform, blendModeCss, opacityCss, transformHas3D, type AppliedTransform } from './transform.js';
@@ -104,6 +104,12 @@ export class TemplateRenderer {
   private maskScopes: MaskScope[] = [];
   private norm: NormalizedTimeline | null = null;
   private rootCache: Record<string, string> = {};
+  /**
+   * Ephemeral editor-only transform overrides. They travel through the normal
+   * renderer path so the DOM and its style cache remain coherent while a
+   * pointer gesture is in progress. They are never serialized into Template.
+   */
+  private editorTransformPreview = new Map<string, Transform>();
 
   // Render stats accumulator: reset per applyState call, snapshotted into onFrame.
   private stats: RenderStats = emptyRenderStats();
@@ -149,6 +155,7 @@ export class TemplateRenderer {
     this.template = template;
     this.variables = variables;
     this.norm = normalizeTimeline(template.timeline);
+    this.editorTransformPreview.clear();
 
     // Size the canvas container.
     this.root.style.width = `${template.canvas.width}px`;
@@ -199,6 +206,24 @@ export class TemplateRenderer {
   seek(frame: number): void {
     this.frame = Math.max(0, Math.round(frame));
     this.lastFrameSampled = null;
+    this.applyState(this.frame);
+  }
+
+  /**
+   * Render a temporary editor transform through the same cache-safe state path
+   * as the on-air renderer. The caller commits the corresponding Template
+   * update separately on pointer-up.
+   */
+  previewLayerTransform(layerId: string, transform: Transform): void {
+    if (!this.template?.layers.some((layer) => layer.id === layerId)) return;
+    this.editorTransformPreview.set(layerId, transform);
+    this.applyState(this.frame);
+  }
+
+  /** Discard any uncommitted editor gesture and restore the current timeline frame. */
+  clearEditorTransformPreview(): void {
+    if (this.editorTransformPreview.size === 0) return;
+    this.editorTransformPreview.clear();
     this.applyState(this.frame);
   }
 
@@ -667,7 +692,7 @@ export class TemplateRenderer {
 
     // Apply animated overrides per layer/group.
     for (const layer of this.template.layers) {
-      const anim = sample.layers[layer.id];
+      const anim = this.editorTransformPreview.get(layer.id) ?? sample.layers[layer.id];
       this.applyLayerState(layer, anim);
     }
     for (const g of this.template.groups) {
@@ -875,7 +900,7 @@ export class TemplateRenderer {
       const layer = t.layers.find((l) => l.id === scope.maskLayerId);
       if (!node || !layer || layer.type !== 'mask') continue;
 
-      const anim = sample.layers[layer.id];
+      const anim = this.editorTransformPreview.get(layer.id) ?? sample.layers[layer.id];
       const mergedT = anim
         ? { ...layer.transform, ...anim as Partial<import('./schema.js').Transform> }
         : layer.transform;
@@ -892,7 +917,7 @@ export class TemplateRenderer {
       if (node.parentMaskId) {
         const parent = t.layers.find((l) => l.id === node.parentMaskId);
         if (parent?.type === 'mask') {
-          const pAnim = sample.layers[parent.id];
+          const pAnim = this.editorTransformPreview.get(parent.id) ?? sample.layers[parent.id];
           const pat = applyTransform(
             parent.transform,
             pAnim as Partial<import('./schema.js').Transform> | undefined,

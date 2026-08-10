@@ -11,6 +11,7 @@ import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
 import { MediaUploadButton } from '../MediaUploadButton';
 import { Field, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
+import { LAYER_DEFAULT_DIMENSIONS } from '../factories';
 
 const BLEND_MODES: BlendMode[] = ['normal', 'multiply', 'screen', 'add', 'overlay', 'darken', 'lighten'];
 
@@ -98,6 +99,7 @@ export function PropertiesPanel() {
         id={layer.id}
         kind="layer"
         t={effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
+        layerType={layer.type}
         updateTransform={updateTransform}
       />
 
@@ -107,22 +109,24 @@ export function PropertiesPanel() {
 }
 
 function TransformSection({
-  id, kind, t, updateTransform,
+  id, kind, t, layerType, updateTransform,
 }: {
   id: string;
   kind: 'layer' | 'group';
   t: Layer['transform'];
+  layerType?: Layer['type'];
   updateTransform: (id: string, partial: Partial<Layer['transform']>, kind?: 'layer' | 'group') => void;
 }) {
   const set = (partial: Partial<Layer['transform']>) => updateTransform(id, partial, kind);
+  const dimensions = layerType ? LAYER_DEFAULT_DIMENSIONS[layerType] : null;
   return (
     <Section title="Transform">
       <LabeledNum label="X" value={t.x} resetValue={0} onChange={(v) => set({ x: v })} />
       <LabeledNum label="Y" value={t.y} resetValue={0} onChange={(v) => set({ y: v })} />
       {kind === 'layer' && (
         <>
-          <LabeledNum label="Width" value={t.width} resetValue={300} onChange={(v) => set({ width: v })} />
-          <LabeledNum label="Height" value={t.height} resetValue={80} onChange={(v) => set({ height: v })} />
+          <LabeledNum label="Width" value={t.width} resetValue={dimensions?.width} onChange={(v) => set({ width: v })} />
+          <LabeledNum label="Height" value={t.height} resetValue={dimensions?.height} onChange={(v) => set({ height: v })} />
         </>
       )}
       <LabeledNum label="Rotate" value={t.rotation} resetValue={0} onChange={(v) => set({ rotation: v })} />
