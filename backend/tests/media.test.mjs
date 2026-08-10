@@ -12,7 +12,12 @@ function tempDir() {
   return mkdtempSync(join(tmpdir(), 'titulus-media-test-'));
 }
 
-function fakeSpawn(calls, { alpha = false } = {}) {
+function fakeSpawn(calls, {
+  alphaTag = false,
+  uppercaseAlphaTag = false,
+  transparentPixels = false,
+  sourceFps = '25/1',
+} = {}) {
   return (command, args) => {
     calls.push({ command, args });
     const child = new EventEmitter();
@@ -26,16 +31,28 @@ function fakeSpawn(calls, { alpha = false } = {}) {
             codec_name: 'vp9',
             width: 1920,
             height: 430,
-            avg_frame_rate: '25/1',
+            avg_frame_rate: sourceFps,
             pix_fmt: 'yuv420p',
-            tags: alpha ? { alpha_mode: '1' } : {},
+            tags: alphaTag
+              ? { [uppercaseAlphaTag ? 'ALPHA_MODE' : 'alpha_mode']: '1' }
+              : {},
           }],
         })));
+      } else if (args.some((arg) => String(arg).includes('alphaextract'))) {
+        child.stdout.emit('data', Buffer.from(
+          `lavfi.signalstats.YMIN=${transparentPixels ? 0 : 255}\n`,
+        ));
       }
       child.emit('close', 0);
     });
     return child;
   };
+}
+
+async function settleMediaJob() {
+  for (let index = 0; index < 6; index += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 }
 
 test('media asset persists playback metadata across a database reopen', () => {
@@ -88,13 +105,13 @@ test('media asset persists playback metadata across a database reopen', () => {
   }
 });
 
-test('video ingest defaults opaque playback to normalized H264', async () => {
+test('opaque alpha-tagged video uses opaque animated WebP when pixels are opaque', async () => {
   const dir = tempDir();
   try {
     const db = openDb(join(dir, 'app.db'));
     const calls = [];
     const jobs = new MediaJobs(db, dir, {
-      spawn: fakeSpawn(calls),
+      spawn: fakeSpawn(calls, { alphaTag: true, transparentPixels: false }),
       promote: () => {},
       remove: () => {},
     });
@@ -106,17 +123,17 @@ test('video ingest defaults opaque playback to normalized H264', async () => {
       size: 123,
     });
 
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
+    await settleMediaJob();
 
-    const ffmpeg = calls.find((call) => call.command === 'ffmpeg');
+    const ffmpeg = calls.find((call) => call.args.some(
+      (arg) => String(arg).endsWith('.part.webp'),
+    ));
     assert.equal(job.status, 'ready');
-    assert.equal(job.profile, 'h264-opaque-50p');
-    assert.match(job.url, /\.mp4$/);
-    assert.ok(ffmpeg.args.includes('libx264'));
-    assert.ok(ffmpeg.args.some((arg) => arg.endsWith('.part.mp4')));
-    assert.ok(ffmpeg.args.some((arg) => arg.startsWith('fps=50,')));
+    assert.equal(job.profile, 'webp-opaque-25p');
+    assert.equal(job.hasAlpha, false);
+    assert.match(job.url, /\.webp$/);
+    assert.ok(ffmpeg.args.includes('libwebp_anim'));
+    assert.ok(ffmpeg.args.some((arg) => arg.includes('fps=25')));
     assert.ok(ffmpeg.args.some((arg) => arg.includes('force_original_aspect_ratio=decrease')));
     db.close();
   } finally {
@@ -155,9 +172,7 @@ test('pending video job is recovered after backend restart', async () => {
       promote: () => {},
       remove: () => {},
     });
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
+    await settleMediaJob();
 
     assert.equal(jobs.get('recover-1').status, 'ready');
     reopened.close();
@@ -166,13 +181,17 @@ test('pending video job is recovered after backend restart', async () => {
   }
 });
 
-test('alpha source keeps the alpha-capable playback profile', async () => {
+test('video with transparent decoded pixels keeps the alpha playback profile', async () => {
   const dir = tempDir();
   try {
     const db = openDb(join(dir, 'app.db'));
     const calls = [];
     const jobs = new MediaJobs(db, dir, {
-      spawn: fakeSpawn(calls, { alpha: true }),
+      spawn: fakeSpawn(calls, {
+        alphaTag: true,
+        uppercaseAlphaTag: true,
+        transparentPixels: true,
+      }),
       promote: () => {},
       remove: () => {},
     });
@@ -184,30 +203,31 @@ test('alpha source keeps the alpha-capable playback profile', async () => {
       size: 123,
     });
 
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
+    await settleMediaJob();
 
-    const ffmpeg = calls.find((call) => call.command === 'ffmpeg');
-    assert.equal(job.profile, 'vp9-alpha-50p');
+    const ffmpeg = calls.find((call) => call.args.some(
+      (arg) => String(arg).endsWith('.part.webp'),
+    ));
+    assert.equal(job.profile, 'webp-alpha-25p');
+    assert.equal(job.hasAlpha, true);
+    assert.match(job.url, /\.webp$/);
     assert.ok(ffmpeg.args.some((arg) => arg.endsWith('format=yuva420p')));
-    assert.ok(ffmpeg.args.includes('-auto-alt-ref'));
+    assert.ok(ffmpeg.args.includes('libwebp_anim'));
     db.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('opaque h264 profile writes an MP4 playback derivative', async () => {
+test('50 fps opaque source is capped to the validated 25p WebP profile', async () => {
   const dir = tempDir();
   try {
     const db = openDb(join(dir, 'app.db'));
     const calls = [];
     const jobs = new MediaJobs(db, dir, {
-      spawn: fakeSpawn(calls),
+      spawn: fakeSpawn(calls, { sourceFps: '50/1' }),
       promote: () => {},
       remove: () => {},
-      opaqueCodec: 'h264',
     });
     const job = jobs.ingest({
       path: join(dir, 'source.webm'),
@@ -217,14 +237,15 @@ test('opaque h264 profile writes an MP4 playback derivative', async () => {
       size: 123,
     });
 
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
-    await new Promise((resolve) => setImmediate(resolve));
+    await settleMediaJob();
 
-    const ffmpeg = calls.find((call) => call.command === 'ffmpeg');
-    assert.equal(job.profile, 'h264-opaque-50p');
-    assert.match(job.url, /\.mp4$/);
-    assert.ok(ffmpeg.args.includes('libx264'));
+    const ffmpeg = calls.find((call) => call.args.some(
+      (arg) => String(arg).endsWith('.part.webp'),
+    ));
+    assert.equal(job.profile, 'webp-opaque-25p');
+    assert.match(job.url, /\.webp$/);
+    assert.ok(ffmpeg.args.includes('libwebp_anim'));
+    assert.ok(ffmpeg.args.some((arg) => arg.includes('fps=25')));
     db.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

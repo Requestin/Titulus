@@ -37,6 +37,7 @@ import { type RenderStats, emptyRenderStats, snapshotStats } from './stats.js';
 import { buildProtocolFrameLayouts } from './renderGraphFrame.js';
 import type { ProtocolLayerLayout } from './graphProtocol.js';
 import type { RenderGraphAnalysis } from './layerPromote.js';
+import { videoPlaybackElementKind } from './videoPlayback.js';
 
 export interface TemplateRendererOptions {
   /** fixed: caller drives tick(fixedTickRate); raf: internal rAF loop. */
@@ -583,15 +584,13 @@ export class TemplateRenderer {
       }
       case 'image':
       case 'video': {
-        const media = document.createElement(layer.type === 'image' ? 'img' : 'video');
-        media.style.width = '100%';
-        media.style.height = '100%';
-        media.style.display = 'block';
-        if (layer.type === 'video') {
-          (media as HTMLVideoElement).muted = true;
-          (media as HTMLVideoElement).playsInline = true;
-          // autoplay/loop handled in applyLayerState when src resolves
-        }
+        const directSrc = layer.type === 'video' && typeof layer.src === 'string'
+          ? layer.src
+          : '';
+        const kind = layer.type === 'image'
+          ? 'image'
+          : videoPlaybackElementKind(directSrc);
+        const media = this.createMediaElement(kind);
         contentEl = media as HTMLElement;
         el.appendChild(media);
         break;
@@ -602,6 +601,39 @@ export class TemplateRenderer {
         break;
     }
     return { el, contentEl };
+  }
+
+  private createMediaElement(kind: 'image' | 'video'): HTMLImageElement | HTMLVideoElement {
+    const media = document.createElement(kind === 'image' ? 'img' : 'video');
+    media.style.width = '100%';
+    media.style.height = '100%';
+    media.style.display = 'block';
+    if (kind === 'video') {
+      (media as HTMLVideoElement).muted = true;
+      (media as HTMLVideoElement).playsInline = true;
+    }
+    return media;
+  }
+
+  private ensureVideoPlaybackElement(node: LayerNode, src: string): HTMLImageElement | HTMLVideoElement {
+    const kind = videoPlaybackElementKind(src);
+    const expectedTag = kind === 'image' ? 'IMG' : 'VIDEO';
+    if (node.contentEl?.tagName === expectedTag) {
+      return node.contentEl as HTMLImageElement | HTMLVideoElement;
+    }
+
+    if (node.contentEl?.tagName === 'VIDEO') {
+      const previous = node.contentEl as HTMLVideoElement;
+      previous.pause();
+      previous.removeAttribute('src');
+      previous.load();
+    }
+    const replacement = this.createMediaElement(kind);
+    node.contentEl?.replaceWith(replacement);
+    node.contentEl = replacement;
+    delete node.cache.src;
+    delete node.cache.objectFit;
+    return replacement;
   }
 
   // -----------------------------------------------------------------------
@@ -1120,14 +1152,15 @@ export class TemplateRenderer {
         break;
       }
       case 'video': {
-        const vid = node.contentEl as HTMLVideoElement;
         const src = String(resolveBinding(layer.src, v));
-        const changed = this.setText(vid, cache, 'src', src);
-        if (changed) {
-          vid.loop = layer.loop;
-          if (layer.loop) vid.play().catch(() => {});
+        const media = this.ensureVideoPlaybackElement(node, src);
+        const changed = this.setText(media, cache, 'src', src);
+        if (media.tagName === 'VIDEO' && changed) {
+          const video = media as HTMLVideoElement;
+          video.loop = layer.loop;
+          if (layer.loop) video.play().catch(() => {});
         }
-        this.setStyle(vid, cache, 'objectFit', layer.fit);
+        this.setStyle(media, cache, 'objectFit', layer.fit);
         break;
       }
     }

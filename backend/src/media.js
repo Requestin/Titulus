@@ -38,6 +38,12 @@ function mediaError(code, message, details = '') {
   return { code, message, details: String(details).slice(-MAX_ERROR_TAIL) };
 }
 
+function hasAlphaModeTag(tags) {
+  return Object.entries(tags ?? {}).some(
+    ([key, value]) => key.toLowerCase() === 'alpha_mode' && String(value) === '1',
+  );
+}
+
 /**
  * Upload source + playback derivative manager.
  *
@@ -51,7 +57,6 @@ function mediaError(code, message, details = '') {
  *   exists?: (path: string) => boolean,
  *   ffprobePath?: string,
  *   ffmpegPath?: string,
- *   opaqueCodec?: 'vp9' | 'h264',
  * }} [options]
  */
 export class MediaJobs {
@@ -70,10 +75,6 @@ export class MediaJobs {
     this.exists = options.exists ?? existsSync;
     this.ffprobePath = options.ffprobePath ?? 'ffprobe';
     this.ffmpegPath = options.ffmpegPath ?? 'ffmpeg';
-    this.opaqueCodec = options.opaqueCodec ?? process.env.TITULUS_OPAQUE_VIDEO_CODEC ?? 'h264';
-    if (!['vp9', 'h264'].includes(this.opaqueCodec)) {
-      throw new Error('TITULUS_OPAQUE_VIDEO_CODEC must be vp9 or h264');
-    }
     this.queue = [];
     this.active = 0;
     this.live = new Map();
@@ -188,7 +189,7 @@ export class MediaJobs {
     this._persist(state);
 
     const probe = await this._probe(state.sourcePath);
-    const profile = this._playbackProfile(probe.hasAlpha);
+    const profile = this._playbackProfile(probe.hasAlpha, probe.playbackFps);
     this._setPlaybackFilename(state, `${state.job.id}.${profile.extension}`);
     state.job.probe = probe;
     state.job.hasAlpha = probe.hasAlpha;
@@ -204,7 +205,7 @@ export class MediaJobs {
       '-y', '-hide_banner', '-loglevel', 'error',
       '-i', state.sourcePath,
       '-an',
-      '-vf', this._playbackFilter(probe.hasAlpha),
+      '-vf', this._playbackFilter(probe),
       ...profile.ffmpegArgs,
       playbackTemp,
     ]);
@@ -225,13 +226,21 @@ export class MediaJobs {
     this._persist(state);
   }
 
-  _playbackFilter(hasAlpha) {
-    const pixFmt = hasAlpha ? 'yuva420p' : 'yuv420p';
-    return [
-      'fps=50',
+  _playbackFilter(probe) {
+    const pixFmt = probe.hasAlpha ? 'yuva420p' : 'yuv420p';
+    const filters = [];
+    // 24/23.976 fps graphics map unevenly to 50i. With silent title media,
+    // the conventional 4% PAL speed-up gives exact 25p cadence without
+    // manufacturing twice as many compressed frames for CEF to decode.
+    if (probe.playbackFps === 25 && probe.fps >= 23 && probe.fps < 24.9) {
+      filters.push(`setpts=${(probe.fps / 25).toFixed(8)}*PTS`);
+    }
+    filters.push(
+      `fps=${probe.playbackFps}`,
       `scale='min(${MAX_VIDEO_WIDTH},iw)':'min(${MAX_VIDEO_HEIGHT},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`,
       `format=${pixFmt}`,
-    ].join(',');
+    );
+    return filters.join(',');
   }
 
   _temporaryPath(path) {
@@ -239,38 +248,16 @@ export class MediaJobs {
     return `${path.slice(0, path.length - extension.length)}.part${extension}`;
   }
 
-  _playbackProfile(hasAlpha) {
-    if (hasAlpha) {
-      return {
-        name: 'vp9-alpha-50p',
-        extension: 'webm',
-        ffmpegArgs: [
-          '-c:v', 'libvpx-vp9',
-          '-auto-alt-ref', '0',
-          '-b:v', '0', '-crf', '24',
-          '-row-mt', '1', '-deadline', 'good', '-cpu-used', '3',
-        ],
-      };
-    }
-    if (this.opaqueCodec === 'h264') {
-      return {
-        name: 'h264-opaque-50p',
-        extension: 'mp4',
-        ffmpegArgs: [
-          '-c:v', 'libx264',
-          '-preset', 'veryfast',
-          '-crf', '20',
-          '-movflags', '+faststart',
-        ],
-      };
-    }
+  _playbackProfile(hasAlpha, playbackFps) {
     return {
-      name: 'vp9-opaque-50p',
-      extension: 'webm',
+      name: `webp-${hasAlpha ? 'alpha' : 'opaque'}-${playbackFps}p`,
+      extension: 'webp',
       ffmpegArgs: [
-        '-c:v', 'libvpx-vp9',
-        '-b:v', '0', '-crf', '24',
-        '-row-mt', '1', '-deadline', 'good', '-cpu-used', '3',
+        '-c:v', 'libwebp_anim',
+        '-lossless', '0',
+        '-q:v', '75',
+        '-compression_level', '4',
+        '-loop', '0',
       ],
     };
   }
@@ -310,14 +297,87 @@ export class MediaJobs {
     ) {
       throw mediaError('INVALID_VIDEO_STREAM', 'video stream exceeds supported playback limits');
     }
+    const alphaTagged = String(stream.pix_fmt ?? '').startsWith('yuva')
+      || hasAlphaModeTag(stream.tags);
+    const hasAlpha = alphaTagged
+      ? await this._detectTransparentPixels(sourcePath, String(stream.codec_name ?? ''))
+      : false;
+    // Animated WebP avoids Chromium's costly/unsupported video decoders.
+    // Cap at 25p: 25 maps exactly to 50i and is the validated 3-channel budget.
+    const playbackFps = 25;
     return {
       codec: String(stream.codec_name ?? ''),
       width,
       height,
       fps,
+      playbackFps,
       pixFmt: String(stream.pix_fmt ?? ''),
-      hasAlpha: String(stream.pix_fmt ?? '').startsWith('yuva') || stream.tags?.alpha_mode === '1',
+      hasAlpha,
     };
+  }
+
+  _detectTransparentPixels(sourcePath, codec) {
+    return new Promise((resolvePromise, rejectPromise) => {
+      const decoderArgs = codec === 'vp9' ? ['-c:v', 'libvpx-vp9'] : [];
+      const args = [
+        '-hide_banner', '-loglevel', 'error',
+        ...decoderArgs,
+        '-i', sourcePath,
+        '-an',
+        '-vf', 'alphaextract,signalstats,metadata=print:key=lavfi.signalstats.YMIN:file=-',
+        '-f', 'null', '-',
+      ];
+      const child = this.spawn(this.ffmpegPath, args);
+      let output = '';
+      let stderr = '';
+      let transparent = false;
+      let settled = false;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        callback(value);
+      };
+      const timeout = setTimeout(() => {
+        child.kill('SIGKILL');
+        finish(rejectPromise, mediaError('ALPHA_PROBE_TIMEOUT', 'alpha pixel probe timed out'));
+      }, TRANSCODE_TIMEOUT_MS);
+      child.stdout?.on('data', (chunk) => {
+        output = `${output}${chunk.toString()}`.slice(-4096);
+        for (const match of output.matchAll(/lavfi\.signalstats\.YMIN=([0-9.]+)/g)) {
+          if (Number(match[1]) < 255) {
+            transparent = true;
+            child.kill('SIGTERM');
+            break;
+          }
+        }
+      });
+      child.stderr?.on('data', (chunk) => {
+        stderr = `${stderr}${chunk.toString()}`.slice(-MAX_ERROR_TAIL);
+      });
+      child.on('error', (error) => {
+        finish(rejectPromise, mediaError(
+          'ALPHA_PROBE_FAILED',
+          `alpha pixel probe failed: ${error.message}`,
+          stderr,
+        ));
+      });
+      child.on('close', (code) => {
+        if (transparent) {
+          finish(resolvePromise, true);
+          return;
+        }
+        if (code !== 0) {
+          finish(rejectPromise, mediaError(
+            'ALPHA_PROBE_FAILED',
+            `alpha pixel probe exited with code ${code}`,
+            stderr,
+          ));
+          return;
+        }
+        finish(resolvePromise, false);
+      });
+    });
   }
 
   _runFfmpeg(args) {
