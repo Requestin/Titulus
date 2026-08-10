@@ -38,6 +38,7 @@ import { buildProtocolFrameLayouts } from './renderGraphFrame.js';
 import type { ProtocolLayerLayout } from './graphProtocol.js';
 import type { RenderGraphAnalysis } from './layerPromote.js';
 import { videoPlaybackElementKind } from './videoPlayback.js';
+import { nextBrowserTickCount, type BrowserPacingState } from './browserPacing.js';
 
 export interface TemplateRendererOptions {
   /** fixed: caller drives tick(fixedTickRate); raf: internal rAF loop. */
@@ -115,7 +116,7 @@ export class TemplateRenderer {
   private lastFrameSampled: number | null = null;
   private lastTimelineSample: TimelineSample | null = null;
   private rafId: number | null = null;
-  private rafLastWall: number | null = null;
+  private rafPacing: BrowserPacingState = { accumulatedMs: 0, lastTickMs: null };
   private onFrame: OnFrameFn | null = null;
   private clockTimer: number | null = null;
 
@@ -1228,19 +1229,17 @@ export class TemplateRenderer {
 
   private startRaf(): void {
     this.stopRaf();
-    this.rafLastWall = null;
+    this.rafPacing = { accumulatedMs: 0, lastTickMs: null };
     const loop = (wall: number) => {
       if (!this.playing) return;
-      if (this.rafLastWall !== null && this.template) {
+      if (this.template) {
         const fps = this.template.timeline.fps;
-        const dt = wall - this.rafLastWall; // ms
-        const frames = Math.round((dt / 1000) * fps);
+        const frames = nextBrowserTickCount(this.rafPacing, wall, fps);
         if (frames > 0) {
           this.frame += frames;
           this.applyState(this.frame);
         }
       }
-      this.rafLastWall = wall;
       this.rafId = requestAnimationFrame(loop);
     };
     this.rafId = requestAnimationFrame(loop);
