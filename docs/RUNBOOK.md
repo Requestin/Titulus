@@ -2,6 +2,11 @@
 
 Ubuntu 24.04+. Быстрый старт: `docs/GETTING_STARTED.md`. Архитектура: `docs/ARCHITECTURE.md`.
 
+Для чистого DeckLink-хоста с постоянными данными, systemd, Nginx и current
+visual pacing см. `docs/DEPLOYMENT_DECKLINK_TEST_SERVER.md`. Этот Runbook
+содержит также низкоуровневые и исследовательские команды; они не заменяют
+полный deployment guide.
+
 ## 1. Зависимости
 
 ```bash
@@ -76,11 +81,18 @@ cd backend && PORT=3002 TITULUS_DATA=/tmp/titulus-dev node src/index.js
 
 Settings UI (`/settings`, admin) или REST `/api/channels`.
 
+Для current DeckLink visual deployment запускайте весь stack через
+`./dev-start.sh`: он явно выбирает `TITULUS_DEV_PACING_MODE=one_tick`. Команды
+ниже — ручной supervisor path; без явного `TITULUS_PACING_MODE=one_tick`
+`run-channel.sh` использует legacy `accumulator`.
+
 ```bash
+TITULUS_PACING_MODE=one_tick \
 BACKEND_URL=http://127.0.0.1:3002 \
 TITULUS_API_USER=admin TITULUS_API_PASSWORD=admin123 \
 ./engine/run-engines.sh --dry-run
 
+TITULUS_PACING_MODE=one_tick \
 BACKEND_URL=http://127.0.0.1:3002 \
 TITULUS_API_USER=admin TITULUS_API_PASSWORD=admin123 \
 ./engine/run-engines.sh
@@ -170,6 +182,11 @@ also fall back automatically and must never produce approximate mixed output.
 
 ### P20 provenance/M0 cell
 
+> `accumulator` в командах этого раздела намерен: это historical/research
+> baseline для P20 A/B, а не допустимый pacing для нового DeckLink visual
+> deployment. Для развёртывания используйте
+> `docs/DEPLOYMENT_DECKLINK_TEST_SERVER.md` и `one_tick`.
+
 Для Phase 20 используйте только canonical entrypoint; он запрещает пересечение
 CPU masks и параллельный Titulus engine, сохраняет config digest и ждёт
 нормальное завершение engine для полного CSV:
@@ -230,4 +247,5 @@ loopback.
 
 ## 11. Логи dev
 
-`logs/dev/backend.log`, `logs/dev/frontend.log`, `logs/dev/engines.log`
+`logs/backend.log`, `logs/frontend.log`, `logs/engines.log`; PID-файлы —
+`logs/dev/`.

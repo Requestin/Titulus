@@ -2,6 +2,9 @@
 # Download and extract CEF minimal (linux64) for bg_engine build.
 # DEVELOPMENT_PROMPT §9.1: CEF 148+, linux64 minimal distribution.
 # Output: engine/third_party/cef/<cef_binary_...>/  (libcef.so, include/, Resources/, libcef_dll_wrapper/)
+#
+# Set TITULUS_CEF_ARCHIVE to an exact archive name to reproduce a known build.
+# Without it, the latest stable minimal archive is selected.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,25 +13,41 @@ mkdir -p "$CEF_DIR"
 cd "$CEF_DIR"
 
 INDEX_URL="https://cef-builds.spotifycdn.com/index.json"
+REQUESTED_NAME="${TITULUS_CEF_ARCHIVE:-}"
 
 # Resolve latest stable linux64 minimal from the official index.
 # Pipe the JSON through stdin to python to avoid ARG_MAX on the large payload.
 META_JSON="$(curl -fsS "$INDEX_URL")"
-read -r NAME SHA1 VERSION <<< "$(printf '%s' "$META_JSON" | python3 -c "
-import json, sys
+read -r NAME SHA1 VERSION <<< "$(printf '%s' "$META_JSON" | TITULUS_CEF_ARCHIVE="$REQUESTED_NAME" python3 -c "
+import json, os, sys
 d = json.load(sys.stdin)
+requested = os.environ.get('TITULUS_CEF_ARCHIVE')
 for v in d['linux64']['versions']:
-    if v['channel'] == 'stable':
-        f = next(x for x in v['files'] if x['type'] == 'minimal')
+    for f in v['files']:
+        if f['type'] != 'minimal':
+            continue
+        if requested:
+            if f['name'] != requested:
+                continue
+        elif v['channel'] != 'stable':
+            continue
         print(f['name'], f['sha1'], v['cef_version'].split('+')[0])
-        break
+        raise SystemExit
 ")"
 
 if [[ -z "${NAME:-}" ]]; then
-  echo "[fetch-cef] could not resolve a stable linux64 minimal build from $INDEX_URL" >&2
+  if [[ -n "$REQUESTED_NAME" ]]; then
+    echo "[fetch-cef] requested archive was not found: $REQUESTED_NAME" >&2
+  else
+    echo "[fetch-cef] could not resolve a stable linux64 minimal build from $INDEX_URL" >&2
+  fi
   exit 1
 fi
-echo "[fetch-cef] latest stable minimal: cef=$VERSION  $NAME"
+if [[ -n "$REQUESTED_NAME" ]]; then
+  echo "[fetch-cef] pinned minimal: cef=$VERSION  $NAME"
+else
+  echo "[fetch-cef] latest stable minimal: cef=$VERSION  $NAME"
+fi
 
 # Idempotent: skip if already extracted for this exact version.
 STAMP="$CEF_DIR/.cef_fetched"
