@@ -4,14 +4,17 @@ alwaysApply: true
 ---
 # Phase 21 — engine first
 
-`origin/main` — единственная база engine/runtime/performance. `origin/sergey-v1`
-— read-only источник возможностей designer. `feature/sergey-v1-merge` — старый
-артефакт, его запрещено использовать.
+Current `origin/main` — единственный engine/runtime/performance foundation для
+разработки, сборки, тестов и deployment. `origin/sergey-v1` — read-only
+источник UX/contracts designer; её engine/supervisor/CMake не переносятся.
+`feature/sergey-v1-merge` — запрещённый старый артефакт.
 
 ## Неприкосновенные инварианты
 
-- Не merge/rebase/cherry-pick ветку `sergey-v1` целиком и не разрешать
-  конфликты выбором `theirs` для engine/runtime/supervisor.
+- Не merge/rebase/cherry-pick `sergey-v1` ни целиком, ни файлами/фрагментами
+  engine/runtime/supervisor; конфликты этих путей не решать через `theirs`.
+- Runtime-возможности designer реализовывать заново поверх current main
+  runtime; не заменять current hot path версией Sergey.
 - Сохранять CPU-only CEF OSR, DeckLink master clock, `one_tick`, hybrid-safe
   CPU packing, unique CEF cache, FrameLog/BGPACING provenance и graceful stop.
 - Сохранять Class-A composited transforms, editor gesture preview, render-graph
@@ -25,8 +28,9 @@ alwaysApply: true
 ## Порядок интеграции
 
 Переносить возможности малыми PR от свежего `main`: contract/fixtures →
-editor UI → runtime behavior → backend/playout. Изменение hot path допускается
-только вместе с тестом, измерением до/после и явным rollback.
+editor UI → runtime behavior, заново реализованное в current runtime, →
+backend/playout. Изменение hot path допускается только вместе с тестом,
+измерением до/после и явным rollback.
 
 Если новая возможность конфликтует с инвариантом, вызывает неизвестную
 регрессию, снижает cadence/throughput или не имеет доказательства parity —
@@ -38,5 +42,6 @@ editor UI → runtime behavior → backend/playout. Изменение hot path 
 До merge: existing tests/typechecks/build, old/new template fixtures,
 editor↔browser↔air parity. Для runtime/hot-path: canonical `test`/`test1`,
 `one_tick` cadence и пропорциональный DeckLink 1ch/3ch gate с zero
-late/drop/flush/unlock. Unreal/VS engine не входит в Phase 21 без отдельного
-GPU/architecture решения.
+late/drop/flush/unlock. Unreal/VS эксперимент сознательно исключён:
+`bg_vs_engine`, `run-vs-channel`, UE routes и `render_backend=unreal` не
+переносятся в `main`.
