@@ -5,9 +5,10 @@ alwaysApply: true
 # План разработки
 
 **Снимок:** август 2026. Phase 20 закрыта по visual acceptance после
-cross-host validation на i7-14700KF: complex `test1` не показал замеченных
-оператором фризов в 1ch/3ch SDI runs. Строгая on-wire zero-anomaly semantic
-certification сознательно отложена; детали — `docs/development-phases/`.
+cross-host validation на i7-14700KF. Открыта Phase 21: возможности нового
+designer из `sergey-v1` переносятся на current `main` без direct merge и без
+ухудшения engine cadence/performance. Engine-first policy — отдельное
+alwaysApply правило; детали — `docs/development-phases/`.
 
 ## Фазы (кратко)
 
@@ -34,6 +35,7 @@ certification сознательно отложена; детали — `docs/de
 | 18 | True 50p progressive pipeline | DONE (потолок задокументирован) | phase-18-true-50p-pipeline.md |
 | 19 | Style Guide + cost model | DONE: Doc02 audit-recovery K2 PASS (PR #84) | phase-19-cost-model.md |
 | 20 | Visual frame pacing + microfreeze | DONE (visual; strict SDI semantic evidence deferred) | phase-20-visual-frame-pacing.md |
+| 21 | New Designer Merge | IN PROGRESS — audit/plan, implementation не начата | phase-21-new-designer-merge.md |
 
 ## Последний milestone в main
 
@@ -50,6 +52,19 @@ Phase 20 завершила visual scope: `one_tick` устранил `(2,0)` lo
 имела zero late/drop/flush; редкие `single`/`overwrite` не объявлены
 погрешностью и не продвигают strict on-wire gate. Отчёт:
 `docs/performance investigation/reports/p20-06-i7-14700k-visual-closure.md`.
+
+Phase 21 открыта как controlled capability port. `origin/main` остаётся
+единственной engine/runtime базой, `origin/sergey-v1` — read-only источник
+designer UX и требований, а `feature/sergey-v1-merge` запрещён как старый
+артефакт. Первый milestone — fresh current-main baseline, capability inventory
+и schema fixtures; прямой merge веток запрещён.
+
+## Следующие задачи
+
+- P21.0 — снять fresh software/DeckLink baseline current `main`.
+- P21.1 — зафиксировать schema vNext, migrations и old/new fixtures.
+- Затем переносить editor/runtime/backend capabilities малыми PR согласно
+  `phase-21-new-designer-merge.md`.
 
 ## Отложенная строгая SDI-проверка
 
