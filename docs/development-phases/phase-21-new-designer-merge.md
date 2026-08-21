@@ -10,9 +10,9 @@
 
 ## 1. Цель фазы
 
-Собрать в `main` единый Titulus:
+Собрать в `main` единый Titulus строго на current новом engine:
 
-1. текущий CPU-only CEF/DeckLink engine из `main`;
+1. текущий CPU-only CEF/DeckLink engine из `main` как единственный foundation;
 2. новый template designer и связанные operator workflows из `sergey-v1`;
 3. единый `@titulus/runtime`, который одинаково интерпретирует template в
    editor preview, browser/OBS, null/preview engine и DeckLink;
@@ -27,14 +27,13 @@ Phase 21 не является обычным Git merge. Это контроли
 
 Вместе с кодом Phase 21 использует подготовленные Сергеем материалы:
 
-- [иллюстрированное описание нового интерфейса](../sergey-v1/new-interface.md)
-  и [исходный DOCX](../sergey-v1/new-interface.docx);
+- [иллюстрированное описание нового интерфейса](../sergey-v1/new-interface.md);
 - [Template Editor → Data](../sergey-v1/template-editor-data.md);
 - [Crawl — параметры и влияние на анимацию](../sergey-v1/crawl-parameters.md);
 - [индекс source-документов](../sergey-v1/README.md).
 
-DOCX сохранён как редактируемый оригинал, а Markdown-копия содержит
-относительные ссылки на 36 извлечённых PNG. Source-документы фиксируют
+Иллюстрированное Markdown-описание содержит относительные ссылки на 36 PNG.
+Source-документы зафиксированы и больше не редактируются. Они определяют
 желаемый UX и semantics, но не отменяют engine-first rule: при расхождении
 приоритет имеют current `main`, этот phase plan и измерительные gates.
 
@@ -72,12 +71,31 @@ semantics, air protocol, database, media ingest, supervisor и добавляе�
 ### 2.2 Стратегия
 
 `origin/main` остаётся базой. `origin/sergey-v1` используется как read-only
-каталог требований, UX и reference implementation. Возможности переносятся
-небольшими PR, при необходимости переписываются поверх current contracts.
+каталог UX, требований и наблюдаемой semantics, но не как donor
+engine/runtime/supervisor. Возможности переносятся небольшими PR; код этих
+слоёв всегда заново реализуется поверх current contracts.
 
 Никакой integration branch, созданной с вершины `sergey-v1`, не будет.
 
-### 2.3 Точные conflict surfaces
+Все implementation branches создаются только от свежего `main`. Собирается,
+запускается и тестируется только current новый `bg_engine`/runtime/supervisor.
+Engine, CMake, channel bootstrap и supervisor из `sergey-v1` не являются
+кандидатами на перенос. Нужные designer runtime semantics реализуются поверх
+current runtime с сохранением его hot path и instrumentation.
+
+### 2.3 Subagent orchestration
+
+Phase 21 должна активнее использовать subagents для research, параллельного
+сравнения кода, поиска решений, изолированной реализации и независимого
+review. Одну рискованную задачу можно поручать нескольким агентам, чтобы
+получить независимые варианты.
+
+Главный агент оркестрирует decomposition, сравнивает выводы, выбирает
+архитектуру, проверяет каждый diff и запускает software/hardware gates.
+Результат subagent не принимается на веру и не заменяет review, tests,
+performance evidence или решение пользователя.
+
+### 2.4 Точные conflict surfaces
 
 Merge simulation пометила `changed in both`:
 
@@ -137,6 +155,8 @@ rundowns routes, `runtime/src/schema.ts`, `shared/template.schema.json`,
 13. Editor preview и air используют один runtime и одну transform semantics.
 14. Старые templates должны открываться, сохраняться и проигрываться без
     визуального сдвига.
+15. Все изменения строятся поверх current нового engine из `main`; старый
+    engine/runtime/supervisor Sergey не используется даже временно.
 
 Если интеграция нарушает хотя бы один пункт, работа останавливается до
 технического решения. UI-функция не оправдывает деградацию engine.
@@ -144,6 +164,9 @@ rundowns routes, `runtime/src/schema.ts`, `shared/template.schema.json`,
 ## 4. Что найдено в `sergey-v1`
 
 ### 4.1 Designer и scene editing
+
+Иллюстрации и полный UX walkthrough:
+[Новый интерфейс `sergey-v1`](../sergey-v1/new-interface.md).
 
 - Layers переименован в Tree.
 - Неограниченная вложенность групп и развитый DnD.
@@ -164,6 +187,9 @@ rundowns routes, `runtime/src/schema.ts`, `shared/template.schema.json`,
 
 ### 4.2 Timeline v2
 
+Source UX: timeline screenshots/actions в
+[иллюстрированном interface guide](../sergey-v1/new-interface.md).
+
 - Directors tree и multi-playhead model.
 - Object groups с дочерними property tracks.
 - Object summary range и move/stretch всех keyframes.
@@ -178,6 +204,10 @@ rundowns routes, `runtime/src/schema.ts`, `shared/template.schema.json`,
 - Видео как timeline clip через `videoProgress`.
 
 ### 4.3 Новые template/runtime capabilities
+
+Подробные product contracts:
+[Template Editor → Data](../sergey-v1/template-editor-data.md) и
+[Crawl parameters](../sergey-v1/crawl-parameters.md).
 
 - Crawl/ticker/carousel layer.
 - Multitext, textfile и time variables.
@@ -196,6 +226,9 @@ rundowns routes, `runtime/src/schema.ts`, `shared/template.schema.json`,
 
 ### 4.4 Control/backend workflows
 
+Иллюстрированная структура Templates/Control/Settings:
+[Новый интерфейс](../sergey-v1/new-interface.md).
+
 - Template folders, visibility in Control, sort/view modes.
 - Template folders одноуровневые; membership хранится как assignment, а не
   filesystem nesting.
@@ -210,7 +243,7 @@ rundowns routes, `runtime/src/schema.ts`, `shared/template.schema.json`,
 - Slot-aware TAKE/UPDATE/CONTINUE/CLEAR.
 - Multiple template instances with LayerID collision semantics.
 
-### 4.5 Отдельный Unreal/VS scope
+### 4.5 Unreal/VS — сознательно исключённый эксперимент
 
 Ветка также добавляет:
 
@@ -220,8 +253,11 @@ rundowns routes, `runtime/src/schema.ts`, `shared/template.schema.json`,
 - UE Templates и Unreal Remote Control proxy;
 - `render_backend=unreal` в channel configuration.
 
-Это не designer merge и не входит в Phase 21. Оно требует отдельной
-архитектурной/GPU/DeckLink фазы.
+Сергей делал этот путь как эксперимент, а не рабочее решение. Phase 21
+сознательно не переносит его в `main`: не добавляются `bg_vs_engine`,
+`run-vs-channel.sh`, UE routes/UI, NDI/chroma code и
+`render_backend=unreal`. Это не deferred milestone и не будущий подпункт
+Phase 21.
 
 ## 5. Качество evidence в исходной ветке
 
@@ -268,8 +304,9 @@ Current `main` в том же файле содержит:
 - content invalidation fixes;
 - mask/performance optimizations.
 
-Файл нельзя брать ни с одной стороны целиком. Каждая возможность переносится
-в current renderer отдельным commit и отдельным gate.
+Sergey `domRenderer.ts` и его fragments не являются donor code. Нужное
+observable behavior заново реализуется в current renderer отдельным commit и
+отдельным gate.
 
 ### 6.2 Transform и Canvas
 
@@ -314,6 +351,8 @@ per-director state machine. В самой ветке уже была регре�
 ### 6.4 Video timeline против current ingest
 
 Это известный архитектурный блокер, а не обычный merge conflict.
+Source UX показывает auto-created timeline clip, Loop и At the end:
+[Video section](../sergey-v1/new-interface.md).
 
 Sergey video timeline управляет `<video>`:
 
@@ -343,6 +382,11 @@ Default решения Phase 21: current WebP остаётся air path. Video t
 
 - `main`: durable source/playback/poster job state, bounded queue, WebP;
 - Sergey: MAM folders/tags/relative paths, WebM, repair/refresh workflows.
+
+Желаемый MAM UX (tags, Copy AssetID, Image/Video import/refresh) показан в
+[interface guide](../sergey-v1/new-interface.md); token contract
+`asset:<uuid>` описан в
+[Data guide](../sergey-v1/template-editor-data.md).
 
 Нужна additive DB migration и adapter MAM поверх current media jobs. Нельзя
 заменять `db.js` или `media.js`.
@@ -390,9 +434,9 @@ promoted как reusable static bitmap. Пока classifier не доказан:
 Sergey `run-engines.sh` основан на старом sequential logical-core allocator и
 не содержит current topology planner/`one_tick`. Его merge запрещён.
 
-`bg_vs_engine`, CMake additions и `run-vs-channel.sh` полностью deferred.
-Перед будущим возвратом этого scope отдельно закрываются Unreal endpoint SSRF
-и backend authorization; скрыть UE controls в UI недостаточно.
+Unreal/VS code не переносится: `bg_vs_engine`, его CMake target,
+`run-vs-channel.sh`, UE/NDI/chroma routes и UI остаются только историческим
+экспериментом в source branch. В Phase 21 и `main` их быть не должно.
 
 ### 6.9 On-air/WS protocol
 
@@ -410,7 +454,7 @@ resolution.
 
 ### 6.10 Data pipeline determinism
 
-Source contract уточняет:
+[Data source guide](../sergey-v1/template-editor-data.md) уточняет contract:
 
 ```text
 source → parse records → designer-owned select → map → variable overrides
@@ -539,6 +583,13 @@ classification.
 Один PR — одна логическая задача. Каждый следующий PR строится от свежего
 `main`, в котором уже merged предыдущий milestone.
 
+Для каждого cross-cutting milestone главный агент по возможности:
+
+1. запускает параллельных research/comparison subagents;
+2. делегирует независимые code slices агентам без overlap файлов;
+3. заказывает отдельный review/regression pass;
+4. сам перечитывает diff, разрешает противоречия и выполняет gates.
+
 ### P21.0 — Baseline freeze и governance
 
 Scope:
@@ -548,6 +599,7 @@ Scope:
 - зафиксировать SHAs main/Sergey/merge-base;
 - снять fresh current-main software/hardware baseline;
 - сохранить команды и artifact manifest.
+- применять subagent orchestration из §2.3 на каждом milestone.
 
 Exit:
 
@@ -580,6 +632,8 @@ Exit:
 
 ### P21.2 — Low-risk designer shell
 
+Source UX: [иллюстрированный interface guide](../sergey-v1/new-interface.md).
+
 Scope:
 
 - Tree label;
@@ -597,6 +651,9 @@ Exit:
 - editor remains responsive on complex template.
 
 ### P21.3 — Scene graph, nested groups, pivot и Z
+
+Source UX: Tree/Properties/Axis/2.5D в
+[иллюстрированном interface guide](../sergey-v1/new-interface.md).
 
 Scope:
 
@@ -650,6 +707,9 @@ Exit:
 
 ### P21.5 — Actions, Update и Continue
 
+Source UX: Timeline Actions и Control Continue в
+[иллюстрированном interface guide](../sergey-v1/new-interface.md).
+
 Scope:
 
 - cue/items schema;
@@ -679,6 +739,10 @@ Exit:
 - canonical main templates have no measurable cadence regression.
 
 ### P21.6 — Crawl + Data pipeline + time
+
+Source contracts:
+[Template Editor → Data](../sergey-v1/template-editor-data.md) и
+[Crawl parameters](../sergey-v1/crawl-parameters.md).
 
 Scope:
 
@@ -718,6 +782,10 @@ Exit:
 
 ### P21.7 — MAM, folders, thumbnails и media adapters
 
+Source UX/contracts:
+[interface guide](../sergey-v1/new-interface.md) и
+[Data media tokens](../sergey-v1/template-editor-data.md).
+
 Scope:
 
 - media tags/folders/search;
@@ -753,6 +821,9 @@ Exit:
 - WYSIWYG difference отсутствует или explicitly accepted.
 
 ### P21.9 — LayerID playout, RBAC и operator closure
+
+Source workflow: разделы Templates/Control/Settings в
+[иллюстрированном interface guide](../sergey-v1/new-interface.md).
 
 Scope:
 
@@ -977,9 +1048,14 @@ B = candidate repeat
 
 - Не merge `sergey-v1` целиком.
 - Не использовать `feature/sergey-v1-merge`.
+- Не собирать, запускать или deploy старый `bg_engine`/runtime/supervisor из
+  `sergey-v1`; единственный execution baseline — current `main`.
+- Не копировать файлы или fragments Sergey в `engine/**`, current runtime hot
+  path, `engine/CMakeLists.txt`, `dev-start.sh`, `run-engines.sh` и другие
+  supervisor scripts.
 - Не заменять current `domRenderer.ts`, `CanvasArea.tsx`, `store.ts`,
-  `db.js`, `media.js`, `run-engines.sh` версией Сергея.
-- Не включать Unreal/VS в designer merge.
+  `db.js` или `media.js` версией Сергея.
+- Не переносить Unreal/VS ни в одном PR Phase 21.
 - Не возвращать WebM alpha/opaque pipeline.
 - Не включать Action state machine для всех templates.
 - Не обновлять React/Zustand state на каждый engine tick.
@@ -1008,6 +1084,10 @@ Phase 21 завершена только если:
 13. Все PR merged в `main` merge commits.
 14. `sergey-v1` остаётся историческим source branch до final sign-off, затем
     удаляется только отдельным решением владельца.
+15. Release собирается и запускается только на current новом engine из
+    `main`; legacy engine code Sergey отсутствует.
+16. В `main` нет `bg_vs_engine`, `run-vs-channel`, UE/NDI/chroma routes/UI и
+    `render_backend=unreal`.
 
 ## 15. Первый следующий шаг
 
@@ -1017,7 +1097,8 @@ Phase 21 завершена только если:
 2. создать machine-readable capability inventory;
 3. добавить old/new contract fixtures;
 4. зафиксировать schema migration policy;
-5. только после этого открыть первый implementation PR.
+5. превратить frozen Markdown source docs в UX acceptance checklist;
+6. только после этого открыть первый implementation PR.
 
 Такой порядок дороже простого merge в начале, но дешевле повторного поиска
 микрофризов и повреждённых templates после смешения двух независимых runtime.
