@@ -23,6 +23,21 @@
 Phase 21 не является обычным Git merge. Это контролируемый перенос
 возможностей на актуальную архитектуру `main`.
 
+### 1.1 Source-документы Сергея
+
+Вместе с кодом Phase 21 использует подготовленные Сергеем материалы:
+
+- [иллюстрированное описание нового интерфейса](../sergey-v1/new-interface.md)
+  и [исходный DOCX](../sergey-v1/new-interface.docx);
+- [Template Editor → Data](../sergey-v1/template-editor-data.md);
+- [Crawl — параметры и влияние на анимацию](../sergey-v1/crawl-parameters.md);
+- [индекс source-документов](../sergey-v1/README.md).
+
+DOCX сохранён как редактируемый оригинал, а Markdown-копия содержит
+относительные ссылки на 36 извлечённых PNG. Source-документы фиксируют
+желаемый UX и semantics, но не отменяют engine-first rule: при расхождении
+приоритет имеют current `main`, этот phase plan и измерительные gates.
+
 ## 2. Решение после первичного аудита
 
 ### 2.1 Прямой merge запрещён
@@ -132,11 +147,14 @@ rundowns routes, `runtime/src/schema.ts`, `shared/template.schema.json`,
 
 - Layers переименован в Tree.
 - Неограниченная вложенность групп и развитый DnD.
-- Copy/delete/reparent элементов в tree.
+- Multi-select и Copy/delete/reparent элементов в tree.
+- Ctrl-drag копирует layer/group subtree вместе с timeline tracks/keyframes.
+- Lock защищает объект от canvas edits.
 - Pivot/axis-center workflow для layers и groups.
 - Position Z (`translateZ`) и 2.5D depth.
 - Scale X/Y lock.
 - Size presets.
+- Numeric inputs поддерживают arrows, horizontal drag, reset и ±45° rotation.
 - Resizable/collapsible editor panels.
 - Type-specific properties и общий collapse/expand.
 - Text transform: none/uppercase/titlecase/lowercase.
@@ -165,7 +183,12 @@ rundowns routes, `runtime/src/schema.ts`, `shared/template.schema.json`,
 - Multitext, textfile и time variables.
 - Template Data pipeline:
   source → parse → select → map → variable.
+- Sources: text file, JSON file и inline.
 - File formats: lines, delimited, key/value, JSON.
+- Select: first/last/index/byKey/match/all; выбор record принадлежит designer,
+  не operator Control.
+- Map types: text/multitext/number/time/image/video.
+- Triggers: take/load/update/refresh; error policies: block/keep/clear.
 - Media tokens `asset:<uuid>`.
 - Time expressions (`today@18:00`, `now+5m`, ISO/epoch).
 - Data-driven image/video variables.
@@ -174,7 +197,11 @@ rundowns routes, `runtime/src/schema.ts`, `shared/template.schema.json`,
 ### 4.4 Control/backend workflows
 
 - Template folders, visibility in Control, sort/view modes.
+- Template folders одноуровневые; membership хранится как assignment, а не
+  filesystem nesting.
 - Data Elements and channel-scoped rundowns.
+- Rundown может содержать template и Data Element; Data Element хранит
+  отдельный набор operator values для template.
 - Template locks.
 - RBAC users/groups/permissions.
 - Media library with tags and poster repair.
@@ -381,6 +408,54 @@ Main и Sergey имеют разные wire semantics:
 collision фиксируются contract tests, а не выбираются случайно при conflict
 resolution.
 
+### 6.10 Data pipeline determinism
+
+Source contract уточняет:
+
+```text
+source → parse records → designer-owned select → map → variable overrides
+→ recalculate Crawl/video metadata → TAKE/UPDATE snapshot
+```
+
+Operator не выбирает строку в Control. `drivenBy` связывает variable с
+pipeline, а `exposed=false` скрывает её от operator. Значения media в файле
+резолвятся по `asset:<uuid>`/UUID/URL, не по display name.
+
+Целевой air contract:
+
+- pipeline выполняется до отправки TAKE/UPDATE, не в CEF frame loop;
+- один command получает immutable resolved snapshot;
+- `runOn` явно определяет trigger;
+- `onError=block` действительно не отправляет TAKE;
+- `keep/clear` имеют deterministic typed fallback;
+- path/URL read имеет allowlist, size/time limits и одинаковый результат вне
+  зависимости от браузера operator;
+- Preview pipeline использует тот же parser/select/map, что air preparation.
+
+Source options без полного UI (`commentPrefix`, header, `rootPath`, join,
+map transforms, `onEmpty`) остаются частью schema и fixtures; UI не должен
+терять их при load/save.
+
+### 6.11 Crawl temporal contract
+
+[Crawl source guide](../sergey-v1/crawl-parameters.md) задаёт observable
+semantics:
+
+- ticker движется по X, carousel по Y;
+- `speed=1` соответствует примерно 60 px/s;
+- `pause` измеряется в frames;
+- `pause=0` — strip, `pause>0` — enter/hold/exit per line;
+- batch выполняет один проход, continuous формирует бесшовный период;
+- separator text/image входит в длину периода;
+- max length режет каждую строку до schedule calculation;
+- duration зависит от content, box, font size, directions, speed, pause,
+  separator, fps и active align;
+- изменение data/variable content до TAKE/UPDATE пересчитывает duration;
+- `fromEnd` action остаётся привязанным к пересчитанному концу director.
+
+Реализация может отличаться от Sergey code, но observable semantics должна
+совпасть в editor/browser/DeckLink.
+
 ## 7. Целевая архитектура Phase 21
 
 ```text
@@ -449,10 +524,12 @@ Designer UI
 6. text transform/shadow;
 7. static и animated four-corner gradient;
 8. Crawl ticker/carousel;
-9. multi-director actions/wait/continue;
-10. Data pipeline text/image/time;
-11. video timeline fixture после выбора media contract;
-12. two-template LayerID stack.
+9. Crawl pause=0/positive, batch/continuous, separator и dynamic content;
+10. multi-director actions/wait/continue/fromEnd;
+11. Data pipeline для каждого source/format/select/error mode;
+12. Data map text/number/time/image/video и select-all join;
+13. video timeline fixture после выбора media contract;
+14. two-template LayerID stack.
 
 Для каждого fixture хранится expected normalized JSON и expected capability
 classification.
@@ -606,7 +683,13 @@ Exit:
 Scope:
 
 - Crawl schema/render/editor;
-- Data source/select/map;
+- Data sources textfile/jsonfile/inline;
+- formats lines/delimited/kv/json;
+- select first/last/index/byKey/match/all;
+- map text/multitext/number/time/image/video;
+- runOn take/load/update/refresh;
+- onError/onEmpty block/keep/clear;
+- join, mediaResolve и map transforms;
 - driven/exposed variables;
 - time expressions;
 - hardened file API.
@@ -620,12 +703,17 @@ Performance:
 - data pipeline runs only on declared trigger;
 - file parsing never occurs in engine hot path.
 - runtime-wide `will-change` не включается.
+- Crawl speed/pause/duration считаются в template fps, не wall-time;
+- dynamic content пересчитывает director до immutable air snapshot.
 
 Exit:
 
 - existing Sergey smoke cases promoted to normal runtime test runner;
 - security tests for file API;
-- ticker/carousel temporal fixtures;
+- parser/select/map/error-policy table tests;
+- Preview pipeline и TAKE дают одинаковые overrides;
+- ticker/carousel + batch/continuous + pause/separator temporal fixtures;
+- fromEnd action сохраняет расстояние до dynamic Crawl end;
 - browser and DeckLink cadence gate on Crawl.
 
 ### P21.7 — MAM, folders, thumbnails и media adapters
@@ -671,6 +759,10 @@ Scope:
 - LayerID schema/UI;
 - collision and stack semantics;
 - slot-aware on-air state;
+- Control mode: Rundowns/Templates/Data Elements;
+- channel-owned rundowns с template/Data Element slots;
+- Data Element save-as-new и operator variable values;
+- on-air list всех active template instances;
 - template locks;
 - RBAC settings.
 
@@ -681,6 +773,9 @@ Exit:
 - UPDATE does not reorder layers;
 - merge/replace semantics variables задокументированы и совместимы;
 - old/new on-air snapshot consumers работают через adapter;
+- direct template slot и Data Element slot имеют однозначный label/status;
+- несколько Data Elements одного template не создают несколько air instances
+  одного `templateId`, а UPDATE передаёт ownership инициирующему slot;
 - expired session handling;
 - lock heartbeat/recovery;
 - permissions enforced backend-side, not only hidden in UI.
