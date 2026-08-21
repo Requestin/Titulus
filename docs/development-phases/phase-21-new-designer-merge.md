@@ -1,11 +1,11 @@
 # Phase 21 — New Designer Merge
 
-**Статус:** IN PROGRESS — аудит завершён, реализация не начата  
-**Дата открытия:** 2026-08-21  
-**База:** `origin/main` @ `6292d33`  
-**Источник возможностей designer:** `origin/sergey-v1` @ `7ca8823`  
-**Запрещённый артефакт:** `feature/sergey-v1-merge`  
-**Предшественник:** Phase 20 visual closure  
+**Статус:** IN PROGRESS — аудит завершён, реализация не начата
+**Дата открытия:** 2026-08-21
+**База:** `origin/main` @ `6292d33`
+**Источник возможностей designer:** `origin/sergey-v1` @ `7ca8823`
+**Запрещённый артефакт:** `feature/sergey-v1-merge`
+**Предшественник:** Phase 20 visual closure
 **Главный приоритет:** сохранить engine cadence, throughput и SDI-плавность
 
 ## 1. Цель фазы
