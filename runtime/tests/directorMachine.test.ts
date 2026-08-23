@@ -113,6 +113,15 @@ test('pause holds for lengthFrames then resumes', () => {
   assert.equal(machine.status('default'), 'running');
 });
 
+test('sample does not fire cues or move local time', () => {
+  const machine = createDirectorMachine(baseTimeline());
+  for (let i = 0; i < 25; i += 1) machine.sample();
+  assert.equal(machine.status('default'), 'running');
+  assert.equal(machine.status('secondary'), 'idle');
+  assert.equal(machine.waitingContinue(), false);
+  assert.equal(machine.localFrame('default'), 0);
+});
+
 test('endScene tag is recorded and does not freeze the director', () => {
   const tl = baseTimeline();
   tl.cues = [{
