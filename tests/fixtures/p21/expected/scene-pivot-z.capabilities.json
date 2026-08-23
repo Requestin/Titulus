@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "p21-capabilities-v1",
+  "required": [
+    "properties.pivot-axis-center",
+    "properties.position-z"
+  ],
+  "supported": [],
+  "airCompatible": false
+}

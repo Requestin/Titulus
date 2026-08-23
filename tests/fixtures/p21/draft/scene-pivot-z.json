@@ -1,0 +1,102 @@
+{
+  "id": "p21-scene-pivot-z",
+  "name": "P21 Scene Pivot and Z",
+  "capabilities": [
+    "properties.pivot-axis-center",
+    "properties.position-z"
+  ],
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "transparent"
+  },
+  "variables": [],
+  "groups": [],
+  "layers": [
+    {
+      "id": "scene-plane",
+      "name": "Scene Plane",
+      "type": "rect",
+      "visible": true,
+      "locked": false,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": {
+        "x": 640,
+        "y": 360,
+        "z": 120,
+        "width": 640,
+        "height": 360,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 18,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "groupId": null,
+      "fill": "#1f2937",
+      "cornerRadius": 8,
+      "borderColor": "#000000",
+      "borderWidth": 0
+    }
+  ],
+  "rootStack": [
+    {
+      "kind": "layer",
+      "id": "scene-plane"
+    }
+  ],
+  "groupStacks": {},
+  "timeline": {
+    "fps": 50,
+    "durationFrames": 500,
+    "playbackMode": "bounded",
+    "directors": [
+      {
+        "id": "default",
+        "name": "default",
+        "durationFrames": 500,
+        "offsetFrames": 0,
+        "autostart": true,
+        "loop": false,
+        "swing": false
+      }
+    ],
+    "trackDirectors": {
+      "scene-plane": "default"
+    },
+    "keyframes": [
+      {
+        "id": "scene-z-start",
+        "frame": 0,
+        "layers": {
+          "scene-plane": {
+            "z": 120
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "scene-z-end",
+        "frame": 100,
+        "layers": {
+          "scene-plane": {
+            "z": 240
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      }
+    ],
+    "actions": [],
+    "propertyTrackDirectors": {
+      "scene-plane": {
+        "z": "default"
+      }
+    }
+  }
+}

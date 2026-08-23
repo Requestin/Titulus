@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "p21-capabilities-v1",
+  "required": [
+    "data.expanded-variable-types",
+    "data.select-map-policies",
+    "data.sources-formats"
+  ],
+  "supported": [],
+  "airCompatible": false
+}

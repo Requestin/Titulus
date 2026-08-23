@@ -1,0 +1,70 @@
+{
+  "id": "p21-timeline-action-cues",
+  "name": "P21 Timeline Action Cues",
+  "capabilities": [
+    "timeline.action-cues-items",
+    "timeline.action-from-end"
+  ],
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "transparent"
+  },
+  "variables": [],
+  "groups": [],
+  "layers": [],
+  "rootStack": [],
+  "groupStacks": {},
+  "timeline": {
+    "fps": 50,
+    "durationFrames": 500,
+    "playbackMode": "bounded",
+    "directors": [
+      {
+        "id": "default",
+        "name": "default",
+        "durationFrames": 500,
+        "offsetFrames": 0,
+        "autostart": true,
+        "loop": false,
+        "swing": false
+      },
+      {
+        "id": "secondary",
+        "name": "Secondary",
+        "durationFrames": 150,
+        "offsetFrames": 0,
+        "autostart": false,
+        "loop": false,
+        "swing": false
+      }
+    ],
+    "trackDirectors": {},
+    "keyframes": [],
+    "actions": [
+      {
+        "id": "end-cue",
+        "directorId": "default",
+        "frame": 25,
+        "fromEnd": true,
+        "name": "Start secondary and end scene",
+        "items": [
+          {
+            "id": "start-secondary",
+            "command": "startDirector",
+            "parameterDirectorId": "secondary",
+            "lengthFrames": 0,
+            "direction": "normal"
+          },
+          {
+            "id": "end-scene",
+            "command": "tag",
+            "parameterTag": "endScene",
+            "lengthFrames": 0,
+            "direction": "both"
+          }
+        ]
+      }
+    ]
+  }
+}

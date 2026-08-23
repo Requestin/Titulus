@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "p21-capabilities-v1",
+  "required": [
+    "rectangle.four-corner-gradient",
+    "timeline.object-track-groups"
+  ],
+  "supported": [],
+  "airCompatible": false
+}

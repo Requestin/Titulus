@@ -1,0 +1,275 @@
+{
+  "id": "p21-data-pipeline-matrix",
+  "name": "P21 Data Pipeline Matrix",
+  "capabilities": [
+    "data.expanded-variable-types",
+    "data.select-map-policies",
+    "data.sources-formats"
+  ],
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "transparent"
+  },
+  "variables": [
+    {
+      "id": "first-value",
+      "name": "first-value",
+      "label": "First Value",
+      "type": "text",
+      "defaultValue": "",
+      "drivenBy": "pipe-first",
+      "exposed": false
+    },
+    {
+      "id": "last-value",
+      "name": "last-value",
+      "label": "Last Value",
+      "type": "text",
+      "defaultValue": "",
+      "drivenBy": "pipe-last",
+      "exposed": false
+    },
+    {
+      "id": "index-value",
+      "name": "index-value",
+      "label": "Index Value",
+      "type": "text",
+      "defaultValue": "",
+      "drivenBy": "pipe-index",
+      "exposed": false
+    },
+    {
+      "id": "key-value",
+      "name": "key-value",
+      "label": "Key Value",
+      "type": "text",
+      "defaultValue": "",
+      "drivenBy": "pipe-by-key",
+      "exposed": false
+    },
+    {
+      "id": "match-value",
+      "name": "match-value",
+      "label": "Match Value",
+      "type": "text",
+      "defaultValue": "",
+      "drivenBy": "pipe-match",
+      "exposed": false
+    },
+    {
+      "id": "all-values",
+      "name": "all-values",
+      "label": "All Values",
+      "type": "multitext",
+      "defaultValue": "",
+      "drivenBy": "pipe-all",
+      "exposed": false
+    }
+  ],
+  "groups": [],
+  "layers": [],
+  "rootStack": [],
+  "groupStacks": {},
+  "timeline": {
+    "fps": 50,
+    "durationFrames": 500,
+    "playbackMode": "bounded",
+    "directors": [
+      {
+        "id": "default",
+        "name": "default",
+        "durationFrames": 500,
+        "offsetFrames": 0,
+        "autostart": true,
+        "loop": false,
+        "swing": false
+      }
+    ],
+    "trackDirectors": {},
+    "keyframes": [],
+    "actions": []
+  },
+  "data": {
+    "version": 1,
+    "sources": [
+      {
+        "id": "source-lines",
+        "label": "Lines source",
+        "type": "textfile",
+        "path": {
+          "type": "literal",
+          "value": "/uploads/p21-lines.txt"
+        },
+        "format": "lines",
+        "options": {
+          "encoding": "utf-8",
+          "skipEmpty": true,
+          "trim": true
+        }
+      },
+      {
+        "id": "source-delimited",
+        "label": "Delimited source",
+        "type": "inline",
+        "content": "1|Alpha\n2|Beta",
+        "format": "delimited",
+        "options": {
+          "delimiter": "|",
+          "columns": [
+            "id",
+            "name"
+          ],
+          "skipEmpty": true,
+          "trim": true,
+          "hasHeader": false
+        }
+      },
+      {
+        "id": "source-kv",
+        "label": "Key value source",
+        "type": "inline",
+        "content": "title=Phase 21\nstatus=draft",
+        "format": "kv",
+        "options": {
+          "kvSeparator": "=",
+          "skipEmpty": true,
+          "trim": true
+        }
+      },
+      {
+        "id": "source-json",
+        "label": "JSON source",
+        "type": "jsonfile",
+        "path": {
+          "type": "literal",
+          "value": "/uploads/p21-data.json"
+        },
+        "format": "json",
+        "options": {
+          "rootPath": "/items"
+        }
+      }
+    ],
+    "pipelines": [
+      {
+        "id": "pipe-first",
+        "sourceId": "source-kv",
+        "select": {
+          "mode": "first"
+        },
+        "map": [
+          {
+            "from": "title",
+            "to": {
+              "type": "variable",
+              "variableId": "first-value"
+            },
+            "as": "text"
+          }
+        ]
+      },
+      {
+        "id": "pipe-last",
+        "sourceId": "source-lines",
+        "select": {
+          "mode": "last"
+        },
+        "map": [
+          {
+            "from": "line",
+            "to": {
+              "type": "variable",
+              "variableId": "last-value"
+            },
+            "as": "text"
+          }
+        ]
+      },
+      {
+        "id": "pipe-index",
+        "sourceId": "source-delimited",
+        "select": {
+          "mode": "index",
+          "index": 2
+        },
+        "map": [
+          {
+            "from": "name",
+            "to": {
+              "type": "variable",
+              "variableId": "index-value"
+            },
+            "as": "text"
+          }
+        ]
+      },
+      {
+        "id": "pipe-by-key",
+        "sourceId": "source-json",
+        "select": {
+          "mode": "byKey",
+          "key": "id",
+          "value": "2"
+        },
+        "map": [
+          {
+            "from": "title",
+            "to": {
+              "type": "variable",
+              "variableId": "key-value"
+            },
+            "as": "text"
+          }
+        ]
+      },
+      {
+        "id": "pipe-match",
+        "sourceId": "source-json",
+        "select": {
+          "mode": "match",
+          "key": "slug",
+          "pattern": "^breaking-"
+        },
+        "map": [
+          {
+            "from": "title",
+            "to": {
+              "type": "variable",
+              "variableId": "match-value"
+            },
+            "as": "text"
+          }
+        ]
+      },
+      {
+        "id": "pipe-all",
+        "sourceId": "source-lines",
+        "select": {
+          "mode": "all"
+        },
+        "map": [
+          {
+            "from": "line",
+            "to": {
+              "type": "variable",
+              "variableId": "all-values"
+            },
+            "as": "multitext"
+          }
+        ],
+        "join": {
+          "field": "line",
+          "separator": "\n"
+        }
+      }
+    ],
+    "runOn": [
+      "take",
+      "load",
+      "update",
+      "refresh"
+    ],
+    "onError": "block"
+  }
+}

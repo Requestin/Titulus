@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "p21-capabilities-v1",
+  "required": [
+    "text.shadow",
+    "text.transform"
+  ],
+  "supported": [],
+  "airCompatible": false
+}

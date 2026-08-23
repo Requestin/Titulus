@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "p21-capabilities-v1",
+  "required": [
+    "control.layer-id-on-air"
+  ],
+  "supported": [],
+  "airCompatible": false
+}

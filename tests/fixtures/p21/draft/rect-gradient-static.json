@@ -1,0 +1,83 @@
+{
+  "id": "p21-rect-gradient-static",
+  "name": "P21 Static Four-Corner Gradient",
+  "capabilities": [
+    "rectangle.four-corner-gradient"
+  ],
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "transparent"
+  },
+  "variables": [],
+  "groups": [],
+  "layers": [
+    {
+      "id": "gradient-static",
+      "name": "Static Gradient",
+      "type": "rect",
+      "visible": true,
+      "locked": false,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": {
+        "x": 120,
+        "y": 120,
+        "width": 480,
+        "height": 140,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      },
+      "groupId": null,
+      "fill": "#1f2937",
+      "fillMode": "gradient",
+      "gradient": {
+        "topLeft": "#ef4444",
+        "topRight": "#3b82f6",
+        "bottomLeft": "#22c55e",
+        "bottomRight": "#eab308",
+        "weights": {
+          "topLeft": 100,
+          "topRight": 80,
+          "bottomLeft": 60,
+          "bottomRight": 40
+        }
+      },
+      "cornerRadius": 8,
+      "borderColor": "#000000",
+      "borderWidth": 0
+    }
+  ],
+  "rootStack": [
+    {
+      "kind": "layer",
+      "id": "gradient-static"
+    }
+  ],
+  "groupStacks": {},
+  "timeline": {
+    "fps": 50,
+    "durationFrames": 500,
+    "playbackMode": "bounded",
+    "directors": [
+      {
+        "id": "default",
+        "name": "default",
+        "durationFrames": 500,
+        "offsetFrames": 0,
+        "autostart": true,
+        "loop": false,
+        "swing": false
+      }
+    ],
+    "trackDirectors": {},
+    "keyframes": [],
+    "actions": []
+  }
+}
