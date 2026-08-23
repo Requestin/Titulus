@@ -12,6 +12,8 @@ import { randomBytes, randomUUID, scryptSync } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import { runMigrations } from './migrations/index.js';
+
 /** @typedef {import('better-sqlite3').Database} Database */
 
 const SCHEMA = `
@@ -161,6 +163,7 @@ export function openDb(dbPath) {
   ensureOnAirOrderIndex(db);
   ensureLicenseRow(db);
   ensureAuthBootstrap(db);
+  runMigrations(db);
   return db;
 }
 
@@ -453,6 +456,23 @@ export const rundownsDao = (db) => ({
 // ---------------------------------------------------------------------------
 // settings (key-value global fallback)
 // ---------------------------------------------------------------------------
+
+
+export const dataFilesDao = (db) => ({
+  all() {
+    return db.prepare('SELECT * FROM data_files ORDER BY created_at DESC').all();
+  },
+  get(id) {
+    return db.prepare('SELECT * FROM data_files WHERE id = ?').get(id) ?? null;
+  },
+  insert({ id, original_name, stored_name, mime, size_bytes }) {
+    db.prepare(
+      `INSERT INTO data_files (id, original_name, stored_name, mime, size_bytes)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(id, original_name, stored_name, mime, size_bytes);
+    return this.get(id);
+  },
+});
 
 export const settingsDao = (db) => ({
   all() {
