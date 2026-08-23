@@ -251,3 +251,42 @@ test('moving a group writes only the group transform and leaves child geometry u
   assert.equal(updated.layers[0]!.transform.x, 12);
   assert.equal(updated.layers[0]!.transform.y, 8);
 });
+
+test('duplicateSelected remaps a crawl director instead of sharing it', () => {
+  useEditor.getState().load(createDefaultTemplate());
+  useEditor.getState().addLayer('crawl');
+  const first = useEditor.getState().template!.layers[0];
+  assert.equal(first?.type, 'crawl');
+  if (first?.type !== 'crawl') return;
+  const firstDirector = first.crawlDirectorId;
+  useEditor.getState().duplicateSelected();
+  const template = useEditor.getState().template!;
+  const crawls = template.layers.filter((layer) => layer.type === 'crawl');
+  assert.equal(crawls.length, 2);
+  assert.notEqual(crawls[0]!.crawlDirectorId, crawls[1]!.crawlDirectorId);
+  assert.ok(template.timeline.directors.some((director) => director.id === crawls[0]!.crawlDirectorId));
+  assert.ok(template.timeline.directors.some((director) => director.id === crawls[1]!.crawlDirectorId));
+  assert.notEqual(firstDirector, crawls.find((layer) => layer.id !== first.id)?.crawlDirectorId);
+});
+
+test('deleteSelected removes an orphan crawl director', () => {
+  useEditor.getState().load(createDefaultTemplate());
+  useEditor.getState().addLayer('crawl');
+  const crawl = useEditor.getState().template!.layers[0];
+  assert.equal(crawl?.type, 'crawl');
+  if (crawl?.type !== 'crawl') return;
+  const directorId = crawl.crawlDirectorId;
+  useEditor.getState().deleteSelected();
+  const template = useEditor.getState().template!;
+  assert.equal(template.layers.length, 0);
+  assert.equal(template.timeline.directors.some((director) => director.id === directorId), false);
+});
+
+test('commitCurveDrag writes value and frame in one patch', () => {
+  const { id } = loadAnimatedRectangle();
+  useEditor.getState().commitCurveDrag({ kind: 'layer', id }, 'x', 0, 12, 77);
+  const template = useEditor.getState().template!;
+  assert.equal(template.timeline.keyframes.some((keyframe) => keyframe.frame === 0 && keyframe.layers[id]?.x !== undefined), false);
+  const moved = template.timeline.keyframes.find((keyframe) => keyframe.frame === 12);
+  assert.equal(moved?.layers[id]?.x, 77);
+});

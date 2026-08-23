@@ -16,6 +16,8 @@
     "data.time-expressions",
     "properties.position-z",
     "rectangle.four-corner-gradient",
+    "text.shadow",
+    "text.transform",
     "timeline.action-cues-items",
     "timeline.action-from-end",
     "timeline.continue-wait",

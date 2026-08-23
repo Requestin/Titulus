@@ -7,6 +7,8 @@ export const SUPPORTED_TEMPLATE_CAPABILITIES = Object.freeze([
   'data.time-expressions',
   'properties.position-z',
   'rectangle.four-corner-gradient',
+  'text.shadow',
+  'text.transform',
   'timeline.action-cues-items',
   'timeline.action-from-end',
   'timeline.continue-wait',
@@ -45,6 +47,10 @@ function isRecord(value) {
 
 function own(value, key) {
   return isRecord(value) && Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isBinding(value) {
+  return isRecord(value) && value.type === 'variable' && typeof value.variableId === 'string';
 }
 
 function records(value) {
@@ -102,6 +108,9 @@ export function inferTemplateCapabilities(template) {
     if (layer.type === 'crawl') inferred.add('crawl.layer');
     if (layer.type === 'rect' && (layer.fillMode === 'gradient' || own(layer, 'gradient'))) {
       inferred.add('rectangle.four-corner-gradient');
+    }
+    if (layer.type === 'clock' && (isBinding(layer.startTime) || isBinding(layer.targetTime))) {
+      inferred.add('data.time-expressions');
     }
   }
 

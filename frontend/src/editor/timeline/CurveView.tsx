@@ -25,7 +25,7 @@ export function CurveView({
   onSelect: (keyframe: SelectedKeyframe) => void;
 }) {
   const setKeyframeValue = useEditor((state) => state.setKeyframeValue);
-  const movePoint = useEditor((state) => state.movePoint);
+  const commitCurveDrag = useEditor((state) => state.commitCurveDrag);
   const deletePoint = useEditor((state) => state.deletePoint);
   const setKeyframeEasing = useEditor((state) => state.setKeyframeEasing);
   const [drag, setDrag] = useState<{ from: number; curFrame: number; curValue: number } | null>(null);
@@ -111,11 +111,10 @@ export function CurveView({
               }}
               onPointerUp={() => {
                 if (drag) {
-                  if (drag.curValue !== point.value) setKeyframeValue(target, drag.from, prop, drag.curValue);
-                  if (drag.curFrame !== drag.from) {
-                    movePoint(target, prop, drag.from, drag.curFrame);
-                    onSelect({ target, prop, frame: drag.curFrame });
-                  }
+                  const moved = drag.curFrame !== drag.from;
+                  const changed = drag.curValue !== point.value || moved;
+                  if (changed) commitCurveDrag(target, prop, drag.from, drag.curFrame, drag.curValue);
+                  if (moved) onSelect({ target, prop, frame: drag.curFrame });
                 }
                 setDrag(null);
               }}

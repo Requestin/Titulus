@@ -81,10 +81,35 @@ export function PropertiesPanel() {
     }
   }
 
-  if (!template || !selection) {
+  if (!template) {
     return (
       <div className="grid h-full place-items-center p-6 text-center text-[13px] text-ink-faint">
-        Select a layer to edit its properties.
+        Open a template to edit its properties.
+      </div>
+    );
+  }
+
+  if (!selection) {
+    return (
+      <div className="flex h-full flex-col">
+        <PropertiesToolbar signal={collapseSignal} onChange={setCollapseSignal} />
+        <div className="min-h-0 flex-1 overflow-auto">
+          <SectionCollapseProvider signal={collapseSignal}>
+            <Section title="Template">
+              <Field label="LayerID">
+                <NumberInput
+                  value={template.layerId ?? 50}
+                  min={1}
+                  max={99}
+                  step={1}
+                  onChange={(value) => patch((t) => {
+                    t.layerId = Math.min(99, Math.max(1, Math.round(value)));
+                  })}
+                />
+              </Field>
+            </Section>
+          </SectionCollapseProvider>
+        </div>
       </div>
     );
   }
@@ -611,6 +636,24 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             <Field label="Format">
               <Input value={layer.format} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'clock') l.format = e.target.value; })} />
             </Field>
+            {layer.mode === 'countup' && (
+              <Field label="Start">
+                <ClockAnchorField
+                  value={layer.startTime}
+                  variables={variables}
+                  onChange={(value) => updateLayer(layer.id, (l) => { if (l.type === 'clock') l.startTime = value; })}
+                />
+              </Field>
+            )}
+            {layer.mode === 'countdown' && (
+              <Field label="Target">
+                <ClockAnchorField
+                  value={layer.targetTime}
+                  variables={variables}
+                  onChange={(value) => updateLayer(layer.id, (l) => { if (l.type === 'clock') l.targetTime = value; })}
+                />
+              </Field>
+            )}
           </Section>
           <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} />
         </>
@@ -662,8 +705,108 @@ function TextStyleSection({ layer, variables, updateLayer }: { layer: Extract<La
       </Field>
       <LabeledNum label="Line height" value={s.lineHeight} resetValue={1.1} step={0.05} onChange={(v) => setStyle((st) => { st.lineHeight = v; })} />
       <LabeledNum label="Spacing" value={s.letterSpacing} resetValue={0} onChange={(v) => setStyle((st) => { st.letterSpacing = v; })} />
-      <Checkbox label="Drop shadow" checked={s.dropShadow} onChange={(v) => setStyle((st) => { st.dropShadow = v; })} />
+      <Field label="Transform">
+        <div className="flex gap-1">
+          {([
+            ['none', 'x'],
+            ['uppercase', 'AA'],
+            ['titlecase', 'Aa'],
+            ['lowercase', 'aa'],
+          ] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              className={cn(
+                'h-8 min-w-8 rounded-md border px-2 text-[12px]',
+                (s.textTransform ?? 'none') === mode
+                  ? 'border-primary text-primary'
+                  : 'border-border text-ink-muted',
+              )}
+              onClick={() => setStyle((st) => {
+                if (mode === 'none') delete st.textTransform;
+                else st.textTransform = mode;
+              })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Checkbox
+        label="Drop shadow"
+        checked={s.dropShadow}
+        onChange={(v) => setStyle((st) => {
+          st.dropShadow = v;
+          if (v) {
+            st.dropShadowOffsetX ??= 0;
+            st.dropShadowOffsetY ??= st.dropShadowDistance;
+          }
+        })}
+      />
+      {s.dropShadow && (
+        <>
+          <Field label="Shadow color">
+            <ColorInput value={s.dropShadowColor} onChange={(c) => setStyle((st) => { st.dropShadowColor = c; })} />
+          </Field>
+          <LabeledNum label="Shadow X" value={s.dropShadowOffsetX ?? 0} resetValue={0} onChange={(v) => setStyle((st) => { st.dropShadowOffsetX = v; })} />
+          <LabeledNum label="Shadow Y" value={s.dropShadowOffsetY ?? s.dropShadowDistance} resetValue={s.dropShadowDistance} onChange={(v) => setStyle((st) => { st.dropShadowOffsetY = v; st.dropShadowDistance = v; })} />
+          <LabeledNum label="Shadow blur" value={s.dropShadowBlur} resetValue={6} onChange={(v) => setStyle((st) => { st.dropShadowBlur = v; })} />
+        </>
+      )}
     </Section>
+  );
+}
+
+
+function ClockAnchorField({
+  value,
+  onChange,
+  variables,
+}: {
+  value: number | VariableBinding | undefined;
+  onChange: (v: number | VariableBinding | undefined) => void;
+  variables: Variable[];
+}) {
+  const timeVars = variables.filter((item) => item.type === 'time');
+  const pool = timeVars.length > 0 ? timeVars : variables;
+  const isBound = typeof value === 'object' && value !== null;
+  return (
+    <div className="flex items-center gap-1.5">
+      {isBound ? (
+        <Select
+          className="flex-1"
+          value={value.variableId}
+          onChange={(e) => onChange({ type: 'variable', variableId: e.target.value })}
+        >
+          {pool.length === 0 && <option value="">No variables</option>}
+          {pool.map((v) => <option key={v.id} value={v.id}>{v.label || v.name}</option>)}
+        </Select>
+      ) : (
+        <Input
+          className="flex-1"
+          value={value == null ? '' : String(value)}
+          onChange={(e) => {
+            const raw = e.target.value.trim();
+            onChange(raw === '' ? undefined : Number(raw));
+          }}
+          placeholder="epoch ms"
+        />
+      )}
+      <button
+        title={isBound ? 'Unbind variable' : 'Bind to variable'}
+        disabled={!isBound && pool.length === 0}
+        onClick={() => {
+          if (isBound) onChange(undefined);
+          else if (pool[0]) onChange({ type: 'variable', variableId: pool[0].id });
+        }}
+        className={cn(
+          'grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border',
+          isBound ? 'border-primary text-primary' : 'text-ink-faint hover:text-ink disabled:opacity-40',
+        )}
+      >
+        <Braces className="h-3.5 w-3.5" aria-hidden />
+      </button>
+    </div>
   );
 }
 

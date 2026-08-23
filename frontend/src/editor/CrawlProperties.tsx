@@ -1,4 +1,8 @@
+import { useState } from 'react';
 import type { CrawlLayer, CrawlProps } from '@runtime';
+import { api, ApiError } from '@/core/api';
+import { toast } from '@/core/toast';
+import { Button } from '@/components/ui/Button';
 import { Checkbox, Field, Input, NumberInput, Select } from '@/components/ui/form';
 
 type UpdateLayer = (id: string, mutator: (layer: CrawlLayer) => void) => void;
@@ -10,6 +14,8 @@ export function CrawlProperties({
   layer: CrawlLayer;
   updateLayer: UpdateLayer;
 }) {
+  const [busy, setBusy] = useState(false);
+
   function patch(partial: Partial<CrawlProps>) {
     updateLayer(layer.id, (item) => {
       if (item.type !== 'crawl') return;
@@ -43,6 +49,43 @@ export function CrawlProperties({
       }
       Object.assign(item.crawl, partial);
     });
+  }
+
+  async function parseFile() {
+    const path = layer.crawl.filePath.trim();
+    if (!path) {
+      toast.error('Set a crawl file path first');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api.files.read(path);
+      updateLayer(layer.id, (item) => {
+        if (item.type === 'crawl') item.content = result.text;
+      });
+      toast.success('Crawl file parsed');
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : 'Could not read crawl file');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function uploadFile(file: File) {
+    setBusy(true);
+    try {
+      const uploaded = await api.files.upload(file);
+      updateLayer(layer.id, (item) => {
+        if (item.type !== 'crawl') return;
+        item.crawl.useFile = true;
+        item.crawl.filePath = uploaded.path;
+      });
+      toast.success('Crawl file uploaded');
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : 'Upload failed');
+    } finally {
+      setBusy(false);
+    }
   }
 
   const directions = layer.crawl.type === 'carousel'
@@ -90,6 +133,42 @@ export function CrawlProperties({
         <Field label="Separator text">
           <Input value={layer.crawl.separatorText} onChange={(event) => patch({ separatorText: event.target.value })} />
         </Field>
+      )}
+      {layer.crawl.separatorMode === 'image' && (
+        <Field label="Separator image">
+          <Input value={layer.crawl.separatorImage} onChange={(event) => patch({ separatorImage: event.target.value })} placeholder="asset:… or /uploads/…" />
+        </Field>
+      )}
+      <Checkbox
+        label="Use file"
+        checked={layer.crawl.useFile}
+        onChange={(value) => patch({ useFile: value })}
+      />
+      {layer.crawl.useFile && (
+        <>
+          <Field label="File path">
+            <Input
+              value={layer.crawl.filePath}
+              onChange={(event) => patch({ filePath: event.target.value })}
+              placeholder="/data-files/crawl.txt"
+            />
+          </Field>
+          <div className="flex items-center gap-2">
+            <Button size="sm" disabled={busy} onClick={() => void parseFile()}>Parse</Button>
+            <label className="text-[12px] text-primary">
+              <input
+                type="file"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void uploadFile(file);
+                  event.currentTarget.value = '';
+                }}
+              />
+              Upload
+            </label>
+          </div>
+        </>
       )}
       <Checkbox
         label="Max length"

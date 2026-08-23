@@ -129,6 +129,12 @@
         { "$ref": "#/$defs/variableBinding" }
       ]
     },
+    "numberOrBinding": {
+      "oneOf": [
+        { "type": "number" },
+        { "$ref": "#/$defs/variableBinding" }
+      ]
+    },
     "transform": {
       "type": "object",
       "required": ["x", "y", "width", "height", "rotation", "rotationX", "rotationY", "perspective", "scaleX", "scaleY", "anchorX", "anchorY"],
@@ -265,8 +271,8 @@
         "loop": { "type": "boolean" },
         "mode": { "type": "string", "enum": ["clock", "countup", "countdown"] },
         "format": { "type": "string" },
-        "startTime": { "type": "number" },
-        "targetTime": { "type": "number" },
+        "startTime": { "$ref": "#/$defs/numberOrBinding" },
+        "targetTime": { "$ref": "#/$defs/numberOrBinding" },
         "maskMode": { "type": "string", "enum": ["normal", "inverted"] },
         "shape": { "type": "string", "enum": ["rect", "ellipse"] },
         "crawlDirectorId": { "type": "string", "minLength": 1 },
