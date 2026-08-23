@@ -43,12 +43,8 @@ export function scheduleCrawl(input) {
       strip += lineSpans[i] ?? 0;
       if (i < lineSpans.length - 1) strip += separatorSpan;
     }
-    const travel = input.crawl.animationType === 'continuous'
-      ? Math.max(strip, boxExtent)
-      : strip + boxExtent;
-    const start = input.crawl.animationType === 'continuous'
-      ? (inPos ? boxExtent : 0)
-      : (inPos ? boxExtent : -strip);
+    const travel = strip + boxExtent;
+    const start = inPos ? boxExtent : -strip;
     const end = start + (outNeg ? -travel : travel);
     const moveFrames = pushMove(segments, travel, pxPerFrame);
     path.push({ frame, offset: start });

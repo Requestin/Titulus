@@ -77,18 +77,17 @@ test('higher speed shortens duration and duration is counted in template fps', (
   assert.equal(fast.pxPerFrame, 600 / 50);
 });
 
-test('continuous pause=0 period is the longer of strip and box, not strip+box clearance', () => {
+test('continuous pause=0 uses the same full In-to-Out clearance as batch', () => {
   const scheduled = scheduleCrawl(baseTicker());
   const strip = (14 * 48) + (5 * 48) + (15 * 48);
-  assert.ok(strip > 760);
-  assert.equal(scheduled.durationFrames, Math.ceil(strip / 6));
+  assert.equal(scheduled.durationFrames, Math.ceil((strip + 760) / 6));
   assert.equal(scheduled.segments.length, 1);
   assert.equal(scheduled.segments[0]?.kind, 'move');
   assert.equal(scheduled.path[0]?.offset, 760);
-  assert.equal(scheduled.path[1]?.offset, 760 - strip);
+  assert.equal(scheduled.path[1]?.offset, -strip);
 });
 
-test('continuous short ticker crosses the box from the In edge to the Out edge', () => {
+test('continuous short ticker enters at the In edge and leaves past the Out edge', () => {
   const scheduled = scheduleCrawl(baseTicker({
     content: 'New crawl',
     box: { width: 755, height: 86 },
@@ -96,9 +95,9 @@ test('continuous short ticker crosses the box from the In edge to the Out edge',
   }));
   const strip = 9 * 48;
   assert.ok(strip < 755);
-  assert.equal(scheduled.durationFrames, Math.ceil(755 / 6));
+  assert.equal(scheduled.durationFrames, Math.ceil((strip + 755) / 6));
   assert.equal(scheduled.path[0]?.offset, 755);
-  assert.equal(scheduled.path[1]?.offset, 0);
+  assert.equal(scheduled.path[1]?.offset, -strip);
 });
 
 test('batch pause=0 travel includes box clearance', () => {
@@ -106,7 +105,7 @@ test('batch pause=0 travel includes box clearance', () => {
   const batch = scheduleCrawl(baseTicker({
     crawl: { ...baseTicker().crawl, animationType: 'batch' },
   }));
-  assert.ok(batch.durationFrames > continuous.durationFrames);
+  assert.equal(batch.durationFrames, continuous.durationFrames);
   const strip = (14 * 48) + (5 * 48) + (15 * 48);
   assert.equal(batch.durationFrames, Math.ceil((strip + 760) / 6));
 });
@@ -231,26 +230,22 @@ test('backend and runtime scheduleCrawl stay on the same formulas', async () => 
   assert.deepEqual(backend.scheduleCrawl(input), scheduleCrawl(input));
 });
 
-test('continuous pause=0 paint duplicates the strip so the box can stay filled', () => {
+test('continuous pause=0 paint keeps the authored text once', () => {
   const crawl = baseTicker().crawl;
-  assert.equal(crawlDuplicatesStrip(crawl), true);
+  assert.equal(crawlDuplicatesStrip(crawl), false);
   assert.equal(crawlDuplicatesStrip({ ...crawl, animationType: 'batch' }), false);
-  assert.equal(crawlDuplicatesStrip({ ...crawl, pause: 12 }), false);
   const strip = joinCrawlLines('New crawl', { separatorMode: 'none', separatorText: '' });
-  assert.equal(crawlPaintText(strip, { ...crawl, separatorMode: 'none' }), 'New crawlNew crawl');
-  assert.equal(
-    crawlPaintText(joinCrawlLines('A\nB', crawl), crawl),
-    'A  •  B  •  A  •  B',
-  );
+  assert.equal(crawlPaintText(strip, { ...crawl, separatorMode: 'none' }), 'New crawl');
+  assert.equal(crawlPaintText(joinCrawlLines('A\nB', crawl), crawl), 'A  •  B');
 });
 
-test('continuous marquee starts at the In box edge and ends at the Out box edge', () => {
+test('continuous marquee starts at the In edge and finishes fully past the Out edge', () => {
   const crawl = baseTicker().crawl;
   assert.deepEqual(sampleContinuousMarqueeOffset(0, 220, 755, 'x', crawl), { x: 755, y: 0 });
-  assert.deepEqual(sampleContinuousMarqueeOffset(1, 220, 755, 'x', crawl), { x: 0, y: 0 });
+  assert.deepEqual(sampleContinuousMarqueeOffset(1, 220, 755, 'x', crawl), { x: -220, y: 0 });
   assert.deepEqual(
     sampleContinuousMarqueeOffset(0.5, 220, 755, 'x', { ...crawl, directionOut: 'right', directionIn: 'left' }),
-    { x: 377.5, y: 0 },
+    { x: 267.5, y: 0 },
   );
   assert.deepEqual(
     sampleContinuousMarqueeOffset(1, 96, 96, 'y', { ...crawl, type: 'carousel', directionIn: 'up', directionOut: 'down' }),

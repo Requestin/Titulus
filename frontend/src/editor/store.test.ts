@@ -290,3 +290,14 @@ test('commitCurveDrag writes value and frame in one patch', () => {
   const moved = template.timeline.keyframes.find((keyframe) => keyframe.frame === 12);
   assert.equal(moved?.layers[id]?.x, 77);
 });
+
+test("selecting a crawl layer focuses its director", () => {
+  useEditor.getState().load(createDefaultTemplate());
+  useEditor.getState().addLayer("crawl");
+  const template = useEditor.getState().template!;
+  const layer = template.layers.find((item) => item.type === "crawl");
+  assert.ok(layer && layer.type === "crawl");
+  useEditor.getState().setActiveDirector("default");
+  useEditor.getState().select({ kind: "layer", id: layer.id });
+  assert.equal(useEditor.getState().activeDirectorId, layer.crawlDirectorId);
+});
