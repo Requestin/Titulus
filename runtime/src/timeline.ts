@@ -18,6 +18,9 @@ import type {
   TimelineDirector,
   TimelineKeyframe,
   TimelineAction,
+  TimelineCue,
+  TimelineCueDirection,
+  TimelineCueItem,
   AnimatableValues,
   AnimatableProp,
 } from './schema.js';
@@ -68,8 +71,19 @@ export interface NormalizedTimeline {
   directorList: TimelineDirector[];
   /** directorId -> actions, sorted by frame */
   actions: Record<string, TimelineAction[]>;
+  /** directorId -> compiled cues with fromEnd already resolved. */
+  cues: Record<string, CompiledCue[]>;
   fps: number;
   durationFrames: number;
+}
+
+export interface CompiledCue {
+  id: string;
+  directorId: string;
+  frame: number;
+  fromEnd: boolean;
+  name: string;
+  items: TimelineCue['items'];
 }
 
 /**
@@ -215,6 +229,7 @@ export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
     directors,
     directorList: tl.directors,
     actions,
+    cues: compileCues(tl),
     fps: tl.fps,
     durationFrames: tl.durationFrames,
   };
@@ -379,6 +394,78 @@ export function actionsCrossed(
       ? a.frame <= curFrame
       : (prevFrame < a.frame && a.frame <= curFrame);
     if (crossed) out.push(a);
+  }
+  return out;
+}
+
+export function resolveCueFrame(
+  cue: Pick<TimelineCue, 'frame' | 'fromEnd'>,
+  directorDuration: number,
+): number {
+  const frame = Math.max(0, Math.round(cue.frame));
+  if (!cue.fromEnd) return frame;
+  return Math.max(0, Math.round(directorDuration) - frame);
+}
+
+function cueItemIsStateful(item: TimelineCueItem): boolean {
+  return item.command !== 'tag';
+}
+
+export function timelineNeedsDirectorRuntime(tl: Timeline): boolean {
+  for (const action of tl.actions) {
+    if (action.command === 'startDirector' || action.command === 'stopDirector') return true;
+  }
+  for (const cue of tl.cues ?? []) {
+    if (cue.items.some(cueItemIsStateful)) return true;
+  }
+  return false;
+}
+
+export function compileCues(tl: Timeline): Record<string, CompiledCue[]> {
+  const durationByDirector = new Map(tl.directors.map((director) => [director.id, director.durationFrames]));
+  const byDirector: Record<string, CompiledCue[]> = {};
+  for (const director of tl.directors) byDirector[director.id] = [];
+  for (const cue of tl.cues ?? []) {
+    const duration = durationByDirector.get(cue.directorId) ?? tl.durationFrames;
+    (byDirector[cue.directorId] ??= []).push({
+      id: cue.id,
+      directorId: cue.directorId,
+      frame: resolveCueFrame(cue, duration),
+      fromEnd: cue.fromEnd,
+      name: cue.name,
+      items: cue.items,
+    });
+  }
+  for (const list of Object.values(byDirector)) {
+    list.sort((left, right) => left.frame - right.frame || left.id.localeCompare(right.id));
+  }
+  return byDirector;
+}
+
+export function cuesCrossed(
+  compiled: Record<string, CompiledCue[]>,
+  directorId: string,
+  prevFrame: number | null,
+  curFrame: number,
+  direction: TimelineCueDirection = 'normal',
+): CompiledCue[] {
+  const list = compiled[directorId] ?? [];
+  if (list.length === 0) return [];
+  const lower = prevFrame === null ? Number.NEGATIVE_INFINITY : prevFrame;
+  let left = 0;
+  let right = list.length;
+  while (left < right) {
+    const mid = (left + right) >> 1;
+    if (list[mid]!.frame <= lower) left = mid + 1;
+    else right = mid;
+  }
+  const out: CompiledCue[] = [];
+  for (let index = left; index < list.length; index += 1) {
+    const cue = list[index]!;
+    if (cue.frame > curFrame) break;
+    const items = cue.items.filter((item) => item.direction === 'both' || item.direction === direction);
+    if (items.length === 0) continue;
+    out.push(items.length === cue.items.length ? cue : { ...cue, items: items as CompiledCue['items'] });
   }
   return out;
 }
