@@ -30,7 +30,8 @@ import {
   isDegenerateProjectedOutline,
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
-import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
+import { normalizeTimeline, sampleAt, actionsCrossed, timelineNeedsDirectorRuntime, type NormalizedTimeline, type TimelineSample } from './timeline.js';
+import { createDirectorMachine, type DirectorMachine } from './directorMachine.js';
 import { effectiveGradient, gradientBackgroundCss } from './rectGradient.js';
 import { formatClock } from './clock.js';
 import { ensureFonts, collectFonts } from './fonts.js';
@@ -121,6 +122,7 @@ export class TemplateRenderer {
   private playing = false;
   private frame = 0;                  // global playhead (frames)
   private lastFrameSampled: number | null = null;
+  private directorMachine: DirectorMachine | null = null;
   private lastTimelineSample: TimelineSample | null = null;
   private rafId: number | null = null;
   private rafPacing: BrowserPacingState = { accumulatedMs: 0, lastTickMs: null };
@@ -156,6 +158,9 @@ export class TemplateRenderer {
     this.template = template;
     this.variables = variables;
     this.norm = normalizeTimeline(template.timeline);
+    this.directorMachine = timelineNeedsDirectorRuntime(template.timeline)
+      ? createDirectorMachine(template.timeline)
+      : null;
     this.editorTransformPreview.clear();
 
     // Size the canvas container.
@@ -248,6 +253,16 @@ export class TemplateRenderer {
     return this.frame;
   }
 
+  continueDirectors(): void {
+    if (!this.directorMachine) return;
+    this.directorMachine.continue();
+    this.applyState(this.frame);
+  }
+
+  waitingContinue(): boolean {
+    return this.directorMachine?.waitingContinue() ?? false;
+  }
+
   /**
    * Advance exactly one frame. Engine mode ('fixed') only. Called by the host
    * at the channel fps (DEVELOPMENT_PROMPT §6.3 fixed-step tick).
@@ -255,6 +270,7 @@ export class TemplateRenderer {
   tick(): void {
     if (!this.playing || this.mode !== 'fixed') return;
     this.frame += 1;
+    this.directorMachine?.advance(this.frame);
     this.applyState(this.frame, this.fixedTickRate);
   }
 
@@ -694,11 +710,13 @@ export class TemplateRenderer {
     this.stats.maskWrites = 0;
     this.stats.textWrites = 0;
 
-    const sample: TimelineSample = sampleAt(this.norm, frame);
+    const sample: TimelineSample = this.directorMachine
+      ? this.directorMachine.sample()
+      : sampleAt(this.norm, frame);
     this.lastTimelineSample = sample;
 
     // Fire actions crossed since the last sampled frame (cue points).
-    if (this.lastFrameSampled !== null && frame > this.lastFrameSampled) {
+    if (!this.directorMachine && this.lastFrameSampled !== null && frame > this.lastFrameSampled) {
       for (const d of this.norm.directorList) {
         const acts = actionsCrossed(this.norm, d.id, this.lastFrameSampled, frame);
         this.runActions(acts);
@@ -1279,6 +1297,7 @@ export class TemplateRenderer {
         const frames = nextBrowserTickCount(this.rafPacing, wall, fps);
         if (frames > 0) {
           this.frame += frames;
+          this.directorMachine?.advance(this.frame);
           this.applyState(this.frame);
         }
       }
