@@ -16,7 +16,11 @@ export function VariableValues({
       {variables.map((v) => (
         <Field key={v.id} label={v.label || v.name}>
           {v.type === 'number' ? (
-            <NumberInput value={Number(values[v.id] ?? 0)} onChange={(n) => onChange(v.id, n)} />
+            <NumberInput
+              value={Number(values[v.id] ?? 0)}
+              aria-label={v.label || v.name}
+              onChange={(n) => onChange(v.id, n)}
+            />
           ) : v.type === 'color' ? (
             <ColorInput value={String(values[v.id] ?? '#ffffff')} onChange={(c) => onChange(v.id, c)} />
           ) : (

@@ -255,7 +255,7 @@ export function LayersPanel() {
     >
       <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <span className="text-[12px] font-semibold text-ink-muted">Layers</span>
+        <span className="text-[12px] font-semibold text-ink-muted">Tree</span>
         <div className="relative flex items-center gap-1">
           <button
             onClick={toggleSelectMode}

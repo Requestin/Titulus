@@ -84,7 +84,13 @@ function DefaultValueInput({ v, onChange }: { v: Variable; onChange: (dv: string
   const fileRef = useRef<HTMLInputElement>(null);
 
   if (v.type === 'number') {
-    return <NumberInput value={typeof v.defaultValue === 'number' ? v.defaultValue : 0} onChange={onChange} />;
+    return (
+      <NumberInput
+        value={typeof v.defaultValue === 'number' ? v.defaultValue : 0}
+        aria-label={`${v.label || v.name} default value`}
+        onChange={onChange}
+      />
+    );
   }
   if (v.type === 'color') {
     return <ColorInput value={String(v.defaultValue || '#ffffff')} onChange={onChange} />;
