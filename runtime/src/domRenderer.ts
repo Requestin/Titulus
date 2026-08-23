@@ -33,7 +33,13 @@ import type { RootStackEntry } from './schema.js';
 import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
 import { reuseOrCreateDirectorMachine, type DirectorMachine } from './directorMachine.js';
 import { effectiveGradient, gradientBackgroundCss } from './rectGradient.js';
-import { sampleCrawlOffset } from './crawlSchedule.js';
+import {
+  crawlDuplicatesStrip,
+  crawlPaintText,
+  joinCrawlLines,
+  sampleContinuousMarqueeOffset,
+  sampleCrawlOffset,
+} from './crawlSchedule.js';
 import { formatClock } from './clock.js';
 import { videoWindowOpen } from './videoPlayback.js';
 import { resolveClockAnchor } from './clockBind.js';
@@ -1201,14 +1207,10 @@ export class TemplateRenderer {
         const s = layer.style;
         const resolved = String(resolveBinding(layer.content, v));
         const progress = anim?.crawlProgress ?? 0;
-        const offset = sampleCrawlOffset({
-          content: resolved,
-          fps: this.template.timeline.fps,
-          box: { width: layer.transform.width, height: layer.transform.height },
-          fontSize: s.fontSize,
-          align: s.align,
-          crawl: layer.crawl,
-        }, progress);
+        const transformed = applyTextTransform(resolved, s.textTransform);
+        const strip = joinCrawlLines(transformed, layer.crawl);
+        const display = crawlPaintText(strip, layer.crawl);
+        const duplicate = crawlDuplicatesStrip(layer.crawl);
         this.setStyle(el, cache, 'overflow', 'hidden');
         this.setStyle(content, cache, 'fontFamily', `"${s.fontFamily}", system-ui, sans-serif`);
         this.setStyle(content, cache, 'fontSize', `${s.fontSize}px`);
@@ -1222,12 +1224,27 @@ export class TemplateRenderer {
         this.setStyle(content, cache, 'position', 'absolute');
         this.setStyle(content, cache, 'left', '0px');
         this.setStyle(content, cache, 'top', '0px');
-        this.setStyle(content, cache, 'transform', `translate3d(${offset.x.toFixed(2)}px, ${offset.y.toFixed(2)}px, 0)`);
-        const transformed = applyTextTransform(resolved, s.textTransform);
-        const display = layer.crawl.separatorMode === 'text'
-          ? transformed.split('\n').join(layer.crawl.separatorText)
-          : transformed;
+        this.setStyle(content, cache, 'width', 'max-content');
+        this.setStyle(content, cache, 'height', 'max-content');
+        this.setStyle(content, cache, 'display', 'block');
         this.setText(content, cache, 'textContent', display);
+        let offset;
+        if (duplicate) {
+          const axis = layer.crawl.type === 'carousel' ? 'y' : 'x';
+          const measured = axis === 'x' ? content.scrollWidth : content.scrollHeight;
+          const period = Math.max(1, measured / 2);
+          offset = sampleContinuousMarqueeOffset(progress, period, axis, layer.crawl);
+        } else {
+          offset = sampleCrawlOffset({
+            content: resolved,
+            fps: this.template.timeline.fps,
+            box: { width: layer.transform.width, height: layer.transform.height },
+            fontSize: s.fontSize,
+            align: s.align,
+            crawl: layer.crawl,
+          }, progress);
+        }
+        this.setStyle(content, cache, 'transform', `translate3d(${offset.x.toFixed(2)}px, ${offset.y.toFixed(2)}px, 0)`);
         break;
       }
       case 'text':
