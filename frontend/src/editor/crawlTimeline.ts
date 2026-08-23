@@ -1,5 +1,6 @@
 import {
   scheduleCrawl,
+  syncCrawlProgressKeys,
   type CrawlLayer,
   type CrawlProps,
   type Template,
@@ -67,14 +68,7 @@ export function attachCrawlTimeline(template: Template, layer: CrawlLayer): void
       crawlProgress: directorId,
     },
   };
-  const start = template.timeline.keyframes.find((key) => key.frame === 0)
-    ?? { id: createId(), frame: 0, layers: {}, groups: {}, easing: 'linear' as const };
-  const end = template.timeline.keyframes.find((key) => key.frame === durationFrames)
-    ?? { id: createId(), frame: durationFrames, layers: {}, groups: {}, easing: 'linear' as const };
-  start.layers[layer.id] = { ...start.layers[layer.id], crawlProgress: 0 };
-  end.layers[layer.id] = { ...end.layers[layer.id], crawlProgress: 1 };
-  if (!template.timeline.keyframes.includes(start)) template.timeline.keyframes.push(start);
-  if (!template.timeline.keyframes.includes(end)) template.timeline.keyframes.push(end);
+  syncCrawlProgressKeys(template.timeline.keyframes, layer.id, durationFrames, createId);
 }
 
 export function isCrawlContentBinding(value: string | VariableBinding): value is VariableBinding {

@@ -13,6 +13,7 @@ import {
   joinCrawlLines,
   sampleContinuousMarqueeOffset,
   scheduleCrawl,
+  syncCrawlProgressKeys,
   type CrawlScheduleInput,
 } from '../src/crawlSchedule.js';
 
@@ -76,12 +77,28 @@ test('higher speed shortens duration and duration is counted in template fps', (
   assert.equal(fast.pxPerFrame, 600 / 50);
 });
 
-test('continuous pause=0 period is strip plus separator without box clearance', () => {
+test('continuous pause=0 period is the longer of strip and box, not strip+box clearance', () => {
   const scheduled = scheduleCrawl(baseTicker());
   const strip = (14 * 48) + (5 * 48) + (15 * 48);
+  assert.ok(strip > 760);
   assert.equal(scheduled.durationFrames, Math.ceil(strip / 6));
   assert.equal(scheduled.segments.length, 1);
   assert.equal(scheduled.segments[0]?.kind, 'move');
+  assert.equal(scheduled.path[0]?.offset, 760);
+  assert.equal(scheduled.path[1]?.offset, 760 - strip);
+});
+
+test('continuous short ticker crosses the box from the In edge to the Out edge', () => {
+  const scheduled = scheduleCrawl(baseTicker({
+    content: 'New crawl',
+    box: { width: 755, height: 86 },
+    crawl: { ...baseTicker().crawl, separatorMode: 'none', separatorText: '' },
+  }));
+  const strip = 9 * 48;
+  assert.ok(strip < 755);
+  assert.equal(scheduled.durationFrames, Math.ceil(755 / 6));
+  assert.equal(scheduled.path[0]?.offset, 755);
+  assert.equal(scheduled.path[1]?.offset, 0);
 });
 
 test('batch pause=0 travel includes box clearance', () => {
@@ -227,16 +244,29 @@ test('continuous pause=0 paint duplicates the strip so the box can stay filled',
   );
 });
 
-test('continuous marquee at 0 and 1 is one measured period, not a box-clearance jump', () => {
+test('continuous marquee starts at the In box edge and ends at the Out box edge', () => {
   const crawl = baseTicker().crawl;
-  assert.deepEqual(sampleContinuousMarqueeOffset(0, 400, 'x', crawl), { x: 0, y: 0 });
-  assert.deepEqual(sampleContinuousMarqueeOffset(1, 400, 'x', crawl), { x: -400, y: 0 });
+  assert.deepEqual(sampleContinuousMarqueeOffset(0, 220, 755, 'x', crawl), { x: 755, y: 0 });
+  assert.deepEqual(sampleContinuousMarqueeOffset(1, 220, 755, 'x', crawl), { x: 0, y: 0 });
   assert.deepEqual(
-    sampleContinuousMarqueeOffset(0.5, 400, 'x', { ...crawl, directionOut: 'right', directionIn: 'left' }),
-    { x: 200, y: 0 },
+    sampleContinuousMarqueeOffset(0.5, 220, 755, 'x', { ...crawl, directionOut: 'right', directionIn: 'left' }),
+    { x: 377.5, y: 0 },
   );
   assert.deepEqual(
-    sampleContinuousMarqueeOffset(1, 96, 'y', { ...crawl, type: 'carousel', directionIn: 'up', directionOut: 'down' }),
+    sampleContinuousMarqueeOffset(1, 96, 96, 'y', { ...crawl, type: 'carousel', directionIn: 'up', directionOut: 'down' }),
     { x: 0, y: 96 },
+  );
+});
+
+test('syncCrawlProgressKeys drops leftover 1@72/1@198 and keeps 0 and duration', () => {
+  const keys = [
+    { id: 'k0', frame: 0, layers: { crawl: { crawlProgress: 0 } }, groups: {}, easing: 'linear' },
+    { id: 'k72', frame: 72, layers: { crawl: { crawlProgress: 1 } }, groups: {}, easing: 'linear' },
+    { id: 'k198', frame: 198, layers: { crawl: { crawlProgress: 1 } }, groups: {}, easing: 'linear' },
+  ];
+  syncCrawlProgressKeys(keys, 'crawl', 126, () => 'k126');
+  assert.deepEqual(
+    keys.filter((key) => key.layers.crawl?.crawlProgress !== undefined).map((key) => [key.frame, key.layers.crawl.crawlProgress]),
+    [[0, 0], [126, 1]],
   );
 });

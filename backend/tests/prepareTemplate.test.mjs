@@ -166,5 +166,6 @@ test('crawl duration rebases after dynamic text without rewriting fromEnd offset
   rebaseCrawlTimeline(template);
   assert.equal(template.timeline.directors[0].durationFrames, long.durationFrames);
   assert.equal(template.timeline.cues[0].frame, 10);
-  assert.equal(template.timeline.keyframes[1].frame, long.durationFrames);
+  const endKey = template.timeline.keyframes.find((key) => key.layers['crawl-1']?.crawlProgress === 1);
+  assert.equal(endKey.frame, long.durationFrames);
 });
