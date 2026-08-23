@@ -268,10 +268,24 @@ export function TimelinePanel() {
       {dir && (
         <div className="flex h-8 shrink-0 items-center gap-3 border-b border-border px-2 text-[12px] text-ink-muted">
           <label className="flex items-center gap-1.5">Dur
-            <NumberInput value={dir.durationFrames} onChange={(v) => updateDirector(dir.id, { durationFrames: Math.max(1, Math.round(v)) })} className="h-6 w-16" />
+            <NumberInput
+              value={dir.durationFrames}
+              min={1}
+              step={1}
+              aria-label={`${dir.name} duration`}
+              onChange={(v) => updateDirector(dir.id, { durationFrames: Math.max(1, Math.round(v)) })}
+              className="h-6 w-16"
+            />
           </label>
           <label className="flex items-center gap-1.5">Offset
-            <NumberInput value={dir.offsetFrames} onChange={(v) => updateDirector(dir.id, { offsetFrames: Math.max(0, Math.round(v)) })} className="h-6 w-16" />
+            <NumberInput
+              value={dir.offsetFrames}
+              min={0}
+              step={1}
+              aria-label={`${dir.name} offset`}
+              onChange={(v) => updateDirector(dir.id, { offsetFrames: Math.max(0, Math.round(v)) })}
+              className="h-6 w-16"
+            />
           </label>
           <Checkbox label="loop" checked={dir.loop} onChange={(v) => updateDirector(dir.id, { loop: v })} />
           <Checkbox label="swing" checked={dir.swing} onChange={(v) => updateDirector(dir.id, { swing: v })} />

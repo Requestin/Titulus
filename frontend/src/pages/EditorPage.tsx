@@ -3,7 +3,14 @@
 // Template editor (DEVELOPMENT_PROMPT §8.3): toolbar + Layers | Canvas | (Props /
 // Variables) + timeline strip. Loads/saves via REST, validated on save.
 
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '@/core/api';
 import {
@@ -12,6 +19,11 @@ import {
 } from '@/core/templateValidation';
 import { toast } from '@/core/toast';
 import { cn } from '@/lib/cn';
+import {
+  nextSize,
+  readBoundedNumberPreference,
+  writeBoundedNumberPreference,
+} from '@/ui/chromePrefs';
 import { Button } from '@/components/ui/Button';
 import { useEditor, undo, redo } from '@/editor/store';
 import { Toolbar } from '@/editor/Toolbar';
@@ -23,6 +35,53 @@ import { TimelinePanel } from '@/editor/panels/TimelinePanel';
 import { effectiveTransform } from '@/editor/effectiveValues';
 import { ancestorMatrix, canvasDeltaToParent } from '@/editor/transformMath';
 
+const TREE_WIDTH = {
+  key: 'titulus.editor.treeWidth',
+  defaultValue: 240,
+  min: 180,
+  max: 360,
+} as const;
+
+const INSPECTOR_WIDTH = {
+  key: 'titulus.editor.inspectorWidth',
+  defaultValue: 320,
+  min: 320,
+  max: 480,
+} as const;
+
+type PanelWidthPreference = typeof TREE_WIDTH | typeof INSPECTOR_WIDTH;
+type PanelResize = { startX: number; startWidth: number; nextWidth: number };
+
+function readPanelWidth(preference: PanelWidthPreference): number {
+  if (typeof window === 'undefined') return preference.defaultValue;
+  try {
+    return readBoundedNumberPreference(
+      window.localStorage,
+      preference.key,
+      preference.defaultValue,
+      preference.min,
+      preference.max,
+    );
+  } catch {
+    return preference.defaultValue;
+  }
+}
+
+function persistPanelWidth(preference: PanelWidthPreference, width: number): void {
+  if (typeof window === 'undefined') return;
+  try {
+    writeBoundedNumberPreference(
+      window.localStorage,
+      preference.key,
+      width,
+      preference.min,
+      preference.max,
+    );
+  } catch {
+    // Accessing localStorage itself can fail under browser privacy policies.
+  }
+}
+
 export function EditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -32,9 +91,13 @@ export function EditorPage() {
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<'properties' | 'variables'>('properties');
   const [timelineHeight, setTimelineHeight] = useState(256);
+  const [treeWidth, setTreeWidth] = useState(() => readPanelWidth(TREE_WIDTH));
+  const [inspectorWidth, setInspectorWidth] = useState(() => readPanelWidth(INSPECTOR_WIDTH));
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const allowNavigationRef = useRef(false);
   const timelineResizeRef = useRef<{ startY: number; startHeight: number } | null>(null);
+  const treeResizeRef = useRef<PanelResize | null>(null);
+  const inspectorResizeRef = useRef<PanelResize | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,11 +216,14 @@ export function EditorPage() {
       const el = e.target as HTMLElement;
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable;
       const mod = e.ctrlKey || e.metaKey;
+      const interactiveTarget = e.target instanceof Element
+        ? e.target.closest('button, a, [role="separator"], [data-chrome-control]')
+        : null;
       if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); void save(); return; }
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+      if (typing || interactiveTarget) return;
       if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); useEditor.getState().duplicateSelected(); return; }
-      if (typing) return;
       const sel = useEditor.getState().selection;
       if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); useEditor.getState().deleteSelected(); return; }
       if (sel) {
@@ -202,6 +268,115 @@ export function EditorPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [save]);
 
+  function beginTreeResize(e: ReactPointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    treeResizeRef.current = { startX: e.clientX, startWidth: treeWidth, nextWidth: treeWidth };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function resizeTree(e: ReactPointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const drag = treeResizeRef.current;
+    if (!drag) return;
+    const width = nextSize(drag.startWidth, e.clientX - drag.startX, TREE_WIDTH);
+    drag.nextWidth = width;
+    setTreeWidth(width);
+  }
+
+  function endTreeResize(e: ReactPointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const drag = treeResizeRef.current;
+    if (!drag) return;
+    treeResizeRef.current = null;
+    persistPanelWidth(TREE_WIDTH, drag.nextWidth);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  }
+
+  function cancelTreeResize(e: ReactPointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const drag = treeResizeRef.current;
+    treeResizeRef.current = null;
+    if (drag) setTreeWidth(drag.startWidth);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  }
+
+  function beginInspectorResize(e: ReactPointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    inspectorResizeRef.current = {
+      startX: e.clientX,
+      startWidth: inspectorWidth,
+      nextWidth: inspectorWidth,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function resizeInspector(e: ReactPointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const drag = inspectorResizeRef.current;
+    if (!drag) return;
+    const width = nextSize(drag.startWidth, drag.startX - e.clientX, INSPECTOR_WIDTH);
+    drag.nextWidth = width;
+    setInspectorWidth(width);
+  }
+
+  function endInspectorResize(e: ReactPointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const drag = inspectorResizeRef.current;
+    if (!drag) return;
+    inspectorResizeRef.current = null;
+    persistPanelWidth(INSPECTOR_WIDTH, drag.nextWidth);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  }
+
+  function cancelInspectorResize(e: ReactPointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const drag = inspectorResizeRef.current;
+    inspectorResizeRef.current = null;
+    if (drag) setInspectorWidth(drag.startWidth);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  }
+
+  function resizePanelFromKeyboard(
+    e: ReactKeyboardEvent<HTMLDivElement>,
+    width: number,
+    setWidth: (value: number) => void,
+    preference: PanelWidthPreference,
+    reverseArrows = false,
+  ) {
+    const step = e.shiftKey ? 40 : 10;
+    let next: number | null = null;
+    if (e.key === 'ArrowLeft') {
+      next = nextSize(width, reverseArrows ? step : -step, preference);
+    } else if (e.key === 'ArrowRight') {
+      next = nextSize(width, reverseArrows ? -step : step, preference);
+    } else if (e.key === 'Home') {
+      next = preference.min;
+    } else if (e.key === 'End') {
+      next = preference.max;
+    }
+    if (next === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setWidth(next);
+    persistPanelWidth(preference, next);
+  }
+
   function beginTimelineResize(e: ReactPointerEvent<HTMLDivElement>) {
     timelineResizeRef.current = { startY: e.clientY, startHeight: timelineHeight };
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -232,11 +407,31 @@ export function EditorPage() {
     <div className="flex h-full flex-col">
       <Toolbar onSave={() => { void save(); }} saving={saving} />
       <div className="flex min-h-0 flex-1">
-        <aside className="w-60 shrink-0 border-r border-border bg-surface">
+        <aside
+          className="shrink-0 border-r border-border bg-surface"
+          style={{ width: treeWidth, flexBasis: treeWidth }}
+        >
           <LayersPanel />
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize Tree panel"
+          aria-valuemin={TREE_WIDTH.min}
+          aria-valuemax={TREE_WIDTH.max}
+          aria-valuenow={treeWidth}
+          tabIndex={0}
+          data-chrome-control
+          className="relative z-sticky -mx-1 w-2 shrink-0 touch-none cursor-col-resize transition-colors hover:bg-primary/30 focus-visible:bg-primary/30 focus-visible:outline-none"
+          onPointerDown={beginTreeResize}
+          onPointerMove={resizeTree}
+          onPointerUp={endTreeResize}
+          onPointerCancel={cancelTreeResize}
+          onKeyDown={(e) => resizePanelFromKeyboard(e, treeWidth, setTreeWidth, TREE_WIDTH)}
+        />
+
+        <div className="flex min-w-[200px] flex-1 flex-col">
           <div className="min-h-0 flex-1">
             <CanvasArea />
           </div>
@@ -258,7 +453,29 @@ export function EditorPage() {
           </div>
         </div>
 
-        <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-surface">
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize inspector panel"
+          aria-valuemin={INSPECTOR_WIDTH.min}
+          aria-valuemax={INSPECTOR_WIDTH.max}
+          aria-valuenow={inspectorWidth}
+          tabIndex={0}
+          data-chrome-control
+          className="relative z-sticky -mx-1 w-2 shrink-0 touch-none cursor-col-resize transition-colors hover:bg-primary/30 focus-visible:bg-primary/30 focus-visible:outline-none"
+          onPointerDown={beginInspectorResize}
+          onPointerMove={resizeInspector}
+          onPointerUp={endInspectorResize}
+          onPointerCancel={cancelInspectorResize}
+          onKeyDown={(e) => {
+            resizePanelFromKeyboard(e, inspectorWidth, setInspectorWidth, INSPECTOR_WIDTH, true);
+          }}
+        />
+
+        <aside
+          className="flex shrink-0 flex-col border-l border-border bg-surface"
+          style={{ width: inspectorWidth, flexBasis: inspectorWidth }}
+        >
           <div className="flex shrink-0 border-b border-border">
             {(['properties', 'variables'] as const).map((t) => (
               <button

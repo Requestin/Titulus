@@ -3,6 +3,7 @@
 // Inspector for the current selection: base props, transform, type-specific
 // style, and variable bindings on string fields (content / fill / src).
 
+import { useId, useState, type ReactNode } from 'react';
 import { Braces } from 'lucide-react';
 import type { Layer, Variable, VariableBinding, BlendMode } from '@runtime';
 import { anchorCompensatedUpdate } from '@runtime';
@@ -10,10 +11,22 @@ import { useEditor } from '../store';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
 import { gesturePreviewStore } from '../gesturePreview';
 import { MediaUploadButton } from '../MediaUploadButton';
-import { Field, Section, Input, NumberInput, Select, ColorInput, Checkbox } from '@/components/ui/form';
+import {
+  Checkbox,
+  CollapseAllButton,
+  ColorInput,
+  Field,
+  Input,
+  NumberInput,
+  Section,
+  SectionCollapseProvider,
+  Select,
+  type SectionCollapseSignal,
+} from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { LAYER_DEFAULT_DIMENSIONS } from '../factories';
 import { useStore } from 'zustand';
+import { nudgeAngle45 } from '@/ui/numberInputMath';
 
 const BLEND_MODES: BlendMode[] = ['normal', 'multiply', 'screen', 'add', 'overlay', 'darken', 'lighten'];
 
@@ -28,6 +41,10 @@ export function PropertiesPanel() {
   const setLayerGroup = useEditor((s) => s.setLayerGroup);
   const patch = useEditor((s) => s.patch);
   const gesturePreview = useStore(gesturePreviewStore, (s) => s.preview);
+  const [collapseSignal, setCollapseSignal] = useState<SectionCollapseSignal>({
+    version: 0,
+    open: true,
+  });
 
   if (!template || !selection) {
     return (
@@ -43,20 +60,25 @@ export function PropertiesPanel() {
     const g = template.groups.find((x) => x.id === selection.id);
     if (!g) return null;
     return (
-      <div className="overflow-auto">
-        <Section title="Group">
-          <Field label="Name">
-            <Input value={g.name} onChange={(e) => patch((t) => { const x = t.groups.find((q) => q.id === g.id); if (x) x.name = e.target.value; })} />
-          </Field>
-        </Section>
-        <TransformSection
-          id={g.id}
-          kind="group"
-          t={gesturePreview?.id === g.id && gesturePreview.kind === 'group'
-            ? gesturePreview.transform
-            : effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
-          updateTransform={updateTransform}
-        />
+      <div className="flex h-full flex-col">
+        <PropertiesToolbar signal={collapseSignal} onChange={setCollapseSignal} />
+        <div className="min-h-0 flex-1 overflow-auto">
+          <SectionCollapseProvider signal={collapseSignal}>
+            <Section title="Group">
+              <Field label="Name">
+                <Input value={g.name} onChange={(e) => patch((t) => { const x = t.groups.find((q) => q.id === g.id); if (x) x.name = e.target.value; })} />
+              </Field>
+            </Section>
+            <TransformSection
+              id={g.id}
+              kind="group"
+              t={gesturePreview?.id === g.id && gesturePreview.kind === 'group'
+                ? gesturePreview.transform
+                : effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
+              updateTransform={updateTransform}
+            />
+          </SectionCollapseProvider>
+        </div>
       </div>
     );
   }
@@ -65,52 +87,71 @@ export function PropertiesPanel() {
   if (!layer) return null;
 
   return (
-    <div className="overflow-auto">
-      <Section title="Layer">
-        <Field label="Name">
-          <Input value={layer.name} onChange={(e) => updateLayer(layer.id, (l) => { l.name = e.target.value; })} />
-        </Field>
-        {layer.type !== 'mask' && (
-          <>
-            <Field label="Opacity">
-              <NumberInput
-                value={effectiveOpacity(template, layer.opacity, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
-                min={0}
-                max={1}
-                step={0.05}
-                resetValue={1}
-                onChange={(v) => setLayerOpacity(layer.id, v)}
-              />
+    <div className="flex h-full flex-col">
+      <PropertiesToolbar signal={collapseSignal} onChange={setCollapseSignal} />
+      <div className="min-h-0 flex-1 overflow-auto">
+        <SectionCollapseProvider signal={collapseSignal}>
+          <Section title="Layer">
+            <Field label="Name">
+              <Input value={layer.name} onChange={(e) => updateLayer(layer.id, (l) => { l.name = e.target.value; })} />
             </Field>
-            <Field label="Blend">
-              <Select value={layer.blendMode} onChange={(e) => updateLayer(layer.id, (l) => { l.blendMode = e.target.value as BlendMode; })}>
-                {BLEND_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+            {layer.type !== 'mask' && (
+              <>
+                <LabeledNum
+                  label="Opacity"
+                  value={effectiveOpacity(template, layer.opacity, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  resetValue={1}
+                  onChange={(v) => setLayerOpacity(layer.id, v)}
+                />
+                <Field label="Blend">
+                  <Select value={layer.blendMode} onChange={(e) => updateLayer(layer.id, (l) => { l.blendMode = e.target.value as BlendMode; })}>
+                    {BLEND_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </Select>
+                </Field>
+              </>
+            )}
+            <Field label="Group">
+              <Select
+                value={layer.groupId ?? ''}
+                onChange={(e) => setLayerGroup(layer.id, e.target.value || null)}
+              >
+                <option value="">(none)</option>
+                {template.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </Select>
             </Field>
-          </>
-        )}
-        <Field label="Group">
-          <Select
-            value={layer.groupId ?? ''}
-            onChange={(e) => setLayerGroup(layer.id, e.target.value || null)}
-          >
-            <option value="">(none)</option>
-            {template.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </Select>
-        </Field>
-      </Section>
+          </Section>
 
-      <TransformSection
-        id={layer.id}
-        kind="layer"
-        t={gesturePreview?.id === layer.id && gesturePreview.kind === 'layer'
-          ? gesturePreview.transform
-          : effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
-        layerType={layer.type}
-        updateTransform={updateTransform}
-      />
+          <TransformSection
+            id={layer.id}
+            kind="layer"
+            t={gesturePreview?.id === layer.id && gesturePreview.kind === 'layer'
+              ? gesturePreview.transform
+              : effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
+            layerType={layer.type}
+            updateTransform={updateTransform}
+          />
 
-      <TypeSection layer={layer} variables={variables} updateLayer={updateLayer} />
+          <TypeSection layer={layer} variables={variables} updateLayer={updateLayer} />
+        </SectionCollapseProvider>
+      </div>
+    </div>
+  );
+}
+
+function PropertiesToolbar({
+  signal,
+  onChange,
+}: {
+  signal: SectionCollapseSignal;
+  onChange: (signal: SectionCollapseSignal) => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
+      <span className="text-[12px] font-semibold text-ink-muted">Properties</span>
+      <CollapseAllButton signal={signal} onChange={onChange} />
     </div>
   );
 }
@@ -138,9 +179,42 @@ function TransformSection({
           <LabeledNum label="Height" value={t.height} resetValue={dimensions?.height} onChange={(v) => set({ height: v })} />
         </>
       )}
-      <LabeledNum label="Rotate" value={t.rotation} resetValue={0} onChange={(v) => set({ rotation: v })} />
-      <LabeledNum label="Tilt X" value={t.rotationX} resetValue={0} onChange={(v) => set({ rotationX: v })} />
-      <LabeledNum label="Tilt Y" value={t.rotationY} resetValue={0} onChange={(v) => set({ rotationY: v })} />
+      <LabeledNum
+        label="Rotate"
+        value={t.rotation}
+        resetValue={0}
+        onChange={(v) => set({ rotation: v })}
+        extraActions={(
+          <AngleActions
+            label="rotation"
+            onNudge={(direction) => set({ rotation: nudgeAngle45(t.rotation, direction) })}
+          />
+        )}
+      />
+      <LabeledNum
+        label="Tilt X"
+        value={t.rotationX}
+        resetValue={0}
+        onChange={(v) => set({ rotationX: v })}
+        extraActions={(
+          <AngleActions
+            label="X rotation"
+            onNudge={(direction) => set({ rotationX: nudgeAngle45(t.rotationX, direction) })}
+          />
+        )}
+      />
+      <LabeledNum
+        label="Tilt Y"
+        value={t.rotationY}
+        resetValue={0}
+        onChange={(v) => set({ rotationY: v })}
+        extraActions={(
+          <AngleActions
+            label="Y rotation"
+            onNudge={(direction) => set({ rotationY: nudgeAngle45(t.rotationY, direction) })}
+          />
+        )}
+      />
       <LabeledNum label="Perspective" value={t.perspective} resetValue={1000} onChange={(v) => set({ perspective: v })} />
       <LabeledNum label="Scale X" value={t.scaleX} resetValue={1} step={0.05} onChange={(v) => set({ scaleX: v })} />
       <LabeledNum label="Scale Y" value={t.scaleY} resetValue={1} step={0.05} onChange={(v) => set({ scaleY: v })} />
@@ -156,17 +230,69 @@ function LabeledNum({
   onChange,
   step,
   resetValue,
+  min,
+  max,
+  extraActions,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
   step?: number;
   resetValue?: number;
+  min?: number;
+  max?: number;
+  extraActions?: ReactNode;
 }) {
+  const inputId = useId();
   return (
-    <Field label={label}>
-      <NumberInput value={value} step={step} resetValue={resetValue} onChange={onChange} />
+    <Field label={label} htmlFor={inputId}>
+      <NumberInput
+        id={inputId}
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        stepper
+        aria-label={label}
+        resetValue={resetValue}
+        extraActions={extraActions}
+        onChange={onChange}
+      />
     </Field>
+  );
+}
+
+function AngleActions({
+  label,
+  onNudge,
+}: {
+  label: string;
+  onNudge: (direction: -1 | 1) => void;
+}) {
+  const buttonClass =
+    'grid h-8 min-w-7 place-items-center rounded-md border border-border bg-surface-2 px-1 ' +
+    'text-[10px] font-semibold tabular-nums text-ink-muted hover:border-ink-faint hover:text-ink';
+  return (
+    <>
+      <button
+        type="button"
+        className={buttonClass}
+        aria-label={`Increase ${label} by 45 degrees`}
+        title="+45°"
+        onClick={() => onNudge(1)}
+      >
+        +45
+      </button>
+      <button
+        type="button"
+        className={buttonClass}
+        aria-label={`Decrease ${label} by 45 degrees`}
+        title="-45°"
+        onClick={() => onNudge(-1)}
+      >
+        -45
+      </button>
+    </>
   );
 }
 
@@ -199,12 +325,8 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
               onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.fill = v; })}
             />
           </Field>
-          <Field label="Radius">
-            <NumberInput value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.cornerRadius = v; })} />
-          </Field>
-          <Field label="Border">
-            <NumberInput value={layer.borderWidth} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.borderWidth = v; })} />
-          </Field>
+          <LabeledNum label="Radius" value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.cornerRadius = v; })} />
+          <LabeledNum label="Border" value={layer.borderWidth} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.borderWidth = v; })} />
           <Field label="Border color">
             <ColorInput value={layer.borderColor} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.borderColor = v; })} />
           </Field>
@@ -225,9 +347,7 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
               <option value="ellipse">ellipse</option>
             </Select>
           </Field>
-          <Field label="Radius">
-            <NumberInput value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.cornerRadius = v; })} />
-          </Field>
+          <LabeledNum label="Radius" value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'mask') l.cornerRadius = v; })} />
         </Section>
       );
     case 'image':
@@ -256,9 +376,7 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             </Select>
           </Field>
           {layer.type === 'image' && (
-            <Field label="Radius">
-              <NumberInput value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'image') l.cornerRadius = v; })} />
-            </Field>
+            <LabeledNum label="Radius" value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'image') l.cornerRadius = v; })} />
           )}
           {layer.type === 'video' && (
             <Checkbox label="Loop" checked={layer.loop} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'video') l.loop = v; })} />
