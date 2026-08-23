@@ -15,6 +15,9 @@ import { v4 as uuid } from 'uuid';
 import { migrateTemplate, TemplateMigrationError } from '../templateMigration.js';
 import { validateTemplate, schema, templateValidationErrorPayload } from '../templateValidation.js';
 import { prepareTemplate } from '../prepareTemplate.js';
+import { templateLocksDao } from '../operatorTables.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 function templateMigrationErrorPayload(error) {
   return {
@@ -40,6 +43,7 @@ export function templatesRouter(db, options = {}) {
   const dao = templatesRouterDao(db);
   const router = Router();
   const dataDir = options.dataDir;
+  const locks = templateLocksDao(db);
 
   router.get('/', (req, res) => {
     res.json(dao.all());
@@ -114,6 +118,56 @@ export function templatesRouter(db, options = {}) {
     return res.json(result);
   });
 
+
+  router.get('/:id/lock', (req, res) => {
+    const lock = locks.get(req.params.id);
+    res.json({ lock: lock && locks.isFresh(lock) ? lock : null });
+  });
+
+  router.post('/:id/lock', (req, res) => {
+    if (!dao.get(req.params.id)) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'not found' } });
+    const result = locks.acquire({
+      templateId: req.params.id,
+      userId: req.auth.userId,
+      username: req.auth.username,
+      token: req.auth.token,
+    });
+    if (!result.ok) return res.status(409).json({ error: { code: 'LOCKED', message: 'template is locked' }, lock: result.lock });
+    res.json({ lock: result.lock });
+  });
+
+  router.post('/:id/heartbeat', (req, res) => {
+    const lock = locks.heartbeat({ templateId: req.params.id, token: req.auth.token });
+    if (!lock) return res.status(409).json({ error: { code: 'LOCK_LOST', message: 'lock is not owned or is stale' } });
+    res.json({ lock });
+  });
+
+  router.post('/:id/unlock', (req, res) => {
+    const ok = locks.release({ templateId: req.params.id, token: req.auth.token });
+    if (!ok) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'not lock owner' } });
+    res.json({ ok: true });
+  });
+
+  router.put('/:id/thumbnail', (req, res) => {
+    const id = req.params.id;
+    if (!/^[a-zA-Z0-9._:-]{1,128}$/.test(id)) {
+      return res.status(400).json({ error: { code: 'INVALID_ID', message: 'unsafe id' } });
+    }
+    if (!dao.get(id)) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'not found' } });
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const buffer = Buffer.concat(chunks);
+      if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) {
+        return res.status(415).json({ error: { code: 'UNSUPPORTED_FORMAT', message: 'JPEG required' } });
+      }
+      const dir = resolve(dataDir, 'thumbnails');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(resolve(dir, `${id}.jpg`), buffer);
+      res.json({ url: `/thumbnails/${id}.jpg` });
+    });
+  });
+
   router.get('/:id', (req, res) => {
     const t = dao.get(req.params.id);
     if (!t) return res.status(404).json({ error: 'not found' });
@@ -123,7 +177,11 @@ export function templatesRouter(db, options = {}) {
   });
 
   router.put('/:id', (req, res) => {
-    const { name, data } = req.body ?? {};
+    const owner = locks.ownerToken(req.params.id);
+    if (owner && owner !== req.auth?.token) {
+      return res.status(409).json({ error: { code: 'LOCKED', message: 'template is locked by another user' } });
+    }
+    const { name, data, folder_id } = req.body ?? {};
     let canonicalData = data;
     if (data !== undefined) {
       const canonical = canonicalizeTemplate(data, res);
@@ -134,7 +192,7 @@ export function templatesRouter(db, options = {}) {
         return res.status(422).json({ error: templateValidationErrorPayload(errors) });
       }
     }
-    const updated = dao.update(req.params.id, { name, data: canonicalData });
+    const updated = dao.update(req.params.id, { name, data: canonicalData, folder_id });
     if (!updated) return res.status(404).json({ error: 'not found' });
     res.json(updated);
   });

@@ -65,6 +65,8 @@ function readSortBy(): TemplateSortBy {
 
 export function TemplatesPage() {
   const nav = useNavigate();
+  const [folderId, setFolderId] = useState<string | 'all'>('all');
+  const [folders, setFolders] = useState<Array<{ id: string; name: string }>>([]);
   const [items, setItems] = useState<TemplateSummary[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -79,6 +81,7 @@ export function TemplatesPage() {
   const load = useCallback(async () => {
     try {
       setItems(await api.templates.list());
+      setFolders(await api.templateFolders.list());
     } catch (e) {
       toast.error(`Failed to load templates: ${(e as Error).message}`);
       setItems([]);
@@ -89,10 +92,12 @@ export function TemplatesPage() {
     void load();
   }, [load]);
 
-  const visibleItems = useMemo(
-    () => (items ? sortTemplates(items, sortBy) : []),
-    [items, sortBy],
-  );
+  const visibleItems = useMemo(() => {
+    const rows = items ? sortTemplates(items, sortBy) : [];
+    if (folderId === 'all') return rows;
+    if (folderId === 'unassigned') return rows.filter((item) => !item.folder_id);
+    return rows.filter((item) => item.folder_id === folderId);
+  }, [items, sortBy, folderId]);
 
   function persistGridView(next: boolean) {
     setGridView(next);
@@ -198,6 +203,14 @@ export function TemplatesPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-[12px] text-ink-muted">
+            <span>Folder</span>
+            <Select aria-label="Filter by folder" value={folderId} onChange={(e) => setFolderId(e.target.value)} className="w-[10.5rem]">
+              <option value="all">All</option>
+              <option value="unassigned">Unassigned</option>
+              {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+            </Select>
+          </label>
           <label className="flex items-center gap-2 text-[12px] text-ink-muted">
             <span>Sort</span>
             <Select

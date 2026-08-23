@@ -63,6 +63,7 @@ export function SettingsPage() {
   const [holder, setHolder] = useState('');
   const [licenseBusy, setLicenseBusy] = useState(false);
   const [eventsBusy, setEventsBusy] = useState(false);
+  const [layerIdPlayout, setLayerIdPlayout] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -76,6 +77,9 @@ export function SettingsPage() {
   }, [selectedId]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void api.settings.get().then((all) => setLayerIdPlayout(all.layerIdPlayout === 'on')).catch(() => undefined);
+  }, []);
 
   const loadLicense = useCallback(async () => {
     try {
@@ -358,6 +362,28 @@ export function SettingsPage() {
               )}
             </div>
 
+            <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>
+                  <span className="font-semibold">LayerID playout</span>
+                  <span className="block text-[12px] text-ink-muted">Off by default. When on, the same LayerID replaces the occupant.</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={layerIdPlayout}
+                  onChange={async (e) => {
+                    const on = e.target.checked;
+                    setLayerIdPlayout(on);
+                    try {
+                      await api.settings.put({ layerIdPlayout: on ? 'on' : 'off' });
+                    } catch (error) {
+                      setLayerIdPlayout(!on);
+                      toast.error(error instanceof Error ? error.message : 'Failed to save LayerID setting');
+                    }
+                  }}
+                />
+              </label>
+            </div>
             <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>

@@ -34,6 +34,9 @@ function validateSlots(slots) {
     if (slot.slotId !== undefined && (typeof slot.slotId !== 'string' || !slot.slotId.trim())) {
       return `slots[${i}].slotId must be a non-empty string`;
     }
+    if (slot.kind === 'ue') {
+      return `slots[${i}].kind ue is not supported`;
+    }
   }
   return null;
 }

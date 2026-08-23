@@ -109,6 +109,7 @@ export function EditorPage() {
         if (!cancelled) {
           load(rec.data);
           setStatus('ready');
+          void api.templateLocks.acquire(id!).catch(() => toast.error('Template is locked by another user'));
         }
       } catch (e) {
         if (!cancelled) {
@@ -119,6 +120,17 @@ export function EditorPage() {
     })();
     return () => { cancelled = true; };
   }, [id, load]);
+
+  useEffect(() => {
+    if (!id) return undefined;
+    const timer = window.setInterval(() => {
+      void api.templateLocks.heartbeat(id).catch(() => undefined);
+    }, 30000);
+    return () => {
+      window.clearInterval(timer);
+      void api.templateLocks.release(id).catch(() => undefined);
+    };
+  }, [id]);
 
   const save = useCallback(async (): Promise<boolean> => {
     const t = useEditor.getState().template;

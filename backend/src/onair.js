@@ -13,7 +13,7 @@
 //
 // The manager is engine-agnostic: it just routes JSON messages.
 
-import { onAirDao } from './db.js';
+import { onAirDao, settingsDao } from './db.js';
 import { validateTemplateForAir } from './templateValidation.js';
 
 function airValidationError(validation) {
@@ -30,6 +30,16 @@ function airValidationError(validation) {
 
 function isPersistedTakeSupportedForAir(cmd) {
   return cmd?.type === 'take' && validateTemplateForAir(cmd.template).valid;
+}
+
+function resolveLayerId(template) {
+  const value = Number(template?.layerId);
+  if (!Number.isInteger(value)) return 50;
+  return Math.min(99, Math.max(1, value));
+}
+
+function layerIdPlayoutEnabled(db) {
+  return settingsDao(db).all().layerIdPlayout === 'on';
 }
 
 export class OnAirManager {
@@ -118,6 +128,17 @@ export class OnAirManager {
         template: prepared.template,
         variables: { ...(cmd.variables || {}), ...prepared.overrides },
       };
+    }
+    if (layerIdPlayoutEnabled(this.db)) {
+      const layerId = resolveLayerId(cmd.template);
+      cmd = { ...cmd, layerId };
+      const occupants = this.state[cmd.channelId] || [];
+      for (const occupant of occupants) {
+        if (occupant.templateId === cmd.templateId) continue;
+        if ((occupant.layerId ?? resolveLayerId(occupant.template)) === layerId) {
+          this.applyClear({ type: 'clear', channelId: cmd.channelId, templateId: occupant.templateId });
+        }
+      }
     }
     this.dao.set(cmd, { bringToFront: true }); // persist with z-order bump
     if (this.quarantined[cmd.channelId]) {
@@ -230,6 +251,9 @@ export class OnAirManager {
     for (const [ch, cmds] of Object.entries(this.state)) {
       channels[ch] = cmds.map((c) => ({
         templateId: c.templateId,
+        slotId: c.templateId,
+        sourceTemplateId: c.template?.id || c.templateId,
+        layerId: c.layerId ?? resolveLayerId(c.template),
         waitingContinue: this.isWaitingContinue(ch, c.templateId),
       }));
     }

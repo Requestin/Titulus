@@ -1,9 +1,18 @@
 import { id as dataFilesId, up as dataFilesUp } from './001_data_files.js';
+import { id as mediaId, up as mediaUp } from './002_media_library.js';
+import { id as foldersId, up as foldersUp } from './003_template_folders.js';
+import { id as deId, up as deUp } from './004_data_elements.js';
+import { id as locksId, up as locksUp } from './005_template_locks.js';
+import { id as rbacId, up as rbacUp } from './006_rbac_groups.js';
 
 export const MIGRATIONS = [
   { id: dataFilesId, up: dataFilesUp },
+  { id: mediaId, up: mediaUp },
+  { id: foldersId, up: foldersUp },
+  { id: deId, up: deUp },
+  { id: locksId, up: locksUp },
+  { id: rbacId, up: rbacUp },
 ];
-
 export function runMigrations(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
