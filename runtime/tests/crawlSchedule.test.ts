@@ -7,7 +7,11 @@ import { fileURLToPath } from 'node:url';
 import type { Template } from '../src/schema.js';
 import {
   CRAWL_PX_PER_SPEED_UNIT,
+  crawlDuplicatesStrip,
+  crawlPaintText,
   crawlPxPerSec,
+  joinCrawlLines,
+  sampleContinuousMarqueeOffset,
   scheduleCrawl,
   type CrawlScheduleInput,
 } from '../src/crawlSchedule.js';
@@ -208,4 +212,31 @@ test('backend and runtime scheduleCrawl stay on the same formulas', async () => 
     },
   };
   assert.deepEqual(backend.scheduleCrawl(input), scheduleCrawl(input));
+});
+
+test('continuous pause=0 paint duplicates the strip so the box can stay filled', () => {
+  const crawl = baseTicker().crawl;
+  assert.equal(crawlDuplicatesStrip(crawl), true);
+  assert.equal(crawlDuplicatesStrip({ ...crawl, animationType: 'batch' }), false);
+  assert.equal(crawlDuplicatesStrip({ ...crawl, pause: 12 }), false);
+  const strip = joinCrawlLines('New crawl', { separatorMode: 'none', separatorText: '' });
+  assert.equal(crawlPaintText(strip, { ...crawl, separatorMode: 'none' }), 'New crawlNew crawl');
+  assert.equal(
+    crawlPaintText(joinCrawlLines('A\nB', crawl), crawl),
+    'A  •  B  •  A  •  B',
+  );
+});
+
+test('continuous marquee at 0 and 1 is one measured period, not a box-clearance jump', () => {
+  const crawl = baseTicker().crawl;
+  assert.deepEqual(sampleContinuousMarqueeOffset(0, 400, 'x', crawl), { x: 0, y: 0 });
+  assert.deepEqual(sampleContinuousMarqueeOffset(1, 400, 'x', crawl), { x: -400, y: 0 });
+  assert.deepEqual(
+    sampleContinuousMarqueeOffset(0.5, 400, 'x', { ...crawl, directionOut: 'right', directionIn: 'left' }),
+    { x: 200, y: 0 },
+  );
+  assert.deepEqual(
+    sampleContinuousMarqueeOffset(1, 96, 'y', { ...crawl, type: 'carousel', directionIn: 'up', directionOut: 'down' }),
+    { x: 0, y: 96 },
+  );
 });

@@ -57,6 +57,51 @@ export function tickerLineSpan(text: string, fontSize: number): number {
   return Math.max(0, text.length * fontSize);
 }
 
+export function crawlDuplicatesStrip(
+  crawl: Pick<CrawlScheduleInput['crawl'], 'animationType' | 'pause'>,
+): boolean {
+  return crawl.animationType === 'continuous' && Math.max(0, crawl.pause) <= 0;
+}
+
+export function joinCrawlLines(
+  text: string,
+  crawl: Pick<CrawlScheduleInput['crawl'], 'separatorMode' | 'separatorText'>,
+): string {
+  if (crawl.separatorMode === 'text') return text.split('\n').join(crawl.separatorText);
+  return text;
+}
+
+export function crawlPaintText(
+  strip: string,
+  crawl: Pick<CrawlScheduleInput['crawl'], 'animationType' | 'pause' | 'separatorMode' | 'separatorText' | 'type'>,
+): string {
+  if (!crawlDuplicatesStrip(crawl) || strip.length === 0) return strip;
+  const glue = crawl.separatorMode === 'text'
+    ? crawl.separatorText
+    : (crawl.type === 'carousel' ? '\n' : '');
+  return `${strip}${glue}${strip}`;
+}
+
+export function sampleContinuousMarqueeOffset(
+  progress: number,
+  periodPx: number,
+  axis: 'x' | 'y',
+  crawl: Pick<CrawlScheduleInput['crawl'], 'type' | 'directionIn' | 'directionOut'>,
+): { x: number; y: number } {
+  const p = Math.min(1, Math.max(0, progress));
+  const period = Math.max(1, periodPx);
+  const along = 0 - p * period;
+  let signed = along;
+  if (crawl.type === 'carousel') {
+    const moveUp = crawl.directionOut === 'up' || crawl.directionIn === 'down';
+    if (!moveUp) signed = -along;
+  } else {
+    const moveLeft = crawl.directionOut === 'left' || crawl.directionIn === 'right';
+    if (!moveLeft) signed = -along;
+  }
+  return axis === 'x' ? { x: signed, y: 0 } : { x: 0, y: signed };
+}
+
 export function scheduleCrawl(input: CrawlScheduleInput): CrawlSchedule {
   const fps = Math.max(1, input.fps);
   const pxPerSec = crawlPxPerSec(input.crawl.speed);
