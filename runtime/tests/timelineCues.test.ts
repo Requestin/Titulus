@@ -119,7 +119,8 @@ test('fromEnd resolves against the owning director duration and crossed lookup i
   }, 150), 125);
   assert.equal(stop.frame, 125);
 
-  const crossed = cuesCrossed(compiled, 'secondary', 100, 130);
+  const crossed = cuesCrossed(compiled, 'secondary', 100, 130, 'reverse');
   assert.deepEqual(crossed.map((cue) => cue.frame), [125]);
-  assert.deepEqual(cuesCrossed(compiled, 'secondary', 130, 140), []);
+  assert.deepEqual(cuesCrossed(compiled, 'secondary', 100, 130, 'normal'), []);
+  assert.deepEqual(cuesCrossed(compiled, 'secondary', 130, 140, 'reverse'), []);
 });
