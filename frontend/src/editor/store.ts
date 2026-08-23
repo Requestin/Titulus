@@ -16,6 +16,7 @@ import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
 import { effectiveTransform } from './effectiveValues';
 import { ancestorMatrix, reparentTransform } from './transformMath';
+import { applyClonedTree, cloneTreeSelection, normalizeTreeSelection, type TreeRef } from './treeClipboard';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
 export type Target = { kind: 'layer' | 'group'; id: string };
@@ -138,6 +139,7 @@ export function reparentTargetAtPlayhead(
 interface EditorState {
   template: Template | null;
   selection: Selection;
+  checked: TreeRef[];
   dirty: boolean;
   zoom: number;
   gridSnap: boolean;
@@ -157,6 +159,8 @@ interface EditorState {
   setCanvas: (partial: Partial<Template['canvas']>) => void;
   addLayer: (type: LayerType) => void;
   duplicateSelected: () => void;
+  toggleChecked: (ref: TreeRef) => void;
+  clearChecked: () => void;
   deleteSelected: () => void;
   toggleVisible: (kind: 'layer' | 'group', id: string) => void;
   toggleLock: (kind: 'layer' | 'group', id: string) => void;
@@ -212,6 +216,7 @@ export const useEditor = create<EditorState>()(
     (set, get) => ({
       template: null,
       selection: null,
+      checked: [],
       dirty: false,
       zoom: 0.45,
       gridSnap: false,
@@ -224,6 +229,7 @@ export const useEditor = create<EditorState>()(
         set({
           template: t,
           selection: null,
+          checked: [],
           dirty: false,
           playhead: 0,
           playing: false,
@@ -233,6 +239,15 @@ export const useEditor = create<EditorState>()(
       },
       markSaved: () => set({ dirty: false }),
       select: (sel) => set({ selection: sel }),
+      toggleChecked: (ref) => set((s) => {
+        const exists = s.checked.some((item) => item.kind === ref.kind && item.id === ref.id);
+        return {
+          checked: exists
+            ? s.checked.filter((item) => item.kind !== ref.kind || item.id !== ref.id)
+            : [...s.checked, ref],
+        };
+      }),
+      clearChecked: () => set({ checked: [] }),
       setZoom: (z) => set({ zoom: Math.min(2, Math.max(0.1, z)) }),
       toggleGridSnap: () => set((s) => ({ gridSnap: !s.gridSnap })),
 
@@ -276,21 +291,18 @@ export const useEditor = create<EditorState>()(
       },
 
       duplicateSelected: () => {
-        const { selection, template } = get();
-        if (!selection || selection.kind !== 'layer' || !template) return;
-        const src = template.layers.find((l) => l.id === selection.id);
-        if (!src) return;
-        const copy = structuredClone(src);
-        copy.id = createId();
-        copy.name = `${src.name} copy`;
-        copy.transform.x += 24;
-        copy.transform.y += 24;
-        copy.groupId = null;
+        const { selection, template, checked } = get();
+        if (!template) return;
+        const sources = checked.length > 0 ? checked : (selection ? [selection] : []);
+        const roots = normalizeTreeSelection(template, sources);
+        if (roots.length === 0) return;
+        let next: Selection = null;
         get().patch((t) => {
-          t.layers.push(copy);
-          t.rootStack.push({ kind: 'layer', id: copy.id });
+          const cloned = cloneTreeSelection(t, roots, { createId, offset: { x: 24, y: 24 } });
+          applyClonedTree(t, cloned);
+          next = cloned.roots[0] ?? null;
         });
-        set({ selection: { kind: 'layer', id: copy.id } });
+        if (next) set({ selection: next });
       },
 
       deleteSelected: () => {
