@@ -301,3 +301,252 @@ test('builds the canonical test1 operator graph without unsupported nodes', () =
   assert.deepEqual(rootMask.dirtyDomains, ['mask_dirty']);
   assert.equal(rootMask.affectedSourceLayerIds?.length, 8);
 });
+
+test('fails closed for a nonzero layer z transform', () => {
+  const scene = template({
+    layers: [layer('image', 'image', {
+      src: '/image.png',
+      cornerRadius: 0,
+      fit: 'contain',
+      transform: { ...transform, z: 10 },
+    })],
+    rootStack: [{ kind: 'layer', id: 'image' }],
+    timeline: {
+      ...template().timeline,
+      trackDirectors: {},
+      keyframes: [],
+    },
+  });
+
+  const report = classifyRenderGraph(scene);
+
+  assert.equal(report.supported, false);
+  assert.deepEqual(report.fallbackReasons, ['layer:image:z_transform']);
+  assert.deepEqual(report.unsupportedLayerIds, ['image']);
+  assert.deepEqual(report.liveSourceLayerIds, ['image']);
+  assert.equal(report.layers.image.nodeKind, 'live_html');
+  assert.equal(report.layers.image.cacheableSource, false);
+  assert.deepEqual(report.layers.image.operatorSupport.reasons, ['z_transform']);
+});
+
+test('fails closed for an animated layer z transform', () => {
+  const scene = template({
+    layers: [layer('image', 'image', {
+      src: '/image.png',
+      cornerRadius: 0,
+      fit: 'contain',
+    })],
+    rootStack: [{ kind: 'layer', id: 'image' }],
+    timeline: {
+      ...template().timeline,
+      trackDirectors: { image: 'main' },
+      keyframes: [{
+        id: 'kf0',
+        frame: 0,
+        layers: { image: { z: 10 } },
+        groups: {},
+        easing: 'linear',
+      }],
+    },
+  });
+
+  const report = classifyRenderGraph(scene);
+
+  assert.equal(report.supported, false);
+  assert.deepEqual(report.fallbackReasons, ['layer:image:z_transform']);
+  assert.deepEqual(report.liveSourceLayerIds, ['image']);
+  assert.deepEqual(report.layers.image.animatedProps, ['z']);
+  assert.equal(report.layers.image.nodeKind, 'live_html');
+  assert.deepEqual(report.layers.image.operatorSupport.reasons, ['z_transform']);
+});
+
+test('fails closed for a crawl layer', () => {
+  const scene = template({
+    layers: [layer('crawl', 'crawl', {
+      content: 'Breaking news',
+      style: {},
+      crawlDirectorId: 'main',
+      crawl: {
+        type: 'ticker',
+        directionIn: 'left',
+        directionOut: 'left',
+        speed: 100,
+        pause: 0,
+        separatorMode: 'text',
+        separatorText: ' • ',
+        separatorImage: '',
+        animationType: 'continuous',
+        useFile: false,
+        filePath: '',
+        maxTextLengthEnabled: false,
+        maxTextLength: 0,
+      },
+    })],
+    rootStack: [{ kind: 'layer', id: 'crawl' }],
+    timeline: {
+      ...template().timeline,
+      trackDirectors: {},
+      keyframes: [],
+    },
+  });
+
+  const report = classifyRenderGraph(scene);
+
+  assert.equal(report.supported, false);
+  assert.deepEqual(report.fallbackReasons, ['layer:crawl:crawl_layer']);
+  assert.deepEqual(report.unsupportedLayerIds, ['crawl']);
+  assert.deepEqual(report.liveSourceLayerIds, ['crawl']);
+  assert.equal(report.layers.crawl.nodeKind, 'live_html');
+  assert.equal(report.layers.crawl.cacheableSource, false);
+  assert.deepEqual(report.layers.crawl.operatorSupport.reasons, ['crawl_layer']);
+});
+
+test('fails closed for a static rectangle gradient', () => {
+  const scene = template({
+    layers: [layer('gradient', 'rect', {
+      fill: '#000',
+      fillMode: 'gradient',
+      gradient: {
+        topLeft: '#f00',
+        topRight: '#0f0',
+        bottomLeft: '#00f',
+        bottomRight: '#fff',
+        weights: { topLeft: 25, topRight: 25, bottomLeft: 25, bottomRight: 25 },
+      },
+      cornerRadius: 0,
+      borderColor: '#000',
+      borderWidth: 0,
+    })],
+    rootStack: [{ kind: 'layer', id: 'gradient' }],
+    timeline: {
+      ...template().timeline,
+      trackDirectors: {},
+      keyframes: [],
+    },
+  });
+
+  const report = classifyRenderGraph(scene);
+
+  assert.equal(report.supported, false);
+  assert.deepEqual(report.fallbackReasons, ['layer:gradient:gradient_fill']);
+  assert.deepEqual(report.unsupportedLayerIds, ['gradient']);
+  assert.deepEqual(report.liveSourceLayerIds, ['gradient']);
+  assert.equal(report.layers.gradient.nodeKind, 'live_html');
+  assert.equal(report.layers.gradient.cacheableSource, false);
+  assert.deepEqual(report.layers.gradient.operatorSupport.reasons, ['gradient_fill']);
+});
+
+test('fails closed for animated rectangle gradient weights', () => {
+  const scene = template({
+    layers: [layer('gradient', 'rect', {
+      fill: '#000',
+      fillMode: 'gradient',
+      gradient: {
+        topLeft: '#f00',
+        topRight: '#0f0',
+        bottomLeft: '#00f',
+        bottomRight: '#fff',
+        weights: { topLeft: 25, topRight: 25, bottomLeft: 25, bottomRight: 25 },
+      },
+      cornerRadius: 0,
+      borderColor: '#000',
+      borderWidth: 0,
+    })],
+    rootStack: [{ kind: 'layer', id: 'gradient' }],
+    timeline: {
+      ...template().timeline,
+      trackDirectors: { gradient: 'main' },
+      keyframes: [{
+        id: 'kf0',
+        frame: 0,
+        layers: { gradient: { 'gradient.weights.topLeft': 75 } },
+        groups: {},
+        easing: 'linear',
+      }],
+    },
+  });
+
+  const report = classifyRenderGraph(scene);
+
+  assert.equal(report.supported, false);
+  assert.deepEqual(report.fallbackReasons, ['layer:gradient:gradient_fill']);
+  assert.deepEqual(report.liveSourceLayerIds, ['gradient']);
+  assert.deepEqual(report.layers.gradient.animatedProps, ['gradient.weights.topLeft']);
+  assert.equal(report.layers.gradient.nodeKind, 'live_html');
+  assert.deepEqual(report.layers.gradient.operatorSupport.reasons, ['gradient_fill']);
+});
+
+test('fails closed for a nonzero group z transform', () => {
+  const scene = template({
+    layers: [layer('image', 'image', {
+      src: '/image.png',
+      cornerRadius: 0,
+      fit: 'contain',
+      groupId: 'group',
+    })],
+    groups: [{
+      id: 'group',
+      name: 'group',
+      parentId: null,
+      visible: true,
+      locked: false,
+      transform: { ...transform, z: 10 },
+    }],
+    rootStack: [{ kind: 'group', id: 'group' }],
+    groupStacks: { group: [{ kind: 'layer', id: 'image' }] },
+    timeline: {
+      ...template().timeline,
+      trackDirectors: {},
+      keyframes: [],
+    },
+  });
+
+  const report = classifyRenderGraph(scene);
+
+  assert.equal(report.supported, false);
+  assert.deepEqual(report.fallbackReasons, ['group:group:z_transform']);
+  assert.deepEqual(report.unsupportedGroupIds, ['group']);
+  assert.equal(report.groups.group.operatorSupport.supported, false);
+  assert.deepEqual(report.groups.group.operatorSupport.reasons, ['z_transform']);
+});
+
+test('fails closed for an animated group z transform', () => {
+  const scene = template({
+    layers: [layer('image', 'image', {
+      src: '/image.png',
+      cornerRadius: 0,
+      fit: 'contain',
+      groupId: 'group',
+    })],
+    groups: [{
+      id: 'group',
+      name: 'group',
+      parentId: null,
+      visible: true,
+      locked: false,
+      transform,
+    }],
+    rootStack: [{ kind: 'group', id: 'group' }],
+    groupStacks: { group: [{ kind: 'layer', id: 'image' }] },
+    timeline: {
+      ...template().timeline,
+      trackDirectors: { group: 'main' },
+      keyframes: [{
+        id: 'kf0',
+        frame: 0,
+        layers: {},
+        groups: { group: { z: 10 } },
+        easing: 'linear',
+      }],
+    },
+  });
+
+  const report = classifyRenderGraph(scene);
+
+  assert.equal(report.supported, false);
+  assert.deepEqual(report.fallbackReasons, ['group:group:z_transform']);
+  assert.deepEqual(report.unsupportedGroupIds, ['group']);
+  assert.deepEqual(report.groups.group.animatedProps, ['z']);
+  assert.equal(report.groups.group.operatorSupport.supported, false);
+  assert.deepEqual(report.groups.group.operatorSupport.reasons, ['z_transform']);
+});
