@@ -185,9 +185,30 @@ test('POST /validate accepts an old fixture for production', async () => {
   });
 });
 
-test('unsupported draft validate and create return explicit capability details without a row', async () => {
+test('allowlisted draft validate and create persist the vNext template', async () => {
   await withTemplateServer(async ({ baseUrl, db }) => {
     const fixture = readFixture('draft', 'scene-pivot-z');
+
+    const validated = await requestJson(baseUrl, '/validate', {
+      method: 'POST',
+      body: fixture,
+    });
+    assert.equal(validated.status, 200, JSON.stringify(validated.body));
+    assert.deepEqual(validated.body, { valid: true, errors: [] });
+
+    const created = await requestJson(baseUrl, '', {
+      method: 'POST',
+      body: { name: fixture.name, data: fixture },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.deepEqual(created.body.data.capabilities, fixture.capabilities);
+    assert.ok(templatesDao(db).get(fixture.id));
+  });
+});
+
+test('unsupported draft validate and create return explicit capability details without a row', async () => {
+  await withTemplateServer(async ({ baseUrl, db }) => {
+    const fixture = readFixture('draft', 'layer-id-stack-a');
 
     const validated = await requestJson(baseUrl, '/validate', {
       method: 'POST',
@@ -208,7 +229,7 @@ test('unsupported draft validate and create return explicit capability details w
   });
 });
 
-test('legacy flat actions without a capability survive create and get unchanged', async () => {
+test('legacy flat actions convert on create and get', async () => {
   await withTemplateServer(async ({ baseUrl }) => {
     const fixture = legacyTemplateWithActions();
 
@@ -217,21 +238,18 @@ test('legacy flat actions without a capability survive create and get unchanged'
       body: { name: 'classic flat actions', data: fixture },
     });
     assert.equal(created.status, 201, JSON.stringify(created.body));
-    assert.deepEqual(created.body.data, fixture);
-    assert.deepEqual(created.body.data.timeline.actions, fixture.timeline.actions);
-    assert.equal(Object.hasOwn(created.body.data.timeline, 'cues'), false);
-    assert.equal(Object.hasOwn(created.body.data, 'capabilities'), false);
+    assert.deepEqual(created.body.data.timeline.actions, []);
+    assert.equal(created.body.data.timeline.cues.length, 2);
+    assert.ok(created.body.data.capabilities.includes('timeline.action-cues-items'));
+    assertClassicDataUnchanged(created.body.data, fixture);
 
     const fetched = await requestJson(baseUrl, `/${encodeURIComponent(fixture.id)}`);
     assert.equal(fetched.status, 200, JSON.stringify(fetched.body));
-    assert.deepEqual(fetched.body.data, fixture);
-    assert.deepEqual(fetched.body.data.timeline.actions, fixture.timeline.actions);
-    assert.equal(Object.hasOwn(fetched.body.data.timeline, 'cues'), false);
-    assert.equal(Object.hasOwn(fetched.body.data, 'capabilities'), false);
+    assert.deepEqual(fetched.body.data, created.body.data);
   });
 });
 
-test('capability-marked flat actions migrate on read and fail closed on validation and save', async () => {
+test('capability-marked flat actions migrate on read without rewrite, then persist on save', async () => {
   await withTemplateServer(async ({ baseUrl, db }) => {
     const legacy = legacyTemplateWithActions({ declareCapability: true });
     const dao = templatesDao(db);
@@ -291,30 +309,27 @@ test('capability-marked flat actions migrate on read and fail closed on validati
       method: 'POST',
       body: legacy,
     });
-    assert.equal(validated.status, 422, JSON.stringify(validated.body));
-    assert.equal(validated.body.valid, false);
-    assertUnsupportedCapabilities(validated.body, legacy.capabilities);
+    assert.equal(validated.status, 200, JSON.stringify(validated.body));
+    assert.deepEqual(validated.body, { valid: true, errors: [] });
 
     const createCandidate = { ...legacy, id: 'marked-actions-create-candidate' };
     const created = await requestJson(baseUrl, '', {
       method: 'POST',
-      body: { name: 'must not create', data: createCandidate },
+      body: { name: 'converted actions', data: createCandidate },
     });
-    assert.equal(created.status, 422, JSON.stringify(created.body));
-    assertUnsupportedCapabilities(created.body, legacy.capabilities);
-    assert.equal(dao.get(createCandidate.id), null);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.deepEqual(created.body.data.timeline.actions, []);
+    assert.ok(created.body.data.capabilities.includes('timeline.action-cues-items'));
+    assert.ok(dao.get(createCandidate.id));
 
     const updated = await requestJson(baseUrl, `/${encodeURIComponent(legacy.id)}`, {
       method: 'PUT',
-      body: { name: 'must not update', data: legacy },
+      body: { name: 'converted seeded', data: legacy },
     });
-    assert.equal(updated.status, 422, JSON.stringify(updated.body));
-    assertUnsupportedCapabilities(updated.body, legacy.capabilities);
-    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM templates').get().count, 1);
-    assert.deepEqual(
-      db.prepare('SELECT name, data FROM templates WHERE id = ?').get(legacy.id),
-      rowBefore,
-      'failed production saves must not mutate the seeded record',
-    );
+    assert.equal(updated.status, 200, JSON.stringify(updated.body));
+    assert.equal(updated.body.name, 'converted seeded');
+    assert.deepEqual(updated.body.data.timeline.actions, []);
+    assert.ok(updated.body.data.capabilities.includes('timeline.action-cues-items'));
+    assertClassicDataUnchanged(updated.body.data, legacy);
   });
 });

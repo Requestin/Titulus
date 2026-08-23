@@ -4,6 +4,20 @@
     "crawl.layer",
     "data.expanded-variable-types"
   ],
-  "supported": [],
-  "airCompatible": false
+  "supported": [
+    "crawl.layer",
+    "data.expanded-variable-types",
+    "data.media-token-resolution",
+    "data.select-map-policies",
+    "data.sources-formats",
+    "data.time-expressions",
+    "properties.position-z",
+    "rectangle.four-corner-gradient",
+    "timeline.action-cues-items",
+    "timeline.action-from-end",
+    "timeline.continue-wait",
+    "timeline.object-track-groups",
+    "timeline.protected-update-flow"
+  ],
+  "airCompatible": true
 }

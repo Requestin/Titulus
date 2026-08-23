@@ -42,8 +42,10 @@ for (const kind of ['old', 'draft'] as const) {
       const actual = classifyTemplateCapabilities(template);
 
       assert.deepEqual(actual, expected);
-      assert.deepEqual(actual.supported, [], 'P21.1 supports no vNext air capability');
-      assert.equal(actual.airCompatible, kind === 'old');
+      assert.equal(
+        actual.airCompatible,
+        actual.required.every((capability) => actual.supported.includes(capability)),
+      );
     });
   }
 }

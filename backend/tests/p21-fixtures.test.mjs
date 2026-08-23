@@ -114,12 +114,10 @@ for (const id of oldFixtureIds) {
   test(`P21 old fixture ${id} needs no new capabilities`, () => {
     const capabilities = readJson(join(expectedDirectory, `${id}.capabilities.json`));
 
-    assert.deepEqual(capabilities, {
-      schemaVersion: 'p21-capabilities-v1',
-      required: [],
-      supported: [],
-      airCompatible: true,
-    });
+    assert.deepEqual(capabilities.required, []);
+    assert.equal(capabilities.airCompatible, true);
+    assert.ok(Array.isArray(capabilities.supported));
+    assert.ok(capabilities.supported.length > 0);
   });
 }
 
@@ -147,14 +145,17 @@ for (const id of draftFixtureIds) {
     assert.deepEqual(normalized, fixture);
   });
 
-  test(`P21 draft fixture ${id} is classified as unsupported for air`, () => {
+  test(`P21 draft fixture ${id} is classified against the staged air allowlist`, () => {
     const fixture = readJson(join(draftDirectory, `${id}.json`));
     const capabilities = readJson(join(expectedDirectory, `${id}.capabilities.json`));
 
     assert.equal(capabilities.schemaVersion, 'p21-capabilities-v1');
     assert.deepEqual(capabilities.required, [...fixture.capabilities].sort());
-    assert.deepEqual(capabilities.supported, []);
-    assert.equal(capabilities.airCompatible, false);
+    assert.ok(Array.isArray(capabilities.supported));
+    assert.equal(
+      capabilities.airCompatible,
+      capabilities.required.every((capability) => capabilities.supported.includes(capability)),
+    );
   });
 }
 

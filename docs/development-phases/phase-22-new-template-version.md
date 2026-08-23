@@ -65,3 +65,25 @@ P22.7 не закрывает фазу без набора оператора.
 
 `git revert <merge-commit>`, rebuild `bg-runtime.js`.
 Allowlist — одним revert. DB — copied `app.db` до migrate-утилиты.
+
+
+## 7. P22.1 allowlist
+
+Первый воздух в эфир — только уже живые capability. В `supported[]`:
+
+- `properties.position-z`
+- `rectangle.four-corner-gradient`
+- `crawl.layer`
+- `timeline.object-track-groups`
+- `timeline.action-cues-items`
+- `timeline.action-from-end`
+- `timeline.continue-wait`
+- `timeline.protected-update-flow`
+- `data.expanded-variable-types`
+- `data.sources-formats`
+- `data.select-map-policies`
+- `data.time-expressions`
+- `data.media-token-resolution`
+
+Пока **не** в allowlist: `text.transform`, `text.shadow`, `control.layer-id-on-air`.
+Их declare без реализации по-прежнему даёт 422.

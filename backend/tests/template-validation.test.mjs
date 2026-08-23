@@ -9,6 +9,7 @@ import {
   validateTemplateForAir,
   validateTemplateSchema,
 } from '../src/templateValidation.js';
+import { classifyTemplateCapabilities } from '../../shared/templateCapabilities.mjs';
 import { normalizeControlMessage } from '../src/routes/ws.js';
 
 const fixturesDirectory = fileURLToPath(
@@ -65,13 +66,18 @@ test('production validation accepts every old fixture', () => {
   }
 });
 
-test('production validation rejects every unsupported vNext draft', () => {
+test('production validation accepts air-compatible vNext drafts and rejects the rest', () => {
   for (const id of fixtureIds(draftDirectory)) {
     const fixture = readJson(join(draftDirectory, `${id}.json`));
     const forAir = validateTemplateForAir(fixture);
     const production = validateTemplate(fixture);
+    const compatible = classifyTemplateCapabilities(fixture).airCompatible;
 
-    assertUnsupportedForAir(forAir, id);
+    if (compatible) {
+      assert.equal(forAir.valid, true, `${id}: ${JSON.stringify(forAir.errors)}`);
+    } else {
+      assertUnsupportedForAir(forAir, id);
+    }
     assert.deepEqual(production, forAir);
   }
 });
@@ -89,8 +95,20 @@ test('normalizeControlMessage accepts legacy TAKE before on-air dispatch', () =>
   assert.deepEqual(result.value.template, template);
 });
 
-test('normalizeControlMessage rejects unsupported vNext TAKE before on-air dispatch', () => {
+test('normalizeControlMessage accepts allowlisted vNext TAKE before on-air dispatch', () => {
   const template = readJson(join(draftDirectory, 'scene-pivot-z.json'));
+  const result = normalizeControlMessage({
+    type: 'take',
+    channelId: 'channel-1',
+    templateId: template.id,
+    template,
+  });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+test('normalizeControlMessage rejects unsupported vNext TAKE before on-air dispatch', () => {
+  const template = readJson(join(draftDirectory, 'layer-id-stack-a.json'));
   const result = normalizeControlMessage({
     type: 'take',
     channelId: 'channel-1',
