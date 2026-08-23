@@ -12,7 +12,28 @@
 
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
+import { migrateTemplate, TemplateMigrationError } from '../templateMigration.js';
 import { validateTemplate, schema, templateValidationErrorPayload } from '../templateValidation.js';
+
+function templateMigrationErrorPayload(error) {
+  return {
+    code: error.code,
+    message: error.message,
+    details: error.details ?? {},
+  };
+}
+
+function canonicalizeTemplate(value, res, { validationResponse = false } = {}) {
+  try {
+    return { ok: true, data: migrateTemplate(value) };
+  } catch (error) {
+    if (!(error instanceof TemplateMigrationError)) throw error;
+    const body = { error: templateMigrationErrorPayload(error) };
+    if (validationResponse) body.valid = false;
+    res.status(422).json(body);
+    return { ok: false, data: undefined };
+  }
+}
 
 export function templatesRouter(db) {
   const dao = templatesRouterDao(db);
@@ -32,12 +53,14 @@ export function templatesRouter(db) {
         error: { code: 'TEMPLATE_DATA_REQUIRED', message: 'data (Template object) required' },
       });
     }
-    const { valid, errors } = validateTemplate(data);
+    const canonical = canonicalizeTemplate(data, res);
+    if (!canonical.ok) return undefined;
+    const { valid, errors } = validateTemplate(canonical.data);
     if (!valid) {
       return res.status(422).json({ error: templateValidationErrorPayload(errors) });
     }
-    const id = data.id || uuid();
-    const created = dao.create({ id, name, data });
+    const id = canonical.data.id || uuid();
+    const created = dao.create({ id, name, data: canonical.data });
     res.status(201).json(created);
   });
 
@@ -54,7 +77,9 @@ export function templatesRouter(db) {
         },
       });
     }
-    const { valid, errors } = validateTemplate(req.body);
+    const canonical = canonicalizeTemplate(req.body, res, { validationResponse: true });
+    if (!canonical.ok) return undefined;
+    const { valid, errors } = validateTemplate(canonical.data);
     if (valid) {
       return res.status(200).json({ valid: true, errors: [] });
     }
@@ -67,18 +92,24 @@ export function templatesRouter(db) {
   router.get('/:id', (req, res) => {
     const t = dao.get(req.params.id);
     if (!t) return res.status(404).json({ error: 'not found' });
-    res.json(t);
+    const canonical = canonicalizeTemplate(t.data, res);
+    if (!canonical.ok) return undefined;
+    res.json({ ...t, data: canonical.data });
   });
 
   router.put('/:id', (req, res) => {
     const { name, data } = req.body ?? {};
+    let canonicalData = data;
     if (data !== undefined) {
-      const { valid, errors } = validateTemplate(data);
+      const canonical = canonicalizeTemplate(data, res);
+      if (!canonical.ok) return undefined;
+      canonicalData = canonical.data;
+      const { valid, errors } = validateTemplate(canonicalData);
       if (!valid) {
         return res.status(422).json({ error: templateValidationErrorPayload(errors) });
       }
     }
-    const updated = dao.update(req.params.id, { name, data });
+    const updated = dao.update(req.params.id, { name, data: canonicalData });
     if (!updated) return res.status(404).json({ error: 'not found' });
     res.json(updated);
   });

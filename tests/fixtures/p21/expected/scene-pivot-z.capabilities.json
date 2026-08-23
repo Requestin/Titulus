@@ -1,8 +1,8 @@
 {
   "schemaVersion": "p21-capabilities-v1",
   "required": [
-    "properties.pivot-axis-center",
-    "properties.position-z"
+    "properties.position-z",
+    "timeline.object-track-groups"
   ],
   "supported": [],
   "airCompatible": false

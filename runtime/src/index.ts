@@ -4,6 +4,8 @@
 // land. The IIFE bundle (window.BG) is assembled by build.mjs.
 
 export * from './schema.js';
+export * from './capabilities.js';
+export * from './normalizeTemplate.js';
 export * from './easing.js';
 export * from './transform.js';
 export * from './stackOrder.js';

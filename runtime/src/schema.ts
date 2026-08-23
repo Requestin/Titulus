@@ -34,6 +34,8 @@ export type EasingType =
 export interface Transform {
   x: number;
   y: number;
+  /** Optional depth position. Missing preserves the legacy z=0 plane. */
+  z?: number;
   width: number;
   height: number;
   rotation: number;   // degrees, Z axis
@@ -59,7 +61,15 @@ export interface VariableBinding {
   variableId: string;
 }
 
-export type VariableType = 'text' | 'image' | 'number' | 'color' | 'video';
+export type VariableType =
+  | 'text'
+  | 'image'
+  | 'number'
+  | 'color'
+  | 'video'
+  | 'multitext'
+  | 'textfile'
+  | 'time';
 
 export interface Variable {
   id: string;
@@ -74,6 +84,115 @@ export interface Variable {
   max?: number;
   step?: number;
   placeholder?: string;
+  /** Pipeline id that owns this variable's value. */
+  drivenBy?: string;
+  /** Whether Control exposes this variable to an operator. */
+  exposed?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Template data pipeline (source -> parse -> select -> map -> variables)
+// ---------------------------------------------------------------------------
+
+export type DataPathRef =
+  | { type: 'literal'; value: string }
+  | VariableBinding;
+
+export type DataSourceType = 'textfile' | 'jsonfile' | 'inline';
+export type DataSourceFormat = 'lines' | 'delimited' | 'kv' | 'json';
+
+export interface DataSourceOptions {
+  encoding?: 'utf-8';
+  skipEmpty?: boolean;
+  trim?: boolean;
+  commentPrefix?: string;
+  delimiter?: string;
+  hasHeader?: boolean;
+  columns?: string[];
+  kvSeparator?: string;
+  /** JSON Pointer or dotted path to an object/array root. */
+  rootPath?: string;
+}
+
+export interface DataSourceBase {
+  id: string;
+  label?: string;
+  format: DataSourceFormat;
+  options?: DataSourceOptions;
+}
+
+export interface InlineDataSource extends DataSourceBase {
+  type: 'inline';
+  content: string;
+  path?: never;
+}
+
+export interface FileDataSource extends DataSourceBase {
+  type: 'textfile' | 'jsonfile';
+  path: DataPathRef;
+  content?: never;
+}
+
+export type DataSource = InlineDataSource | FileDataSource;
+
+export type DataSelect =
+  | { mode: 'first' }
+  | { mode: 'last' }
+  | { mode: 'index'; index: number }
+  | { mode: 'byKey'; key: string; value: string }
+  | { mode: 'match'; key: string; pattern: string }
+  | { mode: 'all' };
+
+export type DataMapAs = 'text' | 'multitext' | 'number' | 'time' | 'image' | 'video';
+export type DataMapTarget = VariableBinding;
+
+export type DataValueTransform =
+  | { op: 'trim' }
+  | { op: 'prefix'; value: string }
+  | { op: 'suffix'; value: string }
+  | { op: 'replace'; pattern: string; replacement: string; flags?: string };
+
+export interface DataMapEntry {
+  from: string;
+  to: DataMapTarget;
+  as?: DataMapAs;
+  transform?: DataValueTransform;
+}
+
+export interface DataPipelineJoin {
+  field: string;
+  separator?: string;
+}
+
+export type MediaResolveStrategy = 'assetId' | 'url' | 'path';
+export type DataMissPolicy = 'keep' | 'clear' | 'block';
+
+export interface MediaResolvePolicy {
+  strategy: [MediaResolveStrategy, ...MediaResolveStrategy[]];
+  onMiss?: DataMissPolicy;
+  fallbackUrl?: string;
+}
+
+export interface DataPipeline {
+  id: string;
+  sourceId: string;
+  enabled?: boolean;
+  select: DataSelect;
+  map: [DataMapEntry, ...DataMapEntry[]];
+  join?: DataPipelineJoin;
+  mediaResolve?: MediaResolvePolicy;
+  onEmpty?: DataMissPolicy;
+}
+
+export type DataRunTrigger = 'take' | 'load' | 'update' | 'refresh';
+export type DataOnError = 'block' | 'keep' | 'clear';
+
+export interface TemplateData {
+  version: 1;
+  sources: DataSource[];
+  pipelines: DataPipeline[];
+  runOn?: DataRunTrigger[];
+  onError?: DataOnError;
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +230,8 @@ export interface BaseLayer {
   groupId: string | null;
 }
 
+export type TextTransformMode = 'none' | 'uppercase' | 'titlecase' | 'lowercase';
+
 export interface TextStyle {
   fontFamily: string;
   fontSize: number;
@@ -121,10 +242,14 @@ export interface TextStyle {
   letterSpacing: number;
   strokeColor: string;
   strokeWidth: number;
+  textTransform?: TextTransformMode;
   dropShadow: boolean;
   dropShadowBlur: number;
   dropShadowColor: string;
+  /** Legacy single-axis shadow offset retained for old templates. */
   dropShadowDistance: number;
+  dropShadowOffsetX?: number;
+  dropShadowOffsetY?: number;
 }
 
 export interface TextLayer extends BaseLayer {
@@ -133,13 +258,42 @@ export interface TextLayer extends BaseLayer {
   style: TextStyle;
 }
 
-export interface RectLayer extends BaseLayer {
+export type RectFillMode = 'solid' | 'gradient';
+
+export interface RectGradientWeights {
+  topLeft: number;
+  topRight: number;
+  bottomLeft: number;
+  bottomRight: number;
+}
+
+export interface RectGradient {
+  topLeft: string;
+  topRight: string;
+  bottomLeft: string;
+  bottomRight: string;
+  weights: RectGradientWeights;
+}
+
+export interface RectLayerBase extends BaseLayer {
   type: 'rect';
   fill: string | VariableBinding;
   cornerRadius: number;
   borderColor: string;
   borderWidth: number;
 }
+
+export interface SolidRectLayer extends RectLayerBase {
+  fillMode?: 'solid';
+  gradient?: never;
+}
+
+export interface GradientRectLayer extends RectLayerBase {
+  fillMode: 'gradient';
+  gradient: RectGradient;
+}
+
+export type RectLayer = SolidRectLayer | GradientRectLayer;
 
 export type ImageFit = 'stretch' | 'contain' | 'cover';
 
@@ -186,15 +340,59 @@ export interface MaskLayer extends BaseLayer {
   borderWidth: number;
 }
 
+export type CrawlKind = 'ticker' | 'carousel';
+export type CrawlHorizontalDirection = 'left' | 'right';
+export type CrawlVerticalDirection = 'up' | 'down';
+export type CrawlAxisDirection = CrawlHorizontalDirection | CrawlVerticalDirection;
+export type CrawlSeparatorMode = 'none' | 'text' | 'image';
+export type CrawlAnimationType = 'batch' | 'continuous';
+
+interface CrawlPropsBase {
+  speed: number;
+  pause: number;
+  separatorMode: CrawlSeparatorMode;
+  separatorText: string;
+  separatorImage: string;
+  animationType: CrawlAnimationType;
+  useFile: boolean;
+  filePath: string;
+  maxTextLengthEnabled: boolean;
+  maxTextLength: number;
+}
+
+export type CrawlProps = CrawlPropsBase & (
+  | {
+    type: 'ticker';
+    directionIn: CrawlHorizontalDirection;
+    directionOut: CrawlHorizontalDirection;
+  }
+  | {
+    type: 'carousel';
+    directionIn: CrawlVerticalDirection;
+    directionOut: CrawlVerticalDirection;
+  }
+);
+
+export interface CrawlLayer extends BaseLayer {
+  type: 'crawl';
+  content: string | VariableBinding;
+  style: TextStyle;
+  crawlDirectorId: string;
+  crawl: CrawlProps;
+}
+
 export type Layer =
   | TextLayer
   | RectLayer
   | ImageLayer
   | VideoLayer
   | ClockLayer
-  | MaskLayer;
+  | MaskLayer
+  | CrawlLayer;
 
-export type LayerType = Layer['type'];
+export type TemplateLayerType = Layer['type'];
+/** Layer kinds currently creatable by the classic editor shell. */
+export type LayerType = Exclude<TemplateLayerType, 'crawl'>;
 
 // ---------------------------------------------------------------------------
 // Timeline (frame-based, §6.2 timeline)
@@ -211,7 +409,20 @@ export const ANIMATABLE_PROPS = [
   'scaleX', 'scaleY',
   'opacity',
 ] as const;
-export type AnimatableProp = (typeof ANIMATABLE_PROPS)[number];
+
+/** Schema-vNext properties; kept separate from legacy runtime/editor iteration. */
+export const VNEXT_ANIMATABLE_PROPS = [
+  'z',
+  'crawlProgress',
+  'gradient.weights.topLeft',
+  'gradient.weights.topRight',
+  'gradient.weights.bottomLeft',
+  'gradient.weights.bottomRight',
+] as const;
+
+export type AnimatableProp =
+  | (typeof ANIMATABLE_PROPS)[number]
+  | (typeof VNEXT_ANIMATABLE_PROPS)[number];
 export type AnimatableValues = Partial<Record<AnimatableProp, number>>;
 
 /** Cubic-bezier handle for custom easing on a keyframe. */
@@ -265,6 +476,46 @@ export interface TimelineAction {
   tag: TimelineActionTag | null;    // for setTag
 }
 
+export type TimelineCueCommand =
+  | 'startDirector'
+  | 'stopDirector'
+  | 'stopDirectorAndWaitContinue'
+  | 'pauseDirector'
+  | 'tag';
+export type TimelineCueDirection = 'normal' | 'reverse' | 'both';
+export type TimelineCueTag = 'endScene' | 'updateData';
+
+export type TimelineCueDirectorCommand = Exclude<TimelineCueCommand, 'tag'>;
+
+export interface TimelineCueItemBase {
+  id: string;
+  lengthFrames: number;
+  direction: TimelineCueDirection;
+}
+
+export interface TimelineDirectorCueItem extends TimelineCueItemBase {
+  command: TimelineCueDirectorCommand;
+  parameterDirectorId: string;
+  parameterTag?: never;
+}
+
+export interface TimelineTagCueItem extends TimelineCueItemBase {
+  command: 'tag';
+  parameterTag: TimelineCueTag;
+  parameterDirectorId?: never;
+}
+
+export type TimelineCueItem = TimelineDirectorCueItem | TimelineTagCueItem;
+
+export interface TimelineCue {
+  id: string;
+  directorId: string;
+  frame: number;
+  fromEnd: boolean;
+  name: string;
+  items: [TimelineCueItem, ...TimelineCueItem[]];
+}
+
 export type PlaybackMode = 'bounded' | 'infinite';
 
 export interface Timeline {
@@ -276,7 +527,12 @@ export interface Timeline {
   /** layerId|groupId -> the director that animates it. */
   trackDirectors: Record<string, string>;
   keyframes: TimelineKeyframe[];
+  /** Legacy single-command action path; remains required and unchanged. */
   actions: TimelineAction[];
+  /** Additive multi-item action-cue path. */
+  cues?: TimelineCue[];
+  /** target id -> animated property -> director id. */
+  propertyTrackDirectors?: Record<string, Partial<Record<AnimatableProp, string>>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +552,24 @@ export interface TemplateMetadata {
   notes?: string;
 }
 
+export type TemplateCapability =
+  | 'control.layer-id-on-air'
+  | 'crawl.layer'
+  | 'data.expanded-variable-types'
+  | 'data.media-token-resolution'
+  | 'data.select-map-policies'
+  | 'data.sources-formats'
+  | 'data.time-expressions'
+  | 'properties.position-z'
+  | 'rectangle.four-corner-gradient'
+  | 'text.shadow'
+  | 'text.transform'
+  | 'timeline.action-cues-items'
+  | 'timeline.action-from-end'
+  | 'timeline.continue-wait'
+  | 'timeline.object-track-groups'
+  | 'timeline.protected-update-flow';
+
 export interface Template {
   schemaVersion?: string;
   id: string;
@@ -303,8 +577,14 @@ export interface Template {
   description?: string;
   tags?: string[];
   metadata?: TemplateMetadata;
+  /** Explicit schema-vNext capabilities required by this template. */
+  capabilities?: TemplateCapability[];
+  /** Cross-template playout stack rank; valid serialized values are 1..99. */
+  layerId?: number;
   canvas: Canvas;
   variables: Variable[];
+  /** Designer-owned data pipeline. Missing preserves legacy behavior. */
+  data?: TemplateData;
   groups: LayerGroup[];
   layers: Layer[];
   rootStack: RootStackEntry[];

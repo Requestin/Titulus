@@ -167,11 +167,14 @@ function layerOperatorSupport(
       || invalidAnimatedScale) {
     reasons.push('non_positive_scale');
   }
+  if ((layer.transform.z ?? 0) !== 0 || animatedProps.includes('z')) reasons.push('z_transform');
   const has3dState = layer.transform.rotationX !== 0 || layer.transform.rotationY !== 0;
   const has3dAnimation = animatedProps.includes('rotationX')
     || animatedProps.includes('rotationY')
     || animatedProps.includes('perspective');
   if (has3dState || has3dAnimation) reasons.push('3d_transform');
+  if (layer.type === 'crawl') reasons.push('crawl_layer');
+  if (layer.type === 'rect' && layer.fillMode === 'gradient') reasons.push('gradient_fill');
 
   if (layer.type === 'mask') {
     if (layer.shape !== 'rect') reasons.push(`mask_shape:${layer.shape}`);
@@ -199,6 +202,7 @@ function groupOperatorSupport(
       || invalidAnimatedScale) {
     reasons.push('non_positive_scale');
   }
+  if ((group.transform.z ?? 0) !== 0 || animatedProps.includes('z')) reasons.push('z_transform');
   const has3dState = group.transform.rotationX !== 0 || group.transform.rotationY !== 0;
   const has3dAnimation = animatedProps.includes('rotationX')
     || animatedProps.includes('rotationY')

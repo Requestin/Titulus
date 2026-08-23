@@ -125,7 +125,9 @@ function TransformSection({
   updateTransform: (id: string, partial: Partial<Layer['transform']>, kind?: 'layer' | 'group') => void;
 }) {
   const set = (partial: Partial<Layer['transform']>) => updateTransform(id, partial, kind);
-  const dimensions = layerType ? LAYER_DEFAULT_DIMENSIONS[layerType] : null;
+  const dimensions = layerType && layerType in LAYER_DEFAULT_DIMENSIONS
+    ? LAYER_DEFAULT_DIMENSIONS[layerType as keyof typeof LAYER_DEFAULT_DIMENSIONS]
+    : null;
   return (
     <Section title="Transform">
       <LabeledNum label="X" value={t.x} resetValue={0} onChange={(v) => set({ x: v })} />

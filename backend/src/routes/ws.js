@@ -9,6 +9,7 @@
 //   GET /api/onair -> { channelId: [templateId,...] }
 
 import { Router } from 'express';
+import { validateTemplateForAir } from '../templateValidation.js';
 
 const MAX_WS_CONTROL_BYTES = 256 * 1024; // 256 KB safety cap
 const SAFE_ID_RE = /^[a-zA-Z0-9._:-]{1,128}$/;
@@ -25,7 +26,7 @@ function isPlainObject(v) {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function normalizeControlMessage(msg) {
+export function normalizeControlMessage(msg) {
   if (!isPlainObject(msg)) {
     return { ok: false, code: 'INVALID_PAYLOAD', message: 'payload must be an object' };
   }
@@ -45,6 +46,17 @@ function normalizeControlMessage(msg) {
     }
     if (!isPlainObject(template)) {
       return { ok: false, code: 'INVALID_TEMPLATE', message: 'template object is required for take' };
+    }
+    const validation = validateTemplateForAir(template);
+    if (!validation.valid) {
+      const reason = validation.errors
+        .map((error) => `${error.path || '/'}: ${error.message || error.code || 'invalid template'}`)
+        .join('; ');
+      return {
+        ok: false,
+        code: 'TEMPLATE_UNSUPPORTED_FOR_AIR',
+        message: `template is unsupported for air: ${reason}`,
+      };
     }
   }
   if (type === 'update') {
