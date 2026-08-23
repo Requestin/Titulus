@@ -14,8 +14,7 @@ import {
 } from './layout';
 
 test('timeline +K list includes z after the classic transform props', () => {
-  assert.ok((TIMELINE_ANIMATABLE_PROPS as readonly string[]).includes('z'));
-  assert.ok((TIMELINE_ANIMATABLE_PROPS as readonly string[]).indexOf('z') > (TIMELINE_ANIMATABLE_PROPS as readonly string[]).indexOf('opacity') || TIMELINE_ANIMATABLE_PROPS.includes('z'));
+  assert.ok(TIMELINE_ANIMATABLE_PROPS.includes('z'));
 });
 
 test('buildLaneLayout stacks object headers and property lanes', () => {

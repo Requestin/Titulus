@@ -198,6 +198,7 @@ interface EditorState {
   setSelectedKeyframes: (keyframes: SelectedKeyframe[]) => void;
   clearSelectedKeyframes: () => void;
   assignPropertyDirector: (target: Target, prop: AnimatableProp, directorId: string) => void;
+  assignTracksToDirector: (tracks: Array<{ target: Target; prop: AnimatableProp }>, directorId: string) => void;
   moveSelectedKeyframes: (deltaFrames: number) => void;
   stretchObjectSummary: (target: Target, edge: 'start' | 'end', newEdgeFrame: number) => void;
   addKeyframeAtPlayhead: (target: Target, prop: AnimatableProp) => void;
@@ -513,6 +514,14 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => {
           if (!t.timeline.trackDirectors[target.id]) t.timeline.trackDirectors[target.id] = get().activeDirectorId;
           writePropertyDirector(t.timeline, target, prop, directorId);
+        }),
+
+      assignTracksToDirector: (tracks, directorId) =>
+        get().patch((t) => {
+          for (const track of tracks) {
+            if (!t.timeline.trackDirectors[track.target.id]) t.timeline.trackDirectors[track.target.id] = directorId;
+            writePropertyDirector(t.timeline, track.target, track.prop, directorId);
+          }
         }),
 
       moveSelectedKeyframes: (deltaFrames) => {
