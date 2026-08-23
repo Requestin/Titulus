@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { continueCommand, isWaitingContinue } from './onAirContinue';
+import { continueCommand, formatOnAirRow, isWaitingContinue, resolveOnAirRows } from './onAirContinue';
 
 test('isWaitingContinue reads the versioned details sibling', () => {
   const details = {
@@ -21,4 +21,28 @@ test('continueCommand is ACK-compatible and has no extra fields', () => {
     channelId: 'ch1',
     templateId: 'tpl',
   });
+});
+
+test('resolveOnAirRows prefers details and sorts by LayerID', () => {
+  const details = {
+    schemaVersion: 'onair-details-v1' as const,
+    channels: {
+      ch1: [
+        { templateId: 'front', layerId: 90, slotId: 'front', sourceTemplateId: 'tpl-front', waitingContinue: false },
+        { templateId: 'back', layerId: 10, slotId: 'slot-9', sourceTemplateId: 'tpl-back', waitingContinue: false },
+      ],
+    },
+  };
+  assert.deepEqual(
+    resolveOnAirRows(details, 'ch1', ['ignored']).map((item) => item.templateId),
+    ['back', 'front'],
+  );
+  assert.equal(
+    formatOnAirRow(details.channels.ch1[1], 'Lower Third'),
+    'L10 · Lower Third · slot slot-9',
+  );
+  assert.equal(
+    formatOnAirRow({ templateId: 'front', layerId: 90, slotId: 'front', sourceTemplateId: 'front', waitingContinue: false }, 'Bug'),
+    'L90 · Bug · template',
+  );
 });

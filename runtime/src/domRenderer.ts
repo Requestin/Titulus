@@ -395,6 +395,7 @@ export class TemplateRenderer {
 
   /** The template currently rendered, or null. (Used by ChannelClient for live updates.) */
   getTemplate(): Template | null { return this.template; }
+  getRoot(): HTMLElement { return this.root; }
 
   /** The variable map currently applied. */
   getVariables(): Record<string, string | number> { return this.variables; }

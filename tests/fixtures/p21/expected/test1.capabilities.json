@@ -2,6 +2,7 @@
   "schemaVersion": "p21-capabilities-v1",
   "required": [],
   "supported": [
+    "control.layer-id-on-air",
     "crawl.layer",
     "data.expanded-variable-types",
     "data.media-token-resolution",

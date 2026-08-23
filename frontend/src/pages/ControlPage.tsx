@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Copy, Check, X, Radio, Trash2 } from 'lucide-react';
 import { api, type Channel, type OnAirDetailsSnapshot, type TemplateSummary, type TemplateRecord, type Rundown } from '@/core/api';
-import { continueCommand, isWaitingContinue } from '@/control/onAirContinue';
+import { continueCommand, formatOnAirRow, isWaitingContinue, onAirOwnerLabel, resolveOnAirRows } from '@/control/onAirContinue';
 import { useControlWs, type WsStatus } from '@/core/controlWs';
 import { prepareForAir } from '@/control/prepareForAir';
 import { toast } from '@/core/toast';
@@ -64,6 +64,7 @@ export function ControlPage() {
     ? (rundownMonitorChannel || channelId || 'default')
     : (channelId || 'default');
   const monitorLive = onAir[monitorChannelId] ?? [];
+  const monitorRows = resolveOnAirRows(onAirDetails, monitorChannelId, monitorLive);
 
   const markTaken = useCallback((tid: string) => {
     setOnAir((prev) => ({ ...prev, [channelId]: Array.from(new Set([...(prev[channelId] ?? []), tid])) }));
@@ -220,15 +221,17 @@ export function ControlPage() {
         <div className="flex min-h-0 flex-col gap-4 overflow-auto p-4">
           {monitorChannelId && <ProgramMonitor channelId={monitorChannelId} />}
           <div>
-            <h3 className="mb-2 text-[12px] font-semibold text-ink-muted">On air ({monitorLive.length})</h3>
-            {monitorLive.length === 0 ? (
+            <h3 className="mb-2 text-[12px] font-semibold text-ink-muted">On air ({monitorRows.length})</h3>
+            {monitorRows.length === 0 ? (
               <p className="text-[12px] text-ink-faint">Nothing on air.</p>
             ) : (
               <ul className="space-y-1">
-                {monitorLive.map((tid) => (
-                  <li key={tid} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
-                    <span className="min-w-0 flex-1 truncate text-[13px]">{displayOnAirName(tid, templates, rundowns) ?? tid}</span>
-                    <button onClick={() => clearFromChannel(monitorChannelId, tid)} className="text-ink-faint hover:text-danger" aria-label="Clear"><X className="h-4 w-4" /></button>
+                {monitorRows.map((item) => (
+                  <li key={item.templateId} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
+                    <span className="min-w-0 flex-1 truncate text-[13px]" title={formatOnAirRow(item, displayOnAirName(item.templateId, templates, rundowns), displayOnAirOwner(item, templates, rundowns))}>
+                      {formatOnAirRow(item, displayOnAirName(item.templateId, templates, rundowns), displayOnAirOwner(item, templates, rundowns))}
+                    </span>
+                    <button onClick={() => clearFromChannel(monitorChannelId, item.templateId)} className="text-ink-faint hover:text-danger" aria-label="Clear"><X className="h-4 w-4" /></button>
                   </li>
                 ))}
               </ul>
@@ -378,6 +381,15 @@ function normalizeRundown(rundown: Rundown): Rundown {
       };
     }),
   };
+}
+
+function displayOnAirOwner(item: import('@/core/api').OnAirDetailsItem, templates: TemplateSummary[], rundowns: Rundown[]): string {
+  if (templates.some((template) => template.id === item.templateId)) return 'template';
+  for (const rundown of rundowns) {
+    const slot = rundown.slots.find((entry) => entry.slotId === item.templateId || entry.slotId === item.slotId);
+    if (slot) return `slot ${slot.slotId}`;
+  }
+  return onAirOwnerLabel(item);
 }
 
 function displayOnAirName(id: string, templates: TemplateSummary[], rundowns: Rundown[]): string {

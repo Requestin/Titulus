@@ -27,6 +27,7 @@ import {
   type PacingIdentity,
 } from './pacingProtocol.js';
 import { diffWaitingContinue } from './waitingContinueReport.js';
+import { compareAirRoots, resolveLayerId } from './airStack.js';
 export type WsStatus = 'connecting' | 'connected' | 'disconnected';
 
 /** A take/update/clear message on /ws/renderer (mirrors §7.4). */
@@ -36,6 +37,8 @@ export interface ChannelMessage {
   template?: Template;      // present on 'take'
   variables?: Record<string, string | number>;
   channelId?: string;
+  layerId?: number;
+  slotId?: string;
 }
 
 export interface ChannelClientOptions {
@@ -67,6 +70,15 @@ interface ActiveTemplate {
   graphRevision: number;
   stateRevision: number;
   dynamicGraph: boolean;
+  layerId: number;
+  takeSeq: number;
+  slotId: string;
+}
+
+export { compareAirRoots, resolveLayerId } from './airStack.js';
+
+function resolveMessageLayerId(msg: ChannelMessage): number {
+  return resolveLayerId(msg.layerId ?? msg.template?.layerId);
 }
 
 const DEFAULT_RECONNECT_MS = 3000;
@@ -80,6 +92,7 @@ export class ChannelClient {
   private disposed = false;
   private nextGraphRevision = 1;
   private lastWaitingContinue = new Map<string, boolean>();
+  private takeSeq = 0;
 
   constructor(opts: ChannelClientOptions) {
     this.opts = opts;
@@ -229,6 +242,13 @@ export class ChannelClient {
     };
   }
 
+  private restackRoots(): void {
+    const ordered = [...this.active.values()].sort(compareAirRoots);
+    for (const item of ordered) {
+      this.opts.stage.appendChild(item.renderer.getRoot());
+    }
+  }
+
   private onTake(msg: ChannelMessage): void {
     if (!msg.template) return;
     const id = msg.templateId;
@@ -247,8 +267,12 @@ export class ChannelClient {
         (node) => node.dirtyDomains.includes('props_dirty')
           || node.dirtyDomains.includes('mask_dirty'),
       ),
+      layerId: resolveMessageLayerId(msg),
+      takeSeq: ++this.takeSeq,
+      slotId: msg.slotId ?? id,
     };
     this.active.set(id, active);
+    this.restackRoots();
     renderer.playTimeline(msg.template, msg.variables ?? {},
       {
         onFrame: (info) => {
@@ -368,6 +392,7 @@ export class ChannelClient {
     a.renderer.destroy();
     this.active.delete(msg.templateId);
     this.lastWaitingContinue.delete(msg.templateId);
+    this.restackRoots();
     this.opts.onActiveCount?.(this.active.size);
     this.publishCurrentGraph();
     this.reportWaitingContinue();

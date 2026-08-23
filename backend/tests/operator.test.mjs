@@ -92,27 +92,52 @@ test('admin keeps all groups; operator has control and files.read; no UE group',
   db.close();
 });
 
-test('LayerID setting default OFF; when ON same layer replaces occupant', () => {
+test('LayerID playout default ON; OFF stacks same layer, ON replaces occupant', () => {
   const db = openDb(':memory:');
-  const manager = new OnAirManager(db);
   const renderer = { readyState: 1, send() {}, close() {} };
-  manager.registerRenderer('ch1', renderer);
   const a = { type: 'take', channelId: 'ch1', templateId: 'slot-a', template: oldTest };
   const b = { type: 'take', channelId: 'ch1', templateId: 'slot-b', template: oldTest };
+
+  const manager = new OnAirManager(db);
+  manager.registerRenderer('ch1', renderer);
   manager.handleControlCommand(a);
   manager.handleControlCommand(b);
-  assert.deepEqual(manager.onAirTemplateIds().ch1, ['slot-a', 'slot-b']);
+  assert.deepEqual(manager.onAirTemplateIds().ch1, ['slot-b']);
+  assert.equal(manager.onAirDetails().channels.ch1[0].layerId, 50);
 
-  db.prepare(`INSERT INTO settings (key, value) VALUES ('layerIdPlayout', 'on')`).run();
+  db.prepare(`INSERT INTO settings (key, value) VALUES ('layerIdPlayout', 'off')`).run();
+  const managerOff = new OnAirManager(db);
+  managerOff.registerRenderer('ch1', renderer);
+  managerOff.handleControlCommand(a);
+  managerOff.handleControlCommand(b);
+  assert.deepEqual(managerOff.onAirTemplateIds().ch1, ['slot-a', 'slot-b']);
+  assert.deepEqual(
+    managerOff.onAirDetails().channels.ch1.map((item) => item.layerId),
+    [50, 50],
+  );
+
+  managerOff.handleControlCommand({ type: 'clear', channelId: 'ch1' });
+  db.prepare(`UPDATE settings SET value = 'on' WHERE key = 'layerIdPlayout'`).run();
+  const withLayer = (templateId, layerId) => ({
+    type: 'take',
+    channelId: 'ch1',
+    templateId,
+    template: {
+      ...oldTest,
+      layerId,
+      capabilities: ['control.layer-id-on-air'],
+    },
+  });
   const managerOn = new OnAirManager(db);
   managerOn.registerRenderer('ch1', renderer);
-  managerOn.handleControlCommand(a);
-  managerOn.handleControlCommand(b);
-  assert.deepEqual(managerOn.onAirTemplateIds().ch1, ['slot-b']);
-  const details = managerOn.onAirDetails();
-  assert.equal(details.channels.ch1[0].layerId, 50);
-  assert.equal(details.channels.ch1[0].slotId, 'slot-b');
-  assert.equal(managerOn.onAirTemplateIds().ch1[0], 'slot-b');
+  managerOn.handleControlCommand(withLayer('low', 10));
+  managerOn.handleControlCommand(withLayer('high', 90));
+  managerOn.handleControlCommand(withLayer('low-replace', 10));
+  assert.deepEqual(managerOn.onAirTemplateIds().ch1, ['high', 'low-replace']);
+  assert.deepEqual(
+    managerOn.onAirDetails().channels.ch1.map((item) => item.layerId),
+    [90, 10],
+  );
   db.close();
 });
 

@@ -206,7 +206,7 @@ test('allowlisted draft validate and create persist the vNext template', async (
   });
 });
 
-test('unsupported draft validate and create return explicit capability details without a row', async () => {
+test('LayerID draft validate and create persist the vNext template', async () => {
   await withTemplateServer(async ({ baseUrl, db }) => {
     const fixture = readFixture('draft', 'layer-id-stack-a');
 
@@ -214,16 +214,36 @@ test('unsupported draft validate and create return explicit capability details w
       method: 'POST',
       body: fixture,
     });
+    assert.equal(validated.status, 200, JSON.stringify(validated.body));
+    assert.deepEqual(validated.body, { valid: true, errors: [] });
+
+    const created = await requestJson(baseUrl, '', {
+      method: 'POST',
+      body: { name: fixture.name, data: fixture },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.deepEqual(created.body.data.capabilities, fixture.capabilities);
+    assert.ok(templatesDao(db).get(fixture.id));
+  });
+});
+
+test('unknown capability validate and create return no row', async () => {
+  await withTemplateServer(async ({ baseUrl, db }) => {
+    const fixture = structuredClone(readFixture('old', 'test'));
+    fixture.capabilities = ['future.unregistered-capability'];
+
+    const validated = await requestJson(baseUrl, '/validate', {
+      method: 'POST',
+      body: fixture,
+    });
     assert.equal(validated.status, 422, JSON.stringify(validated.body));
     assert.equal(validated.body.valid, false);
-    assertUnsupportedCapabilities(validated.body, fixture.capabilities);
 
     const created = await requestJson(baseUrl, '', {
       method: 'POST',
       body: { name: fixture.name, data: fixture },
     });
     assert.equal(created.status, 422, JSON.stringify(created.body));
-    assertUnsupportedCapabilities(created.body, fixture.capabilities);
     assert.equal(templatesDao(db).get(fixture.id), null);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM templates').get().count, 0);
   });

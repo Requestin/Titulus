@@ -25,6 +25,23 @@ function takeCommand(template) {
   };
 }
 
+function withLayerId(cmd, layerId) {
+  return { ...cmd, layerId };
+}
+
+function undeclaredZTemplate(id) {
+  const fixture = readFixture('old', 'test');
+  return {
+    ...fixture,
+    id,
+    layers: fixture.layers.map((layer, index) => (
+      index === 0
+        ? { ...layer, transform: { ...layer.transform, z: 12 } }
+        : layer
+    )),
+  };
+}
+
 function fakeOpenRenderer() {
   const messages = [];
   return {
@@ -36,24 +53,18 @@ function fakeOpenRenderer() {
   };
 }
 
-test('clears quarantined persisted takes before replaying valid legacy takes in z-order', () => {
+test('clears quarantined persisted takes before replaying valid takes in z-order', () => {
   const db = openDb(':memory:');
   try {
     const dao = onAirDao(db);
-    const unsupportedBackTake = takeCommand({
-      ...readFixture('draft', 'layer-id-stack-a'),
-      id: 'p21-layer-id-stack-back',
-    });
+    const unsupportedBackTake = takeCommand(undeclaredZTemplate('p21-quarantined-back'));
     const legacyBackTake = takeCommand(readFixture('old', 'test'));
-    const unsupportedFrontTake = takeCommand({
-      ...readFixture('draft', 'layer-id-stack-a'),
-      id: 'p21-layer-id-stack-front',
-    });
-    const legacyFrontTake = takeCommand(readFixture('old', 'test1'));
+    const unsupportedFrontTake = takeCommand(undeclaredZTemplate('p21-quarantined-front'));
+    const layerFrontTake = takeCommand(readFixture('draft', 'layer-id-stack-a'));
     dao.set(unsupportedBackTake);
     dao.set(legacyBackTake);
     dao.set(unsupportedFrontTake);
-    dao.set(legacyFrontTake);
+    dao.set(layerFrontTake);
 
     const manager = new OnAirManager(db);
     const renderer = fakeOpenRenderer();
@@ -71,7 +82,7 @@ test('clears quarantined persisted takes before replaying valid legacy takes in 
         templateId: unsupportedFrontTake.templateId,
       },
       legacyBackTake,
-      legacyFrontTake,
+      layerFrontTake,
     ]);
     assert.deepEqual(
       dao.get(channelId, unsupportedBackTake.templateId),
@@ -82,14 +93,14 @@ test('clears quarantined persisted takes before replaying valid legacy takes in 
       unsupportedFrontTake,
     );
     assert.deepEqual(manager.onAirTemplateIds(), {
-      [channelId]: [legacyBackTake.templateId, legacyFrontTake.templateId],
+      [channelId]: [legacyBackTake.templateId, layerFrontTake.templateId],
     });
   } finally {
     db.close();
   }
 });
 
-test('rejects unsupported direct takes before persistence or renderer fanout', () => {
+test('rejects undeclared-capability takes before persistence or renderer fanout', () => {
   const db = openDb(':memory:');
   try {
     const dao = onAirDao(db);
@@ -97,10 +108,10 @@ test('rejects unsupported direct takes before persistence or renderer fanout', (
     const renderer = fakeOpenRenderer();
     manager.registerRenderer(channelId, renderer);
 
-    const unsupportedTake = takeCommand(readFixture('draft', 'layer-id-stack-a'));
+    const unsupportedTake = takeCommand(undeclaredZTemplate('p21-undeclared-z'));
     assert.throws(
       () => manager.handleControlCommand(unsupportedTake),
-      /unsupported.*capabilit/i,
+      /unsupported.*capabilit|missing/i,
     );
     assert.equal(dao.get(channelId, unsupportedTake.templateId), null);
     assert.deepEqual(renderer.messages, []);
@@ -109,8 +120,8 @@ test('rejects unsupported direct takes before persistence or renderer fanout', (
     const legacyTake = takeCommand(readFixture('old', 'test'));
     manager.handleControlCommand(legacyTake);
 
-    assert.deepEqual(dao.get(channelId, legacyTake.templateId), legacyTake);
-    assert.deepEqual(renderer.messages, [legacyTake]);
+    assert.deepEqual(dao.get(channelId, legacyTake.templateId), withLayerId(legacyTake, 50));
+    assert.deepEqual(renderer.messages, [withLayerId(legacyTake, 50)]);
     assert.deepEqual(manager.onAirTemplateIds(), {
       [channelId]: [legacyTake.templateId],
     });
@@ -119,7 +130,7 @@ test('rejects unsupported direct takes before persistence or renderer fanout', (
   }
 });
 
-test('accepts allowlisted vNext takes and fans them out', () => {
+test('accepts allowlisted vNext takes and stamps layerId on fanout', () => {
   const db = openDb(':memory:');
   try {
     const dao = onAirDao(db);
@@ -127,14 +138,16 @@ test('accepts allowlisted vNext takes and fans them out', () => {
     const renderer = fakeOpenRenderer();
     manager.registerRenderer(channelId, renderer);
 
-    const allowlistedTake = takeCommand(readFixture('draft', 'scene-pivot-z'));
+    const allowlistedTake = takeCommand(readFixture('draft', 'layer-id-stack-a'));
     manager.handleControlCommand(allowlistedTake);
 
-    assert.deepEqual(dao.get(channelId, allowlistedTake.templateId), allowlistedTake);
-    assert.deepEqual(renderer.messages, [allowlistedTake]);
+    const stamped = withLayerId(allowlistedTake, 42);
+    assert.deepEqual(dao.get(channelId, allowlistedTake.templateId), stamped);
+    assert.deepEqual(renderer.messages, [stamped]);
     assert.deepEqual(manager.onAirTemplateIds(), {
       [channelId]: [allowlistedTake.templateId],
     });
+    assert.equal(manager.onAirDetails().channels[channelId][0].layerId, 42);
   } finally {
     db.close();
   }

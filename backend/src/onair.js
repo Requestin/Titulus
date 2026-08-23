@@ -39,7 +39,7 @@ function resolveLayerId(template) {
 }
 
 function layerIdPlayoutEnabled(db) {
-  return settingsDao(db).all().layerIdPlayout === 'on';
+  return settingsDao(db).all().layerIdPlayout !== 'off';
 }
 
 export class OnAirManager {
@@ -129,9 +129,9 @@ export class OnAirManager {
         variables: { ...(cmd.variables || {}), ...prepared.overrides },
       };
     }
+    const layerId = resolveLayerId(cmd.template);
+    cmd = { ...cmd, layerId };
     if (layerIdPlayoutEnabled(this.db)) {
-      const layerId = resolveLayerId(cmd.template);
-      cmd = { ...cmd, layerId };
       const occupants = this.state[cmd.channelId] || [];
       for (const occupant of occupants) {
         if (occupant.templateId === cmd.templateId) continue;

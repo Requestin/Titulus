@@ -5,6 +5,7 @@
     "data.expanded-variable-types"
   ],
   "supported": [
+    "control.layer-id-on-air",
     "crawl.layer",
     "data.expanded-variable-types",
     "data.media-token-resolution",

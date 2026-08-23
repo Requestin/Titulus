@@ -134,7 +134,7 @@ test('reconnect replays takes only and never a continue', () => {
 
     const reconnect = fakeOpenRenderer();
     manager.registerRenderer(channelId, reconnect);
-    assert.deepEqual(reconnect.messages, [legacyTake]);
+    assert.deepEqual(reconnect.messages, [{ ...legacyTake, layerId: 50 }]);
     assert.equal(reconnect.messages.some((msg) => msg.type === 'continue'), false);
   } finally {
     db.close();

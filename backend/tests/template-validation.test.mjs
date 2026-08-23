@@ -107,8 +107,21 @@ test('normalizeControlMessage accepts allowlisted vNext TAKE before on-air dispa
   assert.equal(result.ok, true, JSON.stringify(result));
 });
 
-test('normalizeControlMessage rejects unsupported vNext TAKE before on-air dispatch', () => {
+test('normalizeControlMessage accepts LayerID vNext TAKE before on-air dispatch', () => {
   const template = readJson(join(draftDirectory, 'layer-id-stack-a.json'));
+  const result = normalizeControlMessage({
+    type: 'take',
+    channelId: 'channel-1',
+    templateId: template.id,
+    template,
+  });
+
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+test('normalizeControlMessage rejects a missing inferred capability before on-air dispatch', () => {
+  const template = structuredClone(readJson(join(oldDirectory, 'test.json')));
+  template.layers[0].transform.z = 12;
   const result = normalizeControlMessage({
     type: 'take',
     channelId: 'channel-1',
@@ -118,5 +131,5 @@ test('normalizeControlMessage rejects unsupported vNext TAKE before on-air dispa
 
   assert.equal(result.ok, false);
   assert.equal(result.code, 'TEMPLATE_UNSUPPORTED_FOR_AIR');
-  assert.match(result.message, /unsupported.*capabilit/i);
+  assert.match(result.message, /missing|unsupported|capabilit/i);
 });
