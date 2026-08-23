@@ -130,6 +130,7 @@ function transformCorner(
 
   x *= t.scaleX;
   y *= t.scaleY;
+  z += t.z ?? 0;
 
   const persp = t.perspective > 0 ? t.perspective : 1000;
   if (t.rotationX !== 0 || t.rotationY !== 0) {
