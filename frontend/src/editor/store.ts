@@ -15,6 +15,7 @@ import type {
 import { ANIMATABLE_PROPS, createDefaultTransform } from '@runtime';
 import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
+import { attachCrawlTimeline } from './crawlTimeline';
 import { effectiveAnimatableValues, effectiveTransform } from './effectiveValues';
 import { ancestorMatrix, reparentTransform } from './transformMath';
 import { applyClonedTree, cloneTreeSelection, normalizeTreeSelection, type TreeRef } from './treeClipboard';
@@ -312,7 +313,9 @@ export const useEditor = create<EditorState>()(
       updateLayer: (id, mutator) =>
         get().patch((t) => {
           const l = t.layers.find((x) => x.id === id);
-          if (l) mutator(l);
+          if (!l) return;
+          mutator(l);
+          if (l.type === 'crawl') attachCrawlTimeline(t, l);
         }),
 
       setLayerOpacity: (id, opacity) =>
@@ -323,6 +326,10 @@ export const useEditor = create<EditorState>()(
       updateTransform: (id, partial, kind = 'layer') =>
         get().patch((t) => {
           editTransformAtPlayhead(t, { kind, id }, partial, currentPlayhead());
+          if (kind === 'layer') {
+            const layer = t.layers.find((item) => item.id === id);
+            if (layer?.type === 'crawl') attachCrawlTimeline(t, layer);
+          }
         }),
 
       setName: (name) => get().patch((t) => { t.name = name; }),
@@ -336,6 +343,7 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => {
           t.layers.push(layer);
           t.rootStack.push({ kind: 'layer', id: layer.id });
+          if (layer.type === 'crawl') attachCrawlTimeline(t, layer);
         });
         set({ selection: { kind: 'layer', id: layer.id } });
       },
@@ -513,6 +521,7 @@ export const useEditor = create<EditorState>()(
       removeDirector: (id) => {
         const t0 = get().template;
         if (!t0 || !canRemoveDirector(t0.timeline.directors, id)) return;
+        if (t0.layers.some((layer) => layer.type === 'crawl' && layer.crawlDirectorId === id)) return;
         get().patch((t) => {
           t.timeline.directors = t.timeline.directors.filter((d) => d.id !== id);
           for (const k of Object.keys(t.timeline.trackDirectors)) {

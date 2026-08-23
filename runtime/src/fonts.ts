@@ -53,7 +53,7 @@ export async function ensureFonts(fonts: FontSpec[]): Promise<void> {
 export function collectFonts(layers: { type: string; style?: { fontFamily: string; fontWeight?: string } }[]): FontSpec[] {
   const map = new Map<string, FontSpec>();
   for (const l of layers) {
-    if ((l.type === 'text' || l.type === 'clock') && l.style) {
+    if ((l.type === 'text' || l.type === 'clock' || l.type === 'crawl') && l.style) {
       const k = `${l.style.fontFamily}|${l.style.fontWeight ?? 'normal'}`;
       if (!map.has(k)) map.set(k, { family: l.style.fontFamily, weight: l.style.fontWeight });
     }
