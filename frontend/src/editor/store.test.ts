@@ -137,3 +137,28 @@ test('each layer type exposes its own size reset defaults', () => {
     assert.equal(layer.transform.height, LAYER_DEFAULT_DIMENSIONS[type].height);
   }
 });
+
+test("editing a tracked z writes the current keyframe and leaves the base unchanged", () => {
+  const template = createDefaultTemplate();
+  const layer = createLayer("rect", "Animated rectangle");
+  layer.id = "animated-rectangle";
+  template.layers.push(layer);
+  template.rootStack.push({ kind: "layer", id: layer.id });
+  template.timeline.keyframes.push({
+    id: "start",
+    frame: 0,
+    layers: { [layer.id]: { z: 8 } },
+    groups: {},
+    easing: "power2.out",
+  });
+  template.timeline.trackDirectors[layer.id] = "default";
+  useEditor.getState().load(template);
+  useEditor.getState().setPlayhead(20);
+
+  useEditor.getState().updateTransform(layer.id, { z: 40 });
+
+  const updated = useEditor.getState().template!;
+  const current = updated.timeline.keyframes.find((keyframe) => keyframe.frame === 20)!;
+  assert.equal(updated.layers.find((item) => item.id === layer.id)!.transform.z, undefined);
+  assert.equal(current.layers[layer.id]?.z, 40);
+});

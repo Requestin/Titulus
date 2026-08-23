@@ -49,7 +49,7 @@ function pruneKf(t: Template, kf: TimelineKeyframe): void {
   }
 }
 
-const ANIMATABLE_SET = new Set<string>(ANIMATABLE_PROPS);
+const ANIMATABLE_SET = new Set<string>([...ANIMATABLE_PROPS, 'z']);
 
 function hasAnimatedProp(t: Template, target: Target, prop: AnimatableProp): boolean {
   return t.timeline.keyframes.some((k) => {

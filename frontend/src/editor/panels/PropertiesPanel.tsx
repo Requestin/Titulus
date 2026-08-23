@@ -3,8 +3,8 @@
 // Inspector for the current selection: base props, transform, type-specific
 // style, and variable bindings on string fields (content / fill / src).
 
-import { useId, useState, type ReactNode } from 'react';
-import { Braces } from 'lucide-react';
+import { useId, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { Braces, Link2, Link2Off } from 'lucide-react';
 import type { Layer, Variable, VariableBinding, BlendMode } from '@runtime';
 import { anchorCompensatedUpdate } from '@runtime';
 import { useEditor } from '../store';
@@ -27,6 +27,14 @@ import { cn } from '@/lib/cn';
 import { LAYER_DEFAULT_DIMENSIONS } from '../factories';
 import { useStore } from 'zustand';
 import { nudgeAngle45 } from '@/ui/numberInputMath';
+import {
+  axisPresetX,
+  axisPresetY,
+  canvasFitSize,
+  has25dCost,
+  lockedScale,
+  type AxisPreset,
+} from '../axisPresets';
 
 const BLEND_MODES: BlendMode[] = ['normal', 'multiply', 'screen', 'add', 'overlay', 'darken', 'lighten'];
 
@@ -75,6 +83,7 @@ export function PropertiesPanel() {
               t={gesturePreview?.id === g.id && gesturePreview.kind === 'group'
                 ? gesturePreview.transform
                 : effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
+              canvas={template.canvas}
               updateTransform={updateTransform}
             />
           </SectionCollapseProvider>
@@ -131,6 +140,7 @@ export function PropertiesPanel() {
               ? gesturePreview.transform
               : effectiveTransform(template, layer.transform, { kind: 'layer', id: layer.id }, playhead, activeDirectorId)}
             layerType={layer.type}
+            canvas={template.canvas}
             updateTransform={updateTransform}
           />
 
@@ -157,26 +167,44 @@ function PropertiesToolbar({
 }
 
 function TransformSection({
-  id, kind, t, layerType, updateTransform,
+  id, kind, t, layerType, canvas, updateTransform,
 }: {
   id: string;
   kind: 'layer' | 'group';
   t: Layer['transform'];
   layerType?: Layer['type'];
+  canvas: { width: number; height: number };
   updateTransform: (id: string, partial: Partial<Layer['transform']>, kind?: 'layer' | 'group') => void;
 }) {
+  const [scaleLocked, setScaleLocked] = useState(false);
   const set = (partial: Partial<Layer['transform']>) => updateTransform(id, partial, kind);
+  const setScale = (next: Partial<Pick<Layer['transform'], 'scaleX' | 'scaleY'>>) => {
+    set(scaleLocked ? lockedScale(t, next) : next);
+  };
   const dimensions = layerType && layerType in LAYER_DEFAULT_DIMENSIONS
     ? LAYER_DEFAULT_DIMENSIONS[layerType as keyof typeof LAYER_DEFAULT_DIMENSIONS]
     : null;
   return (
     <Section title="Transform">
+      {has25dCost(t) && (
+        <p role="status" className="text-[12px] text-warning">
+          2.5D (Z or tilt) makes the frame more expensive. Use it only when layers need to intersect in depth.
+        </p>
+      )}
       <LabeledNum label="X" value={t.x} resetValue={0} onChange={(v) => set({ x: v })} />
       <LabeledNum label="Y" value={t.y} resetValue={0} onChange={(v) => set({ y: v })} />
+      <LabeledNum label="Z" value={t.z ?? 0} resetValue={0} onChange={(v) => set({ z: v })} />
       {kind === 'layer' && (
         <>
           <LabeledNum label="Width" value={t.width} resetValue={dimensions?.width} onChange={(v) => set({ width: v })} />
           <LabeledNum label="Height" value={t.height} resetValue={dimensions?.height} onChange={(v) => set({ height: v })} />
+          <Field label="Fit canvas">
+            <div className="flex flex-wrap gap-1">
+              <ChromeButton aria-label="Fit to canvas" onClick={() => set(canvasFitSize(canvas, 'screen', t))}>Screen</ChromeButton>
+              <ChromeButton aria-label="Fit width to canvas" onClick={() => set(canvasFitSize(canvas, 'width', t))}>Width</ChromeButton>
+              <ChromeButton aria-label="Fit height to canvas" onClick={() => set(canvasFitSize(canvas, 'height', t))}>Height</ChromeButton>
+            </div>
+          </Field>
         </>
       )}
       <LabeledNum
@@ -216,11 +244,124 @@ function TransformSection({
         )}
       />
       <LabeledNum label="Perspective" value={t.perspective} resetValue={1000} onChange={(v) => set({ perspective: v })} />
-      <LabeledNum label="Scale X" value={t.scaleX} resetValue={1} step={0.05} onChange={(v) => set({ scaleX: v })} />
-      <LabeledNum label="Scale Y" value={t.scaleY} resetValue={1} step={0.05} onChange={(v) => set({ scaleY: v })} />
-      <LabeledNum label="Anchor X" value={t.anchorX} resetValue={0} step={0.05} onChange={(v) => set(anchorCompensatedUpdate(t, { anchorX: v }))} />
-      <LabeledNum label="Anchor Y" value={t.anchorY} resetValue={0} step={0.05} onChange={(v) => set(anchorCompensatedUpdate(t, { anchorY: v }))} />
+      <LabeledNum
+        label="Scale X"
+        value={t.scaleX}
+        resetValue={1}
+        step={0.05}
+        onChange={(v) => setScale({ scaleX: v })}
+        extraActions={(
+          <ChromeButton
+            pressed={scaleLocked}
+            aria-label={scaleLocked ? 'Unlock scale axes' : 'Lock scale axes'}
+            title={scaleLocked ? 'Unlock scale' : 'Lock scale'}
+            onClick={() => setScaleLocked((current) => !current)}
+          >
+            {scaleLocked
+              ? <Link2 className="h-3.5 w-3.5" aria-hidden />
+              : <Link2Off className="h-3.5 w-3.5" aria-hidden />}
+          </ChromeButton>
+        )}
+      />
+      <LabeledNum label="Scale Y" value={t.scaleY} resetValue={1} step={0.05} onChange={(v) => setScale({ scaleY: v })} />
+      <LabeledNum
+        label="Anchor X"
+        value={t.anchorX}
+        resetValue={0}
+        step={0.05}
+        onChange={(v) => set(anchorCompensatedUpdate(t, { anchorX: v }))}
+        extraActions={(
+          <AxisPresets
+            axis="x"
+            current={t.anchorX}
+            onPick={(preset) => set(axisPresetX(t, preset))}
+          />
+        )}
+      />
+      <LabeledNum
+        label="Anchor Y"
+        value={t.anchorY}
+        resetValue={0}
+        step={0.05}
+        onChange={(v) => set(anchorCompensatedUpdate(t, { anchorY: v }))}
+        extraActions={(
+          <AxisPresets
+            axis="y"
+            current={t.anchorY}
+            onPick={(preset) => set(axisPresetY(t, preset))}
+          />
+        )}
+      />
     </Section>
+  );
+}
+
+
+const CHROME_BUTTON =
+  'grid h-8 min-w-7 place-items-center rounded-md border border-border bg-surface-2 px-1.5 ' +
+  'text-[10px] font-semibold tabular-nums text-ink-muted hover:border-ink-faint hover:text-ink ' +
+  'aria-pressed:border-primary aria-pressed:text-primary';
+
+function ChromeButton({
+  children,
+  onClick,
+  pressed,
+  title,
+  ...props
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  pressed?: boolean;
+  title?: string;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'children' | 'type'>) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-pressed={pressed}
+      className={CHROME_BUTTON}
+      onClick={onClick}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function AxisPresets({
+  axis,
+  current,
+  onPick,
+}: {
+  axis: 'x' | 'y';
+  current: number;
+  onPick: (preset: AxisPreset) => void;
+}) {
+  const presets: Array<{ value: AxisPreset; label: string; name: string }> = axis === 'x'
+    ? [
+        { value: 0, label: 'L', name: 'left' },
+        { value: 0.5, label: 'C', name: 'center' },
+        { value: 1, label: 'R', name: 'right' },
+      ]
+    : [
+        { value: 0, label: 'T', name: 'top' },
+        { value: 0.5, label: 'C', name: 'center' },
+        { value: 1, label: 'B', name: 'bottom' },
+      ];
+  return (
+    <>
+      {presets.map((preset) => (
+        <ChromeButton
+          key={`${axis}-${preset.label}`}
+          pressed={Math.abs(current - preset.value) < 1e-6}
+          aria-label={`Set ${axis === 'x' ? 'horizontal' : 'vertical'} axis to ${preset.name}`}
+          title={preset.name}
+          onClick={() => onPick(preset.value)}
+        >
+          {preset.label}
+        </ChromeButton>
+      ))}
+    </>
   );
 }
 
