@@ -2,8 +2,8 @@
   "id": "p21-scene-pivot-z",
   "name": "P21 Scene Pivot and Z",
   "capabilities": [
-    "properties.pivot-axis-center",
-    "properties.position-z"
+    "properties.position-z",
+    "timeline.object-track-groups"
   ],
   "canvas": {
     "width": 1920,

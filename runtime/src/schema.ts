@@ -560,7 +560,6 @@ export type TemplateCapability =
   | 'data.select-map-policies'
   | 'data.sources-formats'
   | 'data.time-expressions'
-  | 'properties.pivot-axis-center'
   | 'properties.position-z'
   | 'rectangle.four-corner-gradient'
   | 'text.shadow'
