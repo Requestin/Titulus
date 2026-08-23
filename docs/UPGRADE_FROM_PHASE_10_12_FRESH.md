@@ -259,10 +259,18 @@ TITULUS_PACING_MODE=one_tick
 ```text
 /                    → 127.0.0.1:3011
 /api/, /ws           → 127.0.0.1:3002
-/uploads/, /fonts/   → 127.0.0.1:3002
+/uploads/, /thumbnails/, /fonts/   → 127.0.0.1:3002
 /channel.html        → 127.0.0.1:3002
 /bg-runtime.js       → 127.0.0.1:3002
 ```
+
+
+После первого boot current backend создаёт `$TITULUS_DATA/data-files` и
+`$TITULUS_DATA/thumbnails`. `TITULUS_FILE_ROOTS` оставляйте пустым, пока
+оператору не нужны extra text-file roots. Если переносите **копию** старой
+`app.db`, `openDb` накатывает additive `001_data_files`…`006_rbac_groups`
+и не пересобирает uploads/WebP. Не открывайте боевую базу первым прогоном
+нового кода.
 
 Не оставляйте active proxy на `:3000`/`:3001`. Не публикуйте 3011 или 3002
 напрямую в интернет. Current Nginx/systemd snippets приведены в fresh
