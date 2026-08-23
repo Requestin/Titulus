@@ -15,7 +15,7 @@ import type {
 import { ANIMATABLE_PROPS, createDefaultTransform } from '@runtime';
 import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
-import { attachCrawlTimeline } from './crawlTimeline';
+import { attachAllCrawlTimelines, attachCrawlTimeline } from './crawlTimeline';
 import { effectiveAnimatableValues, effectiveTransform } from './effectiveValues';
 import { ancestorMatrix, reparentTransform } from './transformMath';
 import { applyClonedTree, cloneTreeSelection, normalizeTreeSelection, type TreeRef } from './treeClipboard';
@@ -275,6 +275,7 @@ export const useEditor = create<EditorState>()(
       selectedCueId: null,
 
       load: (t) => {
+        attachAllCrawlTimelines(t);
         syncPlayhead(0, false);
         set({
           template: t,
@@ -517,7 +518,10 @@ export const useEditor = create<EditorState>()(
       clearSelectedKeyframes: () => set({ selectedKeyframes: [] }),
       selectCue: (id) => set({ selectedCueId: id, selectedKeyframes: id ? [] : get().selectedKeyframes }),
 
-      setTimelineMeta: (partial) => get().patch((t) => { Object.assign(t.timeline, partial); }),
+      setTimelineMeta: (partial) => get().patch((t) => {
+        Object.assign(t.timeline, partial);
+        if (partial.fps != null) attachAllCrawlTimelines(t);
+      }),
 
       addDirector: () => {
         const t0 = get().template;
@@ -542,9 +546,11 @@ export const useEditor = create<EditorState>()(
           if (isProtectedUpdateDirector(d) && partial.name !== undefined) {
             const { name: _ignored, ...rest } = partial;
             Object.assign(d, rest);
-            return;
+          } else {
+            Object.assign(d, partial);
           }
-          Object.assign(d, partial);
+          const crawl = t.layers.find((layer) => layer.type === 'crawl' && layer.crawlDirectorId === id);
+          if (crawl && crawl.type === 'crawl') attachCrawlTimeline(t, crawl);
         }),
 
       removeDirector: (id) => {

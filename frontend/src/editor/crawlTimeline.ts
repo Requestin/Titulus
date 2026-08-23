@@ -71,6 +71,16 @@ export function attachCrawlTimeline(template: Template, layer: CrawlLayer): void
   syncCrawlProgressKeys(template.timeline.keyframes, layer.id, durationFrames, createId);
 }
 
+export function attachAllCrawlTimelines(template: Template): void {
+  for (const layer of template.layers) {
+    if (layer.type === 'crawl') attachCrawlTimeline(template, layer);
+  }
+}
+
+export function isCrawlDirector(template: Template, directorId: string): boolean {
+  return template.layers.some((layer) => layer.type === 'crawl' && layer.crawlDirectorId === directorId);
+}
+
 export function isCrawlContentBinding(value: string | VariableBinding): value is VariableBinding {
   return typeof value === 'object' && value !== null && value.type === 'variable';
 }

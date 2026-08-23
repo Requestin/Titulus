@@ -5,6 +5,7 @@ import { Checkbox, NumberInput } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { useEditor, type Target } from '../store';
 import { requestContinue, usePlayhead } from '../playheadStore';
+import { isCrawlDirector } from '../crawlTimeline';
 import { canRemoveDirector, listCuesForDirector } from '../timelineCues';
 import {
   collectTracks,
@@ -244,6 +245,8 @@ export function TimelinePanel() {
               value={director.durationFrames}
               min={1}
               step={1}
+              disabled={isCrawlDirector(current, director.id)}
+              title={isCrawlDirector(current, director.id) ? 'Считается из текста, размера бокса и Speed' : undefined}
               aria-label={`${director.name} duration`}
               onChange={(value) => updateDirector(director.id, { durationFrames: Math.max(1, Math.round(value)) })}
               className="h-6 w-16"
