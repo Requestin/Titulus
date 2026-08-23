@@ -34,7 +34,6 @@ import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, t
 import { reuseOrCreateDirectorMachine, type DirectorMachine } from './directorMachine.js';
 import { effectiveGradient, gradientBackgroundCss } from './rectGradient.js';
 import {
-  crawlDuplicatesStrip,
   crawlPaintText,
   joinCrawlLines,
   sampleContinuousMarqueeOffset,
@@ -1210,7 +1209,6 @@ export class TemplateRenderer {
         const transformed = applyTextTransform(resolved, s.textTransform);
         const strip = joinCrawlLines(transformed, layer.crawl);
         const display = crawlPaintText(strip, layer.crawl);
-        const duplicate = crawlDuplicatesStrip(layer.crawl);
         this.setStyle(el, cache, 'overflow', 'hidden');
         this.setStyle(content, cache, 'fontFamily', `"${s.fontFamily}", system-ui, sans-serif`);
         this.setStyle(content, cache, 'fontSize', `${s.fontSize}px`);
@@ -1229,11 +1227,11 @@ export class TemplateRenderer {
         this.setStyle(content, cache, 'display', 'block');
         this.setText(content, cache, 'textContent', display);
         let offset;
-        if (duplicate) {
+        if (layer.crawl.pause <= 0) {
           const axis = layer.crawl.type === 'carousel' ? 'y' : 'x';
-          const measured = axis === 'x' ? content.scrollWidth : content.scrollHeight;
+          const measured = Math.max(1, axis === 'x' ? content.scrollWidth : content.scrollHeight);
           const boxExtent = axis === 'x' ? layer.transform.width : layer.transform.height;
-          offset = sampleContinuousMarqueeOffset(progress, measured / 2, boxExtent, axis, layer.crawl);
+          offset = sampleContinuousMarqueeOffset(progress, measured, boxExtent, axis, layer.crawl);
         } else {
           offset = sampleCrawlOffset({
             content: resolved,

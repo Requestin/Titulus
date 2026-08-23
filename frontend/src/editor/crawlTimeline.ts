@@ -1,4 +1,6 @@
 import {
+  joinCrawlLines,
+  measureTickerStripPx,
   scheduleCrawl,
   syncCrawlProgressKeys,
   type CrawlLayer,
@@ -36,12 +38,14 @@ export function resolvedCrawlText(template: Template, layer: CrawlLayer): string
 export function attachCrawlTimeline(template: Template, layer: CrawlLayer): void {
   const directorId = layer.crawlDirectorId || createId();
   layer.crawlDirectorId = directorId;
+  const text = joinCrawlLines(resolvedCrawlText(template, layer), layer.crawl);
   const scheduled = scheduleCrawl({
     content: resolvedCrawlText(template, layer),
     fps: template.timeline.fps,
     box: { width: layer.transform.width, height: layer.transform.height },
     fontSize: layer.style.fontSize,
     align: layer.style.align,
+    stripPx: measureTickerStripPx(text, layer.style),
     crawl: layer.crawl,
   });
   const durationFrames = Math.max(1, scheduled.durationFrames);

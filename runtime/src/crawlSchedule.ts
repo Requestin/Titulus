@@ -8,6 +8,7 @@ export type CrawlScheduleInput = {
   box: { width: number; height: number };
   fontSize: number;
   align: CrawlScheduleAlign;
+  stripPx?: number;
   crawl: {
     type: 'ticker' | 'carousel';
     directionIn: 'left' | 'right' | 'up' | 'down';
@@ -53,8 +54,25 @@ export function splitCrawlLines(
   return lines.map((line) => line.slice(0, max));
 }
 
+export const CRAWL_TICKER_EM = 0.55;
+
 export function tickerLineSpan(text: string, fontSize: number): number {
-  return Math.max(0, text.length * fontSize);
+  return Math.max(0, text.length * fontSize * CRAWL_TICKER_EM);
+}
+
+export function measureTickerStripPx(
+  text: string,
+  style: { fontFamily?: string; fontSize: number; fontWeight?: string | number; letterSpacing?: number },
+): number {
+  const tracking = Math.max(0, text.length - 1) * (style.letterSpacing ?? 0);
+  const fallback = tickerLineSpan(text, style.fontSize) + tracking;
+  if (typeof document === 'undefined') return Math.max(1, fallback);
+  const ctx = document.createElement('canvas').getContext('2d');
+  if (!ctx) return Math.max(1, fallback);
+  const weight = style.fontWeight ?? 400;
+  const family = style.fontFamily ?? 'Inter';
+  ctx.font = `${weight} ${style.fontSize}px "${family}", system-ui, sans-serif`;
+  return Math.max(1, ctx.measureText(text).width + tracking);
 }
 
 export function crawlDuplicatesStrip(
@@ -183,9 +201,13 @@ export function scheduleCrawl(input: CrawlScheduleInput): CrawlSchedule {
 
   if (pause === 0) {
     let strip = 0;
-    for (let i = 0; i < lineSpans.length; i += 1) {
-      strip += lineSpans[i] ?? 0;
-      if (i < lineSpans.length - 1) strip += separatorSpan;
+    if (typeof input.stripPx === 'number' && input.stripPx > 0 && axis === 'x') {
+      strip = input.stripPx;
+    } else {
+      for (let i = 0; i < lineSpans.length; i += 1) {
+        strip += lineSpans[i] ?? 0;
+        if (i < lineSpans.length - 1) strip += separatorSpan;
+      }
     }
     // Continuous is the same pass as batch (enter In, fully leave Out) and then loops.
     const travel = strip + boxExtent;
