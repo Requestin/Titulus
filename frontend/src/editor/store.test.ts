@@ -221,3 +221,33 @@ test('duplicateSelected deep-copies a group subtree and its timeline in one patc
   assert.equal(updated.timeline.keyframes[0]!.layers.inside?.y, 33);
   assert.equal(useEditor.getState().selection?.id, copyGroup.id);
 });
+
+test('moving a group writes only the group transform and leaves child geometry untouched', () => {
+  const template = createDefaultTemplate();
+  const group = {
+    id: 'group',
+    name: 'Group',
+    parentId: null,
+    visible: true,
+    locked: false,
+    transform: createDefaultTransform(40, 60),
+  };
+  const layer = createLayer('rect', 'Child');
+  layer.id = 'child';
+  layer.groupId = 'group';
+  layer.transform.x = 12;
+  layer.transform.y = 8;
+  template.groups.push(group);
+  template.layers.push(layer);
+  template.rootStack.push({ kind: 'group', id: 'group' });
+  template.groupStacks.group = [{ kind: 'layer', id: 'child' }];
+  useEditor.getState().load(template);
+
+  useEditor.getState().updateTransform('group', { x: 90, y: 75 }, 'group');
+
+  const updated = useEditor.getState().template!;
+  assert.equal(updated.groups[0]!.transform.x, 90);
+  assert.equal(updated.groups[0]!.transform.y, 75);
+  assert.equal(updated.layers[0]!.transform.x, 12);
+  assert.equal(updated.layers[0]!.transform.y, 8);
+});
