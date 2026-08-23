@@ -30,3 +30,4 @@
 | 19 | [phase-19-cost-model.md](phase-19-cost-model.md) | DONE |
 | 20 | [phase-20-visual-frame-pacing.md](phase-20-visual-frame-pacing.md) | DONE — visual acceptance; strict SDI semantic evidence deferred |
 | 21 | [phase-21-new-designer-merge.md](phase-21-new-designer-merge.md) | DONE — capability port; visual PASS; Unreal/VS excluded |
+| 22 | [phase-22-new-template-version.md](phase-22-new-template-version.md) | IN PROGRESS — convert + staged air allowlist |
