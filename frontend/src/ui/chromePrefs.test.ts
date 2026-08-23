@@ -3,9 +3,11 @@ import test from 'node:test';
 import {
   clamp,
   nextSize,
+  readAllowedStringPreference,
   readBooleanPreference,
   readBoundedNumberPreference,
   type StorageLike,
+  writeAllowedStringPreference,
   writeBooleanPreference,
   writeBoundedNumberPreference,
 } from './chromePrefs';
@@ -113,4 +115,39 @@ test('clamp and nextSize apply panel bounds without mutating their inputs', () =
   assert.equal(nextSize(630, 25, bounds), 640);
   assert.equal(nextSize(170, -25, bounds), 160);
   assert.deepEqual(bounds, before);
+});
+
+const SORT_BY = ['modified', 'name'] as const;
+
+test('allowed string preferences accept only allowlisted values', () => {
+  const storage = memoryStorage({
+    sort: 'name',
+    garbage: 'created',
+    empty: '',
+  });
+
+  assert.equal(readAllowedStringPreference(storage, 'sort', SORT_BY, 'modified'), 'name');
+  assert.equal(readAllowedStringPreference(storage, 'garbage', SORT_BY, 'modified'), 'modified');
+  assert.equal(readAllowedStringPreference(storage, 'empty', SORT_BY, 'modified'), 'modified');
+  assert.equal(readAllowedStringPreference(storage, 'missing', SORT_BY, 'modified'), 'modified');
+});
+
+test('allowed string preference reads and writes tolerate unavailable storage', () => {
+  assert.equal(
+    readAllowedStringPreference(throwingStorage, 'sort', SORT_BY, 'modified'),
+    'modified',
+  );
+  assert.doesNotThrow(() =>
+    writeAllowedStringPreference(throwingStorage, 'sort', SORT_BY, 'name'),
+  );
+});
+
+test('allowed string writes persist allowlisted values and ignore others', () => {
+  const storage = memoryStorage({ sort: 'modified' });
+
+  writeAllowedStringPreference(storage, 'sort', SORT_BY, 'name');
+  assert.equal(storage.values.get('sort'), 'name');
+
+  writeAllowedStringPreference(storage, 'sort', SORT_BY, 'created' as 'name');
+  assert.equal(storage.values.get('sort'), 'name');
 });
