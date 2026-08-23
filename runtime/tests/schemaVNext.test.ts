@@ -1,6 +1,7 @@
 import {
   createDefaultTemplate,
   createDefaultTransform,
+  type CrawlProps,
   type Layer,
   type RectLayer,
   type Template,
@@ -109,6 +110,24 @@ const crawlLayerVNext = {
     maxTextLength: 80,
   },
 } satisfies Layer;
+
+const invalidTickerAxis = {
+  type: 'ticker',
+  directionIn: 'up',
+  directionOut: 'left',
+  speed: 5,
+  pause: 0,
+  separatorMode: 'none',
+  separatorText: '',
+  separatorImage: '',
+  animationType: 'batch',
+  useFile: false,
+  filePath: '',
+  maxTextLengthEnabled: false,
+  maxTextLength: 80,
+// @ts-expect-error ticker directions are horizontal only
+} satisfies CrawlProps;
+void invalidTickerAxis;
 
 const expandedVariables = [
   {

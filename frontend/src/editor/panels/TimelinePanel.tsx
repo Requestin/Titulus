@@ -68,7 +68,8 @@ function collectAllTracks(template: Template): TimelineTrack[] {
   return tracks.sort((a, b) => {
     const byName = targetLabel(template, a.target).localeCompare(targetLabel(template, b.target));
     if (byName !== 0) return byName;
-    return ANIMATABLE_PROPS.indexOf(a.prop) - ANIMATABLE_PROPS.indexOf(b.prop);
+    const order = ANIMATABLE_PROPS as readonly AnimatableProp[];
+    return order.indexOf(a.prop) - order.indexOf(b.prop);
   });
 }
 

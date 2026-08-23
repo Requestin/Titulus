@@ -27,6 +27,10 @@ const LAYER_ICON: Record<LayerType, ComponentType<{ className?: string }>> = {
   text: Type, rect: Square, image: ImageIcon, video: Video, clock: Clock, mask: MaskIcon,
 };
 
+function iconForLayer(type: string): ComponentType<{ className?: string }> {
+  return LAYER_ICON[type as LayerType] ?? Square;
+}
+
 type EntryKey = `${RootStackEntry['kind']}:${string}`;
 type DragIntent =
   | { type: 'inside'; groupId: string }
@@ -283,7 +287,7 @@ export function LayersPanel() {
               <div className="fixed inset-0 z-dropdown" onClick={() => setAddOpen(false)} />
               <div className="absolute right-0 top-8 z-dropdown w-40 overflow-hidden rounded-md border border-border bg-surface-2 py-1 shadow-xl">
                 {LAYER_TYPES.map((type) => {
-                  const Icon = LAYER_ICON[type];
+                  const Icon = iconForLayer(type);
                   return (
                     <button
                       key={type}
@@ -398,7 +402,7 @@ function Row({
   const groupDropActive = !isLayer && dragIntent?.type === 'inside' && dragIntent.groupId === entry.id;
   const lineBefore = dragIntent?.type === 'before' && dragIntent.key === key;
   const lineAfter = dragIntent?.type === 'after' && dragIntent.key === key;
-  const Icon = isLayer ? LAYER_ICON[(obj as { type: LayerType }).type] : Folder;
+  const Icon = isLayer ? iconForLayer((obj as { type: string }).type) : Folder;
   const children = !isLayer ? (template.groupStacks[entry.id] ?? []) : [];
 
   function rename(name: string) {

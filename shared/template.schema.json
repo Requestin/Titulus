@@ -25,6 +25,37 @@
       "maxItems": 32
     },
     "metadata": { "$ref": "#/$defs/templateMetadata" },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "control.layer-id-on-air",
+          "crawl.layer",
+          "data.expanded-variable-types",
+          "data.media-token-resolution",
+          "data.select-map-policies",
+          "data.sources-formats",
+          "data.time-expressions",
+          "properties.pivot-axis-center",
+          "properties.position-z",
+          "rectangle.four-corner-gradient",
+          "text.shadow",
+          "text.transform",
+          "timeline.action-cues-items",
+          "timeline.action-from-end",
+          "timeline.continue-wait",
+          "timeline.object-track-groups",
+          "timeline.protected-update-flow"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "layerId": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 99
+    },
     "canvas": {
       "type": "object",
       "required": ["width", "height", "background"],
@@ -60,7 +91,8 @@
         "items": { "$ref": "#/$defs/stackEntry" }
       }
     },
-    "timeline": { "$ref": "#/$defs/timeline" }
+    "timeline": { "$ref": "#/$defs/timeline" },
+    "data": { "$ref": "#/$defs/templateData" }
   },
 
   "$defs": {
@@ -105,6 +137,7 @@
       "properties": {
         "x": { "type": "number" },
         "y": { "type": "number" },
+        "z": { "type": "number" },
         "width": { "type": "number" },
         "height": { "type": "number" },
         "rotation": { "type": "number" },
@@ -125,8 +158,10 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "label": { "type": "string" },
-        "type": { "type": "string", "enum": ["text", "image", "number", "color", "video"] },
+        "type": { "type": "string", "enum": ["text", "multitext", "textfile", "image", "number", "color", "video", "time"] },
         "defaultValue": { "type": ["string", "number"] },
+        "drivenBy": { "type": "string", "minLength": 1 },
+        "exposed": { "type": "boolean" },
         "description": { "type": "string" },
         "required": { "type": "boolean" },
         "options": {
@@ -148,7 +183,7 @@
         },
         {
           "if": {
-            "properties": { "type": { "enum": ["text", "image", "color", "video"] } }
+            "properties": { "type": { "enum": ["text", "multitext", "textfile", "image", "color", "video", "time"] } }
           },
           "then": {
             "properties": { "defaultValue": { "type": "string" } }
@@ -195,7 +230,13 @@
         "dropShadow": { "type": "boolean" },
         "dropShadowBlur": { "type": "number" },
         "dropShadowColor": { "type": "string" },
-        "dropShadowDistance": { "type": "number" }
+        "dropShadowDistance": { "type": "number" },
+        "textTransform": {
+          "type": "string",
+          "enum": ["none", "uppercase", "titlecase", "lowercase"]
+        },
+        "dropShadowOffsetX": { "type": "number" },
+        "dropShadowOffsetY": { "type": "number" }
       }
     },
     "layer": {
@@ -205,7 +246,7 @@
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
-        "type": { "type": "string", "enum": ["text", "rect", "image", "video", "clock", "mask"] },
+        "type": { "type": "string", "enum": ["text", "rect", "image", "video", "clock", "mask", "crawl"] },
         "visible": { "type": "boolean" },
         "locked": { "type": "boolean" },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
@@ -215,6 +256,8 @@
         "content": { "$ref": "#/$defs/stringOrBinding" },
         "style": { "$ref": "#/$defs/textStyle" },
         "fill": { "$ref": "#/$defs/stringOrBinding" },
+        "fillMode": { "type": "string", "enum": ["solid", "gradient"] },
+        "gradient": { "$ref": "#/$defs/fourCornerGradient" },
         "cornerRadius": { "type": "number" },
         "borderColor": { "type": "string" },
         "borderWidth": { "type": "number" },
@@ -226,7 +269,9 @@
         "startTime": { "type": "number" },
         "targetTime": { "type": "number" },
         "maskMode": { "type": "string", "enum": ["normal", "inverted"] },
-        "shape": { "type": "string", "enum": ["rect", "ellipse"] }
+        "shape": { "type": "string", "enum": ["rect", "ellipse"] },
+        "crawlDirectorId": { "type": "string", "minLength": 1 },
+        "crawl": { "$ref": "#/$defs/crawlProps" }
       },
       "allOf": [
         {
@@ -248,6 +293,51 @@
               "cornerRadius": { "type": "number" },
               "borderColor": { "type": "string" },
               "borderWidth": { "type": "number" }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["fillMode"],
+            "properties": { "fillMode": { "enum": ["solid", "gradient"] } }
+          },
+          "then": {
+            "properties": {
+              "type": { "const": "rect" }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["fillMode"],
+            "properties": { "fillMode": { "const": "gradient" } }
+          },
+          "then": {
+            "required": ["gradient"]
+          }
+        },
+        {
+          "if": {
+            "required": ["gradient"]
+          },
+          "then": {
+            "required": ["fillMode"],
+            "properties": {
+              "type": { "const": "rect" },
+              "fillMode": { "const": "gradient" }
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              { "required": ["crawl"] },
+              { "required": ["crawlDirectorId"] }
+            ]
+          },
+          "then": {
+            "properties": {
+              "type": { "const": "crawl" }
             }
           }
         },
@@ -299,8 +389,334 @@
               "borderWidth": { "type": "number" }
             }
           }
+        },
+        {
+          "if": { "properties": { "type": { "const": "crawl" } } },
+          "then": {
+            "required": ["content", "style", "crawlDirectorId", "crawl"],
+            "properties": {
+              "content": { "$ref": "#/$defs/stringOrBinding" },
+              "style": { "$ref": "#/$defs/textStyle" },
+              "crawlDirectorId": { "type": "string", "minLength": 1 },
+              "crawl": { "$ref": "#/$defs/crawlProps" }
+            }
+          }
         }
       ]
+    },
+    "gradientWeights": {
+      "type": "object",
+      "required": ["topLeft", "topRight", "bottomLeft", "bottomRight"],
+      "additionalProperties": false,
+      "properties": {
+        "topLeft": { "type": "number", "minimum": 0, "maximum": 100 },
+        "topRight": { "type": "number", "minimum": 0, "maximum": 100 },
+        "bottomLeft": { "type": "number", "minimum": 0, "maximum": 100 },
+        "bottomRight": { "type": "number", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "fourCornerGradient": {
+      "type": "object",
+      "required": ["topLeft", "topRight", "bottomLeft", "bottomRight", "weights"],
+      "additionalProperties": false,
+      "properties": {
+        "topLeft": { "type": "string" },
+        "topRight": { "type": "string" },
+        "bottomLeft": { "type": "string" },
+        "bottomRight": { "type": "string" },
+        "weights": { "$ref": "#/$defs/gradientWeights" }
+      }
+    },
+    "crawlProps": {
+      "type": "object",
+      "required": [
+        "type",
+        "directionIn",
+        "directionOut",
+        "speed",
+        "pause",
+        "separatorMode",
+        "separatorText",
+        "separatorImage",
+        "animationType",
+        "useFile",
+        "filePath",
+        "maxTextLengthEnabled",
+        "maxTextLength"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["ticker", "carousel"] },
+        "directionIn": { "type": "string", "enum": ["left", "right", "up", "down"] },
+        "directionOut": { "type": "string", "enum": ["left", "right", "up", "down"] },
+        "speed": { "type": "number", "exclusiveMinimum": 0 },
+        "pause": { "type": "number", "minimum": 0 },
+        "separatorMode": { "type": "string", "enum": ["none", "text", "image"] },
+        "separatorText": { "type": "string" },
+        "separatorImage": { "type": "string" },
+        "animationType": { "type": "string", "enum": ["batch", "continuous"] },
+        "useFile": { "type": "boolean" },
+        "filePath": { "type": "string" },
+        "maxTextLengthEnabled": { "type": "boolean" },
+        "maxTextLength": { "type": "number", "minimum": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["type"],
+            "properties": { "type": { "const": "ticker" } }
+          },
+          "then": {
+            "properties": {
+              "directionIn": { "enum": ["left", "right"] },
+              "directionOut": { "enum": ["left", "right"] }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["type"],
+            "properties": { "type": { "const": "carousel" } }
+          },
+          "then": {
+            "properties": {
+              "directionIn": { "enum": ["up", "down"] },
+              "directionOut": { "enum": ["up", "down"] }
+            }
+          }
+        }
+      ]
+    },
+    "dataPath": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "literal" },
+            "value": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "variableId"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "variable" },
+            "variableId": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "dataSourceOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "encoding": { "type": "string", "enum": ["utf-8"] },
+        "delimiter": { "type": "string", "minLength": 1 },
+        "columns": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "skipEmpty": { "type": "boolean" },
+        "trim": { "type": "boolean" },
+        "hasHeader": { "type": "boolean" },
+        "commentPrefix": { "type": "string" },
+        "kvSeparator": { "type": "string", "minLength": 1 },
+        "rootPath": { "type": "string", "minLength": 1 }
+      }
+    },
+    "dataSource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["id", "type", "content", "format"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "label": { "type": "string" },
+            "type": { "const": "inline" },
+            "content": { "type": "string" },
+            "format": { "type": "string", "enum": ["lines", "delimited", "kv", "json"] },
+            "options": { "$ref": "#/$defs/dataSourceOptions" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["id", "type", "path", "format"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "label": { "type": "string" },
+            "type": { "type": "string", "enum": ["textfile", "jsonfile"] },
+            "path": { "$ref": "#/$defs/dataPath" },
+            "format": { "type": "string", "enum": ["lines", "delimited", "kv", "json"] },
+            "options": { "$ref": "#/$defs/dataSourceOptions" }
+          }
+        }
+      ]
+    },
+    "dataSelect": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["mode"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "type": "string", "enum": ["first", "last", "all"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["mode", "index"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "index" },
+            "index": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["mode", "key", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "byKey" },
+            "key": { "type": "string", "minLength": 1 },
+            "value": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["mode", "key", "pattern"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "match" },
+            "key": { "type": "string", "minLength": 1 },
+            "pattern": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "dataMapTarget": {
+      "type": "object",
+      "required": ["type", "variableId"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "variable" },
+        "variableId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "dataMapTransform": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["op"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "trim" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["op", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "type": "string", "enum": ["prefix", "suffix"] },
+            "value": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["op", "pattern", "replacement"],
+          "additionalProperties": false,
+          "properties": {
+            "op": { "const": "replace" },
+            "pattern": { "type": "string" },
+            "replacement": { "type": "string" },
+            "flags": { "type": "string", "pattern": "^[dgimsuvy]*$" }
+          }
+        }
+      ]
+    },
+    "dataMap": {
+      "type": "object",
+      "required": ["from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "$ref": "#/$defs/dataMapTarget" },
+        "as": {
+          "type": "string",
+          "enum": ["text", "multitext", "number", "time", "image", "video"]
+        },
+        "transform": { "$ref": "#/$defs/dataMapTransform" }
+      }
+    },
+    "dataJoin": {
+      "type": "object",
+      "required": ["field"],
+      "additionalProperties": false,
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "separator": { "type": "string" }
+      }
+    },
+    "dataMediaResolve": {
+      "type": "object",
+      "required": ["strategy"],
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["assetId", "url", "path"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "onMiss": { "type": "string", "enum": ["block", "keep", "clear"] },
+        "fallbackUrl": { "type": "string" }
+      }
+    },
+    "dataPipeline": {
+      "type": "object",
+      "required": ["id", "sourceId", "select", "map"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "sourceId": { "type": "string", "minLength": 1 },
+        "enabled": { "type": "boolean" },
+        "select": { "$ref": "#/$defs/dataSelect" },
+        "map": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dataMap" },
+          "minItems": 1
+        },
+        "join": { "$ref": "#/$defs/dataJoin" },
+        "mediaResolve": { "$ref": "#/$defs/dataMediaResolve" },
+        "onEmpty": { "type": "string", "enum": ["block", "keep", "clear"] }
+      }
+    },
+    "templateData": {
+      "type": "object",
+      "required": ["version", "sources", "pipelines"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "const": 1 },
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dataSource" }
+        },
+        "pipelines": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dataPipeline" }
+        },
+        "runOn": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["take", "load", "update", "refresh"] },
+          "uniqueItems": true
+        },
+        "onError": { "type": "string", "enum": ["block", "keep", "clear"] }
+      }
     },
     "bezier": {
       "type": "object",
@@ -338,6 +754,7 @@
       "properties": {
         "x": { "type": "number" },
         "y": { "type": "number" },
+        "z": { "type": "number" },
         "width": { "type": "number" },
         "height": { "type": "number" },
         "rotation": { "type": "number" },
@@ -346,7 +763,12 @@
         "perspective": { "type": "number" },
         "scaleX": { "type": "number" },
         "scaleY": { "type": "number" },
-        "opacity": { "type": "number" }
+        "opacity": { "type": "number" },
+        "crawlProgress": { "type": "number", "minimum": 0, "maximum": 1 },
+        "gradient.weights.topLeft": { "type": "number", "minimum": 0, "maximum": 100 },
+        "gradient.weights.topRight": { "type": "number", "minimum": 0, "maximum": 100 },
+        "gradient.weights.bottomLeft": { "type": "number", "minimum": 0, "maximum": 100 },
+        "gradient.weights.bottomRight": { "type": "number", "minimum": 0, "maximum": 100 }
       }
     },
     "director": {
@@ -393,6 +815,84 @@
         }
       ]
     },
+    "cueItem": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["id", "command", "parameterDirectorId", "lengthFrames", "direction"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "command": {
+              "type": "string",
+              "enum": ["startDirector", "pauseDirector", "stopDirector", "stopDirectorAndWaitContinue"]
+            },
+            "parameterDirectorId": { "type": "string", "minLength": 1 },
+            "lengthFrames": { "type": "integer", "minimum": 0 },
+            "direction": { "type": "string", "enum": ["normal", "reverse", "both"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["id", "command", "parameterTag", "lengthFrames", "direction"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "command": { "const": "tag" },
+            "parameterTag": { "type": "string", "enum": ["updateData", "endScene"] },
+            "lengthFrames": { "type": "integer", "minimum": 0 },
+            "direction": { "type": "string", "enum": ["normal", "reverse", "both"] }
+          }
+        }
+      ]
+    },
+    "cue": {
+      "type": "object",
+      "required": ["id", "directorId", "frame", "fromEnd", "name", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "directorId": { "type": "string", "minLength": 1 },
+        "frame": { "type": "integer", "minimum": 0 },
+        "fromEnd": { "type": "boolean" },
+        "name": { "type": "string" },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/cueItem" },
+          "minItems": 1
+        }
+      }
+    },
+    "propertyTrackDirectorAssignments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "string", "minLength": 1 },
+        "y": { "type": "string", "minLength": 1 },
+        "z": { "type": "string", "minLength": 1 },
+        "width": { "type": "string", "minLength": 1 },
+        "height": { "type": "string", "minLength": 1 },
+        "rotation": { "type": "string", "minLength": 1 },
+        "rotationX": { "type": "string", "minLength": 1 },
+        "rotationY": { "type": "string", "minLength": 1 },
+        "perspective": { "type": "string", "minLength": 1 },
+        "scaleX": { "type": "string", "minLength": 1 },
+        "scaleY": { "type": "string", "minLength": 1 },
+        "opacity": { "type": "string", "minLength": 1 },
+        "crawlProgress": { "type": "string", "minLength": 1 },
+        "gradient.weights.topLeft": { "type": "string", "minLength": 1 },
+        "gradient.weights.topRight": { "type": "string", "minLength": 1 },
+        "gradient.weights.bottomLeft": { "type": "string", "minLength": 1 },
+        "gradient.weights.bottomRight": { "type": "string", "minLength": 1 }
+      }
+    },
+    "propertyTrackDirectors": {
+      "type": "object",
+      "patternProperties": {
+        "^.+$": { "$ref": "#/$defs/propertyTrackDirectorAssignments" }
+      },
+      "additionalProperties": false
+    },
     "timeline": {
       "type": "object",
       "required": ["fps", "durationFrames", "playbackMode", "directors", "trackDirectors", "keyframes", "actions"],
@@ -407,7 +907,9 @@
           "additionalProperties": { "type": "string", "minLength": 1 }
         },
         "keyframes": { "type": "array", "items": { "$ref": "#/$defs/keyframe" } },
-        "actions": { "type": "array", "items": { "$ref": "#/$defs/action" } }
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/action" } },
+        "cues": { "type": "array", "items": { "$ref": "#/$defs/cue" } },
+        "propertyTrackDirectors": { "$ref": "#/$defs/propertyTrackDirectors" }
       }
     }
   }

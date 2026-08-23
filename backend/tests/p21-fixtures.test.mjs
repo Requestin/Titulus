@@ -223,6 +223,14 @@ test('P21 schema vNext rejects an invalid Crawl direction', () => {
   assertRejectedAt(fixture, '/layers/0/crawl/directionIn');
 });
 
+test('P21 schema vNext rejects a vertical direction for ticker Crawl', () => {
+  const fixture = cloneOldTestFixture();
+  const crawlLayer = addValidCrawlLayer(fixture);
+  crawlLayer.crawl.directionIn = 'up';
+
+  assertRejectedAt(fixture, '/layers/0/crawl/directionIn');
+});
+
 test('P21 schema vNext rejects an unsupported variable type', () => {
   const fixture = cloneOldTestFixture();
   fixture.variables.push({
