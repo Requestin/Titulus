@@ -21,5 +21,6 @@ export * from './graphPublisher.js';
 export * from './pacingProtocol.js';
 export * from './fixedPacing.js';
 export * from './renderGraphFrame.js';
+export * from './rectGradient.js';
 export * from './domRenderer.js';
 export * from './channelClient.js';
