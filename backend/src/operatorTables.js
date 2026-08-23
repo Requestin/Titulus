@@ -155,5 +155,16 @@ export function rbacDao(db) {
       const insert = db.prepare('INSERT OR IGNORE INTO user_group_members (user_id, group_id) VALUES (?, ?)');
       for (const group of groups) insert.run(userId, group);
     },
+    listGroups() {
+      return db.prepare('SELECT id FROM permission_groups ORDER BY id').all().map((row) => row.id);
+    },
+    setGroups(userId, groups) {
+      db.prepare('DELETE FROM user_group_members WHERE user_id = ?').run(userId);
+      const insert = db.prepare('INSERT OR IGNORE INTO user_group_members (user_id, group_id) VALUES (?, ?)');
+      for (const group of groups) {
+        if (PERMISSIONS.includes(group)) insert.run(userId, group);
+      }
+      return this.permissionsForUser(userId, 'operator');
+    },
   };
 }

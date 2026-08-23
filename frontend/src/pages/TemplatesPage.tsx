@@ -20,7 +20,10 @@ import {
   Trash2,
 } from 'lucide-react';
 import { createDefaultTemplate } from '@runtime';
-import { api, type TemplateSummary } from '@/core/api';
+import { api, type Channel, type TemplateFolder, type TemplateSummary } from '@/core/api';
+import { useControlWs } from '@/core/controlWs';
+import { prepareForAir } from '@/control/prepareForAir';
+import { Eye, EyeOff, Radio } from 'lucide-react';
 import { createId } from '@/core/id';
 import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/form';
@@ -66,7 +69,12 @@ function readSortBy(): TemplateSortBy {
 export function TemplatesPage() {
   const nav = useNavigate();
   const [folderId, setFolderId] = useState<string | 'all'>('all');
-  const [folders, setFolders] = useState<Array<{ id: string; name: string }>>([]);
+  const [folders, setFolders] = useState<TemplateFolder[]>([]);
+  const [folderName, setFolderName] = useState('');
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [testChannelId, setTestChannelId] = useState('');
+  const connect = useControlWs((s) => s.connect);
+  const send = useControlWs((s) => s.send);
   const [items, setItems] = useState<TemplateSummary[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -82,6 +90,9 @@ export function TemplatesPage() {
     try {
       setItems(await api.templates.list());
       setFolders(await api.templateFolders.list());
+      const ch = await api.channels.list();
+      setChannels(ch);
+      if (ch[0] && !testChannelId) setTestChannelId(ch[0].id);
     } catch (e) {
       toast.error(`Failed to load templates: ${(e as Error).message}`);
       setItems([]);
@@ -91,6 +102,77 @@ export function TemplatesPage() {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => { connect(); }, [connect]);
+
+  async function testTake(id: string) {
+    if (!testChannelId) { toast.error('Select a test channel'); return; }
+    try {
+      const rec = await api.templates.get(id);
+      const values: Record<string, string | number> = {};
+      for (const variable of rec.data.variables) values[variable.id] = variable.defaultValue;
+      const prepared = await prepareForAir(rec.data, 'take', values);
+      if (prepared.blocked) {
+        toast.error(prepared.errors[0]?.message || 'TAKE blocked');
+        return;
+      }
+      const ok = send({
+        type: 'take',
+        channelId: testChannelId,
+        templateId: rec.id,
+        template: prepared.template ?? rec.data,
+        variables: { ...values, ...prepared.overrides },
+      });
+      if (!ok) toast.error('Control WebSocket not connected');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Test TAKE failed');
+    }
+  }
+
+  function testClear(id: string) {
+    if (!testChannelId) return;
+    send({ type: 'clear', channelId: testChannelId, templateId: id });
+  }
+
+  async function createFolder() {
+    const name = folderName.trim();
+    if (!name) return;
+    try {
+      const created = await api.templateFolders.create(name);
+      setFolders((cur) => [...cur, created]);
+      setFolderName('');
+    } catch (error) {
+      toast.error(`Folder create failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function toggleFolderHidden(folder: TemplateFolder) {
+    try {
+      const updated = await api.templateFolders.update(folder.id, { hideInControl: !folder.hide_in_control });
+      setFolders((cur) => cur.map((item) => (item.id === folder.id ? updated : item)));
+    } catch (error) {
+      toast.error(`Folder update failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function deleteFolder(folder: TemplateFolder) {
+    try {
+      await api.templateFolders.remove(folder.id);
+      setFolders((cur) => cur.filter((item) => item.id !== folder.id));
+      await load();
+    } catch (error) {
+      toast.error(`Folder delete failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function dropOnFolder(folderId: string | null, templateId: string) {
+    try {
+      if (folderId) await api.templateFolders.assign(folderId, templateId);
+      else await api.templateFolders.unfile(templateId);
+      await load();
+    } catch (error) {
+      toast.error(`Move failed: ${(error as Error).message}`);
+    }
+  }
 
   const visibleItems = useMemo(() => {
     const rows = items ? sortTemplates(items, sortBy) : [];
@@ -194,7 +276,7 @@ export function TemplatesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
+    <div className="mx-auto max-w-6xl p-6">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold">Templates</h2>
@@ -255,12 +337,52 @@ export function TemplatesPage() {
               <List className="h-4 w-4" aria-hidden />
             </button>
           </div>
+          <label className="flex items-center gap-2 text-[12px] text-ink-muted">
+            <Radio className="h-3.5 w-3.5" aria-hidden />
+            Test
+            <Select aria-label="Test channel" value={testChannelId} onChange={(e) => setTestChannelId(e.target.value)} className="w-[10.5rem]">
+              {channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}
+            </Select>
+          </label>
           <Button variant="primary" onClick={create} disabled={creating}>
             {creating ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Plus className="h-4 w-4" aria-hidden />}
             New template
           </Button>
         </div>
       </div>
+      <div className="grid grid-cols-[220px_1fr] gap-4">
+        <aside className="space-y-2">
+          <div className="flex gap-1">
+            <Input value={folderName} onChange={(e) => setFolderName(e.target.value)} placeholder="New folder" />
+            <Button size="sm" variant="neutral" onClick={() => void createFolder()}>Add</Button>
+          </div>
+          <button
+            type="button"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); void dropOnFolder(null, e.dataTransfer.getData('text/template-id')); }}
+            onClick={() => setFolderId('unassigned')}
+            className={`flex w-full rounded-md border px-2 py-1.5 text-left text-[12px] ${folderId === 'unassigned' ? 'border-primary' : 'border-border'}`}
+          >
+            Unassigned
+          </button>
+          {folders.map((folder) => (
+            <div
+              key={folder.id}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); void dropOnFolder(folder.id, e.dataTransfer.getData('text/template-id')); }}
+              className={`flex items-center gap-1 rounded-md border px-2 py-1.5 text-[12px] ${folderId === folder.id ? 'border-primary' : 'border-border'}`}
+            >
+              <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setFolderId(folder.id)}>{folder.name}</button>
+              <button type="button" title={folder.hide_in_control ? 'Show in Control' : 'Hide in Control'} onClick={() => void toggleFolderHidden(folder)}>
+                {folder.hide_in_control ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+              <button type="button" title="Delete folder (templates stay)" onClick={() => void deleteFolder(folder)}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </aside>
+        <div>
 
       {items === null ? (
         <div className={gridView
@@ -305,6 +427,8 @@ export function TemplatesPage() {
               onRenameCommit={() => { void commitRename(t); }}
               onRenameCancel={cancelRename}
               onDelete={(trigger) => requestDelete(t, trigger)}
+              onTestTake={() => void testTake(t.id)}
+              onTestClear={() => testClear(t.id)}
             />
           ))}
         </div>
@@ -324,10 +448,15 @@ export function TemplatesPage() {
               onRenameCommit={() => { void commitRename(t); }}
               onRenameCancel={cancelRename}
               onDelete={(trigger) => requestDelete(t, trigger)}
+              onTestTake={() => void testTake(t.id)}
+              onTestClear={() => testClear(t.id)}
             />
           ))}
         </div>
       )}
+
+        </div>
+      </div>
 
       {pendingDelete && (
         <DeleteTemplateDialog
@@ -344,6 +473,8 @@ export function TemplatesPage() {
 
 function TemplateCard({
   template,
+  onTestTake,
+  onTestClear,
   duplicating,
   renaming,
   renameDraft,
@@ -356,14 +487,19 @@ function TemplateCard({
   onDelete,
 }: TemplateItemProps) {
   return (
-    <div className="group flex flex-col overflow-hidden rounded-lg border border-border bg-surface transition-colors hover:border-ink-faint">
+    <div
+      className="group flex flex-col overflow-hidden rounded-lg border border-border bg-surface transition-colors hover:border-ink-faint"
+      draggable
+      onDragStart={(e) => e.dataTransfer.setData("text/template-id", template.id)}
+    >
       <button
         type="button"
         onClick={onOpen}
-        className="grid aspect-video place-items-center bg-surface-2 text-ink-faint"
+        className="relative grid aspect-video place-items-center overflow-hidden bg-surface-2 text-ink-faint"
         aria-label={`Open ${template.name}`}
       >
-        <LayoutTemplate className="h-7 w-7" aria-hidden />
+        <img src={`/thumbnails/${template.id}.jpg`} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+        <LayoutTemplate className="relative h-7 w-7" aria-hidden />
       </button>
       <div className="flex items-center justify-between gap-2 px-3 py-2.5">
         <TemplateIdentity
@@ -383,6 +519,10 @@ function TemplateCard({
           onDelete={onDelete}
           revealOnHover
         />
+      </div>
+      <div className="flex gap-1 px-3 pb-2">
+        <button type="button" className="text-[11px] text-danger" onClick={onTestTake}>TAKE</button>
+        <button type="button" className="text-[11px] text-ink-muted" onClick={onTestClear}>CLEAR</button>
       </div>
     </div>
   );
@@ -576,6 +716,8 @@ function IconAction({
 
 interface TemplateItemProps {
   template: TemplateSummary;
+  onTestTake?: () => void;
+  onTestClear?: () => void;
   duplicating: boolean;
   renaming: boolean;
   renameDraft: string;

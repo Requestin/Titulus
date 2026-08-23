@@ -8,8 +8,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Copy, Check, X, Radio, Trash2 } from 'lucide-react';
-import { api, type Channel, type OnAirDetailsSnapshot, type TemplateSummary, type TemplateRecord, type Rundown } from '@/core/api';
+import { api, type Channel, type OnAirDetailsSnapshot, type TemplateFolder, type TemplateSummary, type TemplateRecord, type Rundown } from '@/core/api';
 import { continueCommand, formatOnAirRow, isWaitingContinue, onAirOwnerLabel, resolveOnAirRows } from '@/control/onAirContinue';
+import { DataElementsTab } from '@/control/DataElementsTab';
+import { templatesVisibleInControl } from '@/control/visibleControlTemplates';
 import { useControlWs, type WsStatus } from '@/core/controlWs';
 import { prepareForAir } from '@/control/prepareForAir';
 import { toast } from '@/core/toast';
@@ -25,11 +27,13 @@ export function ControlPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [channelId, setChannelId] = useState<string>('');
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [folders, setFolders] = useState<TemplateFolder[]>([]);
+  const [dataElements, setDataElements] = useState<import('@/core/api').DataElement[]>([]);
   const [rundowns, setRundowns] = useState<Rundown[]>([]);
   const [controlDataLoaded, setControlDataLoaded] = useState(false);
   const [onAir, setOnAir] = useState<Record<string, string[]>>({});
   const [onAirDetails, setOnAirDetails] = useState<OnAirDetailsSnapshot | null>(null);
-  const [tab, setTab] = useState<'templates' | 'rundowns'>('templates');
+  const [tab, setTab] = useState<'templates' | 'rundowns' | 'data'>('templates');
   const [rundownMonitorChannel, setRundownMonitorChannel] = useState<string>('');
 
   const status = useControlWs((s) => s.status);
@@ -41,10 +45,12 @@ export function ControlPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [ch, tpl, rd, air, details] = await Promise.all([
-          api.channels.list(), api.templates.list(), api.rundowns.list(), api.onair.get(), api.onair.details(),
+        const [ch, tpl, folderRows, deRows, rd, air, details] = await Promise.all([
+          api.channels.list(), api.templates.list(), api.templateFolders.list(), api.dataElements.list(), api.rundowns.list(), api.onair.get(), api.onair.details(),
         ]);
         setChannels(ch);
+        setFolders(folderRows);
+        setDataElements(deRows);
         setTemplates(tpl);
         setRundowns(rd.map(normalizeRundown));
         setOnAir(air);
@@ -59,6 +65,7 @@ export function ControlPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const visibleTemplates = templatesVisibleInControl(templates, folders);
   const live = onAir[channelId] ?? [];
   const monitorChannelId = tab === 'rundowns'
     ? (rundownMonitorChannel || channelId || 'default')
@@ -175,7 +182,7 @@ export function ControlPage() {
         {/* Left: tabs */}
         <div className="flex min-w-0 flex-col border-r border-border">
           <div className="flex shrink-0 border-b border-border">
-            {(['templates', 'rundowns'] as const).map((t) => (
+            {(['templates', 'rundowns', 'data'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -191,7 +198,7 @@ export function ControlPage() {
           <div className="min-h-0 flex-1 overflow-auto">
             {tab === 'templates'
               ? <TemplatesTab
-                  templates={templates}
+                  templates={visibleTemplates}
                   live={live}
                   canContinue={prepId => isWaitingContinue(onAirDetails, channelId, prepId)}
                   onTake={take}
@@ -200,9 +207,24 @@ export function ControlPage() {
                   onContinue={continueLive}
                 />
               : (
+                tab === 'data' ? (
+                <DataElementsTab
+                  templates={visibleTemplates}
+                  onTake={(templateId, values) => {
+                    void (async () => {
+                      try {
+                        const rec = await api.templates.get(templateId);
+                        await take(rec, values);
+                      } catch (error) {
+                        toast.error(error instanceof Error ? error.message : 'TAKE failed');
+                      }
+                    })();
+                  }}
+                />
+              ) : (
                 <RundownTab
                   channels={channels}
-                  templates={templates}
+                  templates={visibleTemplates}
                   rundowns={rundowns}
                   setRundowns={setRundowns}
                   dataLoaded={controlDataLoaded}
@@ -212,8 +234,10 @@ export function ControlPage() {
                   send={send}
                   onAirDetails={onAirDetails}
                   onPreferredChannelChange={setRundownMonitorChannel}
+                  dataElements={dataElements}
                 />
-              )}
+              )
+            )}
           </div>
         </div>
 

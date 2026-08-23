@@ -6,6 +6,7 @@ import {
 import {
   api,
   type Channel,
+  type DataElement,
   type OnAirSnapshot,
   type Rundown,
   type OnAirDetailsSnapshot,
@@ -13,6 +14,7 @@ import {
   type TemplateRecord,
   type TemplateSummary,
 } from '@/core/api';
+import { MamPicker } from '@/media/MamPicker';
 import { prepareForAir } from '@/control/prepareForAir';
 import { continueCommand, isWaitingContinue } from '@/control/onAirContinue';
 import { Button } from '@/components/ui/Button';
@@ -42,6 +44,7 @@ export function RundownTab({
   send,
   onAirDetails,
   onPreferredChannelChange,
+  dataElements = [],
 }: {
   channels: Channel[];
   templates: TemplateSummary[];
@@ -54,6 +57,7 @@ export function RundownTab({
   send: SendControl;
   onAirDetails?: OnAirDetailsSnapshot | null;
   onPreferredChannelChange?: (channelId: string) => void;
+  dataElements?: DataElement[];
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [bootstrapping, setBootstrapping] = useState(false);
@@ -162,8 +166,10 @@ export function RundownTab({
   }
 
   function buildPayload(slot: RundownSlot, varsDef: Variable[]) {
-    const v: Record<string, string | number> = {};
-    for (const d of varsDef) v[d.id] = slot.vars[d.id] ?? d.defaultValue;
+    const de = dataElements.find((item) => item.id === slot.dataElementId);
+    const fromDe = de ? flattenPayload(de.payload) : {};
+    const v: Record<string, string | number> = { ...fromDe };
+    for (const d of varsDef) v[d.id] = slot.vars[d.id] ?? v[d.id] ?? d.defaultValue;
     return v;
   }
 
@@ -446,6 +452,22 @@ export function RundownTab({
                     <Field label="Slot ID">
                       <Input value={slot.slotId} readOnly />
                     </Field>
+                    <Field label="Data element">
+                      <Select
+                        value={slot.dataElementId ?? ''}
+                        onChange={(e) => patchActive((r) => ({
+                          ...r,
+                          slots: r.slots.map((s) => s.slotId === slot.slotId
+                            ? { ...s, dataElementId: e.target.value || undefined }
+                            : s),
+                        }))}
+                      >
+                        <option value="">None</option>
+                        {dataElements.filter((item) => item.templateId === slot.templateId).map((item) => (
+                          <option key={item.id} value={item.id}>{item.name}</option>
+                        ))}
+                      </Select>
+                    </Field>
                     <Button size="sm" variant="ghost" onClick={() => {
                       if (cache[slot.templateId]) return;
                       void ensureTemplate(slot.templateId).catch((e) => toast.error((e as Error).message));
@@ -502,6 +524,7 @@ function SlotVars({
                 onUploaded={(url) => onChange(v.id, url)}
                 label={v.type === 'video' ? 'Upload video' : 'Upload image'}
               />
+              <MamPicker onPick={(token) => onChange(v.id, token)} accept={v.type === 'video' ? 'video/*' : 'image/*'} />
             </div>
           ) : (
             <Input value={String(values[v.id] ?? '')} onChange={(e) => onChange(v.id, e.target.value)} />
@@ -531,4 +554,12 @@ function normalizeImportedSlot(raw: unknown, idx: number): RundownSlot | null {
     name,
     vars,
   };
+}
+
+function flattenPayload(payload: Record<string, unknown>): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  for (const [key, value] of Object.entries(payload ?? {})) {
+    if (typeof value === 'string' || typeof value === 'number') out[key] = value;
+  }
+  return out;
 }

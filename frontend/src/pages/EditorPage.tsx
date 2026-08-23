@@ -12,7 +12,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api } from '@/core/api';
+import { api, ApiError } from '@/core/api';
+import { renderNameCardJpeg } from '@/editor/captureThumbnail';
 import {
   extractTemplateValidationErrors,
   formatTemplateValidationError,
@@ -90,6 +91,8 @@ export function EditorPage() {
   const dirty = useEditor((s) => s.dirty);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [saving, setSaving] = useState(false);
+  const [readOnly, setReadOnly] = useState(false);
+  const [lockOwner, setLockOwner] = useState<string | null>(null);
   const [tab, setTab] = useState<'properties' | 'variables' | 'data'>('properties');
   const [timelineHeight, setTimelineHeight] = useState(256);
   const [treeWidth, setTreeWidth] = useState(() => readPanelWidth(TREE_WIDTH));
@@ -109,7 +112,17 @@ export function EditorPage() {
         if (!cancelled) {
           load(rec.data);
           setStatus('ready');
-          void api.templateLocks.acquire(id!).catch(() => toast.error('Template is locked by another user'));
+          try {
+            await api.templateLocks.acquire(id!);
+            setReadOnly(false);
+            setLockOwner(null);
+          } catch (error) {
+            setReadOnly(true);
+            const fromBody = error instanceof ApiError
+              ? (error.body as { lock?: { username?: string } } | undefined)?.lock?.username
+              : undefined;
+            setLockOwner(fromBody ?? 'another user');
+          }
         }
       } catch (e) {
         if (!cancelled) {
@@ -122,7 +135,7 @@ export function EditorPage() {
   }, [id, load]);
 
   useEffect(() => {
-    if (!id) return undefined;
+    if (!id || readOnly) return undefined;
     const timer = window.setInterval(() => {
       void api.templateLocks.heartbeat(id).catch(() => undefined);
     }, 30000);
@@ -130,11 +143,15 @@ export function EditorPage() {
       window.clearInterval(timer);
       void api.templateLocks.release(id).catch(() => undefined);
     };
-  }, [id]);
+  }, [id, lockOwner, readOnly]);
 
   const save = useCallback(async (): Promise<boolean> => {
     const t = useEditor.getState().template;
     if (!t || !id) return false;
+    if (readOnly) {
+      toast.error(`Locked by ${lockOwner ?? 'another user'}`);
+      return false;
+    }
     setSaving(true);
     try {
       const res = await api.templates.validate(t);
@@ -143,6 +160,12 @@ export function EditorPage() {
         return false;
       }
       await api.templates.update(id, { name: t.name, data: t });
+      try {
+        const jpeg = await renderNameCardJpeg(t.name);
+        await api.templates.putThumbnail(id, jpeg);
+      } catch {
+        // thumbnail is best-effort; the document save already succeeded
+      }
       useEditor.getState().markSaved();
       toast.success('Saved');
       return true;
@@ -157,7 +180,7 @@ export function EditorPage() {
     } finally {
       setSaving(false);
     }
-  }, [id]);
+  }, [id, lockOwner, readOnly]);
 
   const continueTo = useCallback((path: string) => {
     allowNavigationRef.current = true;
@@ -418,7 +441,7 @@ export function EditorPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <Toolbar onSave={() => { void save(); }} saving={saving} />
+      <Toolbar onSave={() => { void save(); }} saving={saving} readOnly={readOnly} lockOwner={lockOwner} />
       <div className="flex min-h-0 flex-1">
         <aside
           className="shrink-0 border-r border-border bg-surface"

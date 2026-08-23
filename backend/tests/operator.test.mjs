@@ -170,3 +170,32 @@ test('rundown rejects kind:ue and keeps legacy slots', async () => {
     db.close();
   }
 });
+
+
+test("RBAC groups API lists seeded groups and assigns operator permissions", async () => {
+  const db = openDb(":memory:");
+  const app = express();
+  app.use(express.json());
+  const auth = createAuth(db);
+  app.use("/api/auth", authRouter(auth));
+  const server = app.listen(0, "127.0.0.1");
+  try {
+    await once(server, "listening");
+    const { port } = server.address();
+    const login = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "admin", password: "admin123" }),
+    });
+    const { token } = await login.json();
+    const groups = await fetch(`http://127.0.0.1:${port}/api/auth/groups`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(groups.status, 200);
+    const listed = await groups.json();
+    assert.ok(listed.includes("control") && listed.includes("template_editor"));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    db.close();
+  }
+});

@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/Button';
 import { Field, Input, Select } from '@/components/ui/form';
 import { toast } from '@/core/toast';
 import { cn } from '@/lib/cn';
+import { RbacPanel } from '@/settings/RbacPanel';
 
 const OUTPUT_MODES: { value: OutputMode; label: string }[] = [
   { value: 'browser', label: 'Browser (control panel preview)' },
@@ -456,6 +457,8 @@ export function SettingsPage() {
                 </Button>
               </div>
             </div>
+
+            <RbacPanel />
 
             <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
               <div className="flex items-center justify-between gap-2">

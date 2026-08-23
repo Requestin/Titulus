@@ -14,6 +14,7 @@ import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
 import { usePlayhead } from '../playheadStore';
 import { gesturePreviewStore } from '../gesturePreview';
 import { MediaUploadButton } from '../MediaUploadButton';
+import { MamPicker } from '@/media/MamPicker';
 import {
   Checkbox,
   CollapseAllButton,
@@ -602,10 +603,16 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             />
           </Field>
           {typeof layer.src !== 'object' && (
-            <MediaUploadButton
-              accept={layer.type === 'image' ? 'image/*' : 'video/*'}
-              onUploaded={(url) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.src = url; })}
-            />
+            <div className="space-y-1">
+              <MamPicker
+                accept={layer.type === 'image' ? 'image/*' : 'video/*'}
+                onPick={(token) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.src = token; })}
+              />
+              <MediaUploadButton
+                accept={layer.type === 'image' ? 'image/*' : 'video/*'}
+                onUploaded={(url) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.src = url; })}
+              />
+            </div>
           )}
           <Field label="Fit">
             <Select value={layer.fit} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.fit = e.target.value as 'stretch' | 'contain' | 'cover'; })}>
