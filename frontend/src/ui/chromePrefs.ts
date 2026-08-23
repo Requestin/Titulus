@@ -87,3 +87,36 @@ export function writeBoundedNumberPreference(
     // Preferences are best-effort and must not break editor interaction.
   }
 }
+
+export function readAllowedStringPreference<T extends string>(
+  storage: StorageLike,
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  try {
+    const value = storage.getItem(key);
+    if (value !== null && (allowed as readonly string[]).includes(value)) {
+      return value as T;
+    }
+  } catch {
+    // Storage can be unavailable because of browser privacy or quota policy.
+  }
+
+  return fallback;
+}
+
+export function writeAllowedStringPreference<T extends string>(
+  storage: StorageLike,
+  key: string,
+  allowed: readonly T[],
+  value: T,
+): void {
+  if (!(allowed as readonly string[]).includes(value)) return;
+
+  try {
+    storage.setItem(key, value);
+  } catch {
+    // Preferences are best-effort and must not break editor interaction.
+  }
+}
