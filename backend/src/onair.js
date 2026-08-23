@@ -34,8 +34,9 @@ function isPersistedTakeSupportedForAir(cmd) {
 
 export class OnAirManager {
   /** @param {import('better-sqlite3').Database} db */
-  constructor(db) {
+  constructor(db, options = {}) {
     this.db = db;
+    this.prepare = options.prepare || null;
     this.dao = onAirDao(db);
     // channelId -> Set<WebSocket>  (renderer clients)
     this.renderers = new Map();
@@ -88,6 +89,11 @@ export class OnAirManager {
   /** Apply a take/clear/update command: mutate state, persist, fan out. */
   handleControlCommand(cmd) {
     if (!cmd || !cmd.type || !cmd.channelId) return;
+    if (cmd.type === 'take') {
+      if (!cmd.templateId || !cmd.template) return;
+      const validation = validateTemplateForAir(cmd.template);
+      if (!validation.valid) throw airValidationError(validation);
+    }
     switch (cmd.type) {
       case 'take':   return this.applyTake(cmd);
       case 'update': return this.applyUpdate(cmd);
@@ -97,10 +103,22 @@ export class OnAirManager {
     }
   }
 
-  applyTake(cmd) {
+  async applyTake(cmd) {
     if (!cmd.templateId || !cmd.template) return;
-    const validation = validateTemplateForAir(cmd.template);
-    if (!validation.valid) throw airValidationError(validation);
+    if (this.prepare) {
+      const prepared = await this.prepare(cmd.template, { trigger: 'take', variables: cmd.variables });
+      if (prepared.blocked) {
+        const error = new Error(prepared.errors?.[0]?.message || 'data pipeline blocked take');
+        error.code = 'DATA_BLOCKED';
+        error.details = prepared.errors;
+        throw error;
+      }
+      cmd = {
+        ...cmd,
+        template: prepared.template,
+        variables: { ...(cmd.variables || {}), ...prepared.overrides },
+      };
+    }
     this.dao.set(cmd, { bringToFront: true }); // persist with z-order bump
     if (this.quarantined[cmd.channelId]) {
       this.quarantined[cmd.channelId] = this.quarantined[cmd.channelId]
@@ -114,7 +132,7 @@ export class OnAirManager {
     this.fanout(cmd.channelId, cmd);
   }
 
-  applyUpdate(cmd) {
+  async applyUpdate(cmd) {
     if (!cmd.templateId) return;
     // Active in-memory state is authoritative: a persisted but quarantined take
     // must not be resurrected by an update.
@@ -124,12 +142,24 @@ export class OnAirManager {
     // Update mutates variables live: persist only the variables delta is not
     // enough — re-stitch the active take command and persist it in place.
     const stored = arr[idx];
-    const next = { ...stored, variables: { ...(stored.variables || {}), ...(cmd.variables || {}) } };
+    let incoming = cmd.variables || {};
+    if (this.prepare && stored.template) {
+      const prepared = await this.prepare(stored.template, { trigger: 'update', variables: { ...(stored.variables || {}), ...incoming } });
+      if (prepared.blocked) {
+        const error = new Error(prepared.errors?.[0]?.message || 'data pipeline blocked update');
+        error.code = 'DATA_BLOCKED';
+        error.details = prepared.errors;
+        throw error;
+      }
+      incoming = { ...incoming, ...prepared.overrides };
+      stored.template = prepared.template;
+    }
+    const next = { ...stored, variables: { ...(stored.variables || {}), ...incoming } };
     this.dao.set(next, { bringToFront: false });
     arr[idx] = next;
     this.state[cmd.channelId] = arr;
-    // Fan out the update message as-is (the runtime's onUpdate handles live var).
-    this.fanout(cmd.channelId, cmd);
+    // Fan out the resolved update. Runtime onUpdate merges live variables.
+    this.fanout(cmd.channelId, { ...cmd, variables: incoming });
   }
 
   applyClear(cmd) {

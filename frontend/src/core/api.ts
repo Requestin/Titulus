@@ -244,6 +244,38 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    prepare: (body: {
+      template?: Template;
+      templateId?: string;
+      trigger?: 'take' | 'load' | 'update' | 'refresh';
+      variables?: Record<string, string | number>;
+    }) =>
+      req<{
+        ok: boolean;
+        blocked: boolean;
+        overrides: Record<string, string | number>;
+        errors: Array<{ code?: string; message: string }>;
+        template: Template | null;
+      }>('/api/templates/prepare', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+  },
+  files: {
+    list: () => req<Array<{ id: string; original_name: string; stored_name: string; mime: string; size_bytes: number }>>('/api/files'),
+    read: (path: string) =>
+      req<{ text: string; lines: string[] }>('/api/files/read', {
+        method: 'POST',
+        body: JSON.stringify({ path }),
+      }),
+    upload: (file: File) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return req<{ id: string; name: string; path: string; size: number; mime: string }>('/api/files', {
+        method: 'POST',
+        body: fd,
+      });
+    },
   },
   channels: {
     list: () => req<Channel[]>('/api/channels'),

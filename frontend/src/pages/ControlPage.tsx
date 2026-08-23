@@ -11,6 +11,7 @@ import { Copy, Check, X, Radio, Trash2 } from 'lucide-react';
 import { api, type Channel, type OnAirDetailsSnapshot, type TemplateSummary, type TemplateRecord, type Rundown } from '@/core/api';
 import { continueCommand, isWaitingContinue } from '@/control/onAirContinue';
 import { useControlWs, type WsStatus } from '@/core/controlWs';
+import { prepareForAir } from '@/control/prepareForAir';
 import { toast } from '@/core/toast';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/form';
@@ -71,11 +72,26 @@ export function ControlPage() {
     setOnAir((prev) => ({ ...prev, [channelId]: (prev[channelId] ?? []).filter((x) => x !== tid) }));
   }, [channelId]);
 
-  function take(rec: TemplateRecord, values: Record<string, string | number>) {
+  async function take(rec: TemplateRecord, values: Record<string, string | number>) {
     if (!channelId) { toast.error('Select a channel first'); return; }
-    const ok = send({ type: 'take', channelId, templateId: rec.id, template: rec.data, variables: values });
-    if (!ok) { toast.error('Control WebSocket not connected'); return; }
-    markTaken(rec.id);
+    try {
+      const prepared = await prepareForAir(rec.data, 'take', values);
+      if (prepared.blocked) {
+        toast.error(prepared.errors[0]?.message || 'Data pipeline blocked TAKE');
+        return;
+      }
+      const ok = send({
+        type: 'take',
+        channelId,
+        templateId: rec.id,
+        template: prepared.template ?? rec.data,
+        variables: { ...values, ...prepared.overrides },
+      });
+      if (!ok) { toast.error('Control WebSocket not connected'); return; }
+      markTaken(rec.id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Prepare failed');
+    }
   }
   function update(templateId: string, values: Record<string, string | number>) {
     send({ type: 'update', channelId, templateId, variables: values });

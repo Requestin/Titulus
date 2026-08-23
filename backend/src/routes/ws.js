@@ -155,7 +155,7 @@ export function wsRouter(onAir, auth) {
       return;
     }
 
-    ws.on('message', (raw) => {
+    ws.on('message', async (raw) => {
       const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw ?? '');
       if (Buffer.byteLength(text, 'utf8') > MAX_WS_CONTROL_BYTES) {
         wsSendError(ws, 'MESSAGE_TOO_LARGE', 'control payload exceeds 256 KB');
@@ -182,7 +182,7 @@ export function wsRouter(onAir, auth) {
       }
 
       try {
-        onAir.handleControlCommand(normalized.value);
+        await onAir.handleControlCommand(normalized.value);
         ws.send(JSON.stringify({
           type: 'ack',
           command: normalized.value.type,
@@ -206,7 +206,7 @@ export function wsRouter(onAir, auth) {
     // The runtime auto-reconnects on its own; we only clean up bookkeeping.
     ws.on('close', () => onAir.unregisterRenderer(channelId, ws));
     ws.on('error', () => onAir.unregisterRenderer(channelId, ws));
-    ws.on('message', (raw) => {
+    ws.on('message', async (raw) => {
       let parsed;
       try {
         parsed = JSON.parse(raw.toString());
