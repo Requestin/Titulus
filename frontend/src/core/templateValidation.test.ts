@@ -52,6 +52,7 @@ test('ignores malformed entries and handles malformed or non-ApiError values saf
   const valid = { path: '/', message: 'must be object' };
   const mixed = new ApiError(422, 'template validation failed', {
     error: {
+      code: 'TEMPLATE_VALIDATION_FAILED',
       details: {
         errors: [null, valid, { path: 1, message: true }, 'invalid'],
       },
@@ -71,6 +72,18 @@ test('ignores malformed entries and handles malformed or non-ApiError values saf
   ];
   for (const value of invalidValues) {
     assert.deepEqual(extractTemplateValidationErrors(value), []);
+  }
+
+  const diagnostics = [{ path: '/', message: 'must be object' }];
+  for (const error of [
+    new ApiError(500, 'internal error', {
+      error: { code: 'TEMPLATE_VALIDATION_FAILED', details: { errors: diagnostics } },
+    }),
+    new ApiError(422, 'migration error', {
+      error: { code: 'AMBIGUOUS_LEGACY_STOP_TAG', details: { errors: diagnostics } },
+    }),
+  ]) {
+    assert.deepEqual(extractTemplateValidationErrors(error), []);
   }
 });
 
@@ -93,6 +106,7 @@ test('reads only validation diagnostics and never inspects or migrates template 
   ]);
   const body = {
     error: {
+      code: 'TEMPLATE_VALIDATION_FAILED',
       details: {
         errors,
       },

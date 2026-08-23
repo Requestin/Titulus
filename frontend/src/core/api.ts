@@ -137,6 +137,8 @@ export interface ValidationError {
   keyword?: string;
   schemaPath?: string;
   params?: unknown;
+  code?: string;
+  capabilities?: string[];
 }
 
 /** On-air snapshot: channelId -> templateIds currently on air. */

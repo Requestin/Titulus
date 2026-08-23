@@ -155,14 +155,21 @@ test('old fixture survives POST, GET and PUT with classic geometry and timeline 
     assert.deepEqual(fetched.body.data, fixture);
     assertClassicDataUnchanged(fetched.body.data, fixture);
 
+    const changed = structuredClone(fixture);
+    changed.variables[0].defaultValue = 'UPDATED VALUE';
     const updated = await requestJson(baseUrl, `/${encodeURIComponent(fixture.id)}`, {
       method: 'PUT',
-      body: { name: 'renamed old fixture', data: fixture },
+      body: { name: 'renamed old fixture', data: changed },
     });
     assert.equal(updated.status, 200, JSON.stringify(updated.body));
     assert.equal(updated.body.name, 'renamed old fixture');
-    assert.deepEqual(updated.body.data, fixture);
+    assert.deepEqual(updated.body.data, changed);
     assertClassicDataUnchanged(updated.body.data, fixture);
+
+    const fetchedAfterUpdate = await requestJson(baseUrl, `/${encodeURIComponent(fixture.id)}`);
+    assert.equal(fetchedAfterUpdate.status, 200, JSON.stringify(fetchedAfterUpdate.body));
+    assert.equal(fetchedAfterUpdate.body.data.variables[0].defaultValue, 'UPDATED VALUE');
+    assert.deepEqual(fetchedAfterUpdate.body.data, changed);
   });
 });
 

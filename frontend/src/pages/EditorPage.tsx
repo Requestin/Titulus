@@ -6,6 +6,10 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '@/core/api';
+import {
+  extractTemplateValidationErrors,
+  formatTemplateValidationError,
+} from '@/core/templateValidation';
 import { toast } from '@/core/toast';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/Button';
@@ -59,7 +63,7 @@ export function EditorPage() {
     try {
       const res = await api.templates.validate(t);
       if (!res.valid) {
-        toast.error(`Validation failed: ${res.errors[0]?.message ?? 'invalid template'}`);
+        toast.error(`Validation failed: ${formatTemplateValidationError(res.errors)}`);
         return false;
       }
       await api.templates.update(id, { name: t.name, data: t });
@@ -67,7 +71,12 @@ export function EditorPage() {
       toast.success('Saved');
       return true;
     } catch (e) {
-      toast.error(`Save failed: ${(e as Error).message}`);
+      const validationErrors = extractTemplateValidationErrors(e);
+      if (validationErrors.length > 0) {
+        toast.error(`Validation failed: ${formatTemplateValidationError(validationErrors)}`);
+      } else {
+        toast.error(`Save failed: ${(e as Error).message}`);
+      }
       return false;
     } finally {
       setSaving(false);
