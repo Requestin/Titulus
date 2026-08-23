@@ -249,3 +249,31 @@ loopback.
 
 `logs/backend.log`, `logs/frontend.log`, `logs/engines.log`; PID-файлы —
 `logs/dev/`.
+
+## 12. Phase 21 data paths
+
+После P21.6–P21.7 backend создаёт рядом с `app.db` три рабочих каталога.
+Они живут только внутри `TITULUS_DATA` и не являются частью git-дерева.
+
+| Путь | Назначение |
+|---|---|
+| `$TITULUS_DATA/uploads/` | current MediaJobs ingest; не unlink при catalog delete |
+| `$TITULUS_DATA/data-files/` | managed text/JSON/CSV для Data/Crawl; лимит 2 MB |
+| `$TITULUS_DATA/thumbnails/` | editor JPEG `{SAFE_ID}.jpg`, раздаётся как `/thumbnails/` |
+
+`TITULUS_FILE_ROOTS` по умолчанию пустой. Только тогда extra filesystem
+roots не открываются: путь `/data-files/foo.txt` резолвится в
+`$TITULUS_DATA/data-files/foo.txt`. Дополнительные корни задаются явно
+списком `realpath`, без symlink traversal. Ошибки 403 не содержат корни.
+
+Nginx для `/thumbnails/` такой же, как для `/uploads/`: proxy на backend.
+Не раздавайте эти каталоги напрямую с диска.
+
+```bash
+mkdir -p "$TITULUS_DATA/uploads" "$TITULUS_DATA/data-files" "$TITULUS_DATA/thumbnails"
+```
+
+Backend сам создаёт каталоги при старте. После upgrade на код с
+`schema_migrations` откройте **копию** старой `app.db`, не боевой файл:
+`openDb` накатывает `001_data_files`…`006_rbac_groups` идемпотентно.
+Uploads и готовые WebP-деривативы не конвертируются заново.

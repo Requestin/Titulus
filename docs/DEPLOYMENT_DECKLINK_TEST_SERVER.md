@@ -240,6 +240,10 @@ TITULUS_API_PASSWORD=REPLACE_WITH_A_NEW_PASSWORD
 # Phase 20 visual deployment default. Do not set accumulator here.
 TITULUS_DEV_PACING_MODE=one_tick
 TITULUS_PACING_MODE=one_tick
+
+# Extra filesystem roots for /api/files. Default empty: only
+# $TITULUS_DATA/data-files is readable/writable.
+# TITULUS_FILE_ROOTS=
 EOF
 sudo chown root:titulus /etc/titulus/titulus.env
 sudo chmod 0640 /etc/titulus/titulus.env
@@ -297,6 +301,7 @@ server {
     }
 
     location /uploads/ { proxy_pass http://127.0.0.1:3002; }
+    location /thumbnails/ { proxy_pass http://127.0.0.1:3002; }
     location /fonts/ { proxy_pass http://127.0.0.1:3002; }
     location = /channel.html { proxy_pass http://127.0.0.1:3002; }
     location = /bg-runtime.js { proxy_pass http://127.0.0.1:3002; }
@@ -379,6 +384,9 @@ curl -sf http://127.0.0.1:3002/api/health | jq
 test -s /var/lib/titulus/app.db
 test -s /opt/titulus/Titulus/backend/public/bg-runtime.js
 sudo -u titulus test -w /var/lib/titulus/uploads
+sudo -u titulus mkdir -p /var/lib/titulus/data-files /var/lib/titulus/thumbnails
+sudo -u titulus test -w /var/lib/titulus/data-files
+sudo -u titulus test -w /var/lib/titulus/thumbnails
 ```
 
 Откройте `https://titulus.example.net`, войдите под
