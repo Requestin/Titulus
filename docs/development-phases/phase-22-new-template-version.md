@@ -1,9 +1,9 @@
 # Phase 22 — New template version
 
-**Статус:** IN PROGRESS
-**Дата открытия:** 2026-08-23
-**База:** `origin/main` после Phase 21 close (`55e50e3`)
-**Предшественник:** Phase 21 New Designer Merge
+**Статус:** IN PROGRESS  
+**Дата открытия:** 2026-08-23  
+**База:** `origin/main` после Phase 21 close (`55e50e3`)  
+**Предшественник:** Phase 21 New Designer Merge  
 **Главный приоритет:** сделать новую схему единственным языком продукта,
 не ухудшив engine cadence и не взяв Unreal / Sergey engine / WebM
 
@@ -43,16 +43,16 @@ Persist остаётся равен air: capability вне `supported[]` → 422
 
 ## 4. План PR
 
-| Шаг | Содержание |
-|---|---|
-| P22.0 | этот документ + development-plan |
-| P22.1 | convert + staged allowlist + переписанные museum-тесты |
-| P22.2 | text-transform, shadow, clock bind, crawl file/copy, Data panel, timeline leftovers |
-| P22.3 | WebP in/out window |
-| P22.4 | LayerID stack + default ON после visual |
-| P22.5 | Control DE, MAM picker, folders, test-mode, thumbs, locks, RBAC UI |
-| P22.6 | null/DeckLink 1ch/3ch на сконвертированных fixtures |
-| P22.7 | goldens + SDI exam на шаблонах оператора, затем close |
+| Шаг | Содержание | Статус |
+|---|---|---|
+| P22.0 | этот документ + development-plan | DONE (PR #144) |
+| P22.1 | convert + staged allowlist + переписанные museum-тесты | DONE (PR #145) |
+| P22.2 | text-transform, shadow, clock bind, crawl file/copy, Data panel, timeline leftovers | DONE (PR #146) |
+| P22.3 | WebP in/out window | DONE (PR #147) |
+| P22.4 | LayerID stack + default ON после visual | DONE (PR #148) |
+| P22.5 | Control DE, MAM picker, folders, test-mode, thumbs, locks, RBAC UI | DONE (PR #149) |
+| P22.6 | null/DeckLink 1ch/3ch на сконвертированных fixtures | telemetry PASS; visual PENDING |
+| P22.7 | goldens + SDI exam на шаблонах оператора, затем close | BLOCKED — нет набора оператора |
 
 P22.7 не закрывает фазу без набора оператора.
 
@@ -66,13 +66,14 @@ P22.7 не закрывает фазу без набора оператора.
 `git revert <merge-commit>`, rebuild `bg-runtime.js`.
 Allowlist — одним revert. DB — copied `app.db` до migrate-утилиты.
 
+## 7. Allowlist
 
-## 7. P22.1 allowlist
-
-Первый воздух в эфир — только уже живые capability. В `supported[]`:
+Все 16 known capability сейчас в `supported[]` (P22.1–P22.4):
 
 - `properties.position-z`
 - `rectangle.four-corner-gradient`
+- `text.shadow`
+- `text.transform`
 - `crawl.layer`
 - `timeline.object-track-groups`
 - `timeline.action-cues-items`
@@ -84,6 +85,27 @@ Allowlist — одним revert. DB — copied `app.db` до migrate-утили�
 - `data.select-map-policies`
 - `data.time-expressions`
 - `data.media-token-resolution`
+- `control.layer-id-on-air`
 
-P22.2 открыл `text.transform` и `text.shadow` после paint/UI.
-Пока **не** в allowlist: `control.layer-id-on-air` (ждёт P22.4 stack).
+Неизвестная или невыведенная capability по-прежнему 422.
+
+## 8. P22.6 gate
+
+Отчёт: `docs/performance investigation/reports/p22-06-converted-gate.md`.
+
+T0 зелёный. Copied-DB migrate на канонических fixtures — 0 rewrite,
+геометрия та же. Null и DeckLink 1ch/3ch ≤5 мин: `(2,0)=0`,
+late/drop/flush/unlock = 0. Сценарии Crawl / Continue / prepare `block` /
+LayerID replace / WebP window — PASS.
+
+Visual PASS ждёт глаз оператора. Residual `single`/`overwrite` записаны
+и не объявлены шумом.
+
+## 9. P22.7 — шаблоны оператора
+
+Положить новые шаблоны в `tests/fixtures/p22/operator/` (без секретов;
+медиа — отдельным оговорённым набором). Затем goldens, T0, null 1ch/3ch,
+DeckLink 1ch/3ch **только на них**, отчёт
+`p22-07-operator-templates.md`, development-plan → DONE.
+
+Без этого набора фаза не закрывается, даже если P22.6 зелёный.

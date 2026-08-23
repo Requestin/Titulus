@@ -35,7 +35,7 @@ Engine-first policy остаётся alwaysApply; детали — `docs/develop
 | 19 | Style Guide + cost model | DONE: Doc02 audit-recovery K2 PASS (PR #84) | phase-19-cost-model.md |
 | 20 | Visual frame pacing + microfreeze | DONE (visual; strict SDI semantic evidence deferred) | phase-20-visual-frame-pacing.md |
 | 21 | New Designer Merge | DONE — capability port на current main; visual PASS; Unreal/VS excluded | phase-21-new-designer-merge.md |
-| 22 | New template version | IN PROGRESS — convert + staged air allowlist; operator templates = final exam | phase-22-new-template-version.md |
+| 22 | New template version | IN PROGRESS — P22.0–P22.5 merged; P22.6 telemetry PASS, visual PENDING; P22.7 = operator exam | phase-22-new-template-version.md |
 
 ## Последний milestone в main
 
@@ -59,16 +59,17 @@ Phase 21 закрыта 2026-08-23 как controlled capability port на curren
 не объявлены шумом. Отчёты: `p21-00-baseline.md`,
 `p21-10-software-matrix.md`, `p21-10-hardware-closure.md`.
 
-Phase 22 открыта: конвертация old→vNext, staged `supported[]`, WebP in/out
-окно, LayerID stack, операторские экраны. Финальный exam — новые шаблоны
-оператора (P22.7), не музейный `test1`.
+Phase 22: P22.0–P22.5 в `main` (PR #144–#149). P22.6 telemetry PASS на
+сконвертированном `p20-test1-visual` (null/DeckLink 1ch/3ch, `(2,0)=0`,
+zero late/drop/flush/unlock); visual PASS ждёт глаз оператора. Отчёт:
+`docs/performance investigation/reports/p22-06-converted-gate.md`.
+Финальный exam — новые шаблоны оператора (P22.7), не музейный `test1`.
 
 ## Следующие задачи
 
-- P22.1 — конвертировать old→vNext и открыть первый staged allowlist.
-- P22.2–P22.5 — editor leftovers, WebP window, LayerID stack, Control/MAM.
-- P22.6 — null/DeckLink на сконвертированных fixtures (≤5 мин, i7).
+- P22.6 visual — глаза оператора на DeckLink 1ch/3ch (`p22-06-converted-gate.md`).
 - P22.7 — после шаблонов оператора: goldens + SDI exam + close.
+  Каталог: `tests/fixtures/p22/operator/`. Без этого набора фаза не закрывается.
 
 ## Отложенная строгая SDI-проверка
 
