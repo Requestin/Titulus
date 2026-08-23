@@ -8,6 +8,7 @@ import { Braces, Link2, Link2Off } from 'lucide-react';
 import type { Layer, Variable, VariableBinding, BlendMode } from '@runtime';
 import { anchorCompensatedUpdate } from '@runtime';
 import { useEditor } from '../store';
+import { CueInspector } from '../timeline/CueInspector';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
 import { usePlayhead } from '../playheadStore';
 import { gesturePreviewStore } from '../gesturePreview';
@@ -54,6 +55,30 @@ export function PropertiesPanel() {
     version: 0,
     open: true,
   });
+  const selectedCueId = useEditor((s) => s.selectedCueId);
+  const updateCue = useEditor((s) => s.updateCue);
+  const updateCueItem = useEditor((s) => s.updateCueItem);
+  const addCueItem = useEditor((s) => s.addCueItem);
+
+  if (template && selectedCueId) {
+    const cue = (template.timeline.cues ?? []).find((item) => item.id === selectedCueId);
+    if (cue) {
+      return (
+        <div className="flex h-full flex-col">
+          <PropertiesToolbar signal={collapseSignal} onChange={setCollapseSignal} />
+          <div className="min-h-0 flex-1 overflow-auto">
+            <CueInspector
+              cue={cue}
+              directors={template.timeline.directors}
+              onUpdateCue={(partial) => updateCue(cue.id, partial)}
+              onUpdateItem={(itemId, item) => updateCueItem(cue.id, itemId, item)}
+              onAddItem={() => addCueItem(cue.id)}
+            />
+          </div>
+        </div>
+      );
+    }
+  }
 
   if (!template || !selection) {
     return (

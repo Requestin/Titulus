@@ -26,6 +26,36 @@ function isPlainObject(v) {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+export function normalizeRendererMessage(msg) {
+  if (!isPlainObject(msg)) {
+    return { ok: false, code: 'INVALID_PAYLOAD', message: 'payload must be an object' };
+  }
+  if (msg.type !== 'waitingContinue') {
+    return { ok: false, code: 'UNKNOWN_TYPE', message: 'unsupported renderer message' };
+  }
+  if (typeof msg.templateId !== 'string' || !SAFE_ID_RE.test(msg.templateId)) {
+    return { ok: false, code: 'INVALID_TEMPLATE_ID', message: 'templateId is required' };
+  }
+  if (typeof msg.waiting !== 'boolean') {
+    return { ok: false, code: 'INVALID_WAITING', message: 'waiting must be a boolean' };
+  }
+  return {
+    ok: true,
+    value: {
+      type: 'waitingContinue',
+      templateId: msg.templateId,
+      waiting: msg.waiting,
+    },
+  };
+}
+
+export function applyRendererMessage(onAir, channelId, msg) {
+  const normalized = normalizeRendererMessage(msg);
+  if (!normalized.ok) return normalized;
+  onAir.setWaitingContinue(channelId, normalized.value.templateId, normalized.value.waiting);
+  return normalized;
+}
+
 export function normalizeControlMessage(msg) {
   if (!isPlainObject(msg)) {
     return { ok: false, code: 'INVALID_PAYLOAD', message: 'payload must be an object' };
@@ -176,6 +206,15 @@ export function wsRouter(onAir, auth) {
     // The runtime auto-reconnects on its own; we only clean up bookkeeping.
     ws.on('close', () => onAir.unregisterRenderer(channelId, ws));
     ws.on('error', () => onAir.unregisterRenderer(channelId, ws));
+    ws.on('message', (raw) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(raw.toString());
+      } catch {
+        return;
+      }
+      applyRendererMessage(onAir, channelId, parsed);
+    });
   });
 
   return router;

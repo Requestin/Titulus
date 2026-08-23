@@ -8,11 +8,16 @@ export function TimelineTransport({
   view,
   canAddKeyframe,
   canDeleteKeyframes,
+  canContinue,
+  canAddCue,
+  canDeleteCue,
   onTogglePlay,
   onStop,
   onContinue,
   onAddKeyframe,
   onDeleteKeyframes,
+  onAddCue,
+  onDeleteCue,
   onView,
   onZoomOut,
   onZoomIn,
@@ -23,11 +28,16 @@ export function TimelineTransport({
   view: 'dope' | 'curve';
   canAddKeyframe: boolean;
   canDeleteKeyframes: boolean;
+  canContinue: boolean;
+  canAddCue: boolean;
+  canDeleteCue: boolean;
   onTogglePlay: () => void;
   onStop: () => void;
-  onContinue?: () => void;
+  onContinue: () => void;
   onAddKeyframe: () => void;
   onDeleteKeyframes: () => void;
+  onAddCue: () => void;
+  onDeleteCue: () => void;
   onView: (view: 'dope' | 'curve') => void;
   onZoomOut: () => void;
   onZoomIn: () => void;
@@ -52,11 +62,14 @@ export function TimelineTransport({
       </button>
       <button
         type="button"
-        disabled
-        aria-disabled="true"
+        disabled={!canContinue}
+        aria-disabled={!canContinue}
         title="Continue"
         onClick={onContinue}
-        className="grid h-7 w-7 place-items-center rounded-md text-ink-faint opacity-40"
+        className={cn(
+          'grid h-7 w-7 place-items-center rounded-md',
+          canContinue ? 'text-ink hover:bg-surface-2' : 'cursor-not-allowed text-ink-faint opacity-40',
+        )}
       >
         <ChevronsRight className="h-4 w-4" />
       </button>
@@ -87,6 +100,30 @@ export function TimelineTransport({
         )}
       >
         -K
+      </button>
+      <button
+        type="button"
+        disabled={!canAddCue}
+        onClick={onAddCue}
+        title="+A"
+        className={cn(
+          'rounded-md px-1.5 text-[11px] font-semibold',
+          canAddCue ? 'text-ink-muted hover:bg-surface-2 hover:text-ink' : 'cursor-not-allowed text-ink-faint opacity-40',
+        )}
+      >
+        +A
+      </button>
+      <button
+        type="button"
+        disabled={!canDeleteCue}
+        onClick={onDeleteCue}
+        title="-A"
+        className={cn(
+          'rounded-md px-1.5 text-[11px] font-semibold',
+          canDeleteCue ? 'text-ink-muted hover:bg-surface-2 hover:text-danger' : 'cursor-not-allowed text-ink-faint opacity-40',
+        )}
+      >
+        -A
       </button>
       <div className="ml-auto flex items-center gap-1">
         <button

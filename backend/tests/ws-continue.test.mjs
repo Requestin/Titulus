@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { onAirDao, openDb } from '../src/db.js';
 import { OnAirManager } from '../src/onair.js';
-import { normalizeControlMessage } from '../src/routes/ws.js';
+import { applyRendererMessage, normalizeControlMessage, normalizeRendererMessage } from '../src/routes/ws.js';
 
 const fixturesDirectory = fileURLToPath(
   new URL('../../tests/fixtures/p21/', import.meta.url),
@@ -199,6 +199,42 @@ test('update after take still merges variables without a z-order bump', () => {
     const stored = dao.get(channelId, legacyTake.templateId);
     assert.deepEqual(stored.variables, { name: 'A', title: 'B' });
     assert.equal(orderIndex(db, legacyTake.templateId), orderAfterTake);
+  } finally {
+    db.close();
+  }
+});
+
+test('normalizeRendererMessage accepts waitingContinue', () => {
+  const result = normalizeRendererMessage({
+    type: 'waitingContinue',
+    templateId: 'tpl-1',
+    waiting: true,
+    extra: 1,
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value, {
+    type: 'waitingContinue',
+    templateId: 'tpl-1',
+    waiting: true,
+  });
+});
+
+test('renderer waitingContinue updates details without persisting', () => {
+  const db = openDb(':memory:');
+  try {
+    const dao = onAirDao(db);
+    const manager = new OnAirManager(db);
+    const fixture = readFixture('old', 'test');
+    manager.handleControlCommand(takeCommand(fixture));
+    const applied = applyRendererMessage(manager, channelId, {
+      type: 'waitingContinue',
+      templateId: fixture.id,
+      waiting: true,
+    });
+    assert.equal(applied.ok, true);
+    assert.equal(manager.isWaitingContinue(channelId, fixture.id), true);
+    assert.equal(manager.onAirDetails().channels[channelId][0].waitingContinue, true);
+    assert.equal('waitingContinue' in (dao.get(channelId, fixture.id) ?? {}), false);
   } finally {
     db.close();
   }

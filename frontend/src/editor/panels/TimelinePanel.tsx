@@ -4,7 +4,8 @@ import type { AnimatableProp, Template } from '@runtime';
 import { Checkbox, NumberInput } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { useEditor, type Target } from '../store';
-import { usePlayhead } from '../playheadStore';
+import { requestContinue, usePlayhead } from '../playheadStore';
+import { canRemoveDirector, listCuesForDirector } from '../timelineCues';
 import {
   collectTracks,
   tracksForDirector,
@@ -15,9 +16,11 @@ import { keyframesInMarquee, normalizeMarquee, toggleKeyframeSelection } from '.
 import { CurveView } from '../timeline/CurveView';
 import { DirectorList } from '../timeline/DirectorList';
 import { DirectorToolbar, TimelineTransport } from '../timeline/Transport';
+import { ActionLane } from '../timeline/ActionLane';
 import { DopeLane } from '../timeline/DopeLane';
 import { SummaryBar } from '../timeline/SummaryBar';
 import {
+  ACTION_LANE_H,
   GROUP_HDR_H,
   HEADER_W,
   RULER_H,
@@ -79,6 +82,8 @@ export function TimelinePanel() {
   const playing = usePlayhead((state) => state.playing);
   const activeDirectorId = useEditor((state) => state.activeDirectorId);
   const selectedKeyframes = useEditor((state) => state.selectedKeyframes);
+  const selectedCueId = useEditor((state) => state.selectedCueId);
+  const waitingContinue = usePlayhead((state) => state.waitingContinue);
   const setPlayhead = useEditor((state) => state.setPlayhead);
   const setPlaying = useEditor((state) => state.setPlaying);
   const setActiveDirector = useEditor((state) => state.setActiveDirector);
@@ -94,6 +99,10 @@ export function TimelinePanel() {
   const deleteSelectedKeyframes = useEditor((state) => state.deleteSelectedKeyframes);
   const moveSelectedKeyframes = useEditor((state) => state.moveSelectedKeyframes);
   const stretchObjectSummary = useEditor((state) => state.stretchObjectSummary);
+  const selectCue = useEditor((state) => state.selectCue);
+  const addCueAtPlayhead = useEditor((state) => state.addCueAtPlayhead);
+  const removeSelectedCue = useEditor((state) => state.removeSelectedCue);
+  const moveCue = useEditor((state) => state.moveCue);
 
   const [view, setView] = useState<'dope' | 'curve'>('dope');
   const [pxPerFrame, setPxPerFrame] = useState(6);
@@ -171,6 +180,12 @@ export function TimelinePanel() {
       event.preventDefault();
       event.stopPropagation();
       deleteSelectedKeyframes();
+      return;
+    }
+    if ((event.key === 'Delete' || event.key === 'Backspace') && selectedCueId) {
+      event.preventDefault();
+      event.stopPropagation();
+      removeSelectedCue();
     }
   }
 
@@ -193,10 +208,16 @@ export function TimelinePanel() {
         view={view}
         canAddKeyframe={Boolean(activeTrackResolved)}
         canDeleteKeyframes={selectedKeyframes.length > 0}
+        canContinue={waitingContinue}
+        canAddCue={Boolean(director)}
+        canDeleteCue={Boolean(selectedCueId)}
         onTogglePlay={() => setPlaying(!playing)}
         onStop={() => { setPlaying(false); setPlayhead(0); }}
+        onContinue={requestContinue}
         onAddKeyframe={handleAddKeyframe}
         onDeleteKeyframes={deleteSelectedKeyframes}
+        onAddCue={addCueAtPlayhead}
+        onDeleteCue={removeSelectedCue}
         onView={setView}
         onZoomOut={() => setPxPerFrame((value) => Math.max(2, value - 2))}
         onZoomIn={() => setPxPerFrame((value) => Math.min(24, value + 2))}
@@ -211,7 +232,7 @@ export function TimelinePanel() {
         />
         <DirectorToolbar
           onAdd={addDirector}
-          canRemove={current.timeline.directors.length > 1}
+          canRemove={canRemoveDirector(current.timeline.directors, director?.id ?? '')}
           onRemove={() => director && removeDirector(director.id)}
         />
       </div>
@@ -252,6 +273,12 @@ export function TimelinePanel() {
             onScroll={() => syncScroll('headers')}
           >
             <div style={{ height: RULER_H }} className="sticky top-0 shrink-0 border-b border-border bg-surface-2" />
+            <div
+              style={{ height: ACTION_LANE_H }}
+              className="flex items-center px-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint"
+            >
+              Actions
+            </div>
             {directorTracks.length === 0 ? (
               <p className="p-3 text-[12px] text-ink-faint">
                 {selectedTarget ? 'Add a track to start animating.' : 'Select a layer and add a track.'}
@@ -403,6 +430,14 @@ export function TimelinePanel() {
             }}
           >
             <Ruler dur={duration} pxPerFrame={pxPerFrame} onScrub={scrubFromEvent} />
+            <ActionLane
+              cues={listCuesForDirector(current.timeline.cues, director?.id ?? 'default')}
+              duration={duration}
+              pxPerFrame={pxPerFrame}
+              selectedCueId={selectedCueId}
+              onSelect={selectCue}
+              onMove={moveCue}
+            />
             {view === 'dope' && directorTracks.length > 0 && (
               <div
                 className="pointer-events-none absolute bottom-0 z-sticky w-px bg-live"

@@ -9,7 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
-import { playheadStore, setLivePlayhead, usePlayhead } from './playheadStore';
+import { playheadStore, setLivePlayhead, setWaitingContinue, usePlayhead } from './playheadStore';
 import { clearGesturePreview, scheduleGesturePreview } from './gesturePreview';
 import { derivedGroupBox } from './groupBounds';
 import {
@@ -69,6 +69,7 @@ export function CanvasArea() {
   const gridSize = useEditor((s) => s.gridSize);
   const playhead = usePlayhead((s) => s.playhead);
   const playing = usePlayhead((s) => s.playing);
+  const continueRequestId = usePlayhead((s) => s.continueRequestId);
   const setPlayhead = useEditor((s) => s.setPlayhead);
   const setPlaying = useEditor((s) => s.setPlaying);
   const select = useEditor((s) => s.select);
@@ -241,7 +242,22 @@ export function CanvasArea() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playhead, playing]);
 
-  // Playback: advance the playhead at fps, seek each frame (WYSIWYG preview).
+  function applyPreviewFrame(renderer: TemplateRenderer, frame: number): void {
+    if (renderer.hasDirectorRuntime()) renderer.advancePlayback(frame);
+    else renderer.seek(frame);
+    setWaitingContinue(renderer.waitingContinue());
+  }
+
+  useEffect(() => {
+    if (continueRequestId === 0) return;
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    renderer.continueDirectors();
+    setWaitingContinue(renderer.waitingContinue());
+  }, [continueRequestId]);
+
+  // Playback: advance the playhead at fps. Action templates drive the machine;
+  // classic templates keep seek-only preview.
   useEffect(() => {
     if (!playing) return;
     const r = rendererRef.current;
@@ -261,13 +277,13 @@ export function CanvasArea() {
         if (dir?.loop) {
           local %= dur;
         } else {
-          r.seek(offset + dur);
+          applyPreviewFrame(r, offset + dur);
           setPlayhead(dur);
           setPlaying(false);
           return;
         }
       }
-      r.seek(offset + local);
+      applyPreviewFrame(r, offset + local);
       setLivePlayhead(local);
       raf = requestAnimationFrame(loop);
     };

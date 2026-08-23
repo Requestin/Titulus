@@ -26,6 +26,7 @@ import {
   selectPacingIdentity,
   type PacingIdentity,
 } from './pacingProtocol.js';
+import { diffWaitingContinue } from './waitingContinueReport.js';
 export type WsStatus = 'connecting' | 'connected' | 'disconnected';
 
 /** A take/update/clear message on /ws/renderer (mirrors §7.4). */
@@ -78,6 +79,7 @@ export class ChannelClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
   private nextGraphRevision = 1;
+  private lastWaitingContinue = new Map<string, boolean>();
 
   constructor(opts: ChannelClientOptions) {
     this.opts = opts;
@@ -119,6 +121,7 @@ export class ChannelClient {
   tick(): void {
     if (this.opts.playbackMode !== 'fixed') return;
     for (const a of this.active.values()) a.renderer.tick();
+    this.reportWaitingContinue();
   }
 
   /** Current on-air template count (for the control-panel status badge). */
@@ -194,10 +197,29 @@ export class ChannelClient {
     }
   }
 
+  private reportWaitingContinue(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    const { changed, snapshot } = diffWaitingContinue(
+      this.lastWaitingContinue,
+      [...this.active.entries()].map(([templateId, active]) => (
+        [templateId, active.renderer.waitingContinue()] as const
+      )),
+    );
+    this.lastWaitingContinue = snapshot;
+    for (const report of changed) {
+      this.ws.send(JSON.stringify({
+        type: 'waitingContinue',
+        templateId: report.templateId,
+        waiting: report.waiting,
+      }));
+    }
+  }
+
   private onContinue(msg: ChannelMessage): void {
     const active = this.active.get(msg.templateId);
     if (!active) return;
     active.renderer.continueDirectors();
+    this.reportWaitingContinue();
   }
 
   private rendererOpts(): TemplateRendererOptions {
@@ -232,10 +254,12 @@ export class ChannelClient {
         onFrame: (info) => {
           this.opts.onFrame?.(info);
           this.publishGraphFrame(id);
+          this.reportWaitingContinue();
         },
       });
     this.opts.onActiveCount?.(this.active.size);
     this.publishCurrentGraph();
+    this.reportWaitingContinue();
   }
 
   private emitGraphLine(line: string | null): void {
@@ -343,8 +367,10 @@ export class ChannelClient {
     // — left to a future enhancement once directors carry clear semantics.)
     a.renderer.destroy();
     this.active.delete(msg.templateId);
+    this.lastWaitingContinue.delete(msg.templateId);
     this.opts.onActiveCount?.(this.active.size);
     this.publishCurrentGraph();
+    this.reportWaitingContinue();
   }
 
   /** Expose current status for the page UI. */
