@@ -36,26 +36,53 @@ function fakeOpenRenderer() {
   };
 }
 
-test('quarantines persisted unsupported takes while replaying valid legacy takes', () => {
+test('clears quarantined persisted takes before replaying valid legacy takes in z-order', () => {
   const db = openDb(':memory:');
   try {
     const dao = onAirDao(db);
-    const unsupportedTake = takeCommand(readFixture('draft', 'scene-pivot-z'));
-    const legacyTake = takeCommand(readFixture('old', 'test'));
-    dao.set(unsupportedTake);
-    dao.set(legacyTake);
+    const unsupportedBackTake = takeCommand({
+      ...readFixture('draft', 'scene-pivot-z'),
+      id: 'p21-scene-pivot-z-back',
+    });
+    const legacyBackTake = takeCommand(readFixture('old', 'test'));
+    const unsupportedFrontTake = takeCommand({
+      ...readFixture('draft', 'scene-pivot-z'),
+      id: 'p21-scene-pivot-z-front',
+    });
+    const legacyFrontTake = takeCommand(readFixture('old', 'test1'));
+    dao.set(unsupportedBackTake);
+    dao.set(legacyBackTake);
+    dao.set(unsupportedFrontTake);
+    dao.set(legacyFrontTake);
 
     const manager = new OnAirManager(db);
     const renderer = fakeOpenRenderer();
     manager.registerRenderer(channelId, renderer);
 
+    assert.deepEqual(renderer.messages, [
+      {
+        type: 'clear',
+        channelId,
+        templateId: unsupportedBackTake.templateId,
+      },
+      {
+        type: 'clear',
+        channelId,
+        templateId: unsupportedFrontTake.templateId,
+      },
+      legacyBackTake,
+      legacyFrontTake,
+    ]);
     assert.deepEqual(
-      renderer.messages.map((message) => message.templateId),
-      [legacyTake.templateId],
+      dao.get(channelId, unsupportedBackTake.templateId),
+      unsupportedBackTake,
     );
-    assert.deepEqual(renderer.messages[0], legacyTake);
+    assert.deepEqual(
+      dao.get(channelId, unsupportedFrontTake.templateId),
+      unsupportedFrontTake,
+    );
     assert.deepEqual(manager.onAirTemplateIds(), {
-      [channelId]: [legacyTake.templateId],
+      [channelId]: [legacyBackTake.templateId, legacyFrontTake.templateId],
     });
   } finally {
     db.close();
