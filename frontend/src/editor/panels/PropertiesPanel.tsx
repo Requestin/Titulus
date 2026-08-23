@@ -618,7 +618,26 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             <LabeledNum label="Radius" value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'image') l.cornerRadius = v; })} />
           )}
           {layer.type === 'video' && (
-            <Checkbox label="Loop" checked={layer.loop} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'video') l.loop = v; })} />
+            <>
+              <Checkbox label="Loop" checked={layer.loop} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'video') l.loop = v; })} />
+              <LabeledNum
+                label="In"
+                value={layer.inFrame ?? 0}
+                resetValue={0}
+                onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'video') l.inFrame = Math.max(0, Math.round(v)); })}
+              />
+              <LabeledNum
+                label="Out"
+                value={layer.outFrame ?? 0}
+                resetValue={0}
+                onChange={(v) => updateLayer(layer.id, (l) => {
+                  if (l.type !== 'video') return;
+                  const next = Math.max(0, Math.round(v));
+                  if (next === 0) delete l.outFrame;
+                  else l.outFrame = next;
+                })}
+              />
+            </>
           )}
         </Section>
       );
