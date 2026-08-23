@@ -82,24 +82,81 @@ export function crawlPaintText(
   return `${strip}${glue}${strip}`;
 }
 
+export function continuousMarqueePeriod(copyPx: number, boxExtent: number): number {
+  return Math.max(1, copyPx, boxExtent);
+}
+
 export function sampleContinuousMarqueeOffset(
   progress: number,
-  periodPx: number,
+  copyPx: number,
+  boxExtent: number,
   axis: 'x' | 'y',
   crawl: Pick<CrawlScheduleInput['crawl'], 'type' | 'directionIn' | 'directionOut'>,
 ): { x: number; y: number } {
   const p = Math.min(1, Math.max(0, progress));
-  const period = Math.max(1, periodPx);
-  const along = 0 - p * period;
-  let signed = along;
-  if (crawl.type === 'carousel') {
-    const moveUp = crawl.directionOut === 'up' || crawl.directionIn === 'down';
-    if (!moveUp) signed = -along;
-  } else {
-    const moveLeft = crawl.directionOut === 'left' || crawl.directionIn === 'right';
-    if (!moveLeft) signed = -along;
+  const box = Math.max(0, boxExtent);
+  const period = continuousMarqueePeriod(copyPx, box);
+  const inPos = crawl.directionIn === 'right' || crawl.directionIn === 'down';
+  const outNeg = crawl.directionOut === 'left' || crawl.directionOut === 'up';
+  const start = inPos ? box : 0;
+  const end = outNeg ? start - period : start + period;
+  const along = start + p * (end - start);
+  return axis === 'x' ? { x: along, y: 0 } : { x: 0, y: along };
+}
+
+export type CrawlProgressKeyframe = {
+  id: string;
+  frame: number;
+  layers: Record<string, Record<string, unknown>>;
+  groups: Record<string, unknown>;
+  easing: string;
+};
+
+export function syncCrawlProgressKeys<T extends CrawlProgressKeyframe>(
+  keyframes: T[],
+  layerId: string,
+  durationFrames: number,
+  createId: () => string,
+): void {
+  const duration = Math.max(1, durationFrames);
+  for (const key of keyframes) {
+    const bag = key.layers[layerId];
+    if (!bag || !Object.prototype.hasOwnProperty.call(bag, 'crawlProgress')) continue;
+    delete bag.crawlProgress;
+    if (Object.keys(bag).length === 0) delete key.layers[layerId];
   }
-  return axis === 'x' ? { x: signed, y: 0 } : { x: 0, y: signed };
+  for (let i = keyframes.length - 1; i >= 0; i -= 1) {
+    const key = keyframes[i]!;
+    const emptyLayers = Object.keys(key.layers).length === 0;
+    const emptyGroups = Object.keys(key.groups ?? {}).length === 0;
+    if (emptyLayers && emptyGroups && key.frame !== 0 && key.frame !== duration) {
+      keyframes.splice(i, 1);
+    }
+  }
+  let start = keyframes.find((key) => key.frame === 0);
+  if (!start) {
+    start = {
+      id: createId(),
+      frame: 0,
+      layers: {},
+      groups: {},
+      easing: 'linear',
+    } as T;
+    keyframes.push(start);
+  }
+  start.layers[layerId] = { ...start.layers[layerId], crawlProgress: 0 };
+  let end = keyframes.find((key) => key.frame === duration);
+  if (!end) {
+    end = {
+      id: createId(),
+      frame: duration,
+      layers: {},
+      groups: {},
+      easing: 'linear',
+    } as T;
+    keyframes.push(end);
+  }
+  end.layers[layerId] = { ...end.layers[layerId], crawlProgress: 1 };
 }
 
 export function scheduleCrawl(input: CrawlScheduleInput): CrawlSchedule {
@@ -130,8 +187,12 @@ export function scheduleCrawl(input: CrawlScheduleInput): CrawlSchedule {
       strip += lineSpans[i] ?? 0;
       if (i < lineSpans.length - 1) strip += separatorSpan;
     }
-    const travel = input.crawl.animationType === 'continuous' ? strip : strip + boxExtent;
-    const start = input.crawl.animationType === 'continuous' ? 0 : (inPos ? boxExtent : -strip);
+    const travel = input.crawl.animationType === 'continuous'
+      ? Math.max(strip, boxExtent)
+      : strip + boxExtent;
+    const start = input.crawl.animationType === 'continuous'
+      ? (inPos ? boxExtent : 0)
+      : (inPos ? boxExtent : -strip);
     const end = start + (outNeg ? -travel : travel);
     const moveFrames = pushMove(segments, travel, pxPerFrame);
     path.push({ frame, offset: start });

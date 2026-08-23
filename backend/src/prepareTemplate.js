@@ -1,6 +1,6 @@
 import { extractAssetId, runTemplateData } from './dataPipeline.js';
 import { readAllowedText } from './filesAccess.js';
-import { scheduleCrawl } from './crawlSchedule.js';
+import { scheduleCrawl, syncCrawlProgressKeys } from './crawlSchedule.js';
 import { mediaAssetsDao } from './db.js';
 
 export function cloneTemplate(template) {
@@ -39,9 +39,13 @@ export function rebaseCrawlTimeline(template) {
       director.durationFrames = durationFrames;
       director.loop = layer.crawl.animationType === 'continuous';
     }
-    for (const key of template.timeline.keyframes ?? []) {
-      if (key.layers?.[layer.id]?.crawlProgress === 1) key.frame = durationFrames;
-    }
+    if (!template.timeline.keyframes) template.timeline.keyframes = [];
+    syncCrawlProgressKeys(
+      template.timeline.keyframes,
+      layer.id,
+      durationFrames,
+      () => crypto.randomUUID(),
+    );
   }
   return template;
 }

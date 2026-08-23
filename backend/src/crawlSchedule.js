@@ -43,8 +43,12 @@ export function scheduleCrawl(input) {
       strip += lineSpans[i] ?? 0;
       if (i < lineSpans.length - 1) strip += separatorSpan;
     }
-    const travel = input.crawl.animationType === 'continuous' ? strip : strip + boxExtent;
-    const start = input.crawl.animationType === 'continuous' ? 0 : (inPos ? boxExtent : -strip);
+    const travel = input.crawl.animationType === 'continuous'
+      ? Math.max(strip, boxExtent)
+      : strip + boxExtent;
+    const start = input.crawl.animationType === 'continuous'
+      ? (inPos ? boxExtent : 0)
+      : (inPos ? boxExtent : -strip);
     const end = start + (outNeg ? -travel : travel);
     const moveFrames = pushMove(segments, travel, pxPerFrame);
     path.push({ frame, offset: start });
@@ -104,4 +108,37 @@ function pushMove(segments, distancePx, pxPerFrame) {
   const frames = pxPerFrame > 0 ? Math.ceil(distance / pxPerFrame) : 0;
   if (frames > 0) segments.push({ kind: 'move', frames, distancePx: distance });
   return frames;
+}
+
+export function syncCrawlProgressKeys(keyframes, layerId, durationFrames, createId) {
+  const duration = Math.max(1, durationFrames);
+  const list = keyframes ?? [];
+  for (const key of list) {
+    const bag = key.layers?.[layerId];
+    if (!bag || !Object.prototype.hasOwnProperty.call(bag, 'crawlProgress')) continue;
+    delete bag.crawlProgress;
+    if (Object.keys(bag).length === 0) delete key.layers[layerId];
+  }
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const key = list[i];
+    const emptyLayers = Object.keys(key.layers || {}).length === 0;
+    const emptyGroups = Object.keys(key.groups || {}).length === 0;
+    if (emptyLayers && emptyGroups && key.frame !== 0 && key.frame !== duration) {
+      list.splice(i, 1);
+    }
+  }
+  let start = list.find((key) => key.frame === 0);
+  if (!start) {
+    start = { id: createId(), frame: 0, layers: {}, groups: {}, easing: 'linear' };
+    list.push(start);
+  }
+  start.layers = start.layers || {};
+  start.layers[layerId] = { ...start.layers[layerId], crawlProgress: 0 };
+  let end = list.find((key) => key.frame === duration);
+  if (!end) {
+    end = { id: createId(), frame: duration, layers: {}, groups: {}, easing: 'linear' };
+    list.push(end);
+  }
+  end.layers = end.layers || {};
+  end.layers[layerId] = { ...end.layers[layerId], crawlProgress: 1 };
 }

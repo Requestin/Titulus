@@ -1232,8 +1232,8 @@ export class TemplateRenderer {
         if (duplicate) {
           const axis = layer.crawl.type === 'carousel' ? 'y' : 'x';
           const measured = axis === 'x' ? content.scrollWidth : content.scrollHeight;
-          const period = Math.max(1, measured / 2);
-          offset = sampleContinuousMarqueeOffset(progress, period, axis, layer.crawl);
+          const boxExtent = axis === 'x' ? layer.transform.width : layer.transform.height;
+          offset = sampleContinuousMarqueeOffset(progress, measured / 2, boxExtent, axis, layer.crawl);
         } else {
           offset = sampleCrawlOffset({
             content: resolved,
