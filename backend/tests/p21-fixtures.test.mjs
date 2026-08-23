@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { validateTemplate } from '../src/templateValidation.js';
+import { validateTemplateSchema } from '../src/templateValidation.js';
 
 const testsDirectory = fileURLToPath(new URL('../../tests/', import.meta.url));
 const templatesDirectory = join(testsDirectory, 'templates');
@@ -45,7 +45,7 @@ function cloneOldTestFixture() {
 }
 
 function assertRejectedAt(fixture, expectedPath) {
-  const result = validateTemplate(fixture);
+  const result = validateTemplateSchema(fixture);
 
   assert.equal(result.valid, false, 'fixture unexpectedly passed validation');
   assert.ok(
@@ -99,7 +99,7 @@ for (const id of oldFixtureIds) {
 
   test(`P21 old fixture ${id} remains valid under the current schema`, () => {
     const fixture = readJson(join(oldDirectory, `${id}.json`));
-    const result = validateTemplate(fixture);
+    const result = validateTemplateSchema(fixture);
 
     assert.equal(result.valid, true, JSON.stringify(result.errors));
   });
@@ -135,7 +135,7 @@ test('P21 draft fixture IDs exactly match the required contract inventory', () =
 for (const id of draftFixtureIds) {
   test(`P21 draft fixture ${id} is valid under schema vNext`, () => {
     const fixture = readJson(join(draftDirectory, `${id}.json`));
-    const result = validateTemplate(fixture);
+    const result = validateTemplateSchema(fixture);
 
     assert.equal(result.valid, true, JSON.stringify(result.errors));
   });
