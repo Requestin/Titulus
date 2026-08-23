@@ -392,7 +392,7 @@ export type Layer =
 
 export type TemplateLayerType = Layer['type'];
 /** Layer kinds currently creatable by the classic editor shell. */
-export type LayerType = Exclude<TemplateLayerType, 'crawl'>;
+export type LayerType = TemplateLayerType;
 
 // ---------------------------------------------------------------------------
 // Timeline (frame-based, §6.2 timeline)

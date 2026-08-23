@@ -9,7 +9,7 @@ export const LANE_H = 26;
 export const GROUP_HDR_H = 20;
 export const ACTION_LANE_H = 22;
 
-export const TIMELINE_ANIMATABLE_PROPS = [...ANIMATABLE_PROPS, 'z'] as const satisfies readonly AnimatableProp[];
+export const TIMELINE_ANIMATABLE_PROPS = [...ANIMATABLE_PROPS, 'z', 'crawlProgress'] as const satisfies readonly AnimatableProp[];
 
 export type GroupLaneRow = {
   kind: 'group';

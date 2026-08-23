@@ -8,6 +8,7 @@ import { Braces, Link2, Link2Off } from 'lucide-react';
 import type { Layer, Variable, VariableBinding, BlendMode } from '@runtime';
 import { anchorCompensatedUpdate } from '@runtime';
 import { useEditor } from '../store';
+import { CrawlProperties } from '../CrawlProperties';
 import { CueInspector } from '../timeline/CueInspector';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
 import { usePlayhead } from '../playheadStore';
@@ -610,6 +611,23 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
             <Field label="Format">
               <Input value={layer.format} onChange={(e) => updateLayer(layer.id, (l) => { if (l.type === 'clock') l.format = e.target.value; })} />
             </Field>
+          </Section>
+          <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} />
+        </>
+      );
+    case 'crawl':
+      return (
+        <>
+          <Section title="Content">
+            <BindableField
+              kind="text"
+              value={layer.content}
+              variables={variables}
+              onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'crawl') l.content = v; })}
+            />
+          </Section>
+          <Section title="Crawl">
+            <CrawlProperties layer={layer} updateLayer={(id, mutator) => updateLayer(id, (l) => { if (l.type === 'crawl') mutator(l); })} />
           </Section>
           <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} />
         </>

@@ -33,6 +33,7 @@ import type { RootStackEntry } from './schema.js';
 import { normalizeTimeline, sampleAt, actionsCrossed, timelineNeedsDirectorRuntime, type NormalizedTimeline, type TimelineSample } from './timeline.js';
 import { createDirectorMachine, type DirectorMachine } from './directorMachine.js';
 import { effectiveGradient, gradientBackgroundCss } from './rectGradient.js';
+import { sampleCrawlOffset } from './crawlSchedule.js';
 import { formatClock } from './clock.js';
 import { ensureFonts, collectFonts } from './fonts.js';
 import { type RenderStats, emptyRenderStats, snapshotStats } from './stats.js';
@@ -642,9 +643,10 @@ export class TemplateRenderer {
     let contentEl: HTMLElement | undefined;
     switch (layer.type) {
       case 'text':
-      case 'clock': {
+      case 'clock':
+      case 'crawl': {
         contentEl = document.createElement('div');
-        contentEl.className = 'titulus-text-content';
+        contentEl.className = layer.type === 'crawl' ? 'titulus-crawl-track' : 'titulus-text-content';
         contentEl.style.width = '100%';
         contentEl.style.height = '100%';
         contentEl.style.display = 'flex';
@@ -1183,6 +1185,39 @@ export class TemplateRenderer {
         this.setStyle(el, cache, 'borderRadius', '0');
         this.setStyle(el, cache, 'clipPath', 'none');
         this.setStyle(el, cache, 'pointerEvents', 'none');
+        break;
+      }
+      case 'crawl': {
+        if (!this.template || !node.contentEl) break;
+        const content = node.contentEl;
+        const s = layer.style;
+        const resolved = String(resolveBinding(layer.content, v));
+        const progress = anim?.crawlProgress ?? 0;
+        const offset = sampleCrawlOffset({
+          content: resolved,
+          fps: this.template.timeline.fps,
+          box: { width: layer.transform.width, height: layer.transform.height },
+          fontSize: s.fontSize,
+          align: s.align,
+          crawl: layer.crawl,
+        }, progress);
+        this.setStyle(el, cache, 'overflow', 'hidden');
+        this.setStyle(content, cache, 'fontFamily', `"${s.fontFamily}", system-ui, sans-serif`);
+        this.setStyle(content, cache, 'fontSize', `${s.fontSize}px`);
+        this.setStyle(content, cache, 'fontWeight', s.fontWeight);
+        this.setStyle(content, cache, 'color', String(resolveBinding(s.fill, v)));
+        this.setStyle(content, cache, 'textAlign', s.align);
+        this.setStyle(content, cache, 'whiteSpace', 'pre');
+        this.setStyle(content, cache, 'lineHeight', String(s.lineHeight));
+        this.setStyle(content, cache, 'letterSpacing', `${s.letterSpacing}px`);
+        this.setStyle(content, cache, 'position', 'absolute');
+        this.setStyle(content, cache, 'left', '0px');
+        this.setStyle(content, cache, 'top', '0px');
+        this.setStyle(content, cache, 'transform', `translate3d(${offset.x.toFixed(2)}px, ${offset.y.toFixed(2)}px, 0)`);
+        const display = layer.crawl.separatorMode === 'text'
+          ? resolved.split('\n').join(layer.crawl.separatorText)
+          : resolved;
+        this.setText(content, cache, 'textContent', display);
         break;
       }
       case 'text':

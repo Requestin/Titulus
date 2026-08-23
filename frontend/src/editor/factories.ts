@@ -6,7 +6,7 @@
 import { createDefaultTransform, type Layer, type LayerType, type TextStyle, type Variable } from '@runtime';
 import { createId } from '@/core/id';
 
-export const LAYER_TYPES: LayerType[] = ['text', 'rect', 'image', 'video', 'clock', 'mask'];
+export const LAYER_TYPES: LayerType[] = ['text', 'rect', 'image', 'video', 'clock', 'mask', 'crawl'];
 
 export const LAYER_LABEL: Record<LayerType, string> = {
   text: 'Text',
@@ -15,6 +15,7 @@ export const LAYER_LABEL: Record<LayerType, string> = {
   video: 'Video',
   clock: 'Clock',
   mask: 'Mask',
+  crawl: 'Crawl',
 };
 
 export const LAYER_DEFAULT_DIMENSIONS: Record<LayerType, Pick<Layer['transform'], 'width' | 'height'>> = {
@@ -24,6 +25,7 @@ export const LAYER_DEFAULT_DIMENSIONS: Record<LayerType, Pick<Layer['transform']
   video: { width: 480, height: 270 },
   clock: { width: 300, height: 96 },
   mask: { width: 480, height: 320 },
+  crawl: { width: 760, height: 96 },
 };
 
 function uuid(): string {
@@ -109,6 +111,29 @@ export function createLayer(type: LayerType, name: string): Layer {
         cornerRadius: 0,
         borderColor: '#000000',
         borderWidth: 0,
+      };
+    case 'crawl':
+      return {
+        ...base, type: 'crawl',
+        transform: { ...createDefaultTransform(120, 120), ...LAYER_DEFAULT_DIMENSIONS.crawl },
+        content: 'New crawl',
+        style: defaultTextStyle(),
+        crawlDirectorId: uuid(),
+        crawl: {
+          type: 'ticker',
+          directionIn: 'right',
+          directionOut: 'left',
+          speed: 5,
+          pause: 0,
+          separatorMode: 'none',
+          separatorText: '',
+          separatorImage: '',
+          animationType: 'batch',
+          useFile: false,
+          filePath: '',
+          maxTextLengthEnabled: false,
+          maxTextLength: 80,
+        },
       };
   }
 }

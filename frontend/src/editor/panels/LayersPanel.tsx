@@ -14,7 +14,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  Type, Square, Image as ImageIcon, Video, Clock, Folder,
+  Type, Square, Image as ImageIcon, Video, Clock, Folder, WrapText,
   Eye, EyeOff, Lock, Unlock, GripVertical, ChevronRight, ChevronDown,
   Plus, FolderPlus, CheckSquare,
 } from 'lucide-react';
@@ -26,7 +26,7 @@ import { LAYER_TYPES, LAYER_LABEL } from '../factories';
 import { cn } from '@/lib/cn';
 
 const LAYER_ICON: Record<LayerType, ComponentType<{ className?: string }>> = {
-  text: Type, rect: Square, image: ImageIcon, video: Video, clock: Clock, mask: MaskIcon,
+  text: Type, rect: Square, image: ImageIcon, video: Video, clock: Clock, mask: MaskIcon, crawl: WrapText,
 };
 
 function iconForLayer(type: string): ComponentType<{ className?: string }> {
