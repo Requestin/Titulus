@@ -178,3 +178,34 @@ test('draft crawl fixtures produce a computed duration, not the authoring placeh
   assert.equal(carouselSchedule.axis, 'y');
   assert.ok(carouselSchedule.segments.some((segment) => segment.kind === 'hold' && segment.frames === 50));
 });
+
+test('backend and runtime scheduleCrawl stay on the same formulas', async () => {
+  const { createRequire } = await import('node:module');
+  const require = createRequire(import.meta.url);
+  const backend = require('../../backend/src/crawlSchedule.js') as {
+    scheduleCrawl: typeof scheduleCrawl;
+  };
+  const input = {
+    content: 'First item\nSecond item',
+    fps: 50,
+    box: { width: 800, height: 80 },
+    fontSize: 48,
+    align: 'left' as const,
+    crawl: {
+      type: 'ticker' as const,
+      directionIn: 'right' as const,
+      directionOut: 'left' as const,
+      speed: 5,
+      pause: 0,
+      separatorMode: 'text' as const,
+      separatorText: ' • ',
+      separatorImage: '',
+      animationType: 'continuous' as const,
+      useFile: false,
+      filePath: '',
+      maxTextLengthEnabled: false,
+      maxTextLength: 80,
+    },
+  };
+  assert.deepEqual(backend.scheduleCrawl(input), scheduleCrawl(input));
+});

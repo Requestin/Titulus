@@ -319,8 +319,8 @@ export interface ClockLayer extends BaseLayer {
   type: 'clock';
   mode: 'clock' | 'countup' | 'countdown';
   format: string;
-  startTime?: number;  // epoch ms (countup/countdown origin)
-  targetTime?: number; // epoch ms (countdown target)
+  startTime?: number | VariableBinding;
+  targetTime?: number | VariableBinding;
   style: TextStyle;
 }
 

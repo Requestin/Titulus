@@ -4,6 +4,7 @@ import {
   cuesCrossed,
   normalizeTimeline,
   sampleAt,
+  timelineNeedsDirectorRuntime,
   type CompiledCue,
   type NormalizedTimeline,
   type TimelineSample,
@@ -25,6 +26,16 @@ export interface DirectorMachine {
   waitingContinue(): boolean;
   endScene(): boolean;
   sample(): TimelineSample;
+}
+
+export function reuseOrCreateDirectorMachine(
+  existing: DirectorMachine | null,
+  timeline: Timeline,
+  reuse: boolean,
+): DirectorMachine | null {
+  if (!timelineNeedsDirectorRuntime(timeline)) return null;
+  if (reuse && existing) return existing;
+  return createDirectorMachine(timeline);
 }
 
 export function createDirectorMachine(timeline: Timeline): DirectorMachine {

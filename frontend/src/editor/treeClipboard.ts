@@ -1,4 +1,6 @@
 import type { Layer, LayerGroup, RootStackEntry, Template, Transform } from '@runtime';
+import { createId } from '@/core/id';
+import { attachCrawlTimeline } from './crawlTimeline';
 
 export type TreeRef = { kind: 'layer' | 'group'; id: string };
 
@@ -117,6 +119,7 @@ export function cloneTreeSelection(
       copy.name = copyName(layer.name);
       copy.groupId = layer.groupId && idMap[layer.groupId] ? idMap[layer.groupId] : layer.groupId;
       if (rootIds.has(oldId) && options.offset) offsetTransform(copy.transform, options.offset);
+      if (copy.type === 'crawl') copy.crawlDirectorId = '';
       layers.push(copy);
       continue;
     }
@@ -151,6 +154,12 @@ export function applyClonedTree(
   template.layers.push(...cloned.layers);
   template.groups.push(...cloned.groups);
   Object.assign(template.groupStacks, cloned.groupStacks);
+  for (const layer of cloned.layers) {
+    if (layer.type === 'crawl') {
+      layer.crawlDirectorId = layer.crawlDirectorId || createId();
+      attachCrawlTimeline(template, layer);
+    }
+  }
   for (const [oldId, newId] of Object.entries(cloned.idMap)) {
     const director = template.timeline.trackDirectors[oldId];
     if (director) template.timeline.trackDirectors[newId] = director;

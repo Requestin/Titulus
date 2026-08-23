@@ -223,6 +223,7 @@ interface EditorState {
   removeDirector: (id: string) => void;
   assignTrack: (targetId: string, directorId: string) => void;
   setKeyframeValue: (target: Target, frame: number, prop: AnimatableProp, value: number) => void;
+  commitCurveDrag: (target: Target, prop: AnimatableProp, fromFrame: number, nextFrame: number, value: number) => void;
   movePoint: (target: Target, prop: AnimatableProp, fromFrame: number, toFrame: number) => void;
   deletePoint: (target: Target, prop: AnimatableProp, frame: number) => void;
   removeTrack: (target: Target, prop: AnimatableProp) => void;
@@ -367,6 +368,11 @@ export const useEditor = create<EditorState>()(
         const sel = get().selection;
         if (!sel) return;
         get().patch((t) => {
+          const orphanDirectorIds = sel.kind === 'layer'
+            ? t.layers
+              .filter((layer): layer is Extract<typeof layer, { type: 'crawl' }> => layer.id === sel.id && layer.type === 'crawl')
+              .map((layer) => layer.crawlDirectorId)
+            : [];
           if (sel.kind === 'layer') {
             t.layers = t.layers.filter((l) => l.id !== sel.id);
           } else {
@@ -402,6 +408,13 @@ export const useEditor = create<EditorState>()(
           for (const kf of t.timeline.keyframes) {
             delete kf.layers[sel.id];
             delete kf.groups[sel.id];
+          }
+          for (const directorId of orphanDirectorIds) {
+            const stillUsed = t.layers.some((layer) => layer.type === 'crawl' && layer.crawlDirectorId === directorId);
+            if (!stillUsed) {
+              t.timeline.directors = t.timeline.directors.filter((director) => director.id !== directorId);
+              t.timeline.cues = stripCuesForDirector(t.timeline, directorId);
+            }
           }
         });
         set({ selection: null });
@@ -605,6 +618,17 @@ export const useEditor = create<EditorState>()(
           const sec = target.kind === 'layer' ? kf.layers : kf.groups;
           (sec[target.id] ??= {})[prop] = value;
           if (!t.timeline.trackDirectors[target.id]) t.timeline.trackDirectors[target.id] = get().activeDirectorId;
+        }),
+
+      commitCurveDrag: (target, prop, fromFrame, nextFrame, value) =>
+        get().patch((t) => {
+          const kf = kfAt(t, Math.round(fromFrame));
+          const sec = target.kind === 'layer' ? kf.layers : kf.groups;
+          (sec[target.id] ??= {})[prop] = value;
+          if (!t.timeline.trackDirectors[target.id]) t.timeline.trackDirectors[target.id] = get().activeDirectorId;
+          if (nextFrame === fromFrame) return;
+          const moves = planKeyframeMoves(t, [{ target, prop, frame: fromFrame }], nextFrame - fromFrame);
+          if (moves.length > 0) applyKeyframeMoves(t, moves);
         }),
 
       movePoint: (target, prop, fromFrame, toFrame) => {

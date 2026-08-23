@@ -85,5 +85,5 @@ Allowlist — одним revert. DB — copied `app.db` до migrate-утили�
 - `data.time-expressions`
 - `data.media-token-resolution`
 
-Пока **не** в allowlist: `text.transform`, `text.shadow`, `control.layer-id-on-air`.
-Их declare без реализации по-прежнему даёт 422.
+P22.2 открыл `text.transform` и `text.shadow` после paint/UI.
+Пока **не** в allowlist: `control.layer-id-on-air` (ждёт P22.4 stack).

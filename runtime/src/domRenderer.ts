@@ -30,11 +30,13 @@ import {
   isDegenerateProjectedOutline,
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
-import { normalizeTimeline, sampleAt, actionsCrossed, timelineNeedsDirectorRuntime, type NormalizedTimeline, type TimelineSample } from './timeline.js';
-import { createDirectorMachine, type DirectorMachine } from './directorMachine.js';
+import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
+import { reuseOrCreateDirectorMachine, type DirectorMachine } from './directorMachine.js';
 import { effectiveGradient, gradientBackgroundCss } from './rectGradient.js';
 import { sampleCrawlOffset } from './crawlSchedule.js';
 import { formatClock } from './clock.js';
+import { resolveClockAnchor } from './clockBind.js';
+import { applyTextTransform, textShadowCss } from './textStyle.js';
 import { ensureFonts, collectFonts } from './fonts.js';
 import { type RenderStats, emptyRenderStats, snapshotStats } from './stats.js';
 import { buildProtocolFrameLayouts } from './renderGraphFrame.js';
@@ -129,6 +131,7 @@ export class TemplateRenderer {
   private rafPacing: BrowserPacingState = { accumulatedMs: 0, lastTickMs: null };
   private onFrame: OnFrameFn | null = null;
   private clockTimer: number | null = null;
+  private clockAnchors = new Map<string, { startTime?: number; targetTime?: number }>();
 
   // Doc02 PR5: per-layer visibility filter for snapshot capture. When non-null,
   // only layers whose id appears in the set have `display:block`; every other
@@ -159,9 +162,12 @@ export class TemplateRenderer {
     this.template = template;
     this.variables = variables;
     this.norm = normalizeTimeline(template.timeline);
-    this.directorMachine = timelineNeedsDirectorRuntime(template.timeline)
-      ? createDirectorMachine(template.timeline)
-      : null;
+    this.directorMachine = reuseOrCreateDirectorMachine(
+      this.directorMachine,
+      template.timeline,
+      this.template === template,
+    );
+    this.clockAnchors.clear();
     this.editorTransformPreview.clear();
 
     // Size the canvas container.
@@ -1210,13 +1216,15 @@ export class TemplateRenderer {
         this.setStyle(content, cache, 'whiteSpace', 'pre');
         this.setStyle(content, cache, 'lineHeight', String(s.lineHeight));
         this.setStyle(content, cache, 'letterSpacing', `${s.letterSpacing}px`);
+        this.setStyle(content, cache, 'textShadow', textShadowCss(s));
         this.setStyle(content, cache, 'position', 'absolute');
         this.setStyle(content, cache, 'left', '0px');
         this.setStyle(content, cache, 'top', '0px');
         this.setStyle(content, cache, 'transform', `translate3d(${offset.x.toFixed(2)}px, ${offset.y.toFixed(2)}px, 0)`);
+        const transformed = applyTextTransform(resolved, s.textTransform);
         const display = layer.crawl.separatorMode === 'text'
-          ? resolved.split('\n').join(layer.crawl.separatorText)
-          : resolved;
+          ? transformed.split('\n').join(layer.crawl.separatorText)
+          : transformed;
         this.setText(content, cache, 'textContent', display);
         break;
       }
@@ -1237,16 +1245,15 @@ export class TemplateRenderer {
         this.setStyle(content, cache, 'whiteSpace', 'pre');
         this.setStyle(content, cache, 'webkitTextStroke',
           s.strokeWidth > 0 ? `${s.strokeWidth}px ${s.strokeColor}` : '');
-        this.setStyle(content, cache, 'textShadow',
-          s.dropShadow
-            ? `${0}px ${s.dropShadowDistance}px ${s.dropShadowBlur}px ${s.dropShadowColor}`
-            : '');
+        this.setStyle(content, cache, 'textShadow', textShadowCss(s));
         if (layer.type === 'text') {
-          this.setText(content, cache, 'textContent', String(resolveBinding(layer.content, v)));
+          this.setText(content, cache, 'textContent', applyTextTransform(String(resolveBinding(layer.content, v)), s.textTransform));
         } else {
-          // clock content is refreshed by the clock ticker; set an initial value.
-          this.setText(content, cache, 'textContent', formatClock(layer.format, layer.mode, Date.now(),
-            { startTime: layer.startTime, targetTime: layer.targetTime }));
+          const now = Date.now();
+          this.setText(content, cache, 'textContent', applyTextTransform(
+            formatClock(layer.format, layer.mode, now, this.clockOpts(layer, now, v)),
+            s.textTransform,
+          ));
         }
         break;
       }
@@ -1304,6 +1311,21 @@ export class TemplateRenderer {
   // Clock ticker (updates clock layers every second independent of timeline)
   // -----------------------------------------------------------------------
 
+  private clockOpts(
+    layer: { id: string; startTime?: number | { type: 'variable'; variableId: string }; targetTime?: number | { type: 'variable'; variableId: string } },
+    now: number,
+    variables: Record<string, string | number>,
+  ): { startTime?: number; targetTime?: number } {
+    const cached = this.clockAnchors.get(layer.id);
+    if (cached) return cached;
+    const resolved = {
+      startTime: resolveClockAnchor(layer.startTime, variables, now),
+      targetTime: resolveClockAnchor(layer.targetTime, variables, now),
+    };
+    this.clockAnchors.set(layer.id, resolved);
+    return resolved;
+  }
+
   private startClockTicker(): void {
     this.stopClockTicker();
     if (typeof window === 'undefined') return;
@@ -1315,8 +1337,11 @@ export class TemplateRenderer {
         if (layer.type !== 'clock') continue;
         const node = this.layerEls.get(layer.id);
         if (node?.contentEl) {
-          node.contentEl.textContent = formatClock(layer.format, layer.mode, Date.now(),
-            { startTime: layer.startTime, targetTime: layer.targetTime });
+          const now = Date.now();
+          node.contentEl.textContent = applyTextTransform(
+            formatClock(layer.format, layer.mode, now, this.clockOpts(layer, now, this.variables)),
+            layer.style.textTransform,
+          );
         }
       }
     }, 1000) as unknown as number;

@@ -13,6 +13,8 @@ export * from './timeline.js';
 export * from './crawlSchedule.js';
 export * from './directorMachine.js';
 export * from './clock.js';
+export * from './clockBind.js';
+export * from './textStyle.js';
 export * from './fonts.js';
 export * from './stats.js';
 export * from './maskScopes.js';
