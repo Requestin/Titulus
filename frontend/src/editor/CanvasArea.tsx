@@ -10,6 +10,7 @@ import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutlin
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
 import { clearGesturePreview, scheduleGesturePreview } from './gesturePreview';
+import { derivedGroupBox } from './groupBounds';
 import {
   ancestorMatrix, canvasDeltaToParent, dragTransform, type AffineMatrix, type DragMode,
 } from './transformMath';
@@ -29,6 +30,7 @@ type SelectionOverlay =
 
 interface DragState {
   id: string;
+  kind: 'layer' | 'group';
   mode: DragMode;
   startPX: number;
   startPY: number;
@@ -101,6 +103,40 @@ export function CanvasArea() {
   const cw = template?.canvas.width ?? 1920;
   const ch = template?.canvas.height ?? 1080;
 
+
+  function resolveLiveTransform(kind: 'layer' | 'group', id: string, preview?: Transform): Transform | null {
+    const st = useEditor.getState();
+    const tpl = st.template;
+    if (!tpl) return null;
+    if (preview && id === (dragRef.current?.id) && dragRef.current?.kind === kind) return preview;
+    if (kind === 'layer') {
+      const layer = tpl.layers.find((item) => item.id === id);
+      if (!layer) return null;
+      return effectiveTransform(tpl, layer.transform, { kind: 'layer', id }, st.playhead, st.activeDirectorId);
+    }
+    const group = tpl.groups.find((item) => item.id === id);
+    if (!group) return null;
+    return effectiveTransform(tpl, group.transform, { kind: 'group', id }, st.playhead, st.activeDirectorId);
+  }
+
+  function overlayForGroup(groupId: string, preview?: Transform): SelectionOverlay | null {
+    const tpl = useEditor.getState().template;
+    if (!tpl) return null;
+    const box = derivedGroupBox(
+      tpl,
+      groupId,
+      (id) => resolveLiveTransform('layer', id) ?? tpl.layers.find((item) => item.id === id)!.transform,
+      (id) => (preview && id === groupId
+        ? preview
+        : (resolveLiveTransform('group', id) ?? tpl.groups.find((item) => item.id === id)!.transform)),
+    );
+    if (!box) return null;
+    return {
+      kind: 'box',
+      box: { left: box.x * zoom, top: box.y * zoom, width: box.width * zoom, height: box.height * zoom },
+    };
+  }
+
   function overlayForTransform(layerId: string, transform: Transform): SelectionOverlay | null {
     const tpl = useEditor.getState().template;
     if (!tpl) return null;
@@ -142,6 +178,11 @@ export function CanvasArea() {
     const tpl = st.template;
     if (!stage || !sel || !tpl) {
       setOverlay(null);
+      return;
+    }
+
+    if (sel.kind === 'group') {
+      setOverlay(overlayForGroup(sel.id));
       return;
     }
 
@@ -243,11 +284,14 @@ export function CanvasArea() {
     let mode: DragMode = 'move';
 
     const handleEl = target.closest('[data-handle]') as HTMLElement | null;
+    let kind: 'layer' | 'group' = 'layer';
     if (handleEl && sel?.kind === 'layer') {
       mode = handleEl.dataset.handle as Handle;
       id = sel.id;
-    } else if (target.closest('[data-overlay-move]') && sel?.kind === 'layer') {
+    } else if (target.closest('[data-overlay-move]') && sel) {
       id = sel.id;
+      kind = sel.kind;
+      if (kind === 'group') mode = 'move';
     } else {
       const layerEl = target.closest('[data-layer-id]') as HTMLElement | null;
       if (layerEl) {
@@ -260,19 +304,24 @@ export function CanvasArea() {
     }
     if (!id) return;
 
-    const layer = currentTemplate.layers.find((l) => l.id === id);
-    if (!layer || layer.locked) return;
     const { playhead: currentPlayhead, activeDirectorId } = useEditor.getState();
+    const entity = kind === 'layer'
+      ? currentTemplate.layers.find((item) => item.id === id)
+      : currentTemplate.groups.find((item) => item.id === id);
+    if (!entity || entity.locked) return;
     const start = effectiveTransform(
       currentTemplate,
-      layer.transform,
-      { kind: 'layer', id: layer.id },
+      entity.transform,
+      { kind, id },
       currentPlayhead,
       activeDirectorId,
     );
+    const parentId = kind === 'layer'
+      ? currentTemplate.layers.find((item) => item.id === id)?.groupId ?? null
+      : currentTemplate.groups.find((item) => item.id === id)?.parentId ?? null;
     const parentMatrix = ancestorMatrix(
       currentTemplate,
-      layer.groupId,
+      parentId,
       (group) => effectiveTransform(
         currentTemplate,
         group.transform,
@@ -284,6 +333,7 @@ export function CanvasArea() {
 
     dragRef.current = {
       id,
+      kind,
       mode,
       startPX: e.clientX,
       startPY: e.clientY,
@@ -327,7 +377,12 @@ export function CanvasArea() {
     const partial = previewForPointer(drag, e);
     drag.preview = { ...drag.start, ...partial };
     renderer.previewLayerTransform(drag.id, drag.preview);
-    scheduleGesturePreview({ id: drag.id, kind: 'layer', transform: drag.preview });
+    scheduleGesturePreview({ id: drag.id, kind: drag.kind, transform: drag.preview });
+    if (drag.kind === 'group') {
+      const next = overlayForGroup(drag.id, drag.preview);
+      if (next) setOverlay(next);
+      return;
+    }
     const layer = useEditor.getState().template?.layers.find((item) => item.id === drag.id);
     if (layer?.type === 'mask') {
       const next = overlayForTransform(drag.id, drag.preview);
@@ -342,7 +397,8 @@ export function CanvasArea() {
     dragRef.current = null;
     if (!drag) return;
     wrapRef.current?.releasePointerCapture(e.pointerId);
-    if (drag.moved) updateTransform(drag.id, previewForPointer(drag, e));
+    if (drag.moved) updateTransform(drag.id, previewForPointer(drag, e), drag.kind);
+    rendererRef.current?.clearEditorTransformPreview();
     clearGesturePreview();
   }
 
