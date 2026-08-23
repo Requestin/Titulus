@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
+import { playheadStore, setLivePlayhead, usePlayhead } from './playheadStore';
 import { clearGesturePreview, scheduleGesturePreview } from './gesturePreview';
 import { derivedGroupBox } from './groupBounds';
 import {
@@ -66,8 +67,8 @@ export function CanvasArea() {
   const zoom = useEditor((s) => s.zoom);
   const gridSnap = useEditor((s) => s.gridSnap);
   const gridSize = useEditor((s) => s.gridSize);
-  const playhead = useEditor((s) => s.playhead);
-  const playing = useEditor((s) => s.playing);
+  const playhead = usePlayhead((s) => s.playhead);
+  const playing = usePlayhead((s) => s.playing);
   const setPlayhead = useEditor((s) => s.setPlayhead);
   const setPlaying = useEditor((s) => s.setPlaying);
   const select = useEditor((s) => s.select);
@@ -112,11 +113,11 @@ export function CanvasArea() {
     if (kind === 'layer') {
       const layer = tpl.layers.find((item) => item.id === id);
       if (!layer) return null;
-      return effectiveTransform(tpl, layer.transform, { kind: 'layer', id }, st.playhead, st.activeDirectorId);
+      return effectiveTransform(tpl, layer.transform, { kind: 'layer', id }, playheadStore.getState().playhead, st.activeDirectorId);
     }
     const group = tpl.groups.find((item) => item.id === id);
     if (!group) return null;
-    return effectiveTransform(tpl, group.transform, { kind: 'group', id }, st.playhead, st.activeDirectorId);
+    return effectiveTransform(tpl, group.transform, { kind: 'group', id }, playheadStore.getState().playhead, st.activeDirectorId);
   }
 
   function overlayForGroup(groupId: string, preview?: Transform): SelectionOverlay | null {
@@ -193,7 +194,7 @@ export function CanvasArea() {
           tpl,
           layer.transform,
           { kind: 'layer', id: layer.id },
-          st.playhead,
+          playheadStore.getState().playhead,
           st.activeDirectorId,
         );
         setOverlay(overlayForTransform(layer.id, t));
@@ -219,7 +220,7 @@ export function CanvasArea() {
     if (!r || !template) return;
     r.syncTemplate(template, resolveVariableMap(template));
     r.resize(cw * zoom, ch * zoom);
-    r.seek(globalFrame(useEditor.getState().playhead));
+    r.seek(globalFrame(playheadStore.getState().playhead));
     clearGesturePreview();
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -250,7 +251,7 @@ export function CanvasArea() {
     const fps = t.timeline.fps || 50;
     const dur = dir?.durationFrames ?? t.timeline.durationFrames;
     const offset = dir?.offsetFrames ?? 0;
-    let local = useEditor.getState().playhead;
+    let local = playheadStore.getState().playhead;
     let last = performance.now();
     let raf = 0;
     const loop = (now: number) => {
@@ -267,7 +268,7 @@ export function CanvasArea() {
         }
       }
       r.seek(offset + local);
-      setPlayhead(local);
+      setLivePlayhead(local);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -304,7 +305,8 @@ export function CanvasArea() {
     }
     if (!id) return;
 
-    const { playhead: currentPlayhead, activeDirectorId } = useEditor.getState();
+    const currentPlayhead = playheadStore.getState().playhead;
+    const { activeDirectorId } = useEditor.getState();
     const entity = kind === 'layer'
       ? currentTemplate.layers.find((item) => item.id === id)
       : currentTemplate.groups.find((item) => item.id === id);

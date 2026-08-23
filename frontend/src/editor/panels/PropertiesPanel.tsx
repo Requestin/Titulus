@@ -9,6 +9,7 @@ import type { Layer, Variable, VariableBinding, BlendMode } from '@runtime';
 import { anchorCompensatedUpdate } from '@runtime';
 import { useEditor } from '../store';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
+import { usePlayhead } from '../playheadStore';
 import { gesturePreviewStore } from '../gesturePreview';
 import { MediaUploadButton } from '../MediaUploadButton';
 import {
@@ -44,7 +45,7 @@ export function PropertiesPanel() {
   const updateLayer = useEditor((s) => s.updateLayer);
   const setLayerOpacity = useEditor((s) => s.setLayerOpacity);
   const updateTransform = useEditor((s) => s.updateTransform);
-  const playhead = useEditor((s) => s.playhead);
+  const playhead = usePlayhead((s) => s.playhead);
   const activeDirectorId = useEditor((s) => s.activeDirectorId);
   const setLayerGroup = useEditor((s) => s.setLayerGroup);
   const patch = useEditor((s) => s.patch);

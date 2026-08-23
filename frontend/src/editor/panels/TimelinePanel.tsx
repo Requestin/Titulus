@@ -9,6 +9,8 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Play, Pause, Square, Plus, Trash2, Activity, ListTree } from 'lucide-react';
 import { ANIMATABLE_PROPS, getEasing, type AnimatableProp, type EasingType, type Template } from '@runtime';
 import { useEditor, type Target } from '../store';
+import { usePlayhead } from '../playheadStore';
+import { type SelectedKeyframe } from '../timelineTracks';
 import { Select, NumberInput, Checkbox } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 
@@ -96,11 +98,7 @@ interface Point {
   easing: EasingType;
 }
 
-export type SelectedKeyframe = {
-  target: Target;
-  prop: AnimatableProp;
-  frame: number;
-};
+export type { SelectedKeyframe };
 
 function isSameKeyframe(a: SelectedKeyframe, target: Target, prop: AnimatableProp, frame: number): boolean {
   return a.target.kind === target.kind && a.target.id === target.id && a.prop === prop && a.frame === frame;
@@ -110,8 +108,8 @@ export function TimelinePanel() {
   const template = useEditor((s) => s.template);
   const selection = useEditor((s) => s.selection);
   const select = useEditor((s) => s.select);
-  const playhead = useEditor((s) => s.playhead);
-  const playing = useEditor((s) => s.playing);
+  const playhead = usePlayhead((s) => s.playhead);
+  const playing = usePlayhead((s) => s.playing);
   const activeDirectorId = useEditor((s) => s.activeDirectorId);
   const setPlayhead = useEditor((s) => s.setPlayhead);
   const setPlaying = useEditor((s) => s.setPlaying);
