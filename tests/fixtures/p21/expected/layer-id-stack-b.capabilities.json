@@ -4,6 +4,7 @@
     "control.layer-id-on-air"
   ],
   "supported": [
+    "control.layer-id-on-air",
     "crawl.layer",
     "data.expanded-variable-types",
     "data.media-token-resolution",
@@ -20,5 +21,5 @@
     "timeline.object-track-groups",
     "timeline.protected-update-flow"
   ],
-  "airCompatible": false
+  "airCompatible": true
 }

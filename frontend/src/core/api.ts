@@ -147,6 +147,9 @@ export type OnAirSnapshot = Record<string, string[]>;
 
 export interface OnAirDetailsItem {
   templateId: string;
+  slotId?: string;
+  sourceTemplateId?: string;
+  layerId?: number;
   waitingContinue: boolean;
 }
 

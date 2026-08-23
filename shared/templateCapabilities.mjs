@@ -1,4 +1,5 @@
 export const SUPPORTED_TEMPLATE_CAPABILITIES = Object.freeze([
+  'control.layer-id-on-air',
   'crawl.layer',
   'data.expanded-variable-types',
   'data.media-token-resolution',

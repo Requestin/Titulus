@@ -63,7 +63,7 @@ export function SettingsPage() {
   const [holder, setHolder] = useState('');
   const [licenseBusy, setLicenseBusy] = useState(false);
   const [eventsBusy, setEventsBusy] = useState(false);
-  const [layerIdPlayout, setLayerIdPlayout] = useState(false);
+  const [layerIdPlayout, setLayerIdPlayout] = useState(true);
 
   const load = useCallback(async () => {
     try {
@@ -78,7 +78,7 @@ export function SettingsPage() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    void api.settings.get().then((all) => setLayerIdPlayout(all.layerIdPlayout === 'on')).catch(() => undefined);
+    void api.settings.get().then((all) => setLayerIdPlayout(all.layerIdPlayout !== 'off')).catch(() => undefined);
   }, []);
 
   const loadLicense = useCallback(async () => {
@@ -366,7 +366,7 @@ export function SettingsPage() {
               <label className="flex items-center justify-between gap-3 text-sm">
                 <span>
                   <span className="font-semibold">LayerID playout</span>
-                  <span className="block text-[12px] text-ink-muted">Off by default. When on, the same LayerID replaces the occupant.</span>
+                  <span className="block text-[12px] text-ink-muted">On by default. The same LayerID replaces the occupant; turn off to stack them.</span>
                 </span>
                 <input
                   type="checkbox"
