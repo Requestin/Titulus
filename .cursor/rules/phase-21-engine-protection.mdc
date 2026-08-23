@@ -59,9 +59,11 @@ backend/playout. Изменение hot path допускается только
 ## Обязательные gates
 
 До merge: existing tests/typechecks/build, old/new template fixtures,
-editor↔browser↔air parity. Для runtime/hot-path: canonical `test`/`test1`,
-`one_tick` cadence и DeckLink 1ch gate не более 5 минут / 3ch gate
-не более 5 минут с zero late/drop/flush/unlock. Unreal/VS эксперимент сознательно
-исключён:
+editor↔browser↔air parity. Для новых runtime/hot-path замеров: canonical
+`newtest1` (без видео) / `newtest2` (с видео) из
+`tests/fixtures/p22/operator/`, `one_tick` cadence и DeckLink 1ch gate
+не более 5 минут / 3ch gate не более 5 минут с zero
+late/drop/flush/unlock. Музейный `test1` / `p20-test1-visual` не использовать
+для новых cells. Unreal/VS эксперимент сознательно исключён:
 `bg_vs_engine`, `run-vs-channel`, UE routes и `render_backend=unreal` не
 переносятся в `main`.

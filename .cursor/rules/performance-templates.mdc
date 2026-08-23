@@ -1,0 +1,28 @@
+---
+description: "Канон шаблонов для тестов производительности: только newtest1/newtest2."
+alwaysApply: true
+---
+# Performance templates
+
+Новые тесты производительности (null / browser / DeckLink / ABBA / soak)
+гонять **только** на этих шаблонах:
+
+| Шаблон | Когда | JSON |
+|---|---|---|
+| `newtest1` | сцена без видео | `tests/fixtures/p22/operator/newtest1.json` |
+| `newtest2` | сцена с видео | `tests/fixtures/p22/operator/newtest2.json` |
+
+Медиа — `tests/fixtures/p22/operator/media/`. Перед cell:
+
+```bash
+tests/fixtures/p22/operator/seed-media.sh "$TITULUS_DATA"
+```
+
+Нельзя для новых замеров:
+
+- музейный `test1` / `p20-test1-visual`
+- случайные UUID из editor `uploads/`
+- WebM на air path (только WebP)
+
+Исторические отчёты P20 / P21 / P22.6 остаются на `p20-test1-visual`.
+Их не переснимать и не подменять. Живой cell по умолчанию ≤ 5 минут.

@@ -68,8 +68,10 @@ zero late/drop/flush/unlock); visual PASS ждёт глаз оператора. 
 ## Следующие задачи
 
 - P22.6 visual — глаза оператора на DeckLink 1ch/3ch (`p22-06-converted-gate.md`).
-- P22.7 — после шаблонов оператора: goldens + SDI exam + close.
-  Каталог: `tests/fixtures/p22/operator/`. Без этого набора фаза не закрывается.
+- P22.7 — operator set зафиксирован: `newtest1` / `newtest2` + media в
+  `tests/fixtures/p22/operator/`. Осталось: T0 + null 1ch/3ch +
+  DeckLink 1ch/3ch только на них и отчёт `p22-07-operator-templates.md`.
+  Все новые performance cells — только `newtest1`/`newtest2`.
 
 ## Отложенная строгая SDI-проверка
 
