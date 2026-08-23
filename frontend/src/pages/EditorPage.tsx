@@ -31,6 +31,7 @@ import { CanvasArea } from '@/editor/CanvasArea';
 import { LayersPanel } from '@/editor/panels/LayersPanel';
 import { PropertiesPanel } from '@/editor/panels/PropertiesPanel';
 import { VariablesPanel } from '@/editor/panels/VariablesPanel';
+import { DataPanel } from '@/editor/panels/DataPanel';
 import { TimelinePanel } from '@/editor/panels/TimelinePanel';
 import { effectiveTransform } from '@/editor/effectiveValues';
 import { ancestorMatrix, canvasDeltaToParent } from '@/editor/transformMath';
@@ -89,7 +90,7 @@ export function EditorPage() {
   const dirty = useEditor((s) => s.dirty);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<'properties' | 'variables'>('properties');
+  const [tab, setTab] = useState<'properties' | 'variables' | 'data'>('properties');
   const [timelineHeight, setTimelineHeight] = useState(256);
   const [treeWidth, setTreeWidth] = useState(() => readPanelWidth(TREE_WIDTH));
   const [inspectorWidth, setInspectorWidth] = useState(() => readPanelWidth(INSPECTOR_WIDTH));
@@ -477,7 +478,7 @@ export function EditorPage() {
           style={{ width: inspectorWidth, flexBasis: inspectorWidth }}
         >
           <div className="flex shrink-0 border-b border-border">
-            {(['properties', 'variables'] as const).map((t) => (
+            {(['properties', 'variables', 'data'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -491,7 +492,7 @@ export function EditorPage() {
             ))}
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
-            {tab === 'properties' ? <PropertiesPanel /> : <VariablesPanel />}
+            {tab === 'properties' ? <PropertiesPanel /> : tab === 'data' ? <DataPanel /> : <VariablesPanel />}
           </div>
         </aside>
       </div>

@@ -13,6 +13,7 @@ import {
   type TemplateRecord,
   type TemplateSummary,
 } from '@/core/api';
+import { prepareForAir } from '@/control/prepareForAir';
 import { continueCommand, isWaitingContinue } from '@/control/onAirContinue';
 import { Button } from '@/components/ui/Button';
 import { Field, Input, NumberInput, ColorInput, Select } from '@/components/ui/form';
@@ -172,12 +173,15 @@ export function RundownTab({
     if (!slot) return;
     const tpl = await ensureTemplate(slot.templateId).catch(() => null);
     if (!tpl) return;
+    const values = buildPayload(slot, tpl.data.variables);
+    const prepared = await prepareForAir(tpl.data, 'take', values);
+    if (prepared.blocked) return toast.error(prepared.errors[0]?.message || 'Data pipeline blocked TAKE');
     const ok = send({
       type: 'take',
       channelId,
       templateId: slot.slotId,
-      template: tpl.data,
-      variables: buildPayload(slot, tpl.data.variables),
+      template: prepared.template ?? tpl.data,
+      variables: { ...values, ...prepared.overrides },
     });
     if (!ok) return toast.error('Control socket disconnected');
     patchOnAir(channelId, (cur) => Array.from(new Set([...cur, slot.slotId])));

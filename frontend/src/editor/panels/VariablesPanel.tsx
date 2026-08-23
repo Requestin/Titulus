@@ -10,7 +10,7 @@ import { useEditor } from '../store';
 import { useUpload } from '../useUpload';
 import { Input, NumberInput, Select, ColorInput } from '@/components/ui/form';
 
-const TYPES: VariableType[] = ['text', 'number', 'color', 'image', 'video'];
+const TYPES: VariableType[] = ['text', 'multitext', 'number', 'time', 'color', 'image', 'video'];
 
 export function VariablesPanel() {
   const template = useEditor((s) => s.template);
@@ -74,6 +74,17 @@ function VariableRow({ v }: { v: Variable }) {
         onChange={(e) => updateVariable(v.id, { label: e.target.value })}
         placeholder="label (shown in control panel)"
       />
+      <label className="flex items-center gap-2 text-[12px] text-ink-muted">
+        <input
+          type="checkbox"
+          checked={v.exposed !== false}
+          onChange={(e) => updateVariable(v.id, { exposed: e.target.checked })}
+        />
+        Exposed in Control
+      </label>
+      {v.drivenBy && (
+        <p className="text-[11px] text-ink-faint">Driven by {v.drivenBy}</p>
+      )}
       <DefaultValueInput v={v} onChange={(dv) => updateVariable(v.id, { defaultValue: dv })} />
     </div>
   );
@@ -121,6 +132,19 @@ function DefaultValueInput({ v, onChange }: { v: Variable; onChange: (dv: string
           {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Upload className="h-4 w-4" aria-hidden />}
         </button>
       </div>
+    );
+  }
+  if (v.type === 'time') {
+    return <Input value={String(v.defaultValue || '')} onChange={(e) => onChange(e.target.value)} placeholder="today@18:00 or now+5m" />;
+  }
+  if (v.type === 'multitext') {
+    return (
+      <textarea
+        value={String(v.defaultValue || '')}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="one line per item"
+        className="h-20 w-full rounded-md border border-border bg-surface-2 p-2 text-[12px]"
+      />
     );
   }
   return <Input value={String(v.defaultValue || '')} onChange={(e) => onChange(e.target.value)} placeholder="default value" />;

@@ -14,6 +14,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { migrateTemplate, TemplateMigrationError } from '../templateMigration.js';
 import { validateTemplate, schema, templateValidationErrorPayload } from '../templateValidation.js';
+import { prepareTemplate } from '../prepareTemplate.js';
 
 function templateMigrationErrorPayload(error) {
   return {
@@ -35,9 +36,10 @@ function canonicalizeTemplate(value, res, { validationResponse = false } = {}) {
   }
 }
 
-export function templatesRouter(db) {
+export function templatesRouter(db, options = {}) {
   const dao = templatesRouterDao(db);
   const router = Router();
+  const dataDir = options.dataDir;
 
   router.get('/', (req, res) => {
     res.json(dao.all());
@@ -87,6 +89,29 @@ export function templatesRouter(db) {
       valid: false,
       error: templateValidationErrorPayload(errors),
     });
+  });
+
+
+  router.post('/prepare', async (req, res) => {
+    const body = req.body ?? {};
+    let template = body.template;
+    if (!template && typeof body.templateId === 'string') {
+      const row = dao.get(body.templateId);
+      if (!row) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'template not found' } });
+      template = row.data;
+    }
+    if (!template || typeof template !== 'object') {
+      return res.status(400).json({ error: { code: 'TEMPLATE_REQUIRED', message: 'template or templateId required' } });
+    }
+    const trigger = ['take', 'load', 'update', 'refresh'].includes(body.trigger) ? body.trigger : 'take';
+    const result = await prepareTemplate(template, {
+      trigger,
+      variables: body.variables,
+      dataDir,
+      db,
+      env: process.env,
+    });
+    return res.json(result);
   });
 
   router.get('/:id', (req, res) => {
