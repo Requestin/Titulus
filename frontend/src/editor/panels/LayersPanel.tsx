@@ -4,7 +4,7 @@
 // via @dnd-kit, visibility/lock/select/rename/delete, add layer, new group.
 // Display is reversed so the frontmost layer (last in stack) sits on top.
 
-import { useState, type ComponentType } from 'react';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
 import {
   DndContext, PointerSensor, useSensor, useSensors, closestCenter,
   type DragEndEvent, type DragMoveEvent, type DragOverEvent,
@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import type { LayerType, RootStackEntry, Template } from '@runtime';
 import { reparentTargetAtPlayhead, useEditor } from '../store';
+import { dropCopies, parseTreeKey, type TreeInsert } from '../treeClipboard';
+import { createId } from '@/core/id';
 import { LAYER_TYPES, LAYER_LABEL } from '../factories';
 import { cn } from '@/lib/cn';
 
@@ -193,27 +195,40 @@ export function LayersPanel() {
   const addLayer = useEditor((s) => s.addLayer);
   const addGroup = useEditor((s) => s.addGroup);
   const patch = useEditor((s) => s.patch);
+  const checked = useEditor((s) => s.checked);
+  const toggleChecked = useEditor((s) => s.toggleChecked);
+  const clearChecked = useEditor((s) => s.clearChecked);
   const [addOpen, setAddOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
-  const [selectedKeys, setSelectedKeys] = useState<Set<EntryKey>>(() => new Set());
   const [dragIntent, setDragIntent] = useState<DragIntent>(null);
+  const copyHeld = useRef(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const selectedKeys = new Set(checked.map((item) => `${item.kind}:${item.id}` as EntryKey));
+  useEffect(() => {
+    const sync = (event: KeyboardEvent | PointerEvent) => {
+      copyHeld.current = event.ctrlKey || event.metaKey;
+    };
+    window.addEventListener('keydown', sync);
+    window.addEventListener('keyup', sync);
+    window.addEventListener('pointermove', sync);
+    return () => {
+      window.removeEventListener('keydown', sync);
+      window.removeEventListener('keyup', sync);
+      window.removeEventListener('pointermove', sync);
+    };
+  }, []);
   if (!template) return null;
 
   function toggleSelectMode() {
     setSelectMode((v) => {
-      if (v) setSelectedKeys(new Set());
+      if (v) clearChecked();
       return !v;
     });
   }
 
   function toggleEntry(key: EntryKey) {
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    const ref = parseTreeKey(key);
+    if (ref) toggleChecked(ref);
   }
 
   function updateDragIntent(e: DragMoveEvent | DragOverEvent) {
@@ -226,11 +241,28 @@ export function LayersPanel() {
 
   function onDragEnd(e: DragEndEvent) {
     const intent = computeDragIntent(e) ?? dragIntent;
+    const copy = copyHeld.current;
     setDragIntent(null);
     const activeKey = String(e.active.id) as EntryKey;
     const activeEntry = parseEntryKey(activeKey);
     if (!activeEntry || !intent) return;
+    const dest: TreeInsert = intent.type === 'inside'
+      ? { type: 'inside', groupId: intent.groupId }
+      : { type: intent.type, key: intent.key };
     patch((t) => {
+      if (copy) {
+        dropCopies(
+          t,
+          useEditor.getState().checked,
+          activeEntry,
+          dest,
+          createId,
+          (doc, ref, parentId) => {
+            reparentTargetAtPlayhead(doc, ref, parentId, useEditor.getState().playhead, useEditor.getState().activeDirectorId);
+          },
+        );
+        return;
+      }
       const keys = normalizedMoveKeys(t, selectedKeys, activeKey);
       if (intent.type === 'inside') {
         if (!keys.has(`group:${intent.groupId}`)) moveEntriesToGroup(t, keys, intent.groupId);

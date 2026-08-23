@@ -44,7 +44,7 @@ export function Toolbar({ onSave, saving }: { onSave: () => void; saving: boolea
 
       <div className="mx-1 h-6 w-px bg-border" />
 
-      <IconBtn onClick={duplicateSelected} disabled={selection?.kind !== 'layer'} title="Duplicate (Ctrl+D)"><Copy className="h-4 w-4" /></IconBtn>
+      <IconBtn onClick={duplicateSelected} disabled={!selection} title="Duplicate (Ctrl+D)"><Copy className="h-4 w-4" /></IconBtn>
       <IconBtn onClick={deleteSelected} disabled={!selection} title="Delete (Del)"><Trash2 className="h-4 w-4" /></IconBtn>
 
       <div className="mx-1 h-6 w-px bg-border" />

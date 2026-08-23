@@ -162,3 +162,62 @@ test("editing a tracked z writes the current keyframe and leaves the base unchan
   assert.equal(updated.layers.find((item) => item.id === layer.id)!.transform.z, undefined);
   assert.equal(current.layers[layer.id]?.z, 40);
 });
+
+test('duplicateSelected copies a tracked layer including keyframes and track assignment', () => {
+  const { id } = loadAnimatedRectangle();
+  useEditor.getState().select({ kind: 'layer', id });
+  useEditor.getState().duplicateSelected();
+
+  const template = useEditor.getState().template!;
+  const copy = template.layers.find((item) => item.id !== id)!;
+  assert.equal(template.layers.length, 2);
+  assert.equal(copy.name, 'Animated rectangle copy');
+  assert.equal(copy.transform.x, template.layers.find((item) => item.id === id)!.transform.x + 24);
+  assert.equal(template.timeline.trackDirectors[copy.id], 'default');
+  assert.equal(template.timeline.keyframes[0]!.layers[copy.id]?.x, template.timeline.keyframes[0]!.layers[id]?.x);
+  assert.equal(useEditor.getState().selection?.id, copy.id);
+});
+
+test('duplicateSelected deep-copies a group subtree and its timeline in one patch', () => {
+  const template = createDefaultTemplate();
+  const group = {
+    id: 'group',
+    name: 'Folder',
+    parentId: null,
+    visible: true,
+    locked: false,
+    transform: createDefaultTransform(10, 20),
+  };
+  const layer = createLayer('rect', 'Inside');
+  layer.id = 'inside';
+  layer.groupId = 'group';
+  template.groups.push(group);
+  template.layers.push(layer);
+  template.rootStack.push({ kind: 'group', id: 'group' });
+  template.groupStacks.group = [{ kind: 'layer', id: 'inside' }];
+  template.timeline.trackDirectors.inside = 'default';
+  template.timeline.keyframes.push({
+    id: 'kf',
+    frame: 0,
+    layers: { inside: { y: 33 } },
+    groups: {},
+    easing: 'linear',
+  });
+  useEditor.getState().load(template);
+  useEditor.getState().select({ kind: 'group', id: 'group' });
+
+  useEditor.getState().duplicateSelected();
+
+  const updated = useEditor.getState().template!;
+  const copyGroup = updated.groups.find((item) => item.id !== 'group')!;
+  const copyLayer = updated.layers.find((item) => item.id !== 'inside')!;
+  assert.equal(updated.groups.length, 2);
+  assert.equal(updated.layers.length, 2);
+  assert.equal(copyGroup.name, 'Folder copy');
+  assert.equal(copyLayer.groupId, copyGroup.id);
+  assert.deepEqual(updated.groupStacks[copyGroup.id], [{ kind: 'layer', id: copyLayer.id }]);
+  assert.equal(updated.timeline.trackDirectors[copyLayer.id], 'default');
+  assert.equal(updated.timeline.keyframes[0]!.layers[copyLayer.id]?.y, 33);
+  assert.equal(updated.timeline.keyframes[0]!.layers.inside?.y, 33);
+  assert.equal(useEditor.getState().selection?.id, copyGroup.id);
+});
