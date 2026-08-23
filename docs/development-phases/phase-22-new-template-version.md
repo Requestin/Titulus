@@ -103,9 +103,17 @@ Visual PASS ждёт глаз оператора. Residual `single`/`overwrite` 
 
 ## 9. P22.7 — шаблоны оператора
 
-Положить новые шаблоны в `tests/fixtures/p22/operator/` (без секретов;
-медиа — отдельным оговорённым набором). Затем goldens, T0, null 1ch/3ch,
-DeckLink 1ch/3ch **только на них**, отчёт
+Набор оператора зафиксирован:
+
+- `tests/fixtures/p22/operator/newtest1.json` — сцена без видео
+- `tests/fixtures/p22/operator/newtest2.json` — сцена с видео
+- медиа: `tests/fixtures/p22/operator/media/` + `seed-media.sh`
+- goldens: `tests/fixtures/p22/expected/newtest{1,2}.{normalized,capabilities}.json`
+
+Все новые тесты производительности — только на этих шаблонах, не на
+музейном `test1` / `p20-test1-visual`.
+
+Осталось: T0, null 1ch/3ch, DeckLink 1ch/3ch **только на них**, отчёт
 `p22-07-operator-templates.md`, development-plan → DONE.
 
-Без этого набора фаза не закрывается, даже если P22.6 зелёный.
+Без SDI exam на этом наборе фаза не закрывается, даже если P22.6 зелёный.
