@@ -17,8 +17,11 @@ function readFixture(kind, id) {
   return JSON.parse(readFileSync(join(fixturesDirectory, kind, `${id}.json`), 'utf8'));
 }
 
-function legacyTemplateWithActions() {
+function legacyTemplateWithActions({ declareCapability = true } = {}) {
   const template = readFixture('old', 'test1');
+  if (declareCapability) {
+    template.capabilities = ['timeline.action-cues-items'];
+  }
   template.timeline.actions = [
     {
       id: 'start-default',
@@ -152,6 +155,25 @@ test('migration is non-mutating and idempotent', () => {
   assert.deepEqual(input, snapshot, 'migration mutated its input');
   assert.notStrictEqual(once, input, 'migration must return a detached value');
   assert.deepEqual(twice, once, 'migration must be idempotent');
+});
+
+test('leaves legacy flat actions unchanged without an explicit cue capability', () => {
+  const input = legacyTemplateWithActions({ declareCapability: false });
+  const snapshot = structuredClone(input);
+
+  const once = migrateTemplate(input);
+  const twice = migrateTemplate(once);
+
+  assert.notStrictEqual(once, input, 'migration must return a detached value');
+  assert.deepEqual(input, snapshot, 'migration mutated its input');
+  assert.deepEqual(once.timeline.actions, snapshot.timeline.actions);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(once.timeline, 'cues'),
+    false,
+    'implicit legacy migration added cues',
+  );
+  assert.equal(Object.prototype.hasOwnProperty.call(once, 'capabilities'), false);
+  assert.deepEqual(twice, once, 'opt-out migration must be idempotent');
 });
 
 test('leaves already canonical cues unchanged', () => {
