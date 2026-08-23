@@ -10,7 +10,7 @@ import { getSessionToken } from '@/core/session';
 export type WsStatus = 'disconnected' | 'connecting' | 'connected';
 
 export interface ControlCommand {
-  type: 'take' | 'update' | 'clear';
+  type: 'take' | 'update' | 'clear' | 'continue';
   channelId: string;
   templateId?: string;
   template?: unknown;

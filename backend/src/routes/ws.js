@@ -2,7 +2,7 @@
 //
 // WebSocket hubs + on-air REST (DEVELOPMENT_PROMPT §7.4).
 //
-//   /ws/control    control panel -> backend: {type:'take'|'update'|'clear', ...}
+//   /ws/control    control panel -> backend: {type:'take'|'update'|'clear'|'continue', ...}
 //                  forwarded to OnAirManager (state + persist + fan-out).
 //   /ws/renderer   engine registers by ?channel=<id>; on connect the manager
 //                  replays all current takes for that channel (state recovery).
@@ -34,7 +34,7 @@ export function normalizeControlMessage(msg) {
   if (typeof type !== 'string') {
     return { ok: false, code: 'TYPE_REQUIRED', message: 'type is required' };
   }
-  if (!['take', 'update', 'clear'].includes(type)) {
+  if (!['take', 'update', 'clear', 'continue'].includes(type)) {
     return { ok: false, code: 'UNKNOWN_TYPE', message: `unsupported command type: ${type}` };
   }
   if (typeof channelId !== 'string' || !SAFE_ID_RE.test(channelId)) {
@@ -65,6 +65,11 @@ export function normalizeControlMessage(msg) {
     }
     if (variables !== undefined && !isPlainObject(variables)) {
       return { ok: false, code: 'INVALID_VARIABLES', message: 'variables must be an object' };
+    }
+  }
+  if (type === 'continue') {
+    if (typeof templateId !== 'string' || !SAFE_ID_RE.test(templateId)) {
+      return { ok: false, code: 'INVALID_TEMPLATE_ID', message: 'templateId is required for continue' };
     }
   }
   if (type === 'clear' && templateId !== undefined) {

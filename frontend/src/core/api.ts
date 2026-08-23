@@ -144,6 +144,16 @@ export interface ValidationError {
 /** On-air snapshot: channelId -> templateIds currently on air. */
 export type OnAirSnapshot = Record<string, string[]>;
 
+export interface OnAirDetailsItem {
+  templateId: string;
+  waitingContinue: boolean;
+}
+
+export interface OnAirDetailsSnapshot {
+  schemaVersion: 'onair-details-v1';
+  channels: Record<string, OnAirDetailsItem[]>;
+}
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -285,6 +295,7 @@ export const api = {
   },
   onair: {
     get: () => req<OnAirSnapshot>('/api/onair'),
+    details: () => req<OnAirDetailsSnapshot>('/api/onair/details'),
   },
   license: {
     get: () => req<LicenseState>('/api/license'),

@@ -30,7 +30,7 @@ export type WsStatus = 'connecting' | 'connected' | 'disconnected';
 
 /** A take/update/clear message on /ws/renderer (mirrors §7.4). */
 export interface ChannelMessage {
-  type: 'take' | 'update' | 'clear';
+  type: 'take' | 'update' | 'clear' | 'continue';
   templateId: string;
   template?: Template;      // present on 'take'
   variables?: Record<string, string | number>;
@@ -190,7 +190,14 @@ export class ChannelClient {
       case 'take':  this.onTake(msg); break;
       case 'update':this.onUpdate(msg); break;
       case 'clear': this.onClear(msg); break;
+      case 'continue': this.onContinue(msg); break;
     }
+  }
+
+  private onContinue(msg: ChannelMessage): void {
+    const active = this.active.get(msg.templateId);
+    if (!active) return;
+    active.renderer.continueDirectors();
   }
 
   private rendererOpts(): TemplateRendererOptions {

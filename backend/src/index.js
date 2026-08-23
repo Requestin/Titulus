@@ -105,6 +105,7 @@ app.use('/api/license', auth.requireAuth, auth.requireRole('admin'), licenseRout
 // On-air snapshot for the control panel (§7.4). Separate from the WS router so
 // it sits under /api alongside the other REST endpoints.
 app.get('/api/onair', auth.requireAuth, (req, res) => res.json(onAir.onAirTemplateIds()));
+app.get('/api/onair/details', auth.requireAuth, (req, res) => res.json(onAir.onAirDetails()));
 
 // WebSocket hubs (§7.4): /ws/control (panel -> backend), /ws/renderer (engine).
 app.use('/ws', wsRouter(onAir, auth));

@@ -44,6 +44,7 @@ export class OnAirManager {
     // but their DB rows remain intact for explicit operator recovery or clear.
     this.state = {};
     this.quarantined = {};
+    this.waitingContinue = new Map();
     for (const [channelId, commands] of Object.entries(this.dao.all())) {
       const active = [];
       const quarantined = [];
@@ -91,6 +92,7 @@ export class OnAirManager {
       case 'take':   return this.applyTake(cmd);
       case 'update': return this.applyUpdate(cmd);
       case 'clear':  return this.applyClear(cmd);
+      case 'continue': return this.applyContinue(cmd);
       default:       return;
     }
   }
@@ -146,6 +148,7 @@ export class OnAirManager {
       return;
     }
     this.dao.remove(cmd.channelId, cmd.templateId);
+    this.setWaitingContinue(cmd.channelId, cmd.templateId, false);
     if (this.quarantined[cmd.channelId]) {
       this.quarantined[cmd.channelId] = this.quarantined[cmd.channelId]
         .filter((c) => c.templateId !== cmd.templateId);
@@ -158,6 +161,30 @@ export class OnAirManager {
     this.fanout(cmd.channelId, cmd);
   }
 
+  applyContinue(cmd) {
+    if (!cmd.templateId) return;
+    this.setWaitingContinue(cmd.channelId, cmd.templateId, false);
+    this.fanout(cmd.channelId, {
+      type: 'continue',
+      channelId: cmd.channelId,
+      templateId: cmd.templateId,
+    });
+  }
+
+  waitingKey(channelId, templateId) {
+    return `${channelId}\0${templateId}`;
+  }
+
+  setWaitingContinue(channelId, templateId, waiting) {
+    const key = this.waitingKey(channelId, templateId);
+    if (waiting) this.waitingContinue.set(key, true);
+    else this.waitingContinue.delete(key);
+  }
+
+  isWaitingContinue(channelId, templateId) {
+    return this.waitingContinue.get(this.waitingKey(channelId, templateId)) === true;
+  }
+
   /** Public snapshot for /api/onair: { channelId: [templateId,...] }. */
   onAirTemplateIds() {
     const out = {};
@@ -165,6 +192,18 @@ export class OnAirManager {
       out[ch] = cmds.map((c) => c.templateId);
     }
     return out;
+  }
+
+  /** Versioned sibling of /api/onair. Never replace the string[] snapshot. */
+  onAirDetails() {
+    const channels = {};
+    for (const [ch, cmds] of Object.entries(this.state)) {
+      channels[ch] = cmds.map((c) => ({
+        templateId: c.templateId,
+        waitingContinue: this.isWaitingContinue(ch, c.templateId),
+      }));
+    }
+    return { schemaVersion: 'onair-details-v1', channels };
   }
 
   // -------------------------------------------------------------------------
