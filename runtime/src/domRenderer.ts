@@ -263,6 +263,17 @@ export class TemplateRenderer {
     return this.directorMachine?.waitingContinue() ?? false;
   }
 
+  hasDirectorRuntime(): boolean {
+    return this.directorMachine !== null;
+  }
+
+  /** Advance the director machine to an absolute frame without calling playTimeline. */
+  advancePlayback(frame: number): void {
+    this.frame = Math.max(0, Math.round(frame));
+    this.directorMachine?.advance(this.frame);
+    this.applyState(this.frame);
+  }
+
   /**
    * Advance exactly one frame. Engine mode ('fixed') only. Called by the host
    * at the channel fps (DEVELOPMENT_PROMPT §6.3 fixed-step tick).

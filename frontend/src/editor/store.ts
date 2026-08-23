@@ -10,6 +10,7 @@ import { temporal } from 'zundo';
 import type {
   Template, Layer, LayerType, Variable, Transform, RootStackEntry,
   TimelineDirector, TimelineKeyframe, AnimatableProp, EasingType,
+  TimelineCue, TimelineCueCommand, TimelineCueItem,
 } from '@runtime';
 import { ANIMATABLE_PROPS, createDefaultTransform } from '@runtime';
 import { createId } from '@/core/id';
@@ -27,6 +28,17 @@ import {
   retargetSelected,
   type SelectedKeyframe,
 } from './timelineTracks';
+import {
+  canRemoveDirector,
+  constrainCueTag,
+  createCue,
+  createCueItem,
+  cueFrameFromEffective,
+  findCueAtEffectiveFrame,
+  isProtectedUpdateDirector,
+  mergeCueItems,
+  stripCuesForDirector,
+} from './timelineCues';
 
 export type Selection = { kind: 'layer' | 'group'; id: string } | null;
 export type Target = { kind: 'layer' | 'group'; id: string };
@@ -192,6 +204,7 @@ interface EditorState {
   playing: boolean;
   activeDirectorId: string;
   selectedKeyframes: SelectedKeyframe[];
+  selectedCueId: string | null;
   setPlayhead: (frame: number) => void;
   setPlaying: (playing: boolean) => void;
   setActiveDirector: (id: string) => void;
@@ -214,6 +227,14 @@ interface EditorState {
   removeTrack: (target: Target, prop: AnimatableProp) => void;
   setKeyframeEasing: (frame: number, easing: EasingType) => void;
   addTrackAtPlayhead: (target: Target, prop: AnimatableProp) => void;
+  selectCue: (id: string | null) => void;
+  addCueAtPlayhead: () => void;
+  removeSelectedCue: () => void;
+  moveCue: (cueId: string, effectiveFrame: number) => void;
+  updateCue: (cueId: string, partial: Partial<Pick<TimelineCue, 'name' | 'fromEnd' | 'frame'>>) => void;
+  addCueItem: (cueId: string, command?: TimelineCueCommand) => void;
+  removeCueItem: (cueId: string, itemId: string) => void;
+  updateCueItem: (cueId: string, itemId: string, next: TimelineCueItem) => void;
 }
 
 function clone(t: Template): Template {
@@ -249,6 +270,7 @@ export const useEditor = create<EditorState>()(
       playing: false,
       activeDirectorId: 'default',
       selectedKeyframes: [],
+      selectedCueId: null,
 
       load: (t) => {
         syncPlayhead(0, false);
@@ -261,6 +283,7 @@ export const useEditor = create<EditorState>()(
           playing: false,
           activeDirectorId: t.timeline.directors[0]?.id ?? 'default',
           selectedKeyframes: [],
+          selectedCueId: null,
         });
         useEditor.temporal.getState().clear();
       },
@@ -453,8 +476,9 @@ export const useEditor = create<EditorState>()(
         syncPlayhead(0, false);
         set({ activeDirectorId: id, playhead: 0, playing: false });
       },
-      setSelectedKeyframes: (keyframes) => set({ selectedKeyframes: keyframes }),
+      setSelectedKeyframes: (keyframes) => set({ selectedKeyframes: keyframes, selectedCueId: keyframes.length ? null : get().selectedCueId }),
       clearSelectedKeyframes: () => set({ selectedKeyframes: [] }),
+      selectCue: (id) => set({ selectedCueId: id, selectedKeyframes: id ? [] : get().selectedKeyframes }),
 
       setTimelineMeta: (partial) => get().patch((t) => { Object.assign(t.timeline, partial); }),
 
@@ -477,18 +501,25 @@ export const useEditor = create<EditorState>()(
       updateDirector: (id, partial) =>
         get().patch((t) => {
           const d = t.timeline.directors.find((x) => x.id === id);
-          if (d) Object.assign(d, partial);
+          if (!d) return;
+          if (isProtectedUpdateDirector(d) && partial.name !== undefined) {
+            const { name: _ignored, ...rest } = partial;
+            Object.assign(d, rest);
+            return;
+          }
+          Object.assign(d, partial);
         }),
 
       removeDirector: (id) => {
         const t0 = get().template;
-        if (!t0 || t0.timeline.directors.length <= 1) return;
+        if (!t0 || !canRemoveDirector(t0.timeline.directors, id)) return;
         get().patch((t) => {
           t.timeline.directors = t.timeline.directors.filter((d) => d.id !== id);
           for (const k of Object.keys(t.timeline.trackDirectors)) {
             if (t.timeline.trackDirectors[k] === id) delete t.timeline.trackDirectors[k];
           }
           t.timeline.actions = t.timeline.actions.filter((a) => a.directorId !== id);
+          t.timeline.cues = stripCuesForDirector(t.timeline, id);
           if (t.timeline.propertyTrackDirectors) {
             for (const [targetId, bag] of Object.entries(t.timeline.propertyTrackDirectors)) {
               for (const [prop, directorId] of Object.entries(bag ?? {})) {
@@ -618,6 +649,103 @@ export const useEditor = create<EditorState>()(
         get().patch((t) => {
           const kf = t.timeline.keyframes.find((k) => k.frame === frame);
           if (kf) { kf.easing = easing; delete kf.bezier; }
+        }),
+
+      addCueAtPlayhead: () => {
+        const t0 = get().template;
+        if (!t0) return;
+        const directorId = get().activeDirectorId;
+        const director = t0.timeline.directors.find((item) => item.id === directorId);
+        if (!director) return;
+        const playhead = Math.max(0, Math.round(currentPlayhead()));
+        const existing = findCueAtEffectiveFrame(
+          t0.timeline.cues,
+          directorId,
+          playhead,
+          director.durationFrames,
+        );
+        if (existing) {
+          get().patch((t) => {
+            const cue = (t.timeline.cues ?? []).find((item) => item.id === existing.id);
+            if (!cue) return;
+            cue.items = mergeCueItems(cue, [createCueItem('startDirector', directorId)]).items;
+          });
+          set({ selectedCueId: existing.id, selectedKeyframes: [] });
+          return;
+        }
+        const cue = createCue(directorId, playhead, false);
+        get().patch((t) => {
+          t.timeline.cues = [...(t.timeline.cues ?? []), cue];
+        });
+        set({ selectedCueId: cue.id, selectedKeyframes: [] });
+      },
+
+      removeSelectedCue: () => {
+        const cueId = get().selectedCueId;
+        if (!cueId) return;
+        get().patch((t) => {
+          t.timeline.cues = (t.timeline.cues ?? []).filter((cue) => cue.id !== cueId);
+        });
+        set({ selectedCueId: null });
+      },
+
+      moveCue: (cueId, effectiveFrame) => {
+        const t0 = get().template;
+        const cue = t0?.timeline.cues?.find((item) => item.id === cueId);
+        const director = t0?.timeline.directors.find((item) => item.id === cue?.directorId);
+        if (!t0 || !cue || !director) return;
+        const host = findCueAtEffectiveFrame(
+          t0.timeline.cues,
+          cue.directorId,
+          effectiveFrame,
+          director.durationFrames,
+          cueId,
+        );
+        get().patch((t) => {
+          const source = (t.timeline.cues ?? []).find((item) => item.id === cueId);
+          if (!source) return;
+          if (host) {
+            const dest = (t.timeline.cues ?? []).find((item) => item.id === host.id);
+            if (!dest) return;
+            dest.items = mergeCueItems(dest, source.items).items;
+            t.timeline.cues = (t.timeline.cues ?? []).filter((item) => item.id !== cueId);
+            return;
+          }
+          source.frame = cueFrameFromEffective(effectiveFrame, source.fromEnd, director.durationFrames);
+        });
+        if (host) set({ selectedCueId: host.id });
+      },
+
+      updateCue: (cueId, partial) =>
+        get().patch((t) => {
+          const cue = (t.timeline.cues ?? []).find((item) => item.id === cueId);
+          if (cue) Object.assign(cue, partial);
+        }),
+
+      addCueItem: (cueId, command = 'startDirector') =>
+        get().patch((t) => {
+          const cue = (t.timeline.cues ?? []).find((item) => item.id === cueId);
+          if (!cue) return;
+          cue.items = mergeCueItems(cue, [createCueItem(command, cue.directorId)]).items;
+        }),
+
+      removeCueItem: (cueId, itemId) =>
+        get().patch((t) => {
+          const cue = (t.timeline.cues ?? []).find((item) => item.id === cueId);
+          if (!cue || cue.items.length <= 1) return;
+          const leftover = cue.items.filter((item) => item.id !== itemId);
+          if (leftover.length === 0) return;
+          cue.items = leftover as TimelineCue['items'];
+        }),
+
+      updateCueItem: (cueId, itemId, next) =>
+        get().patch((t) => {
+          const cue = (t.timeline.cues ?? []).find((item) => item.id === cueId);
+          if (!cue) return;
+          const host = t.timeline.directors.find((item) => item.id === cue.directorId) ?? { name: '' };
+          cue.items = cue.items.map((item) => (
+            item.id === itemId ? constrainCueTag(next, host, t.timeline.cues ?? [], cue.id) : item
+          )) as TimelineCue['items'];
         }),
 
       addTrackAtPlayhead: (target, prop) => {

@@ -4,11 +4,15 @@ import { useStore } from 'zustand';
 export interface PlayheadState {
   playhead: number;
   playing: boolean;
+  continueRequestId: number;
+  waitingContinue: boolean;
 }
 
 export const playheadStore = createStore<PlayheadState>()(() => ({
   playhead: 0,
   playing: false,
+  continueRequestId: 0,
+  waitingContinue: false,
 }));
 
 export function usePlayhead<T>(select: (state: PlayheadState) => T): T {
@@ -25,4 +29,12 @@ export function setLivePlaying(playing: boolean): void {
 
 export function syncPlayhead(frame: number, playing = playheadStore.getState().playing): void {
   playheadStore.setState({ playhead: Math.max(0, Math.round(frame)), playing });
+}
+
+export function requestContinue(): void {
+  playheadStore.setState((state) => ({ continueRequestId: state.continueRequestId + 1 }));
+}
+
+export function setWaitingContinue(waiting: boolean): void {
+  playheadStore.setState({ waitingContinue: waiting });
 }

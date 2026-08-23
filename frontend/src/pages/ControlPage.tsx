@@ -8,7 +8,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Copy, Check, X, Radio, Trash2 } from 'lucide-react';
-import { api, type Channel, type TemplateSummary, type TemplateRecord, type Rundown } from '@/core/api';
+import { api, type Channel, type OnAirDetailsSnapshot, type TemplateSummary, type TemplateRecord, type Rundown } from '@/core/api';
+import { continueCommand, isWaitingContinue } from '@/control/onAirContinue';
 import { useControlWs, type WsStatus } from '@/core/controlWs';
 import { toast } from '@/core/toast';
 import { Button } from '@/components/ui/Button';
@@ -26,6 +27,7 @@ export function ControlPage() {
   const [rundowns, setRundowns] = useState<Rundown[]>([]);
   const [controlDataLoaded, setControlDataLoaded] = useState(false);
   const [onAir, setOnAir] = useState<Record<string, string[]>>({});
+  const [onAirDetails, setOnAirDetails] = useState<OnAirDetailsSnapshot | null>(null);
   const [tab, setTab] = useState<'templates' | 'rundowns'>('templates');
   const [rundownMonitorChannel, setRundownMonitorChannel] = useState<string>('');
 
@@ -38,13 +40,14 @@ export function ControlPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [ch, tpl, rd, air] = await Promise.all([
-          api.channels.list(), api.templates.list(), api.rundowns.list(), api.onair.get(),
+        const [ch, tpl, rd, air, details] = await Promise.all([
+          api.channels.list(), api.templates.list(), api.rundowns.list(), api.onair.get(), api.onair.details(),
         ]);
         setChannels(ch);
         setTemplates(tpl);
         setRundowns(rd.map(normalizeRundown));
         setOnAir(air);
+        setOnAirDetails(details);
         if (ch.length && !channelId) setChannelId(ch[0].id);
       } catch (e) {
         toast.error(`Failed to load control data: ${(e as Error).message}`);
@@ -93,6 +96,30 @@ export function ControlPage() {
     send({ type: 'clear', channelId });
     setOnAir((prev) => ({ ...prev, [channelId]: [] }));
   }
+  function continueLive(templateId: string) {
+    if (!channelId) return;
+    send(continueCommand(channelId, templateId));
+  }
+
+  useEffect(() => {
+    if (!channelId) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const [air, details] = await Promise.all([api.onair.get(), api.onair.details()]);
+        if (cancelled) return;
+        setOnAir(air);
+        setOnAirDetails(details);
+      } catch {
+        // keep last snapshot if the sibling endpoint is briefly unavailable
+      }
+    };
+    const timer = window.setInterval(() => { void poll(); }, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [channelId]);
 
   const browserSourceUrl = monitorChannelId ? `${location.origin}/channel.html?channel=${monitorChannelId}` : '';
 
@@ -146,7 +173,15 @@ export function ControlPage() {
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
             {tab === 'templates'
-              ? <TemplatesTab templates={templates} live={live} onTake={take} onUpdate={update} onClear={clear} />
+              ? <TemplatesTab
+                  templates={templates}
+                  live={live}
+                  canContinue={prepId => isWaitingContinue(onAirDetails, channelId, prepId)}
+                  onTake={take}
+                  onUpdate={update}
+                  onClear={clear}
+                  onContinue={continueLive}
+                />
               : (
                 <RundownTab
                   channels={channels}
@@ -158,6 +193,7 @@ export function ControlPage() {
                   setOnAir={setOnAir}
                   fallbackChannelId={channelId || 'default'}
                   send={send}
+                  onAirDetails={onAirDetails}
                   onPreferredChannelChange={setRundownMonitorChannel}
                 />
               )}
@@ -222,13 +258,15 @@ function BrowserSourceUrl({ url }: { url: string }) {
 }
 
 function TemplatesTab({
-  templates, live, onTake, onUpdate, onClear,
+  templates, live, canContinue, onTake, onUpdate, onClear, onContinue,
 }: {
   templates: TemplateSummary[];
   live: string[];
+  canContinue: (templateId: string) => boolean;
   onTake: (rec: TemplateRecord, values: Record<string, string | number>) => void;
   onUpdate: (templateId: string, values: Record<string, string | number>) => void;
   onClear: (templateId: string) => void;
+  onContinue: (templateId: string) => void;
 }) {
   const [prep, setPrep] = useState<TemplateRecord | null>(null);
   const [values, setValues] = useState<Record<string, string | number>>({});
@@ -296,10 +334,11 @@ function TemplatesTab({
             <div className="min-h-0 flex-1 overflow-auto p-3">
               <VariableValues variables={prep.data.variables} values={values} onChange={setValue} />
             </div>
-            <div className="grid grid-cols-3 gap-2 border-t border-border p-3">
+            <div className="grid grid-cols-4 gap-2 border-t border-border p-3">
               <Button variant="danger" onClick={() => onTake(prep, values)}>TAKE</Button>
               <Button variant="neutral" onClick={() => onUpdate(prep.id, values)} disabled={!live.includes(prep.id)}>UPDATE</Button>
               <Button variant="neutral" onClick={() => onClear(prep.id)} disabled={!live.includes(prep.id)}>CLEAR</Button>
+              <Button variant="neutral" onClick={() => onContinue(prep.id)} disabled={!canContinue(prep.id)}>CONTINUE</Button>
             </div>
           </>
         )}

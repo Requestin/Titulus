@@ -8,10 +8,12 @@ import {
   type Channel,
   type OnAirSnapshot,
   type Rundown,
+  type OnAirDetailsSnapshot,
   type RundownSlot,
   type TemplateRecord,
   type TemplateSummary,
 } from '@/core/api';
+import { continueCommand, isWaitingContinue } from '@/control/onAirContinue';
 import { Button } from '@/components/ui/Button';
 import { Field, Input, NumberInput, ColorInput, Select } from '@/components/ui/form';
 import { MediaUploadButton } from '@/editor/MediaUploadButton';
@@ -37,6 +39,7 @@ export function RundownTab({
   setOnAir,
   fallbackChannelId,
   send,
+  onAirDetails,
   onPreferredChannelChange,
 }: {
   channels: Channel[];
@@ -48,6 +51,7 @@ export function RundownTab({
   setOnAir: React.Dispatch<React.SetStateAction<OnAirSnapshot>>;
   fallbackChannelId: string;
   send: SendControl;
+  onAirDetails?: OnAirDetailsSnapshot | null;
   onPreferredChannelChange?: (channelId: string) => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -353,6 +357,15 @@ export function RundownTab({
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-border bg-surface px-3 py-2">
           <Button size="sm" variant="neutral" disabled={focusIdx === 0} onClick={() => { const i = Math.max(0, focusIdx - 1); setFocusIdx(i); void takeAt(i); }}>PREV</Button>
           <Button size="sm" variant="primary" disabled={active.slots.length === 0} onClick={() => void takeAt(focusIdx, true)}>TAKE</Button>
+          <Button
+            size="sm"
+            variant="neutral"
+            disabled={!active.slots[focusIdx] || !isWaitingContinue(onAirDetails, channelId, active.slots[focusIdx].slotId)}
+            onClick={() => {
+              const slot = active.slots[focusIdx];
+              if (slot) send(continueCommand(channelId, slot.slotId));
+            }}
+          >CONTINUE</Button>
           <Button size="sm" variant="neutral" disabled={focusIdx >= active.slots.length - 1} onClick={() => { const i = Math.min(active.slots.length - 1, focusIdx + 1); setFocusIdx(i); void takeAt(i); }}>NEXT</Button>
           <Button size="sm" variant="ghost" onClick={() => {
             for (const slot of active.slots) if (activeLiveSet.has(slot.slotId)) clearSlot(slot.slotId);
