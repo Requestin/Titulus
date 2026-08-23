@@ -4,10 +4,9 @@ alwaysApply: true
 ---
 # План разработки
 
-**Снимок:** август 2026. Phase 20 закрыта по visual acceptance после
-cross-host validation на i7-14700KF. Phase 21 закрыта: возможности нового
-designer перенесены на current `main` без direct merge и без ухудшения
-engine cadence/performance. Unreal/VS исключены; 15/60 min soak вне scope.
+**Снимок:** август 2026. Phase 21 закрыта. Открыта Phase 22: новая схема
+шаблона становится единственным языком продукта, старые шаблоны
+конвертируются, эфир открывается staged allowlist без Unreal и без WebM.
 Engine-first policy остаётся alwaysApply; детали — `docs/development-phases/`.
 
 ## Фазы (кратко)
@@ -36,6 +35,7 @@ Engine-first policy остаётся alwaysApply; детали — `docs/develop
 | 19 | Style Guide + cost model | DONE: Doc02 audit-recovery K2 PASS (PR #84) | phase-19-cost-model.md |
 | 20 | Visual frame pacing + microfreeze | DONE (visual; strict SDI semantic evidence deferred) | phase-20-visual-frame-pacing.md |
 | 21 | New Designer Merge | DONE — capability port на current main; visual PASS; Unreal/VS excluded | phase-21-new-designer-merge.md |
+| 22 | New template version | IN PROGRESS — convert + staged air allowlist; operator templates = final exam | phase-22-new-template-version.md |
 
 ## Последний milestone в main
 
@@ -59,17 +59,23 @@ Phase 21 закрыта 2026-08-23 как controlled capability port на curren
 не объявлены шумом. Отчёты: `p21-00-baseline.md`,
 `p21-10-software-matrix.md`, `p21-10-hardware-closure.md`.
 
+Phase 22 открыта: конвертация old→vNext, staged `supported[]`, WebP in/out
+окно, LayerID stack, операторские экраны. Финальный exam — новые шаблоны
+оператора (P22.7), не музейный `test1`.
+
 ## Следующие задачи
 
-Открытой фазы нет. Engine-first rule и deferred on-wire soak остаются в силе.
-Новую фазу открывать отдельным решением, не продолжением Phase 21.
+- P22.1 — конвертировать old→vNext и открыть первый staged allowlist.
+- P22.2–P22.5 — editor leftovers, WebP window, LayerID stack, Control/MAM.
+- P22.6 — null/DeckLink на сконвертированных fixtures (≤5 мин, i7).
+- P22.7 — после шаблонов оператора: goldens + SDI exam + close.
 
 ## Отложенная строгая SDI-проверка
 
 Если будущая фаза потребует формальный zero-error on-wire claim, открыть
 отдельную задачу: repeatable 5–15-minute semantic capture с zero
 duplicate/skip/reversal и zero steady-state `single`/`overwrite`, затем 3ch
-60-minute soak. Это не является блокером закрытой visual Phase 20 и закрытой Phase 21.
+60-minute soak. Это не является блокером закрытой visual Phase 20, закрытой Phase 21 и открытой Phase 22.
 
 ## Как обновлять этот файл
 

@@ -2,7 +2,11 @@
 description: "Phase 21: engine-first защита при переносе нового designer из sergey-v1."
 alwaysApply: true
 ---
-# Phase 21 — engine first
+# Phase 21–22 — engine first
+
+Phase 22 не ослабляет эти инварианты. Меняется только
+канон шаблона: old конвертируется в vNext, эфир открывается staged
+`supported[]`. Видео остаётся WebP без скраба и без WebM.
 
 Current `origin/main` — единственный engine/runtime/performance foundation для
 разработки, сборки, тестов и deployment. `origin/sergey-v1` — read-only
@@ -36,7 +40,9 @@ Current `origin/main` — единственный engine/runtime/performance fo
   WS acknowledgement, используемый Phase 20 harness.
 - Editor и эфир используют один `@titulus/runtime`; отдельная render-логика в
   frontend запрещена.
-- Старые main templates обязаны рендериться и двигаться без изменений.
+- Сконвертированные шаблоны обязаны сохранить геометрию и движение
+  (x/y/anchor/`rootStack`/keyframes). Новая схема — канон; музей
+  «только old fixtures в эфире» больше не действует.
 
 ## Порядок интеграции
 
