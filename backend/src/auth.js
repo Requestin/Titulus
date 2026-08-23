@@ -104,6 +104,7 @@ export function createAuth(db) {
     requirePermission,
     permissionsFor: (userId, role) => rbacDao(db).permissionsForUser(userId, role),
     assignDefaults: (userId, role) => rbacDao(db).assignDefaults(userId, role),
+    rbac: rbacDao(db),
     authenticateToken,
     passwordMatches,
     sessionExpiresAt,

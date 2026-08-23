@@ -37,11 +37,39 @@ export interface RundownSlot {
   templateId: string;
   name: string;
   vars: Record<string, string | number>;
+  dataElementId?: string;
   // legacy aliases for older persisted data (normalized on backend read).
   id?: string;
   label?: string;
   variables?: Record<string, string | number>;
 }
+
+export interface DataElement {
+  id: string;
+  name: string;
+  templateId: string;
+  payload: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TemplateFolder {
+  id: string;
+  name: string;
+  hide_in_control: number;
+  sort_order?: number;
+}
+
+export interface MediaAsset {
+  id: string;
+  title?: string;
+  originalName?: string;
+  token: string;
+  url: string | null;
+  tags: string[];
+}
+
+export type PermissionGroup = 'template_editor' | 'control' | 'settings' | 'files.read';
 
 export interface Rundown {
   id: string;
@@ -218,10 +246,16 @@ export const api = {
         body: JSON.stringify({ username, password }),
       }),
     logout: () => req<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
-    me: () => req<{ user: AuthUser; tenantId: string; role: UserRole }>('/api/auth/me'),
+    me: () => req<{ user: AuthUser; tenantId: string; role: UserRole; permissions: PermissionGroup[] }>('/api/auth/me'),
     listUsers: () => req<AuthUser[]>('/api/auth/users'),
     createUser: (body: { username: string; password: string; role?: UserRole }) =>
       req<AuthUser>('/api/auth/users', { method: 'POST', body: JSON.stringify(body) }),
+    updateUser: (id: string, patch: { role?: UserRole; isActive?: boolean }) =>
+      req<AuthUser>(`/api/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+    userGroups: (id: string) => req<PermissionGroup[]>(`/api/auth/users/${id}/groups`),
+    setUserGroups: (id: string, groups: PermissionGroup[]) =>
+      req<PermissionGroup[]>(`/api/auth/users/${id}/groups`, { method: 'PUT', body: JSON.stringify({ groups }) }),
+    groups: () => req<PermissionGroup[]>('/api/auth/groups'),
   },
   billing: {
     entitlements: () => req<Entitlements>('/api/billing/entitlements'),
@@ -264,6 +298,22 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    putThumbnail: async (id: string, blob: Blob) => {
+      const headers = new Headers();
+      const token = getSessionToken();
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      headers.set('Content-Type', 'image/jpeg');
+      const res = await fetch(`/api/templates/${encodeURIComponent(id)}/thumbnail`, {
+        method: 'PUT',
+        headers,
+        body: blob,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new ApiError(res.status, (body as { error?: { message?: string } }).error?.message || res.statusText, body);
+      }
+      return res.json() as Promise<{ url: string }>;
+    },
   },
   media: {
     list: (params?: { q?: string; tag?: string }) => {
@@ -271,25 +321,38 @@ export const api = {
       if (params?.q) query.set('q', params.q);
       if (params?.tag) query.set('tag', params.tag);
       const suffix = query.toString();
-      return req<Array<{ id: string; title: string; token: string; url: string | null; tags: string[] }>>(
-        `/api/media${suffix ? `?${suffix}` : ''}`,
-      );
+      return req<MediaAsset[]>(`/api/media${suffix ? `?${suffix}` : ''}`);
     },
+    import: (file: File) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      return req<{ catalog: MediaAsset; job: unknown }>('/api/media/import', { method: 'POST', body: fd });
+    },
+    setTags: (id: string, tags: string[]) =>
+      req<MediaAsset>(`/api/media/${id}/tags`, { method: 'PUT', body: JSON.stringify({ tags }) }),
   },
   templateFolders: {
-    list: () => req<Array<{ id: string; name: string; hide_in_control: number }>>('/api/template-folders'),
-    create: (name: string) => req<{ id: string; name: string }>('/api/template-folders', { method: 'POST', body: JSON.stringify({ name }) }),
+    list: () => req<TemplateFolder[]>('/api/template-folders'),
+    create: (name: string, hideInControl = false) =>
+      req<TemplateFolder>('/api/template-folders', { method: 'POST', body: JSON.stringify({ name, hideInControl }) }),
+    update: (id: string, patch: { name?: string; hideInControl?: boolean }) =>
+      req<TemplateFolder>(`/api/template-folders/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    remove: (id: string) => req<{ ok: true }>(`/api/template-folders/${id}`, { method: 'DELETE' }),
     assign: (folderId: string, templateId: string) =>
       req<{ ok: true }>(`/api/template-folders/${folderId}/assign`, { method: 'POST', body: JSON.stringify({ templateId }) }),
     unfile: (templateId: string) =>
       req<{ ok: true }>('/api/template-folders/unfile', { method: 'POST', body: JSON.stringify({ templateId }) }),
   },
   dataElements: {
-    list: () => req<Array<{ id: string; name: string; templateId: string; payload: Record<string, unknown> }>>('/api/data-elements'),
+    list: () => req<DataElement[]>('/api/data-elements'),
     create: (body: { name: string; templateId: string; payload?: Record<string, unknown> }) =>
-      req('/api/data-elements', { method: 'POST', body: JSON.stringify(body) }),
+      req<DataElement>('/api/data-elements', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, patch: { name?: string; payload?: Record<string, unknown> }) =>
+      req<DataElement>(`/api/data-elements/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+    remove: (id: string) => req<{ ok: true }>(`/api/data-elements/${id}`, { method: 'DELETE' }),
   },
   templateLocks: {
+    get: (id: string) => req<{ lock: { username: string; user_id?: string } | null }>(`/api/templates/${id}/lock`),
     acquire: (id: string) => req<{ lock: { username: string } }>(`/api/templates/${id}/lock`, { method: 'POST' }),
     heartbeat: (id: string) => req<{ lock: { username: string } }>(`/api/templates/${id}/heartbeat`, { method: 'POST' }),
     release: (id: string) => req<{ ok: true }>(`/api/templates/${id}/unlock`, { method: 'POST' }),

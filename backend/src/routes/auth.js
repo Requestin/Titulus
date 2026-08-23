@@ -21,6 +21,7 @@ function toPublicUser(row) {
 export function authRouter(auth) {
   const router = Router();
   const { dao } = auth;
+  const rbac = auth.rbac;
 
   router.post('/login', (req, res) => {
     req.auditEventType = 'auth.login';
@@ -105,6 +106,40 @@ export function authRouter(auth) {
       }
       throw err;
     }
+  });
+
+  router.get('/groups', auth.requireAuth, auth.requireRole('admin'), (_req, res) => {
+    res.json(rbac.listGroups());
+  });
+
+  router.get('/users/:id/groups', auth.requireAuth, auth.requireRole('admin'), (req, res) => {
+    const user = dao.getUserById(req.params.id);
+    if (!user) return authError(res, 404, 'NOT_FOUND', 'user not found');
+    res.json(rbac.permissionsForUser(user.id, user.role === 'admin' ? 'operator' : user.role));
+  });
+
+  router.put('/users/:id/groups', auth.requireAuth, auth.requireRole('admin'), (req, res) => {
+    const user = dao.getUserById(req.params.id);
+    if (!user) return authError(res, 404, 'NOT_FOUND', 'user not found');
+    const groups = Array.isArray(req.body?.groups) ? req.body.groups.map(String) : [];
+    res.json(rbac.setGroups(user.id, groups));
+  });
+
+  router.patch('/users/:id', auth.requireAuth, auth.requireRole('admin'), (req, res) => {
+    const user = dao.getUserById(req.params.id);
+    if (!user) return authError(res, 404, 'NOT_FOUND', 'user not found');
+    const body = req.body ?? {};
+    if (body.role !== undefined) {
+      if (!isValidRole(body.role)) {
+        return authError(res, 422, 'ROLE_INVALID', 'role must be one of operator|admin');
+      }
+      dao.setUserRole(user.id, body.role);
+      if (body.role === 'admin') rbac.assignDefaults(user.id, 'admin');
+    }
+    if (body.isActive !== undefined) {
+      dao.setUserActive(user.id, Boolean(body.isActive));
+    }
+    res.json(toPublicUser(dao.getUserById(user.id)));
   });
 
   return router;

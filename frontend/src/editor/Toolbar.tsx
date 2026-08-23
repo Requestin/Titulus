@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import { useEditor, useCanUndo, useCanRedo, undo, redo } from './store';
 
-export function Toolbar({ onSave, saving }: { onSave: () => void; saving: boolean }) {
+export function Toolbar({ onSave, saving, readOnly = false, lockOwner }: { onSave: () => void; saving: boolean; readOnly?: boolean; lockOwner?: string | null }) {
   const name = useEditor((s) => s.template?.name ?? '');
   const dirty = useEditor((s) => s.dirty);
   const zoom = useEditor((s) => s.zoom);
@@ -61,8 +61,9 @@ export function Toolbar({ onSave, saving }: { onSave: () => void; saving: boolea
       <IconBtn onClick={toggleGridSnap} active={gridSnap} title="Grid snap"><Grid3x3 className="h-4 w-4" /></IconBtn>
 
       <div className="ml-auto flex items-center gap-2">
-        {dirty && <span className="text-[12px] text-ink-faint">Unsaved</span>}
-        <Button variant="primary" size="sm" onClick={onSave} disabled={saving}>
+        {readOnly && <span className="text-[12px] text-warning">Read-only{lockOwner ? ` · locked by ${lockOwner}` : ''}</span>}
+        {dirty && !readOnly && <span className="text-[12px] text-ink-faint">Unsaved</span>}
+        <Button variant="primary" size="sm" onClick={onSave} disabled={saving || readOnly}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
           Save
         </Button>

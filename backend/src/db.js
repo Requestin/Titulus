@@ -593,6 +593,14 @@ export const authDao = (db) => ({
     ).run(isActive ? 1 : 0, id);
     return this.getUserById(id);
   },
+  setUserRole(id, role) {
+    db.prepare(
+      `UPDATE users
+       SET role = ?, updated_at = datetime('now')
+       WHERE id = ?`,
+    ).run(role, id);
+    return this.getUserById(id);
+  },
   createSession({ token, userId, tenantId, expiresAt }) {
     db.prepare(
       `INSERT INTO sessions (token, user_id, tenant_id, expires_at)
