@@ -1,8 +1,10 @@
 # Phase 21 — New Designer Merge
 
-**Статус:** IN PROGRESS — baseline P21.0 на fresh main завершён; merge ожидается
+**Статус:** DONE — capabilities нового designer на current `main`; Unreal/VS исключены; 15/60 min soak вне scope
 **Дата открытия:** 2026-08-21
-**База:** `origin/main` @ `91a5563`
+**Дата закрытия:** 2026-08-23
+**База закрытия:** `origin/main` @ `4dfa8a5`
+**База открытия:** `origin/main` @ `91a5563`
 **Источник возможностей designer:** `origin/sergey-v1` @ `7ca8823`
 **Запрещённый артефакт:** `feature/sergey-v1-merge`
 **Предшественник:** Phase 20 visual closure
@@ -592,6 +594,8 @@ classification.
 
 ## 9. План интеграции по PR
 
+P21.0–P21.10 закрыты 2026-08-23. Ниже — исторический план, не очередь работ.
+
 Один PR — одна логическая задача. Каждый следующий PR строится от свежего
 `main`, в котором уже merged предыдущий milestone.
 
@@ -605,8 +609,7 @@ classification.
 ### P21.0 — Baseline freeze и governance
 
 Baseline evidence завершён на fresh `main` @ `91a5563`: DeckLink x4 — PASS.
-Это завершает baseline-часть P21.0, но весь P21.0 остаётся `IN PROGRESS` до
-merge.
+P21.0 merged (PR #117).
 
 Scope:
 
@@ -1115,17 +1118,41 @@ Phase 21 завершена только если:
 16. В `main` нет `bg_vs_engine`, `run-vs-channel`, UE/NDI/chroma routes/UI и
     `render_backend=unreal`.
 
-## 15. Первый следующий шаг
+Вердикт 2026-08-23: пункты 1–16 выполнены в пределах Phase 21. Draft vNext
+fixtures остаются fail-closed для эфира (`supported=[]`). Operator visual
+PASS на i7 DeckLink 1ch/3ch. Residual `single`/`overwrite` не объявлены
+шумом. 15/60 min soak и strict on-wire zero-anomaly — вне scope.
+`docs/sergey-v1/*` остаются историей и не удаляются этим закрытием.
 
-Не начинать с merge UI. Fresh baseline P21.0 на `main` @ `91a5563` уже снят
-с DeckLink x4 PASS, но P21.0 остаётся `IN PROGRESS` до merge. Сначала довести
-baseline/governance до merge, затем начать P21.1:
+## 15. Закрытие
 
-1. создать machine-readable capability inventory;
-2. добавить old/new contract fixtures;
-3. зафиксировать schema migration policy;
-4. превратить frozen Markdown source docs в UX acceptance checklist;
-5. только после этого открыть первый implementation PR.
+Phase 21 закрыта. Возможности designer перенесены малыми PR на current
+`main` без merge `sergey-v1` engine/runtime. Следующая работа — вне этого
+документа. Engine-first rule и deferred on-wire gate остаются в силе.
 
-Такой порядок дороже простого merge в начале, но дешевле повторного поиска
-микрофризов и повреждённых templates после смешения двух независимых runtime.
+Evidence:
+
+- [p21-00-baseline.md](../performance%20investigation/reports/p21-00-baseline.md)
+- [p21-08-video-timeline.md](p21-08-video-timeline.md)
+- [p21-10-software-matrix.md](../performance%20investigation/reports/p21-10-software-matrix.md)
+- [p21-10-hardware-closure.md](../performance%20investigation/reports/p21-10-hardware-closure.md)
+
+Rollback по-прежнему `git revert <merge-commit>` одного milestone, затем
+rebuild `bg-runtime.js`.
+
+## 16. Индекс PR
+
+| PR | Задача |
+|---|---|
+| #114–#116 | governance, source docs, engine-first rule |
+| #117 | P21.0 baseline + inventory |
+| #118–#120 | P21.1 fixtures / schema / agreement |
+| #121–#122 | P21.2 editor + templates shell |
+| #123–#127 | P21.3 Z / Tree / group preview / gradient |
+| #128–#133 | P21.4–P21.5 Timeline v2 + Continue |
+| #134–#138 | P21.6 Crawl + Data + files + prepare |
+| #139 | P21.7/P21.9 catalog, folders, locks, LayerID, RBAC |
+| #140 | P21.8 video ADR (WebP air; PR-81 closed) |
+| #141 | P21.10 software / fixture / migration matrix |
+| #142 | P21.10 hardware / visual closure |
+| #143 | P21.10 phase-close docs |
