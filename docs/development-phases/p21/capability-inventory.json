@@ -1,0 +1,1322 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatedFrom": {
+    "main": {
+      "ref": "main",
+      "commit": "91a5563770430b7558c856a92fdf5fc3a4db5c4a"
+    },
+    "sergey": {
+      "ref": "origin/sergey-v1",
+      "commit": "7ca8823633b6a47e963f1b3377dcb0758d9734e9"
+    },
+    "frozenDocs": [
+      {
+        "path": "docs/sergey-v1/new-interface.md",
+        "ref": "main",
+        "commit": "91a5563770430b7558c856a92fdf5fc3a4db5c4a"
+      },
+      {
+        "path": "docs/sergey-v1/template-editor-data.md",
+        "ref": "main",
+        "commit": "91a5563770430b7558c856a92fdf5fc3a4db5c4a"
+      },
+      {
+        "path": "docs/sergey-v1/crawl-parameters.md",
+        "ref": "main",
+        "commit": "91a5563770430b7558c856a92fdf5fc3a4db5c4a"
+      }
+    ]
+  },
+  "statusEnum": [
+    "current",
+    "partial",
+    "planned",
+    "excluded"
+  ],
+  "milestones": [
+    "P21.1",
+    "P21.2",
+    "P21.3",
+    "P21.4",
+    "P21.5",
+    "P21.6",
+    "P21.7",
+    "P21.8",
+    "P21.9",
+    "excluded"
+  ],
+  "domains": [
+    "shell",
+    "editor-tree",
+    "editor-properties",
+    "runtime-schema",
+    "runtime-render",
+    "timeline",
+    "data",
+    "templates",
+    "media",
+    "control",
+    "backend",
+    "security",
+    "engine"
+  ],
+  "riskEnum": [
+    "low",
+    "medium",
+    "high",
+    "critical"
+  ],
+  "requiredGates": {
+    "schema-contract": "JSON Schema, TypeScript model and backend validation agree; unknown combinations fail closed.",
+    "old-template-fixtures": "Current test/test1 and old templates load, save and render without geometry or timing change.",
+    "new-template-fixtures": "A versioned fixture covers the capability and its deterministic defaults.",
+    "migration-idempotence": "Migration or normalizer is explicit, golden-tested and idempotent.",
+    "frontend-tests": "Relevant frontend automated tests pass.",
+    "frontend-typecheck-build": "Frontend typecheck and production build pass.",
+    "runtime-tests-build": "Runtime tests, typecheck and bundle build pass.",
+    "backend-tests": "Backend tests use isolated TITULUS_DATA and pass.",
+    "editor-browser-air-parity": "Editor, browser channel and air runtime agree at selected static and temporal states.",
+    "manual-user-verdict": "A user explicitly records PASS or FAIL after observing the stated UX criterion.",
+    "accessibility-keyboard": "Keyboard, focus and accessibility smoke passes.",
+    "visual-regression": "Reference screenshot or justified image-diff review passes.",
+    "ws-protocol": "Versioned control/renderer protocol and reconnect acknowledgement tests pass.",
+    "security": "Authorization, input validation, path traversal and failure-mode tests pass as applicable.",
+    "db-migration-rollback": "Copied old DB migrates additively and rollback preserves DB/uploads.",
+    "media-ingest": "Durable ingest, poster, recovery and current WebP alpha/opaque tests pass.",
+    "one-tick-cadence": "Canonical one_tick behavior and logical cadence remain unchanged.",
+    "decklink-1ch-3ch": "Required 1-channel and 3-channel DeckLink runs are each no longer than 5 minutes and show no directional regression.",
+    "abba-hot-path": "Any runtime hot-path change is compared with current main using matched ABBA runs.",
+    "resource-isolation": "Thumbnail, scan and transcode work cannot steal live channel CPU/cache.",
+    "exclusion-audit": "Forbidden engine, route, UI, config and dependency surfaces remain absent from main."
+  },
+  "capabilities": [
+    {
+      "id": "shell.navigation-collapse",
+      "title": "Application shell and collapsible navigation",
+      "sourceSections": [
+        "new-interface.md §1 General structure"
+      ],
+      "status": "partial",
+      "milestone": "P21.2",
+      "domains": [
+        "shell"
+      ],
+      "risk": "low",
+      "currentEvidence": [
+        "frontend/src/components/AppShell.tsx has Templates, Control, Settings and Logout",
+        "The navigation rail has fixed width and no collapse control"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "frontend-typecheck-build",
+        "accessibility-keyboard",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "shell.resizable-collapsible-panels",
+      "title": "Resizable and collapsible editor panels",
+      "sourceSections": [
+        "new-interface.md §2 Template editor"
+      ],
+      "status": "planned",
+      "milestone": "P21.2",
+      "domains": [
+        "shell",
+        "editor-properties"
+      ],
+      "risk": "low",
+      "currentEvidence": [
+        "Current EditorPage layout does not expose the Sergey panel resizing/collapse workflow"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "frontend-typecheck-build",
+        "accessibility-keyboard",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "tree.label-order-dnd",
+      "title": "Tree naming, visual order and drag-and-drop",
+      "sourceSections": [
+        "new-interface.md §2 Tree"
+      ],
+      "status": "partial",
+      "milestone": "P21.2",
+      "domains": [
+        "editor-tree"
+      ],
+      "risk": "medium",
+      "currentEvidence": [
+        "frontend/src/editor/panels/LayersPanel.tsx renders hierarchical DnD and frontmost-first order",
+        "The panel is still labelled Layers rather than Tree"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "frontend-typecheck-build",
+        "old-template-fixtures",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "tree.nested-groups",
+      "title": "Nested groups and world-preserving reparent",
+      "sourceSections": [
+        "new-interface.md §2 Tree"
+      ],
+      "status": "current",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-tree",
+        "runtime-schema"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "runtime/src/schema.ts has LayerGroup.parentId and groupStacks",
+        "LayersPanel supports nested group DnD",
+        "frontend/src/editor/transformMath.ts and store tests preserve world geometry on reparent/delete"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "frontend-tests",
+        "editor-browser-air-parity",
+        "one-tick-cadence",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "tree.multiselect-move",
+      "title": "Tree multi-select and grouped move",
+      "sourceSections": [
+        "new-interface.md §2 Tree"
+      ],
+      "status": "current",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-tree"
+      ],
+      "risk": "medium",
+      "currentEvidence": [
+        "LayersPanel select mode stores multiple entry keys and moves the normalized selection together"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "new-template-fixtures",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "tree.copy-delete-subtree",
+      "title": "Copy/delete subtree with animation tracks",
+      "sourceSections": [
+        "new-interface.md §2 Tree"
+      ],
+      "status": "partial",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-tree",
+        "timeline"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "store.ts duplicates one selected layer only",
+        "The current duplicate is moved to root and does not clone subtree timeline tracks/keyframes",
+        "Group delete reparents children instead of silently deleting the subtree"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "frontend-tests",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "editor-browser-air-parity",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "tree.object-locks",
+      "title": "Layer and group edit locks",
+      "sourceSections": [
+        "new-interface.md §2 Tree"
+      ],
+      "status": "partial",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-tree",
+        "editor-properties"
+      ],
+      "risk": "medium",
+      "currentEvidence": [
+        "Layer/group locked flags and lock controls exist",
+        "CanvasArea blocks direct edits of a locked layer",
+        "Ancestor-group lock propagation and all inspector/timeline mutation paths are not proven"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "old-template-fixtures",
+        "accessibility-keyboard",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "properties.pivot-axis-center",
+      "title": "Pivot/axis-center workflow and presets",
+      "sourceSections": [
+        "new-interface.md §2 Properties / Axis center"
+      ],
+      "status": "partial",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-properties",
+        "runtime-render"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "Transform has anchorX/anchorY and PropertiesPanel uses anchorCompensatedUpdate",
+        "Sergey left/center/right and bottom/center/top preset workflow is absent"
+      ],
+      "requiredGates": [
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "frontend-tests",
+        "runtime-tests-build",
+        "editor-browser-air-parity",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "properties.position-z",
+      "title": "Position Z and 2.5D depth",
+      "sourceSections": [
+        "new-interface.md §2 Properties / Position"
+      ],
+      "status": "partial",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-properties",
+        "runtime-schema",
+        "runtime-render",
+        "engine"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "Current main supports rotationX, rotationY and perspective",
+        "Transform has no translateZ/position Z property"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "migration-idempotence",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "editor-browser-air-parity",
+        "one-tick-cadence",
+        "decklink-1ch-3ch",
+        "abba-hot-path",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "properties.scale-lock",
+      "title": "Scale X/Y linking",
+      "sourceSections": [
+        "new-interface.md §2 Properties / Size"
+      ],
+      "status": "partial",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-properties",
+        "timeline"
+      ],
+      "risk": "medium",
+      "currentEvidence": [
+        "Independent scaleX and scaleY fields and tracks exist",
+        "No user-visible scale-link control exists"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "editor-browser-air-parity",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "properties.size-presets",
+      "title": "Screen, width and height size presets",
+      "sourceSections": [
+        "new-interface.md §2 Properties / Size"
+      ],
+      "status": "planned",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-properties"
+      ],
+      "risk": "medium",
+      "currentEvidence": [
+        "Width and height numeric controls exist",
+        "Screen/Width/Height quick actions are absent"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "old-template-fixtures",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "properties.numeric-input-gestures",
+      "title": "Numeric arrows, horizontal drag, reset and ±45 degrees",
+      "sourceSections": [
+        "new-interface.md §2 Properties"
+      ],
+      "status": "partial",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-properties"
+      ],
+      "risk": "low",
+      "currentEvidence": [
+        "NumberInput supports native stepping, horizontal pointer drag and reset",
+        "Dedicated +45/-45 rotation actions are absent"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "accessibility-keyboard",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "text.transform",
+      "title": "Text case transform modes",
+      "sourceSections": [
+        "new-interface.md §2 Properties / Text"
+      ],
+      "status": "planned",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-properties",
+        "runtime-schema",
+        "runtime-render"
+      ],
+      "risk": "medium",
+      "currentEvidence": [
+        "TextStyle has no none/uppercase/titlecase/lowercase transform field"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "editor-browser-air-parity",
+        "visual-regression",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "text.shadow",
+      "title": "Text, clock and Crawl shadow controls",
+      "sourceSections": [
+        "new-interface.md §2 Properties / Text",
+        "crawl-parameters.md Shadow"
+      ],
+      "status": "partial",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-properties",
+        "runtime-schema",
+        "runtime-render"
+      ],
+      "risk": "medium",
+      "currentEvidence": [
+        "TextStyle currently has dropShadow, blur, color and distance and is shared by text/clock",
+        "Separate X/Y source semantics and Crawl coverage are incomplete"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "editor-browser-air-parity",
+        "visual-regression",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "rectangle.four-corner-gradient",
+      "title": "Four-corner gradient with animatable weights",
+      "sourceSections": [
+        "new-interface.md §2 Properties / Rectangle"
+      ],
+      "status": "planned",
+      "milestone": "P21.3",
+      "domains": [
+        "editor-properties",
+        "runtime-schema",
+        "runtime-render",
+        "engine"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "RectLayer supports a single solid fill only"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "editor-browser-air-parity",
+        "visual-regression",
+        "one-tick-cadence",
+        "decklink-1ch-3ch",
+        "abba-hot-path",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "crawl.layer",
+      "title": "Crawl ticker/carousel, speed, pause, separators and dynamic duration",
+      "sourceSections": [
+        "new-interface.md §2 Properties / Crawl",
+        "crawl-parameters.md"
+      ],
+      "status": "planned",
+      "milestone": "P21.6",
+      "domains": [
+        "editor-properties",
+        "runtime-schema",
+        "runtime-render",
+        "timeline",
+        "data",
+        "engine"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "Current layer union and editor factories contain no Crawl layer"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "frontend-tests",
+        "backend-tests",
+        "editor-browser-air-parity",
+        "visual-regression",
+        "one-tick-cadence",
+        "decklink-1ch-3ch",
+        "abba-hot-path",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "timeline.directors-playheads",
+      "title": "Director tree and independent playheads",
+      "sourceSections": [
+        "new-interface.md §2 Timeline"
+      ],
+      "status": "partial",
+      "milestone": "P21.4",
+      "domains": [
+        "timeline",
+        "runtime-schema",
+        "runtime-render"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "Multiple directors, offsets, loop/swing/autostart and an active-director selector exist",
+        "Playback is still based on one global frame rather than the Sergey per-director state/playhead model"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "frontend-tests",
+        "editor-browser-air-parity",
+        "one-tick-cadence",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "timeline.object-track-groups",
+      "title": "Object groups, property tracks and summary ranges",
+      "sourceSections": [
+        "new-interface.md §2 Timeline / Tracks and animation"
+      ],
+      "status": "partial",
+      "milestone": "P21.4",
+      "domains": [
+        "timeline"
+      ],
+      "risk": "medium",
+      "currentEvidence": [
+        "TimelinePanel groups existing per-property tracks by object",
+        "Object summary range move/stretch is absent"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "timeline.multiselect-keyframes",
+      "title": "Marquee multi-select and grouped keyframe drag/stretch",
+      "sourceSections": [
+        "new-interface.md §2 Timeline / Keyframes and animation"
+      ],
+      "status": "planned",
+      "milestone": "P21.4",
+      "domains": [
+        "timeline"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "TimelinePanel stores one selected keyframe and moves one point at a time"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "editor-browser-air-parity",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "timeline.track-director-dnd",
+      "title": "Move tracks and objects between directors",
+      "sourceSections": [
+        "new-interface.md §2 Timeline / Tracks"
+      ],
+      "status": "planned",
+      "milestone": "P21.4",
+      "domains": [
+        "timeline"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "trackDirectors exists in schema",
+        "TimelinePanel has no DnD workflow between directors"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "frontend-tests",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "editor-browser-air-parity",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "timeline.action-cues-items",
+      "title": "Action cues with multiple command items",
+      "sourceSections": [
+        "new-interface.md §2 Timeline / Actions"
+      ],
+      "status": "partial",
+      "milestone": "P21.5",
+      "domains": [
+        "timeline",
+        "runtime-schema",
+        "runtime-render"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "Current schema has legacy flat actions startDirector/stopDirector/setTag",
+        "domRenderer.runActions is a no-op and the editor has no Action cue UI",
+        "Current tags differ from updateData/endScene semantics"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "migration-idempotence",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "frontend-tests",
+        "editor-browser-air-parity",
+        "ws-protocol",
+        "one-tick-cadence",
+        "decklink-1ch-3ch",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "timeline.action-from-end",
+      "title": "Action position measured from director end",
+      "sourceSections": [
+        "new-interface.md §2 Timeline / Actions"
+      ],
+      "status": "planned",
+      "milestone": "P21.5",
+      "domains": [
+        "timeline",
+        "runtime-schema"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "TimelineAction stores only an absolute frame"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "editor-browser-air-parity",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "timeline.continue-wait",
+      "title": "Stop-and-wait Continue state",
+      "sourceSections": [
+        "new-interface.md §2 Timeline",
+        "new-interface.md §3 Control"
+      ],
+      "status": "planned",
+      "milestone": "P21.5",
+      "domains": [
+        "timeline",
+        "runtime-render",
+        "control",
+        "backend"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "Control WS supports take/update/clear only",
+        "Runtime has no per-director wait state"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "runtime-tests-build",
+        "frontend-tests",
+        "backend-tests",
+        "ws-protocol",
+        "editor-browser-air-parity",
+        "one-tick-cadence",
+        "decklink-1ch-3ch",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "timeline.protected-update-flow",
+      "title": "Protected Update director and updateData handoff",
+      "sourceSections": [
+        "new-interface.md §2 Timeline",
+        "new-interface.md §3 Control"
+      ],
+      "status": "partial",
+      "milestone": "P21.5",
+      "domains": [
+        "timeline",
+        "runtime-render",
+        "control",
+        "backend"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "Current backend update immediately merges variable deltas",
+        "There is no protected Update director or deferred updateData action"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "migration-idempotence",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "backend-tests",
+        "ws-protocol",
+        "editor-browser-air-parity",
+        "one-tick-cadence",
+        "decklink-1ch-3ch",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "data.expanded-variable-types",
+      "title": "Multitext, textfile and time variables",
+      "sourceSections": [
+        "new-interface.md §2 Variables",
+        "template-editor-data.md Variables"
+      ],
+      "status": "partial",
+      "milestone": "P21.6",
+      "domains": [
+        "data",
+        "runtime-schema",
+        "control"
+      ],
+      "risk": "medium",
+      "currentEvidence": [
+        "Current variable types are text, image, number, color and video",
+        "multitext, textfile, time, drivenBy and exposed are absent"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "migration-idempotence",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "frontend-tests",
+        "editor-browser-air-parity"
+      ]
+    },
+    {
+      "id": "data.sources-formats",
+      "title": "Data sources and parse formats",
+      "sourceSections": [
+        "template-editor-data.md Sources",
+        "template-editor-data.md Formats"
+      ],
+      "status": "planned",
+      "milestone": "P21.6",
+      "domains": [
+        "data",
+        "runtime-schema",
+        "backend",
+        "security"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "Template has no data contract and backend has no hardened file-read API for this workflow"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "backend-tests",
+        "security",
+        "editor-browser-air-parity",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "data.select-map-policies",
+      "title": "Designer-owned select, map, triggers and error policies",
+      "sourceSections": [
+        "template-editor-data.md Pipelines",
+        "template-editor-data.md runOn/onError"
+      ],
+      "status": "planned",
+      "milestone": "P21.6",
+      "domains": [
+        "data",
+        "runtime-schema",
+        "runtime-render",
+        "control"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "No source→parse→select→map pipeline exists in current main"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "frontend-tests",
+        "backend-tests",
+        "editor-browser-air-parity",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "data.time-expressions",
+      "title": "today/now/ISO/epoch time expressions",
+      "sourceSections": [
+        "template-editor-data.md Clock + Data",
+        "new-interface.md §2 Clock"
+      ],
+      "status": "planned",
+      "milestone": "P21.6",
+      "domains": [
+        "data",
+        "runtime-render"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "Clock startTime/targetTime are numeric epoch fields and no expression parser is present"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "new-template-fixtures",
+        "runtime-tests-build",
+        "editor-browser-air-parity",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "data.media-token-resolution",
+      "title": "asset:<uuid> image/video token resolution",
+      "sourceSections": [
+        "template-editor-data.md Media",
+        "new-interface.md §2 Image/Video"
+      ],
+      "status": "planned",
+      "milestone": "P21.7",
+      "domains": [
+        "data",
+        "media",
+        "backend",
+        "security"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "Current upload API returns direct URLs",
+        "No asset token resolver is exposed to templates or Data pipeline"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "backend-tests",
+        "security",
+        "media-ingest",
+        "editor-browser-air-parity",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "templates.test-mode-channel",
+      "title": "Template test mode with channel selection",
+      "sourceSections": [
+        "new-interface.md §1 Templates test mode"
+      ],
+      "status": "planned",
+      "milestone": "P21.2",
+      "domains": [
+        "templates",
+        "control"
+      ],
+      "risk": "medium",
+      "currentEvidence": [
+        "Current editor has no in-place test-mode channel selector and TAKE/CLEAR workflow"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "frontend-typecheck-build",
+        "ws-protocol",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "templates.list-crud",
+      "title": "Template list create/copy/delete/open",
+      "sourceSections": [
+        "new-interface.md §1 Templates"
+      ],
+      "status": "current",
+      "milestone": "P21.2",
+      "domains": [
+        "templates",
+        "backend"
+      ],
+      "risk": "low",
+      "currentEvidence": [
+        "TemplatesPage lists cards and supports create, duplicate, delete and open",
+        "templates REST validates template data"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "frontend-typecheck-build",
+        "backend-tests",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "templates.sort-view-rename",
+      "title": "Template rename, sort and list/thumbnail view switch",
+      "sourceSections": [
+        "new-interface.md §1 Templates"
+      ],
+      "status": "planned",
+      "milestone": "P21.2",
+      "domains": [
+        "templates"
+      ],
+      "risk": "low",
+      "currentEvidence": [
+        "Current TemplatesPage has one card layout and no sort or rename control"
+      ],
+      "requiredGates": [
+        "frontend-tests",
+        "frontend-typecheck-build",
+        "accessibility-keyboard",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "templates.folders-control-visibility",
+      "title": "One-level template folders and Control visibility",
+      "sourceSections": [
+        "new-interface.md §1 Templates folders",
+        "new-interface.md §3 Control / Templates"
+      ],
+      "status": "planned",
+      "milestone": "P21.7",
+      "domains": [
+        "templates",
+        "control",
+        "backend"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "Current DB and routes have no template folder or assignment table"
+      ],
+      "requiredGates": [
+        "db-migration-rollback",
+        "backend-tests",
+        "frontend-tests",
+        "security",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "templates.persistent-thumbnails",
+      "title": "Persistent thumbnail generation on save",
+      "sourceSections": [
+        "new-interface.md §1 Templates"
+      ],
+      "status": "planned",
+      "milestone": "P21.7",
+      "domains": [
+        "templates",
+        "media",
+        "backend",
+        "engine"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "TemplatesPage renders placeholder icons and the template record has no persistent thumbnail contract"
+      ],
+      "requiredGates": [
+        "db-migration-rollback",
+        "backend-tests",
+        "visual-regression",
+        "resource-isolation",
+        "security",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "mam.library-tags-search",
+      "title": "Media library, tags, search, import and poster repair",
+      "sourceSections": [
+        "new-interface.md §2 Image",
+        "new-interface.md §2 Video"
+      ],
+      "status": "partial",
+      "milestone": "P21.7",
+      "domains": [
+        "media",
+        "backend",
+        "security"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "Current main has durable media_assets jobs, bounded transcoding, poster generation and direct upload controls",
+        "There is no MAM browser, tags/search, watched-folder import or poster-repair UX"
+      ],
+      "requiredGates": [
+        "db-migration-rollback",
+        "backend-tests",
+        "media-ingest",
+        "security",
+        "resource-isolation",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "control.data-elements",
+      "title": "Data Elements with reusable operator values",
+      "sourceSections": [
+        "new-interface.md §3 Control / Dataelements"
+      ],
+      "status": "planned",
+      "milestone": "P21.9",
+      "domains": [
+        "control",
+        "backend",
+        "templates"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "Current DB, API and Control tabs contain no Data Element entity"
+      ],
+      "requiredGates": [
+        "db-migration-rollback",
+        "backend-tests",
+        "frontend-tests",
+        "ws-protocol",
+        "security",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "control.rundowns",
+      "title": "Channel-owned rundowns with template and Data Element slots",
+      "sourceSections": [
+        "new-interface.md §3 Control / Rundowns"
+      ],
+      "status": "partial",
+      "milestone": "P21.9",
+      "domains": [
+        "control",
+        "backend"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "Current main has channel-bound rundown CRUD, reorder/import/export, template slots, slot values and slot-scoped on-air instances",
+        "Data Element slots and Continue are absent",
+        "Current slot identity differs from the planned one-templateId/one-render-instance Update ownership model"
+      ],
+      "requiredGates": [
+        "db-migration-rollback",
+        "backend-tests",
+        "frontend-tests",
+        "ws-protocol",
+        "editor-browser-air-parity",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "control.layer-id-on-air",
+      "title": "LayerID 1–99 stacking, collision and on-air details",
+      "sourceSections": [
+        "new-interface.md §2 Properties / Layers",
+        "new-interface.md §3 Control"
+      ],
+      "status": "planned",
+      "milestone": "P21.9",
+      "domains": [
+        "runtime-schema",
+        "control",
+        "backend",
+        "engine"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "Template schema has no LayerID",
+        "Current on-air state lists template/slot identifiers without LayerID collision semantics"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "migration-idempotence",
+        "old-template-fixtures",
+        "new-template-fixtures",
+        "backend-tests",
+        "ws-protocol",
+        "editor-browser-air-parity",
+        "one-tick-cadence",
+        "decklink-1ch-3ch",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "templates.edit-locks",
+      "title": "Concurrent template edit locks and recovery",
+      "sourceSections": [
+        "new-interface.md §3 Settings and locks"
+      ],
+      "status": "planned",
+      "milestone": "P21.9",
+      "domains": [
+        "templates",
+        "backend",
+        "security"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "Current templates API has no lock owner, lease or heartbeat contract"
+      ],
+      "requiredGates": [
+        "db-migration-rollback",
+        "backend-tests",
+        "security",
+        "ws-protocol",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "security.rbac",
+      "title": "Users, groups and granular permissions",
+      "sourceSections": [
+        "new-interface.md §4 Settings"
+      ],
+      "status": "partial",
+      "milestone": "P21.9",
+      "domains": [
+        "security",
+        "backend",
+        "shell"
+      ],
+      "risk": "high",
+      "currentEvidence": [
+        "Current main has authenticated sessions, admin/operator roles, admin-only user APIs and an admin-only Settings route",
+        "Groups and granular backend-enforced permissions are absent and no full management UI is present"
+      ],
+      "requiredGates": [
+        "db-migration-rollback",
+        "backend-tests",
+        "security",
+        "frontend-tests",
+        "accessibility-keyboard",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "video.timeline-webp-window",
+      "title": "Guarded video timeline with WebP visibility/start window default",
+      "sourceSections": [
+        "new-interface.md §2 Video",
+        "new-interface.md §2 Timeline"
+      ],
+      "status": "partial",
+      "milestone": "P21.8",
+      "domains": [
+        "media",
+        "timeline",
+        "runtime-schema",
+        "runtime-render",
+        "engine"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "Current main transcodes video to CEF-friendly animated WebP and renders .webp through an image element",
+        "There is no video timeline clip metadata or videoProgress track",
+        "The Phase 21 default is to preserve WebP and define clip timing as a guarded visibility/start window, not to restore Sergey WebM behavior"
+      ],
+      "requiredGates": [
+        "schema-contract",
+        "new-template-fixtures",
+        "media-ingest",
+        "runtime-tests-build",
+        "frontend-tests",
+        "editor-browser-air-parity",
+        "visual-regression",
+        "one-tick-cadence",
+        "decklink-1ch-3ch",
+        "abba-hot-path",
+        "manual-user-verdict"
+      ]
+    },
+    {
+      "id": "excluded.unreal",
+      "title": "Unreal rendering integration",
+      "sourceSections": [
+        "new-interface.md §1 Ue Templates"
+      ],
+      "status": "excluded",
+      "milestone": "excluded",
+      "domains": [
+        "engine",
+        "backend",
+        "shell"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "Phase 21 explicitly excludes the experimental Unreal path"
+      ],
+      "requiredGates": [
+        "exclusion-audit"
+      ]
+    },
+    {
+      "id": "excluded.vs-engine",
+      "title": "VS compositor engine and run-vs-channel",
+      "sourceSections": [
+        "new-interface.md §1 Ue Templates"
+      ],
+      "status": "excluded",
+      "milestone": "excluded",
+      "domains": [
+        "engine"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "bg_vs_engine and run-vs-channel are forbidden Phase 21 surfaces"
+      ],
+      "requiredGates": [
+        "exclusion-audit"
+      ]
+    },
+    {
+      "id": "excluded.ue-templates",
+      "title": "UE Templates and Unreal Remote Control UI/routes",
+      "sourceSections": [
+        "new-interface.md §1 Ue Templates"
+      ],
+      "status": "excluded",
+      "milestone": "excluded",
+      "domains": [
+        "shell",
+        "backend",
+        "control"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "The source guide itself says not to port UE Templates"
+      ],
+      "requiredGates": [
+        "exclusion-audit"
+      ]
+    },
+    {
+      "id": "excluded.ndi-input",
+      "title": "NDI input producer",
+      "sourceSections": [
+        "Phase 21 plan §4.5 Unreal/VS exclusion"
+      ],
+      "status": "excluded",
+      "milestone": "excluded",
+      "domains": [
+        "engine",
+        "media"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "NDI producer code is explicitly excluded from Phase 21"
+      ],
+      "requiredGates": [
+        "exclusion-audit"
+      ]
+    },
+    {
+      "id": "excluded.chroma",
+      "title": "Chroma keyer/compositor",
+      "sourceSections": [
+        "Phase 21 plan §4.5 Unreal/VS exclusion"
+      ],
+      "status": "excluded",
+      "milestone": "excluded",
+      "domains": [
+        "engine",
+        "runtime-render"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "Chroma code is explicitly excluded from Phase 21"
+      ],
+      "requiredGates": [
+        "exclusion-audit"
+      ]
+    },
+    {
+      "id": "excluded.render-backend-unreal",
+      "title": "render_backend=unreal channel mode",
+      "sourceSections": [
+        "Phase 21 plan §4.5 Unreal/VS exclusion"
+      ],
+      "status": "excluded",
+      "milestone": "excluded",
+      "domains": [
+        "backend",
+        "engine"
+      ],
+      "risk": "critical",
+      "currentEvidence": [
+        "render_backend=unreal is explicitly forbidden in current main"
+      ],
+      "requiredGates": [
+        "exclusion-audit"
+      ]
+    }
+  ]
+}
