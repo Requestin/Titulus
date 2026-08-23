@@ -31,6 +31,7 @@ import {
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
 import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
+import { effectiveGradient, gradientBackgroundCss } from './rectGradient.js';
 import { formatClock } from './clock.js';
 import { ensureFonts, collectFonts } from './fonts.js';
 import { type RenderStats, emptyRenderStats, snapshotStats } from './stats.js';
@@ -900,7 +901,7 @@ export class TemplateRenderer {
       this.setStyle(el, cache, 'transformStyle', 'flat');
     }
 
-    this.paintLayerContent(layer, node);
+    this.paintLayerContent(layer, node, anim);
   }
 
   /** Update mask clip hosts from each mask layer's animated geometry (§6.5). */
@@ -1129,14 +1130,15 @@ export class TemplateRenderer {
   }
 
   /** Paint the type-specific content (text/media/fill/mask) for a layer. */
-  private paintLayerContent(layer: Layer, node: LayerNode): void {
+  private paintLayerContent(layer: Layer, node: LayerNode, anim?: import('./schema.js').AnimatableValues): void {
     const el = node.el;
     const v = this.variables;
     const cache = node.cache;
     switch (layer.type) {
       case 'rect': {
         const fill = String(resolveBinding(layer.fill, v));
-        this.setStyle(el, cache, 'background', fill);
+        const gradient = effectiveGradient(layer, anim);
+        this.setStyle(el, cache, 'background', gradient ? gradientBackgroundCss(gradient) : fill);
         this.setStyle(el, cache, 'borderRadius', `${layer.cornerRadius}px`);
         const border = layer.borderWidth > 0
           ? `${layer.borderWidth}px solid ${layer.borderColor}`

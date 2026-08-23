@@ -73,7 +73,7 @@ test('gradient css is reused by cache key and not rebuilt on identical state', (
   const first = gradientBackgroundCss(paint);
   const second = gradientBackgroundCss(paint);
   assert.equal(first, second);
-  assert.match(first, /#ef4444|#3b82f6|#22c55e|#eab308/);
+  assert.match(first, /%23ef4444/);
   assert.equal(gradientCssCacheSize(), 1);
   gradientBackgroundCss(effectiveGradient(layer, { 'gradient.weights.bottomRight': 5 })!);
   assert.equal(gradientCssCacheSize(), 2);

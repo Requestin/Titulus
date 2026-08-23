@@ -466,6 +466,52 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
               onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.fill = v; })}
             />
           </Field>
+          <Field label="Fill mode">
+            <Select
+              value={layer.fillMode ?? 'solid'}
+              onChange={(e) => updateLayer(layer.id, (l) => {
+                if (l.type !== 'rect') return;
+                const mode = e.target.value as 'solid' | 'gradient';
+                if (mode === 'gradient') {
+                  const fill = typeof l.fill === 'string' ? l.fill : '#1f2937';
+                  (l as { fillMode: 'gradient'; gradient: {
+                    topLeft: string; topRight: string; bottomLeft: string; bottomRight: string;
+                    weights: { topLeft: number; topRight: number; bottomLeft: number; bottomRight: number };
+                  } }).fillMode = 'gradient';
+                  l.gradient = {
+                    topLeft: fill, topRight: fill, bottomLeft: fill, bottomRight: fill,
+                    weights: { topLeft: 100, topRight: 100, bottomLeft: 100, bottomRight: 100 },
+                  };
+                } else {
+                  l.fillMode = 'solid';
+                  delete (l as { gradient?: unknown }).gradient;
+                }
+              })}
+            >
+              <option value="solid">solid</option>
+              <option value="gradient">gradient</option>
+            </Select>
+          </Field>
+          {layer.fillMode === 'gradient' && layer.gradient && (
+            <>
+              <Field label="Top left">
+                <ColorInput value={layer.gradient.topLeft} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.topLeft = v; })} />
+              </Field>
+              <Field label="Top right">
+                <ColorInput value={layer.gradient.topRight} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.topRight = v; })} />
+              </Field>
+              <Field label="Bottom left">
+                <ColorInput value={layer.gradient.bottomLeft} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.bottomLeft = v; })} />
+              </Field>
+              <Field label="Bottom right">
+                <ColorInput value={layer.gradient.bottomRight} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.bottomRight = v; })} />
+              </Field>
+              <LabeledNum label="Weight TL" value={layer.gradient.weights.topLeft} min={0} max={100} resetValue={100} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.weights.topLeft = v; })} />
+              <LabeledNum label="Weight TR" value={layer.gradient.weights.topRight} min={0} max={100} resetValue={100} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.weights.topRight = v; })} />
+              <LabeledNum label="Weight BL" value={layer.gradient.weights.bottomLeft} min={0} max={100} resetValue={100} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.weights.bottomLeft = v; })} />
+              <LabeledNum label="Weight BR" value={layer.gradient.weights.bottomRight} min={0} max={100} resetValue={100} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.weights.bottomRight = v; })} />
+            </>
+          )}
           <LabeledNum label="Radius" value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.cornerRadius = v; })} />
           <LabeledNum label="Border" value={layer.borderWidth} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.borderWidth = v; })} />
           <Field label="Border color">
