@@ -1,3 +1,21 @@
+export const SUPPORTED_TEMPLATE_CAPABILITIES = Object.freeze([
+  'crawl.layer',
+  'data.expanded-variable-types',
+  'data.media-token-resolution',
+  'data.select-map-policies',
+  'data.sources-formats',
+  'data.time-expressions',
+  'properties.position-z',
+  'rectangle.four-corner-gradient',
+  'timeline.action-cues-items',
+  'timeline.action-from-end',
+  'timeline.continue-wait',
+  'timeline.object-track-groups',
+  'timeline.protected-update-flow',
+]);
+
+export const SUPPORTED_CAPABILITY_SET = new Set(SUPPORTED_TEMPLATE_CAPABILITIES);
+
 export const KNOWN_TEMPLATE_CAPABILITIES = Object.freeze([
   'control.layer-id-on-air',
   'crawl.layer',
@@ -60,7 +78,7 @@ function inferTextStyle(style, inferred) {
   }
 }
 
-function inferTemplateCapabilities(template) {
+export function inferTemplateCapabilities(template) {
   const inferred = new Set();
   if (!isRecord(template)) return [];
 
@@ -167,13 +185,27 @@ export function classifyTemplateCapabilities(template) {
   }
 
   const required = [...new Set([...declared, ...inferred])].sort();
-  const supported = [];
+  const supported = [...SUPPORTED_TEMPLATE_CAPABILITIES];
 
   return {
     schemaVersion: 'p21-capabilities-v1',
     required,
     supported,
-    airCompatible: required.length === 0,
+    airCompatible: required.every((capability) => SUPPORTED_CAPABILITY_SET.has(capability)),
   };
+}
+
+/** Write capabilities = declared ∪ inferred. Omit the field when empty. */
+export function stampDeclaredCapabilities(template) {
+  if (!isRecord(template)) return template;
+  const inferred = inferTemplateCapabilities(template);
+  const declared = Array.isArray(template.capabilities) ? template.capabilities : [];
+  const required = [...new Set([...declared, ...inferred])].sort();
+  if (required.length === 0) {
+    delete template.capabilities;
+  } else {
+    template.capabilities = required;
+  }
+  return template;
 }
 

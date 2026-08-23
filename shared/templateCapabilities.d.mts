@@ -1,3 +1,6 @@
+export const SUPPORTED_TEMPLATE_CAPABILITIES: readonly string[];
+export const SUPPORTED_CAPABILITY_SET: ReadonlySet<string>;
+
 export const KNOWN_TEMPLATE_CAPABILITIES: readonly [
   'control.layer-id-on-air',
   'crawl.layer',
@@ -29,3 +32,6 @@ export interface TemplateCapabilityClassification {
 export function classifyTemplateCapabilities(
   template: unknown,
 ): TemplateCapabilityClassification;
+
+export function inferTemplateCapabilities(template: unknown): KnownTemplateCapability[];
+export function stampDeclaredCapabilities<T>(template: T): T;

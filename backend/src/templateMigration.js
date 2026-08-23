@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { stampDeclaredCapabilities } from '../../shared/templateCapabilities.mjs';
 
 const ACTION_CUES_CAPABILITY = 'timeline.action-cues-items';
 
@@ -92,20 +93,13 @@ export function migrateTemplate(template) {
   const migrated = structuredClone(template);
   const timeline = migrated?.timeline;
   const actions = timeline?.actions;
-  const capabilities = Array.isArray(migrated?.capabilities)
-    ? migrated.capabilities
-    : [];
 
-  // Legacy templates stay on the classic action path until they explicitly
-  // opt into canonical cues. This prevents a read/save boundary from replacing
-  // current behavior with an air-unsupported contract.
-  if (!capabilities.includes(ACTION_CUES_CAPABILITY)) {
-    return migrated;
-  }
   if (!Array.isArray(actions) || actions.length === 0) {
+    stampDeclaredCapabilities(migrated);
     return migrated;
   }
   if (timeline.cues !== undefined && !Array.isArray(timeline.cues)) {
+    stampDeclaredCapabilities(migrated);
     return migrated;
   }
 
@@ -146,5 +140,6 @@ export function migrateTemplate(template) {
   timeline.actions = [];
   timeline.cues = [...existingCues, ...migratedCues];
   addActionCuesCapability(migrated);
+  stampDeclaredCapabilities(migrated);
   return migrated;
 }

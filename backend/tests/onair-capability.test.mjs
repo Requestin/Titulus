@@ -41,13 +41,13 @@ test('clears quarantined persisted takes before replaying valid legacy takes in 
   try {
     const dao = onAirDao(db);
     const unsupportedBackTake = takeCommand({
-      ...readFixture('draft', 'scene-pivot-z'),
-      id: 'p21-scene-pivot-z-back',
+      ...readFixture('draft', 'layer-id-stack-a'),
+      id: 'p21-layer-id-stack-back',
     });
     const legacyBackTake = takeCommand(readFixture('old', 'test'));
     const unsupportedFrontTake = takeCommand({
-      ...readFixture('draft', 'scene-pivot-z'),
-      id: 'p21-scene-pivot-z-front',
+      ...readFixture('draft', 'layer-id-stack-a'),
+      id: 'p21-layer-id-stack-front',
     });
     const legacyFrontTake = takeCommand(readFixture('old', 'test1'));
     dao.set(unsupportedBackTake);
@@ -97,7 +97,7 @@ test('rejects unsupported direct takes before persistence or renderer fanout', (
     const renderer = fakeOpenRenderer();
     manager.registerRenderer(channelId, renderer);
 
-    const unsupportedTake = takeCommand(readFixture('draft', 'scene-pivot-z'));
+    const unsupportedTake = takeCommand(readFixture('draft', 'layer-id-stack-a'));
     assert.throws(
       () => manager.handleControlCommand(unsupportedTake),
       /unsupported.*capabilit/i,
@@ -113,6 +113,27 @@ test('rejects unsupported direct takes before persistence or renderer fanout', (
     assert.deepEqual(renderer.messages, [legacyTake]);
     assert.deepEqual(manager.onAirTemplateIds(), {
       [channelId]: [legacyTake.templateId],
+    });
+  } finally {
+    db.close();
+  }
+});
+
+test('accepts allowlisted vNext takes and fans them out', () => {
+  const db = openDb(':memory:');
+  try {
+    const dao = onAirDao(db);
+    const manager = new OnAirManager(db);
+    const renderer = fakeOpenRenderer();
+    manager.registerRenderer(channelId, renderer);
+
+    const allowlistedTake = takeCommand(readFixture('draft', 'scene-pivot-z'));
+    manager.handleControlCommand(allowlistedTake);
+
+    assert.deepEqual(dao.get(channelId, allowlistedTake.templateId), allowlistedTake);
+    assert.deepEqual(renderer.messages, [allowlistedTake]);
+    assert.deepEqual(manager.onAirTemplateIds(), {
+      [channelId]: [allowlistedTake.templateId],
     });
   } finally {
     db.close();

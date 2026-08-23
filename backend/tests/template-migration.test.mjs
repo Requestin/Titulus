@@ -157,7 +157,7 @@ test('migration is non-mutating and idempotent', () => {
   assert.deepEqual(twice, once, 'migration must be idempotent');
 });
 
-test('leaves legacy flat actions unchanged without an explicit cue capability', () => {
+test('converts legacy flat actions even without an explicit cue capability', () => {
   const input = legacyTemplateWithActions({ declareCapability: false });
   const snapshot = structuredClone(input);
 
@@ -166,14 +166,10 @@ test('leaves legacy flat actions unchanged without an explicit cue capability', 
 
   assert.notStrictEqual(once, input, 'migration must return a detached value');
   assert.deepEqual(input, snapshot, 'migration mutated its input');
-  assert.deepEqual(once.timeline.actions, snapshot.timeline.actions);
-  assert.equal(
-    Object.prototype.hasOwnProperty.call(once.timeline, 'cues'),
-    false,
-    'implicit legacy migration added cues',
-  );
-  assert.equal(Object.prototype.hasOwnProperty.call(once, 'capabilities'), false);
-  assert.deepEqual(twice, once, 'opt-out migration must be idempotent');
+  assert.deepEqual(once.timeline.actions, []);
+  assert.equal(once.timeline.cues.length, 2);
+  assert.ok(once.capabilities.includes('timeline.action-cues-items'));
+  assert.deepEqual(twice, once, 'implicit legacy migration must be idempotent');
 });
 
 test('leaves already canonical cues unchanged', () => {
