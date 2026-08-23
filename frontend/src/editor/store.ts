@@ -290,7 +290,23 @@ export const useEditor = create<EditorState>()(
         useEditor.temporal.getState().clear();
       },
       markSaved: () => set({ dirty: false }),
-      select: (sel) => set({ selection: sel }),
+      select: (sel) => {
+        const template = get().template;
+        if (sel?.kind === 'layer' && template) {
+          const layer = template.layers.find((item) => item.id === sel.id);
+          if (layer?.type === 'crawl' && layer.crawlDirectorId) {
+            const duration = template.timeline.directors.find((item) => item.id === layer.crawlDirectorId)?.durationFrames
+              ?? get().playhead;
+            set({
+              selection: sel,
+              activeDirectorId: layer.crawlDirectorId,
+              playhead: Math.min(get().playhead, Math.max(0, duration)),
+            });
+            return;
+          }
+        }
+        set({ selection: sel });
+      },
       toggleChecked: (ref) => set((s) => {
         const exists = s.checked.some((item) => item.kind === ref.kind && item.id === ref.id);
         return {
@@ -346,7 +362,7 @@ export const useEditor = create<EditorState>()(
           t.rootStack.push({ kind: 'layer', id: layer.id });
           if (layer.type === 'crawl') attachCrawlTimeline(t, layer);
         });
-        set({ selection: { kind: 'layer', id: layer.id } });
+        get().select({ kind: 'layer', id: layer.id });
       },
 
       duplicateSelected: () => {

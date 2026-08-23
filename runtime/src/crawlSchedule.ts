@@ -60,7 +60,10 @@ export function tickerLineSpan(text: string, fontSize: number): number {
 export function crawlDuplicatesStrip(
   crawl: Pick<CrawlScheduleInput['crawl'], 'animationType' | 'pause'>,
 ): boolean {
-  return crawl.animationType === 'continuous' && Math.max(0, crawl.pause) <= 0;
+  // Operator content is authored once. Continuous only loops the same pass;
+  // it must not paint a second copy of the string.
+  void crawl;
+  return false;
 }
 
 export function joinCrawlLines(
@@ -75,15 +78,12 @@ export function crawlPaintText(
   strip: string,
   crawl: Pick<CrawlScheduleInput['crawl'], 'animationType' | 'pause' | 'separatorMode' | 'separatorText' | 'type'>,
 ): string {
-  if (!crawlDuplicatesStrip(crawl) || strip.length === 0) return strip;
-  const glue = crawl.separatorMode === 'text'
-    ? crawl.separatorText
-    : (crawl.type === 'carousel' ? '\n' : '');
-  return `${strip}${glue}${strip}`;
+  void crawl;
+  return strip;
 }
 
 export function continuousMarqueePeriod(copyPx: number, boxExtent: number): number {
-  return Math.max(1, copyPx, boxExtent);
+  return Math.max(1, copyPx + boxExtent);
 }
 
 export function sampleContinuousMarqueeOffset(
@@ -98,7 +98,7 @@ export function sampleContinuousMarqueeOffset(
   const period = continuousMarqueePeriod(copyPx, box);
   const inPos = crawl.directionIn === 'right' || crawl.directionIn === 'down';
   const outNeg = crawl.directionOut === 'left' || crawl.directionOut === 'up';
-  const start = inPos ? box : 0;
+  const start = inPos ? box : -Math.max(1, copyPx);
   const end = outNeg ? start - period : start + period;
   const along = start + p * (end - start);
   return axis === 'x' ? { x: along, y: 0 } : { x: 0, y: along };
@@ -187,12 +187,9 @@ export function scheduleCrawl(input: CrawlScheduleInput): CrawlSchedule {
       strip += lineSpans[i] ?? 0;
       if (i < lineSpans.length - 1) strip += separatorSpan;
     }
-    const travel = input.crawl.animationType === 'continuous'
-      ? Math.max(strip, boxExtent)
-      : strip + boxExtent;
-    const start = input.crawl.animationType === 'continuous'
-      ? (inPos ? boxExtent : 0)
-      : (inPos ? boxExtent : -strip);
+    // Continuous is the same pass as batch (enter In, fully leave Out) and then loops.
+    const travel = strip + boxExtent;
+    const start = inPos ? boxExtent : -strip;
     const end = start + (outNeg ? -travel : travel);
     const moveFrames = pushMove(segments, travel, pxPerFrame);
     path.push({ frame, offset: start });
