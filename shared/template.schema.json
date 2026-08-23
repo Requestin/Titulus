@@ -269,6 +269,8 @@
         "src": { "$ref": "#/$defs/stringOrBinding" },
         "fit": { "type": "string", "enum": ["stretch", "contain", "cover"] },
         "loop": { "type": "boolean" },
+        "inFrame": { "type": "integer", "minimum": 0 },
+        "outFrame": { "type": "integer", "minimum": 0 },
         "mode": { "type": "string", "enum": ["clock", "countup", "countdown"] },
         "format": { "type": "string" },
         "startTime": { "$ref": "#/$defs/numberOrBinding" },

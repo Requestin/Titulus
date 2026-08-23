@@ -35,6 +35,7 @@ import { reuseOrCreateDirectorMachine, type DirectorMachine } from './directorMa
 import { effectiveGradient, gradientBackgroundCss } from './rectGradient.js';
 import { sampleCrawlOffset } from './crawlSchedule.js';
 import { formatClock } from './clock.js';
+import { videoWindowOpen } from './videoPlayback.js';
 import { resolveClockAnchor } from './clockBind.js';
 import { applyTextTransform, textShadowCss } from './textStyle.js';
 import { ensureFonts, collectFonts } from './fonts.js';
@@ -888,7 +889,7 @@ export class TemplateRenderer {
     const cache = node.cache;
     const isMask = layer.type === 'mask';
 
-    this.setStyle(el, cache, 'display', layer.visible ? 'block' : 'none');
+    this.setStyle(el, cache, 'display', layer.visible && videoWindowOpen(layer, this.frame) ? 'block' : 'none');
     // Doc02 PR5: when a visibility filter is active (snapshot capture), layers
     // outside the filter are forced to display:none regardless of their own
     // visibility flag. The filter is owned by the host and cleared on demand.

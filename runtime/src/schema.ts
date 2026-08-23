@@ -309,6 +309,10 @@ export interface VideoLayer extends BaseLayer {
   src: string | VariableBinding;
   loop: boolean;
   fit: ImageFit;
+  /** Inclusive template-frame start of the visibility window. */
+  inFrame?: number;
+  /** Exclusive template-frame end of the visibility window. */
+  outFrame?: number;
 }
 
 /**
