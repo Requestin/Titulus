@@ -9,6 +9,19 @@ Current `origin/main` — единственный engine/runtime/performance fo
 источник UX/contracts designer; её engine/supervisor/CMake не переносятся.
 `feature/sergey-v1-merge` — запрещённый старый артефакт.
 
+Вся разработка, сборка, software tests и hardware tests Phase 21 выполняются
+только на новом i7-14700KF server `requestin@100.73.71.86` в
+`/home/requestin/Titulus`. Другие hosts не используются для Phase 21 evidence.
+
+Каждый отдельный живой null/browser/DeckLink/ABBA/closure run длится не более
+5 минут; каждая нога ABBA считается отдельным run. DeckLink 3ch gate длится не более 5
+минут. Phase 20 soaks длительностью 15/60 минут находятся вне scope Phase 21
+и не запускаются.
+
+Если требуется ручная/визуальная проверка либо UX/semantics допускает
+неоднозначное решение, остановиться, задать пользователю один простой вопрос
+и дождаться ответа. Самостоятельно выбирать такое поведение запрещено.
+
 ## Неприкосновенные инварианты
 
 - Не merge/rebase/cherry-pick `sergey-v1` ни целиком, ни файлами/фрагментами
@@ -41,7 +54,8 @@ backend/playout. Изменение hot path допускается только
 
 До merge: existing tests/typechecks/build, old/new template fixtures,
 editor↔browser↔air parity. Для runtime/hot-path: canonical `test`/`test1`,
-`one_tick` cadence и пропорциональный DeckLink 1ch/3ch gate с zero
-late/drop/flush/unlock. Unreal/VS эксперимент сознательно исключён:
+`one_tick` cadence и DeckLink 1ch gate не более 5 минут / 3ch gate
+не более 5 минут с zero late/drop/flush/unlock. Unreal/VS эксперимент сознательно
+исключён:
 `bg_vs_engine`, `run-vs-channel`, UE routes и `render_backend=unreal` не
 переносятся в `main`.

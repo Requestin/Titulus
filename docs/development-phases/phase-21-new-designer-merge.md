@@ -1,8 +1,8 @@
 # Phase 21 — New Designer Merge
 
-**Статус:** IN PROGRESS — аудит завершён, реализация не начата
+**Статус:** IN PROGRESS — baseline P21.0 на fresh main завершён; merge ожидается
 **Дата открытия:** 2026-08-21
-**База:** `origin/main` @ `6292d33`
+**База:** `origin/main` @ `91a5563`
 **Источник возможностей designer:** `origin/sergey-v1` @ `7ca8823`
 **Запрещённый артефакт:** `feature/sergey-v1-merge`
 **Предшественник:** Phase 20 visual closure
@@ -82,6 +82,18 @@ engine/runtime/supervisor. Возможности переносятся неб�
 Engine, CMake, channel bootstrap и supervisor из `sergey-v1` не являются
 кандидатами на перенос. Нужные designer runtime semantics реализуются поверх
 current runtime с сохранением его hot path и instrumentation.
+
+Вся разработка, сборка, software tests и hardware tests Phase 21 выполняются
+только на новом i7-14700KF server `requestin@100.73.71.86` в
+`/home/requestin/Titulus`. Другие hosts не используются для Phase 21 evidence.
+
+Каждый отдельный живой null/browser/DeckLink/ABBA/closure run длится не более
+5 минут. DeckLink 3ch gate длится не более 5 минут. Phase 20 soaks длительностью 15/60
+минут находятся вне scope Phase 21 и не запускаются.
+
+Если требуется ручная/визуальная проверка либо UX/semantics допускает
+неоднозначное решение, работа останавливается: агент задаёт пользователю один
+простой вопрос и ждёт ответа, не выбирая поведение самостоятельно.
 
 ### 2.3 Subagent orchestration
 
@@ -592,6 +604,10 @@ classification.
 
 ### P21.0 — Baseline freeze и governance
 
+Baseline evidence завершён на fresh `main` @ `91a5563`: DeckLink x4 — PASS.
+Это завершает baseline-часть P21.0, но весь P21.0 остаётся `IN PROGRESS` до
+merge.
+
 Scope:
 
 - этот phase document;
@@ -606,7 +622,9 @@ Exit:
 - rule активна;
 - current tests green;
 - i7 1ch/3ch baseline повторяем;
-- old fixtures и reference screenshots/telemetry сохранены.
+- baseline manifests, telemetry и operator marks сохранены;
+- capability inventory, UX checklist и fixture layout зафиксированы;
+- immutable old/new JSON fixtures добавляются в P21.1 до первого UI PR.
 
 ### P21.1 — Contract inventory и migration harness
 
@@ -945,13 +963,21 @@ Temporal acceptance:
 
 ## 11. Engine/performance acceptance
 
+Все live gates выполняются только на новом i7-14700KF server
+`requestin@100.73.71.86:/home/requestin/Titulus`. Каждый отдельный
+null/browser/DeckLink run, каждая нога ABBA и каждый closure run длится не
+более 5 минут. DeckLink 3ch gate длится не более 5 минут. Phase 20 soaks на 15 и 60
+минут находятся вне scope Phase 21 и не запускаются.
+
 ### 11.1 Fresh baseline
 
-Перед первым runtime PR повторить current `main` на i7-14700K и зафиксировать:
+Fresh baseline снят на новом i7-14700KF server для `main` @
+`91a5563`. Зафиксированы:
 
-- null 1ch/3ch `test` и `test1`;
+- null 1ch/3ch `p20-test1-visual`;
 - DeckLink 1ch 5 min;
-- DeckLink 3ch 15 min;
+- DeckLink 3ch 5 min;
+- DeckLink x4 PASS;
 - CPU masks, CEF archive, git SHA, channel/template IDs;
 - FrameLog/BGPACING/DeckLink telemetry;
 - operator visual marks.
@@ -1091,14 +1117,15 @@ Phase 21 завершена только если:
 
 ## 15. Первый следующий шаг
 
-Не начинать с merge UI. Сначала P21.0:
+Не начинать с merge UI. Fresh baseline P21.0 на `main` @ `91a5563` уже снят
+с DeckLink x4 PASS, но P21.0 остаётся `IN PROGRESS` до merge. Сначала довести
+baseline/governance до merge, затем начать P21.1:
 
-1. снять fresh baseline на current main;
-2. создать machine-readable capability inventory;
-3. добавить old/new contract fixtures;
-4. зафиксировать schema migration policy;
-5. превратить frozen Markdown source docs в UX acceptance checklist;
-6. только после этого открыть первый implementation PR.
+1. создать machine-readable capability inventory;
+2. добавить old/new contract fixtures;
+3. зафиксировать schema migration policy;
+4. превратить frozen Markdown source docs в UX acceptance checklist;
+5. только после этого открыть первый implementation PR.
 
 Такой порядок дороже простого merge в начале, но дешевле повторного поиска
 микрофризов и повреждённых templates после смешения двух независимых runtime.
