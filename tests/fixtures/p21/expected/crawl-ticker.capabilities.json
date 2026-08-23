@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "p21-capabilities-v1",
+  "required": [
+    "crawl.layer",
+    "data.expanded-variable-types"
+  ],
+  "supported": [],
+  "airCompatible": false
+}

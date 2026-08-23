@@ -1,0 +1,37 @@
+{
+  "id": "p21-layer-id-stack-a",
+  "name": "P21 Layer ID Stack A",
+  "capabilities": [
+    "control.layer-id-on-air"
+  ],
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "transparent"
+  },
+  "variables": [],
+  "groups": [],
+  "layers": [],
+  "rootStack": [],
+  "groupStacks": {},
+  "timeline": {
+    "fps": 50,
+    "durationFrames": 500,
+    "playbackMode": "bounded",
+    "directors": [
+      {
+        "id": "default",
+        "name": "default",
+        "durationFrames": 500,
+        "offsetFrames": 0,
+        "autostart": true,
+        "loop": false,
+        "swing": false
+      }
+    ],
+    "trackDirectors": {},
+    "keyframes": [],
+    "actions": []
+  },
+  "layerId": 42
+}

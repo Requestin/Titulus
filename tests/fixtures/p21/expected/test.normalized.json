@@ -1,0 +1,180 @@
+{
+  "id": "3fec5af5-71f3-411a-a9a0-1d5ab654a6f9",
+  "name": "test",
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "transparent"
+  },
+  "variables": [],
+  "groups": [
+    {
+      "id": "26301143-4526-46d6-8945-2757c569ae73",
+      "name": "Group 1",
+      "parentId": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "x": -60,
+        "y": -70,
+        "width": 300,
+        "height": 80,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      }
+    }
+  ],
+  "layers": [
+    {
+      "id": "2635064c-7ccf-42dd-a4e0-13dc2494b450",
+      "name": "Rectangle 1",
+      "visible": true,
+      "locked": false,
+      "opacity": 1,
+      "blendMode": "normal",
+      "groupId": "26301143-4526-46d6-8945-2757c569ae73",
+      "type": "rect",
+      "transform": {
+        "x": 120,
+        "y": 120,
+        "width": 480,
+        "height": 140,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      },
+      "fill": "#c14e6a",
+      "cornerRadius": 8,
+      "borderColor": "#000000",
+      "borderWidth": 0
+    },
+    {
+      "id": "6d20ab0b-e476-4e59-aa6b-39c3ef996fba",
+      "name": "Clock 1",
+      "visible": true,
+      "locked": false,
+      "opacity": 1,
+      "blendMode": "normal",
+      "groupId": "26301143-4526-46d6-8945-2757c569ae73",
+      "type": "clock",
+      "transform": {
+        "x": 195.65972222222223,
+        "y": 140.65972222222223,
+        "width": 300,
+        "height": 96,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      },
+      "mode": "clock",
+      "format": "HH:mm:ss",
+      "style": {
+        "fontFamily": "Inter",
+        "fontSize": 48,
+        "fontWeight": "600",
+        "fill": "#ffffff",
+        "align": "center",
+        "lineHeight": 1.1,
+        "letterSpacing": 0,
+        "strokeColor": "#000000",
+        "strokeWidth": 0,
+        "dropShadow": false,
+        "dropShadowBlur": 6,
+        "dropShadowColor": "#000000",
+        "dropShadowDistance": 2
+      }
+    }
+  ],
+  "rootStack": [
+    {
+      "kind": "group",
+      "id": "26301143-4526-46d6-8945-2757c569ae73"
+    }
+  ],
+  "groupStacks": {
+    "26301143-4526-46d6-8945-2757c569ae73": [
+      {
+        "kind": "layer",
+        "id": "2635064c-7ccf-42dd-a4e0-13dc2494b450"
+      },
+      {
+        "kind": "layer",
+        "id": "6d20ab0b-e476-4e59-aa6b-39c3ef996fba"
+      }
+    ]
+  },
+  "timeline": {
+    "fps": 50,
+    "durationFrames": 500,
+    "playbackMode": "bounded",
+    "directors": [
+      {
+        "id": "default",
+        "name": "default",
+        "durationFrames": 200,
+        "offsetFrames": 0,
+        "autostart": true,
+        "loop": true,
+        "swing": false
+      }
+    ],
+    "trackDirectors": {
+      "26301143-4526-46d6-8945-2757c569ae73": "default"
+    },
+    "keyframes": [
+      {
+        "id": "462bd881-adc2-4b2f-94a5-42163fd3addd",
+        "frame": 0,
+        "layers": {},
+        "groups": {
+          "26301143-4526-46d6-8945-2757c569ae73": {
+            "x": -60,
+            "y": -70
+          }
+        },
+        "easing": "power2.out"
+      },
+      {
+        "id": "4bf7f2fb-8327-410f-82ca-e4b388578d41",
+        "frame": 100,
+        "layers": {},
+        "groups": {
+          "26301143-4526-46d6-8945-2757c569ae73": {
+            "x": 1300,
+            "y": 800
+          }
+        },
+        "easing": "power2.out"
+      },
+      {
+        "id": "d4c1cdd8-6034-4941-9aee-209f85d37be1",
+        "frame": 200,
+        "layers": {},
+        "groups": {
+          "26301143-4526-46d6-8945-2757c569ae73": {
+            "x": -60,
+            "y": -70
+          }
+        },
+        "easing": "power2.out"
+      }
+    ],
+    "actions": []
+  }
+}

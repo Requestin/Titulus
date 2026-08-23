@@ -1,0 +1,123 @@
+{
+  "id": "p21-crawl-carousel",
+  "name": "P21 Crawl Carousel",
+  "capabilities": [
+    "crawl.layer"
+  ],
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "transparent"
+  },
+  "variables": [],
+  "groups": [],
+  "layers": [
+    {
+      "id": "crawl-carousel-layer",
+      "name": "P21 Crawl Carousel",
+      "type": "crawl",
+      "visible": true,
+      "locked": false,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": {
+        "x": 120,
+        "y": 120,
+        "width": 760,
+        "height": 96,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      },
+      "groupId": null,
+      "content": "First item\nSecond item",
+      "style": {
+        "fontFamily": "Inter",
+        "fontSize": 48,
+        "fontWeight": "600",
+        "fill": "#ffffff",
+        "align": "center",
+        "lineHeight": 1.1,
+        "letterSpacing": 0,
+        "strokeColor": "#000000",
+        "strokeWidth": 0,
+        "dropShadow": false,
+        "dropShadowBlur": 6,
+        "dropShadowColor": "#000000",
+        "dropShadowDistance": 2
+      },
+      "crawlDirectorId": "crawl-carousel-director",
+      "crawl": {
+        "type": "carousel",
+        "directionIn": "up",
+        "directionOut": "down",
+        "speed": 5,
+        "pause": 50,
+        "separatorMode": "image",
+        "separatorText": "",
+        "separatorImage": "/uploads/p21-carousel-separator.png",
+        "animationType": "batch",
+        "useFile": false,
+        "filePath": "",
+        "maxTextLengthEnabled": true,
+        "maxTextLength": 32
+      }
+    }
+  ],
+  "rootStack": [
+    {
+      "kind": "layer",
+      "id": "crawl-carousel-layer"
+    }
+  ],
+  "groupStacks": {},
+  "timeline": {
+    "fps": 50,
+    "durationFrames": 500,
+    "playbackMode": "bounded",
+    "directors": [
+      {
+        "id": "crawl-carousel-director",
+        "name": "P21 Crawl Carousel",
+        "durationFrames": 250,
+        "offsetFrames": 0,
+        "autostart": true,
+        "loop": false,
+        "swing": false
+      }
+    ],
+    "trackDirectors": {
+      "crawl-carousel-layer": "crawl-carousel-director"
+    },
+    "keyframes": [
+      {
+        "id": "crawl-carousel-start",
+        "frame": 0,
+        "layers": {
+          "crawl-carousel-layer": {
+            "crawlProgress": 0
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "crawl-carousel-end",
+        "frame": 250,
+        "layers": {
+          "crawl-carousel-layer": {
+            "crawlProgress": 1
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      }
+    ],
+    "actions": []
+  }
+}

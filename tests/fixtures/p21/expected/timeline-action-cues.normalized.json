@@ -1,0 +1,154 @@
+{
+  "id": "p21-timeline-action-cues",
+  "name": "P21 Timeline Action Cues",
+  "capabilities": [
+    "timeline.action-cues-items",
+    "timeline.action-from-end",
+    "timeline.continue-wait",
+    "timeline.protected-update-flow"
+  ],
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "transparent"
+  },
+  "variables": [],
+  "groups": [],
+  "layers": [],
+  "rootStack": [],
+  "groupStacks": {},
+  "timeline": {
+    "fps": 50,
+    "durationFrames": 500,
+    "playbackMode": "bounded",
+    "directors": [
+      {
+        "id": "default",
+        "name": "default",
+        "durationFrames": 500,
+        "offsetFrames": 0,
+        "autostart": true,
+        "loop": false,
+        "swing": false
+      },
+      {
+        "id": "update",
+        "name": "Update",
+        "durationFrames": 100,
+        "offsetFrames": 0,
+        "autostart": false,
+        "loop": false,
+        "swing": false
+      },
+      {
+        "id": "secondary",
+        "name": "Secondary",
+        "durationFrames": 150,
+        "offsetFrames": 0,
+        "autostart": false,
+        "loop": false,
+        "swing": false
+      }
+    ],
+    "trackDirectors": {},
+    "keyframes": [],
+    "actions": [
+      {
+        "id": "start-secondary-cue",
+        "directorId": "default",
+        "frame": 25,
+        "fromEnd": false,
+        "name": "Start secondary",
+        "items": [
+          {
+            "id": "start-secondary",
+            "command": "startDirector",
+            "parameterDirectorId": "secondary",
+            "lengthFrames": 0,
+            "direction": "normal"
+          }
+        ]
+      },
+      {
+        "id": "pause-secondary-cue",
+        "directorId": "secondary",
+        "frame": 50,
+        "fromEnd": false,
+        "name": "Pause secondary",
+        "items": [
+          {
+            "id": "pause-secondary",
+            "command": "pauseDirector",
+            "parameterDirectorId": "secondary",
+            "lengthFrames": 20,
+            "direction": "both"
+          }
+        ]
+      },
+      {
+        "id": "stop-secondary-cue",
+        "directorId": "secondary",
+        "frame": 25,
+        "fromEnd": true,
+        "name": "Stop secondary from end",
+        "items": [
+          {
+            "id": "stop-secondary",
+            "command": "stopDirector",
+            "parameterDirectorId": "secondary",
+            "lengthFrames": 0,
+            "direction": "reverse"
+          }
+        ]
+      },
+      {
+        "id": "continue-wait-cue",
+        "directorId": "default",
+        "frame": 200,
+        "fromEnd": false,
+        "name": "Wait for continue",
+        "items": [
+          {
+            "id": "wait-default",
+            "command": "stopDirectorAndWaitContinue",
+            "parameterDirectorId": "default",
+            "lengthFrames": 0,
+            "direction": "normal"
+          }
+        ]
+      },
+      {
+        "id": "update-data-cue",
+        "directorId": "update",
+        "frame": 50,
+        "fromEnd": false,
+        "name": "Update data handoff",
+        "items": [
+          {
+            "id": "update-data",
+            "command": "tag",
+            "parameterTag": "updateData",
+            "lengthFrames": 0,
+            "direction": "both"
+          }
+        ]
+      },
+      {
+        "id": "end-scene-cue",
+        "directorId": "default",
+        "frame": 25,
+        "fromEnd": true,
+        "name": "End scene from director end",
+        "items": [
+          {
+            "id": "end-scene",
+            "command": "tag",
+            "parameterTag": "endScene",
+            "lengthFrames": 0,
+            "direction": "both"
+          }
+        ]
+      }
+    ]
+  }
+}

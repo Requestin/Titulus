@@ -1,0 +1,136 @@
+{
+  "id": "p21-crawl-ticker",
+  "name": "P21 Crawl Ticker",
+  "capabilities": [
+    "crawl.layer",
+    "data.expanded-variable-types"
+  ],
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "transparent"
+  },
+  "variables": [
+    {
+      "id": "crawl-ticker-content",
+      "name": "crawl-ticker-content",
+      "label": "Crawl Ticker Content",
+      "type": "multitext",
+      "defaultValue": "First headline\nSecond headline",
+      "exposed": true
+    }
+  ],
+  "groups": [],
+  "layers": [
+    {
+      "id": "crawl-ticker-layer",
+      "name": "P21 Crawl Ticker",
+      "type": "crawl",
+      "visible": true,
+      "locked": false,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": {
+        "x": 120,
+        "y": 120,
+        "width": 760,
+        "height": 96,
+        "rotation": 0,
+        "rotationX": 0,
+        "rotationY": 0,
+        "perspective": 1000,
+        "scaleX": 1,
+        "scaleY": 1,
+        "anchorX": 0,
+        "anchorY": 0
+      },
+      "groupId": null,
+      "content": {
+        "type": "variable",
+        "variableId": "crawl-ticker-content"
+      },
+      "style": {
+        "fontFamily": "Inter",
+        "fontSize": 48,
+        "fontWeight": "600",
+        "fill": "#ffffff",
+        "align": "left",
+        "lineHeight": 1.1,
+        "letterSpacing": 0,
+        "strokeColor": "#000000",
+        "strokeWidth": 0,
+        "dropShadow": false,
+        "dropShadowBlur": 6,
+        "dropShadowColor": "#000000",
+        "dropShadowDistance": 2
+      },
+      "crawlDirectorId": "crawl-ticker-director",
+      "crawl": {
+        "type": "ticker",
+        "directionIn": "right",
+        "directionOut": "left",
+        "speed": 5,
+        "pause": 0,
+        "separatorMode": "text",
+        "separatorText": "  •  ",
+        "separatorImage": "",
+        "animationType": "continuous",
+        "useFile": false,
+        "filePath": "",
+        "maxTextLengthEnabled": false,
+        "maxTextLength": 80
+      }
+    }
+  ],
+  "rootStack": [
+    {
+      "kind": "layer",
+      "id": "crawl-ticker-layer"
+    }
+  ],
+  "groupStacks": {},
+  "timeline": {
+    "fps": 50,
+    "durationFrames": 500,
+    "playbackMode": "bounded",
+    "directors": [
+      {
+        "id": "crawl-ticker-director",
+        "name": "P21 Crawl Ticker",
+        "durationFrames": 250,
+        "offsetFrames": 0,
+        "autostart": true,
+        "loop": true,
+        "swing": false
+      }
+    ],
+    "trackDirectors": {
+      "crawl-ticker-layer": "crawl-ticker-director"
+    },
+    "keyframes": [
+      {
+        "id": "crawl-ticker-start",
+        "frame": 0,
+        "layers": {
+          "crawl-ticker-layer": {
+            "crawlProgress": 0
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      },
+      {
+        "id": "crawl-ticker-end",
+        "frame": 250,
+        "layers": {
+          "crawl-ticker-layer": {
+            "crawlProgress": 1
+          }
+        },
+        "groups": {},
+        "easing": "linear"
+      }
+    ],
+    "actions": []
+  }
+}

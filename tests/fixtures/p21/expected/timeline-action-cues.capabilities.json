@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "p21-capabilities-v1",
+  "required": [
+    "timeline.action-cues-items",
+    "timeline.action-from-end",
+    "timeline.continue-wait",
+    "timeline.protected-update-flow"
+  ],
+  "supported": [],
+  "airCompatible": false
+}
