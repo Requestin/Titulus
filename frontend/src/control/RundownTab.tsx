@@ -20,7 +20,7 @@ import { toast } from '@/core/toast';
 import { createId } from '@/core/id';
 
 type SendControl = (cmd: {
-  type: 'take' | 'update' | 'clear';
+  type: 'take' | 'update' | 'clear' | 'continue';
   channelId: string;
   templateId?: string;
   template?: unknown;
