@@ -38,6 +38,8 @@ export function effectiveTransform(
     if (p === 'opacity') continue;
     if (anim[p] !== undefined) (out as unknown as Record<string, number>)[p] = anim[p]!;
   }
+  const animatedZ = (anim as { z?: number }).z;
+  if (animatedZ !== undefined) out.z = animatedZ;
   return out;
 }
 
