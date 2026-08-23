@@ -25,6 +25,8 @@ import { templatesRouter } from './routes/templates.js';
 import { channelsRouter } from './routes/channels.js';
 import { rundownsRouter } from './routes/rundowns.js';
 import { uploadsRouter } from './routes/uploads.js';
+import { filesRouter } from './routes/files.js';
+import { ensureDataFilesDir } from './filesAccess.js';
 import { licenseRouter } from './routes/license.js';
 import { wsRouter } from './routes/ws.js';
 
@@ -78,6 +80,7 @@ app.use(express.json({ limit: '50mb' }));
 
 const db = openDb(resolve(DATA_DIR, 'app.db'));
 mkdirSync(UPLOADS_DIR, { recursive: true });
+ensureDataFilesDir(DATA_DIR);
 
 app.locals.db = db;
 const auth = createAuth(db);
@@ -100,6 +103,7 @@ app.use('/api/templates', auth.requireAuth, templatesRouter(db));
 app.use('/api/channels', auth.requireAuth, auth.requireRole('admin'), channelsRouter(db));
 app.use('/api/rundowns', auth.requireAuth, rundownsRouter(db));
 app.use('/api/uploads', auth.requireAuth, uploadsCors, uploadsRouter(media, UPLOADS_DIR));
+app.use('/api/files', auth.requireAuth, filesRouter({ db, dataDir: DATA_DIR }));
 app.use('/api/license', auth.requireAuth, auth.requireRole('admin'), licenseRouter(db));
 
 // On-air snapshot for the control panel (§7.4). Separate from the WS router so
