@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { Template } from '../src/schema.js';
 import {
   CRAWL_PX_PER_SPEED_UNIT,
+  CRAWL_TICKER_EM,
   crawlDuplicatesStrip,
   crawlPaintText,
   crawlPxPerSec,
@@ -79,12 +80,12 @@ test('higher speed shortens duration and duration is counted in template fps', (
 
 test('continuous pause=0 uses the same full In-to-Out clearance as batch', () => {
   const scheduled = scheduleCrawl(baseTicker());
-  const strip = (14 * 48) + (5 * 48) + (15 * 48);
+  const strip = ((14 * 48) + (5 * 48) + (15 * 48)) * CRAWL_TICKER_EM;
   assert.equal(scheduled.durationFrames, Math.ceil((strip + 760) / 6));
   assert.equal(scheduled.segments.length, 1);
   assert.equal(scheduled.segments[0]?.kind, 'move');
   assert.equal(scheduled.path[0]?.offset, 760);
-  assert.equal(scheduled.path[1]?.offset, -strip);
+  assert.ok(Math.abs((scheduled.path[1]?.offset ?? 0) + strip) < 1e-6);
 });
 
 test('continuous short ticker enters at the In edge and leaves past the Out edge', () => {
@@ -93,7 +94,7 @@ test('continuous short ticker enters at the In edge and leaves past the Out edge
     box: { width: 755, height: 86 },
     crawl: { ...baseTicker().crawl, separatorMode: 'none', separatorText: '' },
   }));
-  const strip = 9 * 48;
+  const strip = 9 * 48 * CRAWL_TICKER_EM;
   assert.ok(strip < 755);
   assert.equal(scheduled.durationFrames, Math.ceil((strip + 755) / 6));
   assert.equal(scheduled.path[0]?.offset, 755);
@@ -106,7 +107,7 @@ test('batch pause=0 travel includes box clearance', () => {
     crawl: { ...baseTicker().crawl, animationType: 'batch' },
   }));
   assert.equal(batch.durationFrames, continuous.durationFrames);
-  const strip = (14 * 48) + (5 * 48) + (15 * 48);
+  const strip = ((14 * 48) + (5 * 48) + (15 * 48)) * CRAWL_TICKER_EM;
   assert.equal(batch.durationFrames, Math.ceil((strip + 760) / 6));
 });
 
@@ -241,8 +242,9 @@ test('continuous pause=0 paint keeps the authored text once', () => {
 
 test('continuous marquee starts at the In edge and finishes fully past the Out edge', () => {
   const crawl = baseTicker().crawl;
-  assert.deepEqual(sampleContinuousMarqueeOffset(0, 220, 755, 'x', crawl), { x: 755, y: 0 });
-  assert.deepEqual(sampleContinuousMarqueeOffset(1, 220, 755, 'x', crawl), { x: -220, y: 0 });
+  assert.deepEqual(sampleContinuousMarqueeOffset(0, 220, 700, 'x', crawl), { x: 700, y: 0 });
+  assert.deepEqual(sampleContinuousMarqueeOffset(1, 220, 700, 'x', crawl), { x: -220, y: 0 });
+  assert.ok(sampleContinuousMarqueeOffset(116 / 199, 220, 700, 'x', crawl).x > 0);
   assert.deepEqual(
     sampleContinuousMarqueeOffset(0.5, 220, 755, 'x', { ...crawl, directionOut: 'right', directionIn: 'left' }),
     { x: 267.5, y: 0 },

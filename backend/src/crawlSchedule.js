@@ -11,8 +11,10 @@ export function splitCrawlLines(content, maxTextLengthEnabled, maxTextLength) {
   return lines.map((line) => line.slice(0, max));
 }
 
+export const CRAWL_TICKER_EM = 0.55;
+
 export function tickerLineSpan(text, fontSize) {
-  return Math.max(0, String(text ?? '').length * fontSize);
+  return Math.max(0, String(text ?? '').length * fontSize * CRAWL_TICKER_EM);
 }
 
 export function scheduleCrawl(input) {
@@ -39,9 +41,13 @@ export function scheduleCrawl(input) {
 
   if (pause === 0) {
     let strip = 0;
-    for (let i = 0; i < lineSpans.length; i += 1) {
-      strip += lineSpans[i] ?? 0;
-      if (i < lineSpans.length - 1) strip += separatorSpan;
+    if (typeof input.stripPx === 'number' && input.stripPx > 0 && axis === 'x') {
+      strip = input.stripPx;
+    } else {
+      for (let i = 0; i < lineSpans.length; i += 1) {
+        strip += lineSpans[i] ?? 0;
+        if (i < lineSpans.length - 1) strip += separatorSpan;
+      }
     }
     const travel = strip + boxExtent;
     const start = inPos ? boxExtent : -strip;
