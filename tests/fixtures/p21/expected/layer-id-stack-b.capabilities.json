@@ -1,8 +1,7 @@
 {
   "schemaVersion": "p21-capabilities-v1",
   "required": [
-    "crawl.layer",
-    "data.expanded-variable-types"
+    "control.layer-id-on-air"
   ],
   "supported": [],
   "airCompatible": false

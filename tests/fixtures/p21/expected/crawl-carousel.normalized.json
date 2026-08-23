@@ -58,14 +58,14 @@
         "directionOut": "down",
         "speed": 5,
         "pause": 50,
-        "separatorMode": "text",
-        "separatorText": "  •  ",
-        "separatorImage": "",
+        "separatorMode": "image",
+        "separatorText": "",
+        "separatorImage": "/uploads/p21-carousel-separator.png",
         "animationType": "batch",
         "useFile": false,
         "filePath": "",
-        "maxTextLengthEnabled": false,
-        "maxTextLength": 80
+        "maxTextLengthEnabled": true,
+        "maxTextLength": 32
       }
     }
   ],

@@ -1,6 +1,6 @@
 {
-  "id": "p21-layer-id-stack",
-  "name": "P21 Layer ID Stack",
+  "id": "p21-layer-id-stack-a",
+  "name": "P21 Layer ID Stack A",
   "capabilities": [
     "control.layer-id-on-air"
   ],

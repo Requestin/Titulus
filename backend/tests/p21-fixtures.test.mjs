@@ -28,7 +28,10 @@ const draftFixtureIds = [
   'crawl-carousel',
   'timeline-action-cues',
   'data-pipeline-matrix',
-  'layer-id-stack',
+  'data-error-keep',
+  'data-error-clear',
+  'layer-id-stack-a',
+  'layer-id-stack-b',
 ];
 
 function readJson(path) {
@@ -81,7 +84,9 @@ test('P21 draft fixture IDs exactly match the required contract inventory', () =
 for (const id of draftFixtureIds) {
   test(`P21 draft fixture ${id} parses but current validation rejects it`, () => {
     const fixture = readJson(join(draftDirectory, `${id}.json`));
-    const result = validateTemplate(fixture);
+    const fixtureWithoutCapabilities = { ...fixture };
+    delete fixtureWithoutCapabilities.capabilities;
+    const result = validateTemplate(fixtureWithoutCapabilities);
 
     assert.equal(result.valid, false);
   });
@@ -94,11 +99,11 @@ for (const id of draftFixtureIds) {
   });
 
   test(`P21 draft fixture ${id} is classified as unsupported for air`, () => {
+    const fixture = readJson(join(draftDirectory, `${id}.json`));
     const capabilities = readJson(join(expectedDirectory, `${id}.capabilities.json`));
 
     assert.equal(capabilities.schemaVersion, 'p21-capabilities-v1');
-    assert.ok(Array.isArray(capabilities.required));
-    assert.ok(capabilities.required.length > 0);
+    assert.deepEqual(capabilities.required, [...fixture.capabilities].sort());
     assert.deepEqual(capabilities.supported, []);
     assert.equal(capabilities.airCompatible, false);
   });

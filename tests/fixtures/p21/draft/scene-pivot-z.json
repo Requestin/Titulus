@@ -11,7 +11,52 @@
     "background": "transparent"
   },
   "variables": [],
-  "groups": [],
+  "groups": [
+    {
+      "id": "scene-root",
+      "name": "Scene Root",
+      "parentId": null,
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "x": 220,
+        "y": 140,
+        "z": 40,
+        "width": 1480,
+        "height": 800,
+        "rotation": -4,
+        "rotationX": 6,
+        "rotationY": 10,
+        "perspective": 1200,
+        "scaleX": 1.05,
+        "scaleY": 0.95,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      }
+    },
+    {
+      "id": "nested-stage",
+      "name": "Nested Stage",
+      "parentId": "scene-root",
+      "visible": true,
+      "locked": false,
+      "transform": {
+        "x": 180,
+        "y": 120,
+        "z": 80,
+        "width": 960,
+        "height": 540,
+        "rotation": 7,
+        "rotationX": -5,
+        "rotationY": -14,
+        "perspective": 900,
+        "scaleX": 0.9,
+        "scaleY": 1.1,
+        "anchorX": 0.25,
+        "anchorY": 0.75
+      }
+    }
+  ],
   "layers": [
     {
       "id": "scene-plane",
@@ -22,34 +67,82 @@
       "opacity": 1,
       "blendMode": "normal",
       "transform": {
-        "x": 640,
-        "y": 360,
+        "x": 240,
+        "y": 160,
         "z": 120,
         "width": 640,
         "height": 360,
-        "rotation": 0,
-        "rotationX": 0,
+        "rotation": 12,
+        "rotationX": 8,
         "rotationY": 18,
         "perspective": 1000,
-        "scaleX": 1,
-        "scaleY": 1,
+        "scaleX": 1.1,
+        "scaleY": 0.9,
         "anchorX": 0.5,
         "anchorY": 0.5
       },
-      "groupId": null,
+      "groupId": "nested-stage",
       "fill": "#1f2937",
       "cornerRadius": 8,
+      "borderColor": "#000000",
+      "borderWidth": 0
+    },
+    {
+      "id": "projected-mask",
+      "name": "Projected Rect Mask",
+      "type": "mask",
+      "visible": true,
+      "locked": false,
+      "opacity": 1,
+      "blendMode": "normal",
+      "transform": {
+        "x": 200,
+        "y": 120,
+        "z": 180,
+        "width": 720,
+        "height": 440,
+        "rotation": -9,
+        "rotationX": 12,
+        "rotationY": 26,
+        "perspective": 1000,
+        "scaleX": 1.05,
+        "scaleY": 0.92,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "groupId": "nested-stage",
+      "maskMode": "normal",
+      "shape": "rect",
+      "fill": "#000000",
+      "cornerRadius": 24,
       "borderColor": "#000000",
       "borderWidth": 0
     }
   ],
   "rootStack": [
     {
-      "kind": "layer",
-      "id": "scene-plane"
+      "kind": "group",
+      "id": "scene-root"
     }
   ],
-  "groupStacks": {},
+  "groupStacks": {
+    "scene-root": [
+      {
+        "kind": "group",
+        "id": "nested-stage"
+      }
+    ],
+    "nested-stage": [
+      {
+        "kind": "layer",
+        "id": "scene-plane"
+      },
+      {
+        "kind": "layer",
+        "id": "projected-mask"
+      }
+    ]
+  },
   "timeline": {
     "fps": 50,
     "durationFrames": 500,
@@ -66,36 +159,128 @@
       }
     ],
     "trackDirectors": {
-      "scene-plane": "default"
+      "nested-stage": "default",
+      "projected-mask": "default",
+      "scene-plane": "default",
+      "scene-root": "default"
     },
     "keyframes": [
       {
-        "id": "scene-z-start",
+        "id": "scene-transform-start",
         "frame": 0,
         "layers": {
           "scene-plane": {
-            "z": 120
+            "z": 120,
+            "rotation": 12,
+            "rotationX": 8,
+            "rotationY": 18,
+            "scaleX": 1.1,
+            "scaleY": 0.9
+          },
+          "projected-mask": {
+            "z": 180,
+            "rotation": -9,
+            "rotationX": 12,
+            "rotationY": 26,
+            "scaleX": 1.05,
+            "scaleY": 0.92
           }
         },
-        "groups": {},
-        "easing": "linear"
+        "groups": {
+          "scene-root": {
+            "z": 40,
+            "rotation": -4,
+            "rotationX": 6,
+            "rotationY": 10,
+            "scaleX": 1.05,
+            "scaleY": 0.95
+          },
+          "nested-stage": {
+            "z": 80,
+            "rotation": 7,
+            "rotationX": -5,
+            "rotationY": -14,
+            "scaleX": 0.9,
+            "scaleY": 1.1
+          }
+        },
+        "easing": "power2.out"
       },
       {
-        "id": "scene-z-end",
+        "id": "scene-transform-end",
         "frame": 100,
         "layers": {
           "scene-plane": {
-            "z": 240
+            "z": 240,
+            "rotation": -6,
+            "rotationX": -4,
+            "rotationY": 32,
+            "scaleX": 0.95,
+            "scaleY": 1.08
+          },
+          "projected-mask": {
+            "z": 220,
+            "rotation": 11,
+            "rotationX": -8,
+            "rotationY": 34,
+            "scaleX": 0.96,
+            "scaleY": 1.04
           }
         },
-        "groups": {},
-        "easing": "linear"
+        "groups": {
+          "scene-root": {
+            "z": 60,
+            "rotation": 3,
+            "rotationX": -3,
+            "rotationY": 16,
+            "scaleX": 0.98,
+            "scaleY": 1.02
+          },
+          "nested-stage": {
+            "z": 140,
+            "rotation": -5,
+            "rotationX": 9,
+            "rotationY": -22,
+            "scaleX": 1.08,
+            "scaleY": 0.94
+          }
+        },
+        "easing": "power2.inOut"
       }
     ],
     "actions": [],
     "propertyTrackDirectors": {
+      "nested-stage": {
+        "z": "default",
+        "rotation": "default",
+        "rotationX": "default",
+        "rotationY": "default",
+        "scaleX": "default",
+        "scaleY": "default"
+      },
+      "projected-mask": {
+        "z": "default",
+        "rotation": "default",
+        "rotationX": "default",
+        "rotationY": "default",
+        "scaleX": "default",
+        "scaleY": "default"
+      },
       "scene-plane": {
-        "z": "default"
+        "z": "default",
+        "rotation": "default",
+        "rotationX": "default",
+        "rotationY": "default",
+        "scaleX": "default",
+        "scaleY": "default"
+      },
+      "scene-root": {
+        "z": "default",
+        "rotation": "default",
+        "rotationX": "default",
+        "rotationY": "default",
+        "scaleX": "default",
+        "scaleY": "default"
       }
     }
   }

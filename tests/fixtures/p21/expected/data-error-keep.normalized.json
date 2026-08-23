@@ -1,0 +1,85 @@
+{
+  "id": "p21-data-error-keep",
+  "name": "P21 Data Error Keep",
+  "capabilities": [
+    "data.select-map-policies",
+    "data.sources-formats"
+  ],
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "background": "transparent"
+  },
+  "variables": [
+    {
+      "id": "error-number",
+      "name": "error-number",
+      "label": "Error number",
+      "type": "number",
+      "defaultValue": 99
+    }
+  ],
+  "groups": [],
+  "layers": [],
+  "rootStack": [],
+  "groupStacks": {},
+  "timeline": {
+    "fps": 50,
+    "durationFrames": 500,
+    "playbackMode": "bounded",
+    "directors": [
+      {
+        "id": "default",
+        "name": "default",
+        "durationFrames": 500,
+        "offsetFrames": 0,
+        "autostart": true,
+        "loop": false,
+        "swing": false
+      }
+    ],
+    "trackDirectors": {},
+    "keyframes": [],
+    "actions": []
+  },
+  "data": {
+    "version": 1,
+    "sources": [
+      {
+        "id": "source-invalid-number",
+        "label": "Invalid number source",
+        "type": "inline",
+        "content": "not-a-number",
+        "format": "lines",
+        "options": {
+          "encoding": "utf-8",
+          "skipEmpty": true,
+          "trim": true
+        }
+      }
+    ],
+    "pipelines": [
+      {
+        "id": "pipe-error",
+        "sourceId": "source-invalid-number",
+        "select": {
+          "mode": "first"
+        },
+        "map": [
+          {
+            "from": "line",
+            "to": {
+              "type": "variable",
+              "variableId": "error-number"
+            },
+            "as": "number"
+          }
+        ]
+      }
+    ],
+    "runOn": [
+      "take"
+    ],
+    "onError": "keep"
+  }
+}

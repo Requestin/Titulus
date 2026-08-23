@@ -3,8 +3,10 @@
   "name": "P21 Data Pipeline Matrix",
   "capabilities": [
     "data.expanded-variable-types",
+    "data.media-token-resolution",
     "data.select-map-policies",
-    "data.sources-formats"
+    "data.sources-formats",
+    "data.time-expressions"
   ],
   "canvas": {
     "width": 1920,
@@ -13,45 +15,54 @@
   },
   "variables": [
     {
-      "id": "first-value",
-      "name": "first-value",
-      "label": "First Value",
+      "id": "first-text",
+      "name": "first-text",
+      "label": "First text",
       "type": "text",
       "defaultValue": "",
       "drivenBy": "pipe-first",
       "exposed": false
     },
     {
-      "id": "last-value",
-      "name": "last-value",
-      "label": "Last Value",
+      "id": "last-text",
+      "name": "last-text",
+      "label": "Last text",
       "type": "text",
       "defaultValue": "",
       "drivenBy": "pipe-last",
       "exposed": false
     },
     {
-      "id": "index-value",
-      "name": "index-value",
-      "label": "Index Value",
-      "type": "text",
+      "id": "index-number",
+      "name": "index-number",
+      "label": "Index number",
+      "type": "number",
+      "defaultValue": 0,
+      "drivenBy": "pipe-index",
+      "exposed": false
+    },
+    {
+      "id": "index-time",
+      "name": "index-time",
+      "label": "Index time",
+      "type": "time",
       "defaultValue": "",
       "drivenBy": "pipe-index",
       "exposed": false
     },
     {
-      "id": "key-value",
-      "name": "key-value",
-      "label": "Key Value",
+      "id": "by-key-text",
+      "name": "by-key-text",
+      "label": "By-key text",
       "type": "text",
       "defaultValue": "",
       "drivenBy": "pipe-by-key",
       "exposed": false
     },
     {
-      "id": "match-value",
-      "name": "match-value",
-      "label": "Match Value",
+      "id": "match-text",
+      "name": "match-text",
+      "label": "Match text",
       "type": "text",
       "defaultValue": "",
       "drivenBy": "pipe-match",
@@ -60,10 +71,64 @@
     {
       "id": "all-values",
       "name": "all-values",
-      "label": "All Values",
+      "label": "All values",
       "type": "multitext",
       "defaultValue": "",
       "drivenBy": "pipe-all",
+      "exposed": false
+    },
+    {
+      "id": "asset-image",
+      "name": "asset-image",
+      "label": "Asset image",
+      "type": "image",
+      "defaultValue": "",
+      "drivenBy": "pipe-media-asset",
+      "exposed": false
+    },
+    {
+      "id": "url-video",
+      "name": "url-video",
+      "label": "URL video",
+      "type": "video",
+      "defaultValue": "",
+      "drivenBy": "pipe-media-url",
+      "exposed": false
+    },
+    {
+      "id": "path-image",
+      "name": "path-image",
+      "label": "Path image",
+      "type": "image",
+      "defaultValue": "",
+      "drivenBy": "pipe-media-path",
+      "exposed": false
+    },
+    {
+      "id": "empty-block",
+      "name": "empty-block",
+      "label": "Empty block",
+      "type": "text",
+      "defaultValue": "block-fallback",
+      "drivenBy": "pipe-empty-block",
+      "exposed": false
+    },
+    {
+      "id": "empty-keep",
+      "name": "empty-keep",
+      "label": "Empty keep",
+      "type": "text",
+      "defaultValue": "keep-fallback",
+      "drivenBy": "pipe-empty-keep",
+      "exposed": false
+    },
+    {
+      "id": "empty-clear",
+      "name": "empty-clear",
+      "label": "Empty clear",
+      "type": "text",
+      "defaultValue": "clear-fallback",
+      "drivenBy": "pipe-empty-clear",
       "exposed": false
     }
   ],
@@ -96,11 +161,8 @@
       {
         "id": "source-lines",
         "label": "Lines source",
-        "type": "textfile",
-        "path": {
-          "type": "literal",
-          "value": "/uploads/p21-lines.txt"
-        },
+        "type": "inline",
+        "content": "Alpha\nBeta\nGamma",
         "format": "lines",
         "options": {
           "encoding": "utf-8",
@@ -112,13 +174,15 @@
         "id": "source-delimited",
         "label": "Delimited source",
         "type": "inline",
-        "content": "1|Alpha\n2|Beta",
+        "content": "1|Alpha|42|now+30m\n2|Beta|7|2026-08-23T12:00:00Z",
         "format": "delimited",
         "options": {
           "delimiter": "|",
           "columns": [
             "id",
-            "name"
+            "name",
+            "count",
+            "clock"
           ],
           "skipEmpty": true,
           "trim": true,
@@ -129,7 +193,7 @@
         "id": "source-kv",
         "label": "Key value source",
         "type": "inline",
-        "content": "title=Phase 21\nstatus=draft",
+        "content": "title=  Phase 21  \nstatus=draft",
         "format": "kv",
         "options": {
           "kvSeparator": "=",
@@ -140,11 +204,8 @@
       {
         "id": "source-json",
         "label": "JSON source",
-        "type": "jsonfile",
-        "path": {
-          "type": "literal",
-          "value": "/uploads/p21-data.json"
-        },
+        "type": "inline",
+        "content": "{\"items\":[{\"id\":\"1\",\"slug\":\"breaking-weather\",\"title\":\"Breaking: Weather\",\"imageAsset\":\"asset:11111111-1111-4111-8111-111111111111\",\"videoUrl\":\"https://cdn.example.test/p21/clip.webp\",\"imagePath\":\"/uploads/p21/still.png\"},{\"id\":\"2\",\"slug\":\"sports\",\"title\":\"Sports\",\"imageAsset\":\"asset:22222222-2222-4222-8222-222222222222\",\"videoUrl\":\"https://cdn.example.test/p21/sports.webp\",\"imagePath\":\"/uploads/p21/sports.png\"}]}",
         "format": "json",
         "options": {
           "rootPath": "/items"
@@ -163,9 +224,12 @@
             "from": "title",
             "to": {
               "type": "variable",
-              "variableId": "first-value"
+              "variableId": "first-text"
             },
-            "as": "text"
+            "as": "text",
+            "transform": {
+              "op": "trim"
+            }
           }
         ]
       },
@@ -180,9 +244,13 @@
             "from": "line",
             "to": {
               "type": "variable",
-              "variableId": "last-value"
+              "variableId": "last-text"
             },
-            "as": "text"
+            "as": "text",
+            "transform": {
+              "op": "suffix",
+              "value": "!"
+            }
           }
         ]
       },
@@ -195,12 +263,20 @@
         },
         "map": [
           {
-            "from": "name",
+            "from": "count",
             "to": {
               "type": "variable",
-              "variableId": "index-value"
+              "variableId": "index-number"
             },
-            "as": "text"
+            "as": "number"
+          },
+          {
+            "from": "clock",
+            "to": {
+              "type": "variable",
+              "variableId": "index-time"
+            },
+            "as": "time"
           }
         ]
       },
@@ -217,9 +293,13 @@
             "from": "title",
             "to": {
               "type": "variable",
-              "variableId": "key-value"
+              "variableId": "by-key-text"
             },
-            "as": "text"
+            "as": "text",
+            "transform": {
+              "op": "prefix",
+              "value": "Selected: "
+            }
           }
         ]
       },
@@ -236,9 +316,15 @@
             "from": "title",
             "to": {
               "type": "variable",
-              "variableId": "match-value"
+              "variableId": "match-text"
             },
-            "as": "text"
+            "as": "text",
+            "transform": {
+              "op": "replace",
+              "pattern": "^Breaking: ",
+              "replacement": "",
+              "flags": "i"
+            }
           }
         ]
       },
@@ -260,8 +346,139 @@
         ],
         "join": {
           "field": "line",
-          "separator": "\n"
+          "separator": " • "
         }
+      },
+      {
+        "id": "pipe-media-asset",
+        "sourceId": "source-json",
+        "select": {
+          "mode": "byKey",
+          "key": "id",
+          "value": "1"
+        },
+        "map": [
+          {
+            "from": "imageAsset",
+            "to": {
+              "type": "variable",
+              "variableId": "asset-image"
+            },
+            "as": "image"
+          }
+        ],
+        "mediaResolve": {
+          "strategy": [
+            "assetId"
+          ],
+          "onMiss": "block"
+        }
+      },
+      {
+        "id": "pipe-media-url",
+        "sourceId": "source-json",
+        "select": {
+          "mode": "first"
+        },
+        "map": [
+          {
+            "from": "videoUrl",
+            "to": {
+              "type": "variable",
+              "variableId": "url-video"
+            },
+            "as": "video"
+          }
+        ],
+        "mediaResolve": {
+          "strategy": [
+            "url"
+          ],
+          "onMiss": "keep"
+        }
+      },
+      {
+        "id": "pipe-media-path",
+        "sourceId": "source-json",
+        "select": {
+          "mode": "last"
+        },
+        "map": [
+          {
+            "from": "imagePath",
+            "to": {
+              "type": "variable",
+              "variableId": "path-image"
+            },
+            "as": "image"
+          }
+        ],
+        "mediaResolve": {
+          "strategy": [
+            "path"
+          ],
+          "onMiss": "clear"
+        }
+      },
+      {
+        "id": "pipe-empty-block",
+        "sourceId": "source-json",
+        "select": {
+          "mode": "byKey",
+          "key": "id",
+          "value": "missing-block"
+        },
+        "map": [
+          {
+            "from": "title",
+            "to": {
+              "type": "variable",
+              "variableId": "empty-block"
+            },
+            "as": "text"
+          }
+        ],
+        "onEmpty": "block"
+      },
+      {
+        "id": "pipe-empty-keep",
+        "sourceId": "source-json",
+        "select": {
+          "mode": "byKey",
+          "key": "id",
+          "value": "missing-keep"
+        },
+        "map": [
+          {
+            "from": "title",
+            "to": {
+              "type": "variable",
+              "variableId": "empty-keep"
+            },
+            "as": "text"
+          }
+        ],
+        "onEmpty": "keep"
+      },
+      {
+        "id": "pipe-empty-clear",
+        "sourceId": "source-json",
+        "select": {
+          "mode": "byKey",
+          "key": "id",
+          "value": "missing-clear"
+        },
+        "map": [
+          {
+            "from": "title",
+            "to": {
+              "type": "variable",
+              "variableId": "empty-clear"
+            },
+            "as": "text"
+          }
+        ],
+        "onEmpty": "clear"
       }
     ],
     "runOn": [

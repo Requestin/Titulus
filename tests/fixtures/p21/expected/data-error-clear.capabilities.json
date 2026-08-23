@@ -1,11 +1,8 @@
 {
   "schemaVersion": "p21-capabilities-v1",
   "required": [
-    "data.expanded-variable-types",
-    "data.media-token-resolution",
     "data.select-map-policies",
-    "data.sources-formats",
-    "data.time-expressions"
+    "data.sources-formats"
   ],
   "supported": [],
   "airCompatible": false

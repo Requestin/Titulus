@@ -2,14 +2,24 @@
   "id": "p21-crawl-ticker",
   "name": "P21 Crawl Ticker",
   "capabilities": [
-    "crawl.layer"
+    "crawl.layer",
+    "data.expanded-variable-types"
   ],
   "canvas": {
     "width": 1920,
     "height": 1080,
     "background": "transparent"
   },
-  "variables": [],
+  "variables": [
+    {
+      "id": "crawl-ticker-content",
+      "name": "crawl-ticker-content",
+      "label": "Crawl Ticker Content",
+      "type": "multitext",
+      "defaultValue": "First headline\nSecond headline",
+      "exposed": true
+    }
+  ],
   "groups": [],
   "layers": [
     {
@@ -35,7 +45,10 @@
         "anchorY": 0
       },
       "groupId": null,
-      "content": "First headline\nSecond headline",
+      "content": {
+        "type": "variable",
+        "variableId": "crawl-ticker-content"
+      },
       "style": {
         "fontFamily": "Inter",
         "fontSize": 48,
