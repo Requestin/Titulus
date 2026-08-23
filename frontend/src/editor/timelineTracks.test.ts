@@ -75,9 +75,9 @@ test('planKeyframeMoves overwrites a destination and keeps the later source on a
     { target, prop: 'x', frame: 0 },
     { target, prop: 'x', frame: 20 },
   ];
-  const piled = planKeyframeMoves(template, selected, 20);
+  const piled = planKeyframeMoves(template, selected, -40);
   assert.deepEqual(piled, [
-    { target, prop: 'x', fromFrame: 20, toFrame: 40, value: 40 },
+    { target, prop: 'x', fromFrame: 20, toFrame: 0, value: 40 },
   ]);
 
   const ontoOccupied = planKeyframeMoves(template, [{ target, prop: 'x', frame: 0 }], 20);
@@ -87,7 +87,8 @@ test('planKeyframeMoves overwrites a destination and keeps the later source on a
   applyKeyframeMoves(template, ontoOccupied);
   const xPoints = pointsFor(template, target, 'x');
   assert.deepEqual(xPoints.map((item) => [item.frame, item.value]), [[20, 10]]);
-  assert.equal(template.timeline.keyframes.find((item) => item.frame === 0), undefined);
+  assert.equal(template.timeline.keyframes.find((item) => item.frame === 0)?.layers.box?.x, undefined);
+  assert.equal(template.timeline.keyframes.find((item) => item.frame === 0)?.layers.box?.y, 20);
 });
 
 test('keyframe identity is target+prop+frame', () => {

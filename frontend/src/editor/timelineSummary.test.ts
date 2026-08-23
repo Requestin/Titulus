@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createDefaultTemplate } from '@runtime';
 import { createLayer } from './factories';
-import { applyKeyframeMoves, planStretchMoves, pointsFor } from './timelineTracks';
-import { objectSummary, stretchSummaryKeys } from './timelineSummary';
+import { applyKeyframeMoves, pointsFor } from './timelineTracks';
+import { objectSummary, planStretchMoves, stretchSummaryKeys } from './timelineSummary';
 
 function spanTemplate() {
   const template = createDefaultTemplate();

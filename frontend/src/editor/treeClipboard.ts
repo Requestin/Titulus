@@ -154,6 +154,11 @@ export function applyClonedTree(
   for (const [oldId, newId] of Object.entries(cloned.idMap)) {
     const director = template.timeline.trackDirectors[oldId];
     if (director) template.timeline.trackDirectors[newId] = director;
+    const propertyDirectors = template.timeline.propertyTrackDirectors?.[oldId];
+    if (propertyDirectors) {
+      template.timeline.propertyTrackDirectors ??= {};
+      template.timeline.propertyTrackDirectors[newId] = { ...propertyDirectors };
+    }
   }
   for (const keyframe of template.timeline.keyframes) {
     for (const [oldId, newId] of Object.entries(cloned.idMap)) {
