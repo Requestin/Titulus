@@ -130,6 +130,14 @@
       "defaultValue": "clear-fallback",
       "drivenBy": "pipe-empty-clear",
       "exposed": false
+    },
+    {
+      "id": "json-file-path",
+      "name": "json-file-path",
+      "label": "JSON file path",
+      "type": "text",
+      "defaultValue": "/data-files/p21-records.json",
+      "exposed": true
     }
   ],
   "groups": [],
@@ -161,20 +169,23 @@
       {
         "id": "source-lines",
         "label": "Lines source",
-        "type": "inline",
-        "content": "Alpha\nBeta\nGamma",
+        "type": "textfile",
         "format": "lines",
         "options": {
           "encoding": "utf-8",
           "skipEmpty": true,
           "trim": true
+        },
+        "path": {
+          "type": "literal",
+          "value": "/data-files/p21-lines.txt"
         }
       },
       {
         "id": "source-delimited",
         "label": "Delimited source",
         "type": "inline",
-        "content": "1|Alpha|42|now+30m\n2|Beta|7|2026-08-23T12:00:00Z",
+        "content": "# id|name|count|clock\n1|Alpha|42|now+30m\n2|Beta|7|2026-08-23T12:00:00Z",
         "format": "delimited",
         "options": {
           "delimiter": "|",
@@ -186,7 +197,8 @@
           ],
           "skipEmpty": true,
           "trim": true,
-          "hasHeader": false
+          "hasHeader": false,
+          "commentPrefix": "#"
         }
       },
       {
@@ -204,11 +216,14 @@
       {
         "id": "source-json",
         "label": "JSON source",
-        "type": "inline",
-        "content": "{\"items\":[{\"id\":\"1\",\"slug\":\"breaking-weather\",\"title\":\"Breaking: Weather\",\"imageAsset\":\"asset:11111111-1111-4111-8111-111111111111\",\"videoUrl\":\"https://cdn.example.test/p21/clip.webp\",\"imagePath\":\"/uploads/p21/still.png\"},{\"id\":\"2\",\"slug\":\"sports\",\"title\":\"Sports\",\"imageAsset\":\"asset:22222222-2222-4222-8222-222222222222\",\"videoUrl\":\"https://cdn.example.test/p21/sports.webp\",\"imagePath\":\"/uploads/p21/sports.png\"}]}",
+        "type": "jsonfile",
         "format": "json",
         "options": {
           "rootPath": "/items"
+        },
+        "path": {
+          "type": "variable",
+          "variableId": "json-file-path"
         }
       }
     ],
