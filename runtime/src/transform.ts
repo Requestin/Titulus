@@ -63,8 +63,9 @@ export function applyTransform(
   const originY = t.height * t.anchorY;
 
   const useComposited = opts?.compositePosition ?? false;
+  const depth = t.z ?? 0;
   const usePerspective = !opts?.skipPerspective && t.perspective > 0
-    && (t.rotationX !== 0 || t.rotationY !== 0);
+    && (t.rotationX !== 0 || t.rotationY !== 0 || (useComposited && depth !== 0));
 
   // Build the transform function list. Two equivalent encodings of the same
   // logical transformation (rotate/scale around the anchor pivot):
@@ -73,7 +74,7 @@ export function applyTransform(
   //              applied with CSS transform-origin = originX originY
   //              (CSS wraps the whole list as T(o)·F·T(-o))
   //
-  //   composite: transform = [perspective] translate3d(left,top,0)
+  //   composite: transform = [perspective] translate3d(left,top,z|0)
   //                          translate(o) [rotateX/Y] [rotate] [scale]
   //                          translate(-o)
   //              applied with CSS transform-origin = 0 0
@@ -88,7 +89,8 @@ export function applyTransform(
   if (useComposited) {
     // Position (translate3d) goes BEFORE the pivot wrap so it is not itself
     // rotated/scaled — it is a pure world-space offset of the element box.
-    parts.push(`translate3d(${(t.x - originX).toFixed(2)}px, ${(t.y - originY).toFixed(2)}px, 0)`);
+    const depthCss = depth === 0 ? '0' : `${depth.toFixed(2)}px`;
+    parts.push(`translate3d(${(t.x - originX).toFixed(2)}px, ${(t.y - originY).toFixed(2)}px, ${depthCss})`);
     // Open the pivot wrap: shift origin to the anchor point inside the box.
     parts.push(`translate(${originX.toFixed(2)}px, ${originY.toFixed(2)}px)`);
   }
@@ -135,7 +137,7 @@ export function anchorCompensatedUpdate(
 
 /** True when the transform uses 2.5D (tilt or explicit perspective). */
 export function transformHas3D(t: Transform): boolean {
-  return t.rotationX !== 0 || t.rotationY !== 0 || t.perspective > 0;
+  return t.rotationX !== 0 || t.rotationY !== 0 || t.perspective > 0 || (t.z ?? 0) !== 0;
 }
 
 /** CSS blend-mode string for a layer. */
