@@ -10,6 +10,7 @@ export * from './easing.js';
 export * from './transform.js';
 export * from './stackOrder.js';
 export * from './timeline.js';
+export * from './crawlSchedule.js';
 export * from './directorMachine.js';
 export * from './clock.js';
 export * from './fonts.js';
