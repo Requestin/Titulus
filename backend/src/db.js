@@ -215,7 +215,7 @@ function ensureAuthBootstrap(db) {
 
 export const templatesDao = (db) => ({
   all() {
-    return db.prepare('SELECT id, name, created_at, updated_at FROM templates ORDER BY updated_at DESC').all();
+    return db.prepare('SELECT id, name, folder_id, created_at, updated_at FROM templates ORDER BY updated_at DESC').all();
   },
   get(id) {
     const row = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
@@ -228,16 +228,17 @@ export const templatesDao = (db) => ({
     ).run(id, name, JSON.stringify(data));
     return this.get(id);
   },
-  update(id, { name, data }) {
+  update(id, { name, data, folder_id }) {
     const cur = db.prepare('SELECT * FROM templates WHERE id = ?').get(id);
     if (!cur) return null;
     const next = {
       name: name ?? cur.name,
       data: data !== undefined ? JSON.stringify(data) : cur.data,
+      folder_id: folder_id === undefined ? cur.folder_id : folder_id,
     };
     db.prepare(
-      `UPDATE templates SET name = ?, data = ?, updated_at = datetime('now') WHERE id = ?`,
-    ).run(next.name, next.data, id);
+      `UPDATE templates SET name = ?, data = ?, folder_id = ?, updated_at = datetime('now') WHERE id = ?`,
+    ).run(next.name, next.data, next.folder_id, id);
     return this.get(id);
   },
   remove(id) {
@@ -353,11 +354,19 @@ function normalizeRundownSlots(input) {
       ? raw.name.trim()
       : (typeof raw.label === 'string' ? raw.label.trim() : '');
     const vars = normalizeSlotVars(raw.vars ?? raw.variables ?? {});
+    if (raw.kind === 'ue') {
+      changed = true;
+      continue;
+    }
+    const dataElementId = typeof raw.dataElementId === 'string' && raw.dataElementId.trim()
+      ? raw.dataElementId.trim()
+      : undefined;
     const slot = {
       slotId,
       templateId,
       name: name || `Slot ${i + 1}`,
       vars,
+      ...(dataElementId ? { dataElementId } : {}),
     };
     normalized.push(slot);
 

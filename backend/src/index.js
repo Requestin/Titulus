@@ -27,6 +27,9 @@ import { channelsRouter } from './routes/channels.js';
 import { rundownsRouter } from './routes/rundowns.js';
 import { uploadsRouter } from './routes/uploads.js';
 import { filesRouter } from './routes/files.js';
+import { mediaLibraryRouter } from './routes/media.js';
+import { templateFoldersRouter } from './routes/templateFolders.js';
+import { dataElementsRouter } from './routes/dataElements.js';
 import { ensureDataFilesDir } from './filesAccess.js';
 import { licenseRouter } from './routes/license.js';
 import { wsRouter } from './routes/ws.js';
@@ -82,6 +85,8 @@ app.use(express.json({ limit: '50mb' }));
 const db = openDb(resolve(DATA_DIR, 'app.db'));
 mkdirSync(UPLOADS_DIR, { recursive: true });
 ensureDataFilesDir(DATA_DIR);
+const THUMBNAILS_DIR = resolve(DATA_DIR, 'thumbnails');
+mkdirSync(THUMBNAILS_DIR, { recursive: true });
 
 app.locals.db = db;
 const auth = createAuth(db);
@@ -106,7 +111,10 @@ app.use('/api/templates', auth.requireAuth, templatesRouter(db, { dataDir: DATA_
 app.use('/api/channels', auth.requireAuth, auth.requireRole('admin'), channelsRouter(db));
 app.use('/api/rundowns', auth.requireAuth, rundownsRouter(db));
 app.use('/api/uploads', auth.requireAuth, uploadsCors, uploadsRouter(media, UPLOADS_DIR));
-app.use('/api/files', auth.requireAuth, filesRouter({ db, dataDir: DATA_DIR }));
+app.use('/api/files', auth.requireAuth, auth.requirePermission('files.read'), filesRouter({ db, dataDir: DATA_DIR }));
+app.use('/api/media', auth.requireAuth, mediaLibraryRouter({ db, media, uploadsDir: UPLOADS_DIR }));
+app.use('/api/template-folders', auth.requireAuth, templateFoldersRouter(db));
+app.use('/api/data-elements', auth.requireAuth, dataElementsRouter(db));
 app.use('/api/license', auth.requireAuth, auth.requireRole('admin'), licenseRouter(db));
 
 // On-air snapshot for the control panel (§7.4). Separate from the WS router so
@@ -133,6 +141,12 @@ app.get('/api/health', (req, res) => res.json({ ok: true, service: 'titulus-back
 // Static: engine channel page, runtime bundle, fonts, uploads.
 // Channel.html + bg-runtime.js come from backend/public (Vite proxies in dev).
 // ---------------------------------------------------------------------------
+app.use('/thumbnails', express.static(THUMBNAILS_DIR, {
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+  },
+}));
 app.use('/uploads', uploadsCors, express.static(UPLOADS_DIR, {
   setHeaders: (res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');

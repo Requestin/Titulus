@@ -1,5 +1,6 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { authDao } from './db.js';
+import { rbacDao } from './operatorTables.js';
 
 const ROLES = new Set(['operator', 'admin']);
 const SESSION_TTL_HOURS = parseInt(process.env.TITULUS_SESSION_TTL_HOURS || '12', 10);
@@ -62,6 +63,16 @@ export function createAuth(db) {
     return next();
   }
 
+  function requirePermission(permission) {
+    return (req, res, next) => {
+      if (!req.auth) return authError(res, 401, 'AUTH_REQUIRED', 'authentication required');
+      if (!rbacDao(db).hasPermission(req.auth.userId, req.auth.role, permission)) {
+        return authError(res, 403, 'FORBIDDEN', 'insufficient permission');
+      }
+      return next();
+    };
+  }
+
   function requireRole(...allowed) {
     const allowedSet = new Set(allowed);
     return (req, res, next) => {
@@ -90,6 +101,9 @@ export function createAuth(db) {
     dao,
     requireAuth,
     requireRole,
+    requirePermission,
+    permissionsFor: (userId, role) => rbacDao(db).permissionsForUser(userId, role),
+    assignDefaults: (userId, role) => rbacDao(db).assignDefaults(userId, role),
     authenticateToken,
     passwordMatches,
     sessionExpiresAt,

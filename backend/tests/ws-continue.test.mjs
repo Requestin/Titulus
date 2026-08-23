@@ -156,6 +156,9 @@ test('legacy on-air string[] snapshot stays unchanged when details waitingContin
       channels: {
         [channelId]: [{
           templateId: legacyTake.templateId,
+          slotId: legacyTake.templateId,
+          sourceTemplateId: legacyTake.template.id || legacyTake.templateId,
+          layerId: 50,
           waitingContinue: false,
         }],
       },
@@ -170,6 +173,9 @@ test('legacy on-air string[] snapshot stays unchanged when details waitingContin
       channels: {
         [channelId]: [{
           templateId: legacyTake.templateId,
+          slotId: legacyTake.templateId,
+          sourceTemplateId: legacyTake.template.id || legacyTake.templateId,
+          layerId: 50,
           waitingContinue: true,
         }],
       },

@@ -30,12 +30,12 @@ test('openDb applies schema_migrations and data_files on a copied legacy DB', ()
   assert.ok(tables.includes('templates'));
   assert.deepEqual(
     db.prepare('SELECT id FROM schema_migrations ORDER BY id').all().map((row) => row.id),
-    ['001_data_files'],
+    ['001_data_files', '002_media_library', '003_template_folders', '004_data_elements', '005_template_locks', '006_rbac_groups'],
   );
   assert.equal(db.prepare('SELECT name FROM templates WHERE id = ?').get('old').name, 'Old');
 
   const again = runMigrations(db);
-  assert.deepEqual(again, ['001_data_files']);
+  assert.deepEqual(again, ['001_data_files', '002_media_library', '003_template_folders', '004_data_elements', '005_template_locks', '006_rbac_groups']);
   db.close();
 });
 
@@ -44,6 +44,6 @@ test('runMigrations is transactional and idempotent on a fresh memory db', () =>
   const first = runMigrations(db);
   const second = runMigrations(db);
   assert.deepEqual(first, second);
-  assert.deepEqual(first, ['001_data_files']);
+  assert.deepEqual(first, ['001_data_files', '002_media_library', '003_template_folders', '004_data_elements', '005_template_locks', '006_rbac_groups']);
   db.close();
 });

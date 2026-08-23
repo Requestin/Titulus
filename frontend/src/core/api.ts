@@ -9,6 +9,7 @@ import { getSessionToken } from '@/core/session';
 export interface TemplateSummary {
   id: string;
   name: string;
+  folder_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -260,6 +261,35 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+  },
+  media: {
+    list: (params?: { q?: string; tag?: string }) => {
+      const query = new URLSearchParams();
+      if (params?.q) query.set('q', params.q);
+      if (params?.tag) query.set('tag', params.tag);
+      const suffix = query.toString();
+      return req<Array<{ id: string; title: string; token: string; url: string | null; tags: string[] }>>(
+        `/api/media${suffix ? `?${suffix}` : ''}`,
+      );
+    },
+  },
+  templateFolders: {
+    list: () => req<Array<{ id: string; name: string; hide_in_control: number }>>('/api/template-folders'),
+    create: (name: string) => req<{ id: string; name: string }>('/api/template-folders', { method: 'POST', body: JSON.stringify({ name }) }),
+    assign: (folderId: string, templateId: string) =>
+      req<{ ok: true }>(`/api/template-folders/${folderId}/assign`, { method: 'POST', body: JSON.stringify({ templateId }) }),
+    unfile: (templateId: string) =>
+      req<{ ok: true }>('/api/template-folders/unfile', { method: 'POST', body: JSON.stringify({ templateId }) }),
+  },
+  dataElements: {
+    list: () => req<Array<{ id: string; name: string; templateId: string; payload: Record<string, unknown> }>>('/api/data-elements'),
+    create: (body: { name: string; templateId: string; payload?: Record<string, unknown> }) =>
+      req('/api/data-elements', { method: 'POST', body: JSON.stringify(body) }),
+  },
+  templateLocks: {
+    acquire: (id: string) => req<{ lock: { username: string } }>(`/api/templates/${id}/lock`, { method: 'POST' }),
+    heartbeat: (id: string) => req<{ lock: { username: string } }>(`/api/templates/${id}/heartbeat`, { method: 'POST' }),
+    release: (id: string) => req<{ ok: true }>(`/api/templates/${id}/unlock`, { method: 'POST' }),
   },
   files: {
     list: () => req<Array<{ id: string; original_name: string; stored_name: string; mime: string; size_bytes: number }>>('/api/files'),

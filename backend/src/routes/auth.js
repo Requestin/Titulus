@@ -67,6 +67,7 @@ export function authRouter(auth) {
       user: toPublicUser(user),
       tenantId: req.auth.tenantId,
       role: req.auth.role,
+      permissions: auth.permissionsFor(user.id, user.role),
     });
   });
 
@@ -95,6 +96,7 @@ export function authRouter(auth) {
         passwordSalt: salt,
         role,
       });
+      auth.assignDefaults(created.id, role);
       return res.status(201).json(toPublicUser(created));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'user create failed';
