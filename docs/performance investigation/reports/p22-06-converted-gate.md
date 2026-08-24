@@ -3,11 +3,10 @@
 **Дата:** 2026-08-23  
 **Хост:** Intel i7-14700KF (`100.73.71.86`), Quad 2  
 **HEAD:** `47a2c1f` (`origin/main` after PR #149)  
-**Статус:** automated cadence PASS; operator visual **PENDING**
+**Статус:** automated cadence PASS; operator visual **PASS** (Phase 22 close, 2026-08-24)
 
-Это не soak и не formal zero-anomaly on-wire claim. Visual PASS
-только после глаз оператора. Residual `single`/`overwrite` не объявлены
-шумом.
+Это не soak и не formal zero-anomaly on-wire claim. Residual
+`single`/`overwrite` не объявлены шумом.
 
 ## Идентичность
 

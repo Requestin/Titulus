@@ -46,8 +46,8 @@ engine/research/p20/run-p20-cell.sh 3ch \
 Живой cell по умолчанию ≤ 5 минут. Более длинный soak — только если
 оператор явно попросил.
 
-P22.7 exam: T0 + null 1ch/3ch + DeckLink 1ch/3ch только на этих
-шаблонах, отчёт `p22-07-operator-templates.md`.
+P22.7 закрыт. Отчёт:
+`docs/performance investigation/reports/p22-07-operator-templates.md`.
 
 ## Naming / JSON
 

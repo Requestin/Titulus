@@ -4,10 +4,10 @@ alwaysApply: true
 ---
 # План разработки
 
-**Снимок:** август 2026. Phase 21 закрыта. Открыта Phase 22: новая схема
-шаблона становится единственным языком продукта, старые шаблоны
-конвертируются, эфир открывается staged allowlist без Unreal и без WebM.
-Engine-first policy остаётся alwaysApply; детали — `docs/development-phases/`.
+**Снимок:** август 2026. Phase 22 закрыта. Новая схема шаблона — канон
+продукта, старые шаблоны конвертируются, эфир открыт staged allowlist
+без Unreal и без WebM. Engine-first policy остаётся alwaysApply;
+детали — `docs/development-phases/`.
 
 ## Фазы (кратко)
 
@@ -35,7 +35,7 @@ Engine-first policy остаётся alwaysApply; детали — `docs/develop
 | 19 | Style Guide + cost model | DONE: Doc02 audit-recovery K2 PASS (PR #84) | phase-19-cost-model.md |
 | 20 | Visual frame pacing + microfreeze | DONE (visual; strict SDI semantic evidence deferred) | phase-20-visual-frame-pacing.md |
 | 21 | New Designer Merge | DONE — capability port на current main; visual PASS; Unreal/VS excluded | phase-21-new-designer-merge.md |
-| 22 | New template version | IN PROGRESS — P22.0–P22.5 merged; P22.6 telemetry PASS, visual PENDING; P22.7 = operator exam | phase-22-new-template-version.md |
+| 22 | New template version | DONE — schema canon; operator `newtest1`/`newtest2`; Unreal/WebM excluded | phase-22-new-template-version.md |
 
 ## Последний milestone в main
 
@@ -59,26 +59,24 @@ Phase 21 закрыта 2026-08-23 как controlled capability port на curren
 не объявлены шумом. Отчёты: `p21-00-baseline.md`,
 `p21-10-software-matrix.md`, `p21-10-hardware-closure.md`.
 
-Phase 22: P22.0–P22.5 в `main` (PR #144–#149). P22.6 telemetry PASS на
-сконвертированном `p20-test1-visual` (null/DeckLink 1ch/3ch, `(2,0)=0`,
-zero late/drop/flush/unlock); visual PASS ждёт глаз оператора. Отчёт:
-`docs/performance investigation/reports/p22-06-converted-gate.md`.
-Финальный exam — новые шаблоны оператора (P22.7), не музейный `test1`.
+Phase 22 закрыта 2026-08-24. P22.0–P22.5 в `main` (PR #144–#149).
+P22.6 telemetry + visual PASS на сконвертированном `p20-test1-visual`.
+P22.7: операторские `newtest1`/`newtest2` + media в
+`tests/fixtures/p22/operator/`; 15m 3ch DeckLink на `newtest2` с
+`(2,0)=0` и zero late/drop/flush. Отчёты:
+`p22-06-converted-gate.md`, `p22-07-operator-templates.md`.
+Новые performance cells — только `newtest1`/`newtest2`.
 
 ## Следующие задачи
 
-- P22.6 visual — глаза оператора на DeckLink 1ch/3ch (`p22-06-converted-gate.md`).
-- P22.7 — operator set зафиксирован: `newtest1` / `newtest2` + media в
-  `tests/fixtures/p22/operator/`. Осталось: T0 + null 1ch/3ch +
-  DeckLink 1ch/3ch только на них и отчёт `p22-07-operator-templates.md`.
-  Все новые performance cells — только `newtest1`/`newtest2`.
+- Нет открытой фазы. Следующая работа — по новой задаче оператора.
 
 ## Отложенная строгая SDI-проверка
 
 Если будущая фаза потребует формальный zero-error on-wire claim, открыть
 отдельную задачу: repeatable 5–15-minute semantic capture с zero
 duplicate/skip/reversal и zero steady-state `single`/`overwrite`, затем 3ch
-60-minute soak. Это не является блокером закрытой visual Phase 20, закрытой Phase 21 и открытой Phase 22.
+60-minute soak. Это не является блокером закрытой visual Phase 20, закрытой Phase 21 и закрытой Phase 22.
 
 ## Как обновлять этот файл
 
