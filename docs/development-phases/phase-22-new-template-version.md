@@ -1,7 +1,8 @@
 # Phase 22 — New template version
 
-**Статус:** IN PROGRESS  
+**Статус:** DONE — новая схема канон; operator exam PASS; Unreal/WebM excluded  
 **Дата открытия:** 2026-08-23  
+**Дата закрытия:** 2026-08-24  
 **База:** `origin/main` после Phase 21 close (`55e50e3`)  
 **Предшественник:** Phase 21 New Designer Merge  
 **Главный приоритет:** сделать новую схему единственным языком продукта,
@@ -51,10 +52,10 @@ Persist остаётся равен air: capability вне `supported[]` → 422
 | P22.3 | WebP in/out window | DONE (PR #147) |
 | P22.4 | LayerID stack + default ON после visual | DONE (PR #148) |
 | P22.5 | Control DE, MAM picker, folders, test-mode, thumbs, locks, RBAC UI | DONE (PR #149) |
-| P22.6 | null/DeckLink 1ch/3ch на сконвертированных fixtures | telemetry PASS; visual PENDING |
-| P22.7 | goldens + SDI exam на шаблонах оператора, затем close | BLOCKED — нет набора оператора |
+| P22.6 | null/DeckLink 1ch/3ch на сконвертированных fixtures | DONE — telemetry PASS; visual PASS (operator close) |
+| P22.7 | goldens + SDI exam на шаблонах оператора, затем close | DONE — `newtest1`/`newtest2` + 15m 3ch; фаза закрыта |
 
-P22.7 не закрывает фазу без набора оператора.
+P22.7 закрыт оператором 2026-08-24.
 
 ## 5. Видео
 
@@ -98,8 +99,8 @@ T0 зелёный. Copied-DB migrate на канонических fixtures — 
 late/drop/flush/unlock = 0. Сценарии Crawl / Continue / prepare `block` /
 LayerID replace / WebP window — PASS.
 
-Visual PASS ждёт глаз оператора. Residual `single`/`overwrite` записаны
-и не объявлены шумом.
+Visual PASS — оператор закрыл фазу 2026-08-24. Residual
+`single`/`overwrite` записаны и не объявлены шумом.
 
 ## 9. P22.7 — шаблоны оператора
 
@@ -113,7 +114,38 @@ Visual PASS ждёт глаз оператора. Residual `single`/`overwrite` 
 Все новые тесты производительности — только на этих шаблонах, не на
 музейном `test1` / `p20-test1-visual`.
 
-Осталось: T0, null 1ch/3ch, DeckLink 1ch/3ch **только на них**, отчёт
-`p22-07-operator-templates.md`, development-plan → DONE.
+Отчёт: `docs/performance investigation/reports/p22-07-operator-templates.md`.
+15m 3ch DeckLink на `newtest2`: `(2,0)=0`, late/drop/flush = 0, pose
+49.71 / 49.89 / 49.88. Residual записаны. Оператор закрыл P22.7 и фазу.
 
-Без SDI exam на этом наборе фаза не закрывается, даже если P22.6 зелёный.
+## 10. Закрытие
+
+Phase 22 закрыта 2026-08-24. Новая схема — единственный язык продукта.
+Старые шаблоны конвертируются в vNext. Эфир открыт staged `supported[]`.
+Видео — WebP без скраба и без WebM. Unreal/VS в `main` нет.
+
+Финальный exam — операторские `newtest1` / `newtest2`, не музейный `test1`.
+Следующая работа — вне этого документа. Engine-first rule и deferred
+on-wire gate остаются в силе.
+
+Evidence:
+
+- [p22-06-converted-gate.md](../performance%20investigation/reports/p22-06-converted-gate.md)
+- [p22-07-operator-templates.md](../performance%20investigation/reports/p22-07-operator-templates.md)
+
+Rollback по-прежнему `git revert <merge-commit>` одного milestone, затем
+rebuild `bg-runtime.js`.
+
+## 11. Индекс PR
+
+| PR | Задача |
+|---|---|
+| #144 | P22.0 phase doc + development-plan |
+| #145 | P22.1 convert + staged allowlist |
+| #146 | P22.2 leftover editor capabilities |
+| #147 | P22.3 WebP in/out window |
+| #148 | P22.4 LayerID stack |
+| #149 | P22.5 Control DE / MAM / folders / RBAC |
+| #152–#155 | crawl continuous travel / duration |
+| #156 | P22.7 operator fixtures `newtest1`/`newtest2` |
+
