@@ -7,6 +7,8 @@ logs stress test/
 docs archieve/
 docs/development-proposals.md
 docs/dialog-summary.md
+# Local-only Sergey designer source docs (keep on disk, not in git)
+docs/sergey-v1/
 
 # Logs
 logs
