@@ -1122,7 +1122,7 @@ Phase 21 завершена только если:
 fixtures остаются fail-closed для эфира (`supported=[]`). Operator visual
 PASS на i7 DeckLink 1ch/3ch. Residual `single`/`overwrite` не объявлены
 шумом. 15/60 min soak и strict on-wire zero-anomaly — вне scope.
-`docs/sergey-v1/*` остаются историей и не удаляются этим закрытием.
+`docs/sergey-v1/` остаётся локальной историей на хостах и больше не хранится в git.
 
 ## 15. Закрытие
 
