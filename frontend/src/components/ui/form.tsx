@@ -47,6 +47,8 @@ export interface NumberInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value' | 'type'> {
   value: number;
   onChange: (value: number) => void;
+  /** Live draft while pointer-dragging; `null` when the gesture ends. */
+  onPreview?: (value: number | null) => void;
   resetValue?: number;
   dragScale?: number;
   stepper?: boolean;
@@ -63,6 +65,7 @@ type NumberDragState = {
 export function NumberInput({
   value,
   onChange,
+  onPreview,
   resetValue,
   dragScale,
   stepper = false,
@@ -157,6 +160,7 @@ export function NumberInput({
     e.preventDefault();
     drag.draftValue = bounded(roundForStep(drag.value + dx * scale, scale));
     setDraft(formatNumber(drag.draftValue));
+    onPreview?.(drag.draftValue);
   }
 
   function releasePointer(e: PointerEvent<HTMLInputElement>) {
@@ -173,8 +177,19 @@ export function NumberInput({
     releasePointer(e);
     if (!drag?.dragging) return;
     e.preventDefault();
-    if (disabled) setDraft(formatNumber(value));
-    else emit(drag.draftValue);
+    if (disabled) {
+      setDraft(formatNumber(value));
+      onPreview?.(null);
+      return;
+    }
+    // Always commit the drag result. During live preview the controlled `value`
+    // may already equal draftValue (PropertiesPanel mirrors gesturePreview into
+    // props), so notifyIfChanged would skip onChange and clearing the preview
+    // would snap back to the pre-drag store value.
+    const next = bounded(drag.draftValue);
+    setDraft(formatNumber(next));
+    onChange(next);
+    onPreview?.(null);
   }
 
   function onPointerCancel(e: PointerEvent<HTMLInputElement>) {
@@ -182,7 +197,10 @@ export function NumberInput({
     dragRef.current = null;
     releasePointer(e);
     setDraft(formatNumber(value));
-    if (wasDragging) e.preventDefault();
+    if (wasDragging) {
+      onPreview?.(null);
+      e.preventDefault();
+    }
   }
 
   return (

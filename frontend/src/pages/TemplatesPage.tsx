@@ -30,6 +30,12 @@ import { Input, Select } from '@/components/ui/form';
 import { toast } from '@/core/toast';
 import { cn } from '@/lib/cn';
 import {
+  readHideAllInControl,
+  readHideUnassignedInControl,
+  writeHideAllInControl,
+  writeHideUnassignedInControl,
+} from '@/control/controlFolderPrefs';
+import {
   readAllowedStringPreference,
   readBooleanPreference,
   type StorageLike,
@@ -84,6 +90,8 @@ export function TemplatesPage() {
   const [renameDraft, setRenameDraft] = useState('');
   const [gridView, setGridView] = useState(readGridView);
   const [sortBy, setSortBy] = useState<TemplateSortBy>(readSortBy);
+  const [hideAllInControl, setHideAllInControl] = useState(readHideAllInControl);
+  const [hideUnassignedInControl, setHideUnassignedInControl] = useState(readHideUnassignedInControl);
   const deleteTriggerRef = useRef<HTMLElement | null>(null);
 
   const load = useCallback(async () => {
@@ -286,14 +294,6 @@ export function TemplatesPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-2 text-[12px] text-ink-muted">
-            <span>Folder</span>
-            <Select aria-label="Filter by folder" value={folderId} onChange={(e) => setFolderId(e.target.value)} className="w-[10.5rem]">
-              <option value="all">All</option>
-              <option value="unassigned">Unassigned</option>
-              {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-            </Select>
-          </label>
-          <label className="flex items-center gap-2 text-[12px] text-ink-muted">
             <span>Sort</span>
             <Select
               aria-label="Sort templates"
@@ -356,15 +356,44 @@ export function TemplatesPage() {
             <Input value={folderName} onChange={(e) => setFolderName(e.target.value)} placeholder="New folder" />
             <Button size="sm" variant="neutral" onClick={() => void createFolder()}>Add</Button>
           </div>
-          <button
-            type="button"
+          <div
+            className={`flex items-center gap-1 rounded-md border px-2 py-1.5 text-[12px] ${folderId === 'all' ? 'border-primary' : 'border-border'}`}
+          >
+            <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setFolderId('all')}>
+              {'<All>'}
+            </button>
+            <button
+              type="button"
+              title={hideAllInControl ? 'Show All in Control' : 'Hide All in Control'}
+              onClick={() => {
+                const next = !hideAllInControl;
+                setHideAllInControl(next);
+                writeHideAllInControl(next);
+              }}
+            >
+              {hideAllInControl ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+          <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => { e.preventDefault(); void dropOnFolder(null, e.dataTransfer.getData('text/template-id')); }}
-            onClick={() => setFolderId('unassigned')}
-            className={`flex w-full rounded-md border px-2 py-1.5 text-left text-[12px] ${folderId === 'unassigned' ? 'border-primary' : 'border-border'}`}
+            className={`flex items-center gap-1 rounded-md border px-2 py-1.5 text-[12px] ${folderId === 'unassigned' ? 'border-primary' : 'border-border'}`}
           >
-            Unassigned
-          </button>
+            <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setFolderId('unassigned')}>
+              {'<Unassigned>'}
+            </button>
+            <button
+              type="button"
+              title={hideUnassignedInControl ? 'Show Unassigned in Control' : 'Hide Unassigned in Control'}
+              onClick={() => {
+                const next = !hideUnassignedInControl;
+                setHideUnassignedInControl(next);
+                writeHideUnassignedInControl(next);
+              }}
+            >
+              {hideUnassignedInControl ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          </div>
           {folders.map((folder) => (
             <div
               key={folder.id}

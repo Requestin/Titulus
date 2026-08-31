@@ -329,6 +329,12 @@ function normalizeSlotVars(input) {
 
 function normalizeRundownSlots(input) {
   if (!Array.isArray(input)) return { slots: [], changed: true };
+  const { slots, changed } = normalizeRundownSlotList(input, 0);
+  const stable = JSON.stringify(input) === JSON.stringify(slots);
+  return { slots, changed: changed || !stable };
+}
+
+function normalizeRundownSlotList(input, depth) {
   const normalized = [];
   let changed = false;
   for (let i = 0; i < input.length; i++) {
@@ -338,10 +344,17 @@ function normalizeRundownSlots(input) {
       continue;
     }
 
+    if (raw.kind === 'ue') {
+      changed = true;
+      continue;
+    }
+
+    const kind = raw.kind === 'primary' ? 'primary' : 'item';
     const templateId = typeof raw.templateId === 'string'
       ? raw.templateId.trim()
       : '';
-    if (!templateId) {
+
+    if (kind === 'item' && !templateId) {
       changed = true;
       continue;
     }
@@ -354,28 +367,50 @@ function normalizeRundownSlots(input) {
       ? raw.name.trim()
       : (typeof raw.label === 'string' ? raw.label.trim() : '');
     const vars = normalizeSlotVars(raw.vars ?? raw.variables ?? {});
-    if (raw.kind === 'ue') {
-      changed = true;
-      continue;
-    }
     const dataElementId = typeof raw.dataElementId === 'string' && raw.dataElementId.trim()
       ? raw.dataElementId.trim()
       : undefined;
-    const slot = {
-      slotId,
-      templateId,
-      name: name || `Slot ${i + 1}`,
-      vars,
-      ...(dataElementId ? { dataElementId } : {}),
-    };
-    normalized.push(slot);
+
+    if (kind === 'primary') {
+      const childrenRaw = Array.isArray(raw.children) ? raw.children : [];
+      const nested = depth < 8
+        ? normalizeRundownSlotList(childrenRaw, depth + 1)
+        : { slots: [], changed: childrenRaw.length > 0 };
+      // Primary children should only be item slots (flatten nested primaries away by kind filter).
+      const children = nested.slots
+        .filter((child) => child.kind !== 'primary')
+        .map((child) => {
+          const { kind: _kind, children: _children, ...rest } = child;
+          return { ...rest, kind: 'item' };
+        });
+      if (nested.changed || children.length !== nested.slots.length) changed = true;
+      const slot = {
+        slotId,
+        kind: 'primary',
+        name: name || 'Primary',
+        vars,
+        children,
+        ...(dataElementId ? { dataElementId } : {}),
+      };
+      normalized.push(slot);
+    } else {
+      const slot = {
+        slotId,
+        kind: 'item',
+        templateId,
+        name: name || `Slot ${i + 1}`,
+        vars,
+        ...(dataElementId ? { dataElementId } : {}),
+      };
+      normalized.push(slot);
+    }
 
     if (!slotIdCandidate) changed = true;
     if ('id' in raw || 'label' in raw || 'variables' in raw) changed = true;
+    if (kind === 'item' && raw.kind !== 'item' && raw.kind !== undefined) changed = true;
   }
 
-  const stable = JSON.stringify(input) === JSON.stringify(normalized);
-  return { slots: normalized, changed: changed || !stable };
+  return { slots: normalized, changed };
 }
 
 function parseSlots(rawJson) {

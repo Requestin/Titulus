@@ -1,6 +1,6 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
-import type { AnimatableProp, Template } from '@runtime';
+import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
+import type { AnimatableProp, Template, TimelineDirector } from '@runtime';
 import { Checkbox, NumberInput } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { useEditor, type Target } from '../store';
@@ -9,30 +9,40 @@ import { isCrawlDirector } from '../crawlTimeline';
 import { canRemoveDirector, listCuesForDirector } from '../timelineCues';
 import {
   collectTracks,
-  tracksForDirector,
   type SelectedKeyframe,
 } from '../timelineTracks';
 import { objectSummary as objectRange } from '../timelineSummary';
 import { keyframesInMarquee, normalizeMarquee, toggleKeyframeSelection } from '../timelineMarquee';
 import { CurveView } from '../timeline/CurveView';
-import { DirectorList } from '../timeline/DirectorList';
-import { DirectorToolbar, TimelineTransport } from '../timeline/Transport';
+import { TimelineTransport, TrackEditToolbar } from '../timeline/Transport';
 import { ActionLane } from '../timeline/ActionLane';
 import { DopeLane } from '../timeline/DopeLane';
 import { SummaryBar } from '../timeline/SummaryBar';
 import {
   ACTION_LANE_H,
+  DIRECTOR_HDR_H,
   GROUP_HDR_H,
   HEADER_W,
   RULER_H,
   TIMELINE_ANIMATABLE_PROPS,
-  buildLaneLayout,
+  buildAllDirectorsLaneLayout,
+  directorLaneSpans,
   keyframeHits,
   parseTimelineDrag,
   serializeTimelineDrag,
+  timelinePropLabel,
 } from '../timeline/layout';
 
 export type { SelectedKeyframe };
+
+function directorLocalPlayhead(
+  director: TimelineDirector,
+  active: TimelineDirector | undefined,
+  activeLocal: number,
+): number {
+  const global = (active?.offsetFrames ?? 0) + activeLocal;
+  return Math.max(0, Math.min(director.durationFrames, global - director.offsetFrames));
+}
 
 function Ruler({
   dur,
@@ -72,7 +82,14 @@ function untrackedPropsFor(template: Template, target: Target): AnimatableProp[]
       .filter((track) => track.target.kind === target.kind && track.target.id === target.id)
       .map((track) => track.prop),
   );
-  return TIMELINE_ANIMATABLE_PROPS.filter((prop) => !tracked.has(prop));
+  const layer = target.kind === 'layer'
+    ? template.layers.find((item) => item.id === target.id)
+    : null;
+  return TIMELINE_ANIMATABLE_PROPS.filter((prop) => {
+    if (tracked.has(prop)) return false;
+    if (prop === 'crawlProgress' && (!layer || layer.type !== 'crawl')) return false;
+    return true;
+  });
 }
 
 export function TimelinePanel() {
@@ -109,6 +126,7 @@ export function TimelinePanel() {
   const [pxPerFrame, setPxPerFrame] = useState(6);
   const [activeTrack, setActiveTrack] = useState<{ target: Target; prop: AnimatableProp } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [collapsedDirectors, setCollapsedDirectors] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const headersScrollRef = useRef<HTMLDivElement>(null);
   const lanesScrollRef = useRef<HTMLDivElement>(null);
@@ -116,18 +134,20 @@ export function TimelinePanel() {
 
   if (!template) return null;
   const current = template;
-  const director = current.timeline.directors.find((item) => item.id === activeDirectorId) ?? current.timeline.directors[0];
-  const duration = director?.durationFrames ?? template.timeline.durationFrames;
+  const directors = current.timeline.directors;
+  const director = directors.find((item) => item.id === activeDirectorId) ?? directors[0];
+  const duration = Math.max(1, ...directors.map((item) => item.durationFrames));
   const selectedTarget: Target | null = selection ? { kind: selection.kind, id: selection.id } : null;
-  const directorTracks = tracksForDirector(current, director?.id ?? 'default');
-  const layout = buildLaneLayout(current, directorTracks, pxPerFrame);
+  const allTracks = collectTracks(current);
+  const layout = buildAllDirectorsLaneLayout(current, directors, collapsedDirectors, pxPerFrame);
+  const spans = directorLaneSpans(layout.rows);
   const untrackedProps = selectedTarget ? untrackedPropsFor(current, selectedTarget) : [];
   const activeTrackResolved = activeTrack
-    && directorTracks.some((track) => track.target.id === activeTrack.target.id && track.prop === activeTrack.prop)
+    && allTracks.some((track) => track.target.id === activeTrack.target.id && track.prop === activeTrack.prop)
     ? activeTrack
     : (selectedTarget
-      ? directorTracks.find((track) => track.target.kind === selectedTarget.kind && track.target.id === selectedTarget.id) ?? directorTracks[0] ?? null
-      : directorTracks[0] ?? null);
+      ? allTracks.find((track) => track.target.kind === selectedTarget.kind && track.target.id === selectedTarget.id) ?? allTracks[0] ?? null
+      : allTracks[0] ?? null);
 
   function syncScroll(from: 'headers' | 'lanes') {
     if (view !== 'dope' || scrollSyncRef.current) return;
@@ -176,6 +196,15 @@ export function TimelinePanel() {
     addKeyframeAtPlayhead(activeTrackResolved.target, activeTrackResolved.prop);
   }
 
+  function toggleDirectorCollapsed(directorId: string) {
+    setCollapsedDirectors((prev) => {
+      const next = new Set(prev);
+      if (next.has(directorId)) next.delete(directorId);
+      else next.add(directorId);
+      return next;
+    });
+  }
+
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if ((event.key === 'Delete' || event.key === 'Backspace') && selectedKeyframes.length > 0) {
       event.preventDefault();
@@ -207,39 +236,20 @@ export function TimelinePanel() {
         playhead={playhead}
         duration={duration}
         view={view}
-        canAddKeyframe={Boolean(activeTrackResolved)}
-        canDeleteKeyframes={selectedKeyframes.length > 0}
         canContinue={waitingContinue}
-        canAddCue={Boolean(director)}
-        canDeleteCue={Boolean(selectedCueId)}
         onTogglePlay={() => setPlaying(!playing)}
         onStop={() => { setPlaying(false); setPlayhead(0); }}
         onContinue={requestContinue}
-        onAddKeyframe={handleAddKeyframe}
-        onDeleteKeyframes={deleteSelectedKeyframes}
-        onAddCue={addCueAtPlayhead}
-        onDeleteCue={removeSelectedCue}
         onView={setView}
         onZoomOut={() => setPxPerFrame((value) => Math.max(2, value - 2))}
         onZoomIn={() => setPxPerFrame((value) => Math.min(24, value + 2))}
       />
 
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2">
-        <DirectorList
-          directors={current.timeline.directors}
-          activeId={director?.id ?? 'default'}
-          onSelect={setActiveDirector}
-          onDropPayload={handleDrop}
-        />
-        <DirectorToolbar
-          onAdd={addDirector}
-          canRemove={canRemoveDirector(current.timeline.directors, director?.id ?? '')}
-          onRemove={() => director && removeDirector(director.id)}
-        />
-      </div>
-
       {director && (
         <div className="flex h-8 shrink-0 items-center gap-3 border-b border-border px-2 text-[12px] text-ink-muted">
+          <span className="max-w-[8rem] truncate font-semibold uppercase tracking-wide text-ink" title={director.name}>
+            {director.name}
+          </span>
           <label className="flex items-center gap-1.5">Dur
             <NumberInput
               value={director.durationFrames}
@@ -268,6 +278,30 @@ export function TimelinePanel() {
         </div>
       )}
 
+      <TrackEditToolbar
+        canAddTrack={Boolean(selectedTarget) && untrackedProps.length > 0}
+        canAddKeyframe={Boolean(activeTrackResolved)}
+        canDeleteKeyframes={selectedKeyframes.length > 0}
+        canAddCue={Boolean(director)}
+        canDeleteCue={Boolean(selectedCueId)}
+        addOpen={addOpen}
+        untrackedProps={untrackedProps}
+        propLabel={timelinePropLabel}
+        onToggleAdd={() => setAddOpen((value) => !value)}
+        onAddProp={(prop) => {
+          if (!selectedTarget) return;
+          addTrackAtPlayhead(selectedTarget, prop);
+          assignPropertyDirector(selectedTarget, prop, director?.id ?? 'default');
+          setActiveTrack({ target: selectedTarget, prop });
+          setAddOpen(false);
+        }}
+        onAddDirector={addDirector}
+        onAddKeyframe={handleAddKeyframe}
+        onDeleteKeyframes={deleteSelectedKeyframes}
+        onAddCue={addCueAtPlayhead}
+        onDeleteCue={removeSelectedCue}
+      />
+
       <div className="flex min-h-0 flex-1">
         <div className="flex shrink-0 flex-col border-r border-border" style={{ width: HEADER_W }}>
           <div
@@ -282,17 +316,68 @@ export function TimelinePanel() {
             >
               Actions
             </div>
-            {directorTracks.length === 0 ? (
+            {directors.length === 0 ? (
               <p className="p-3 text-[12px] text-ink-faint">
-                {selectedTarget ? 'Add a track to start animating.' : 'Select a layer and add a track.'}
+                Add a director with +D.
               </p>
             ) : (
               layout.rows.map((row) => {
+                if (row.kind === 'director') {
+                  const active = row.directorId === (director?.id ?? '');
+                  const removable = canRemoveDirector(directors, row.directorId);
+                  return (
+                    <div
+                      key={`d:${row.directorId}`}
+                      style={{ height: DIRECTOR_HDR_H }}
+                      className={cn(
+                        'flex w-full items-center gap-0.5 border-b border-border/50 px-1 text-[11px] font-semibold uppercase tracking-wide',
+                        active ? 'bg-primary/15 text-ink' : 'bg-surface-2 text-ink-muted',
+                      )}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        handleDrop(row.directorId, event.dataTransfer.getData('text/plain'));
+                      }}
+                    >
+                      <button
+                        type="button"
+                        aria-label={row.collapsed ? `Expand ${row.label}` : `Collapse ${row.label}`}
+                        onClick={() => toggleDirectorCollapsed(row.directorId)}
+                        className="grid h-6 w-6 shrink-0 place-items-center hover:text-ink"
+                      >
+                        {row.collapsed
+                          ? <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                          : <ChevronDown className="h-3.5 w-3.5" aria-hidden />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveDirector(row.directorId)}
+                        className="min-w-0 flex-1 truncate text-left hover:text-ink"
+                      >
+                        {row.label}
+                      </button>
+                      {removable && (
+                        <button
+                          type="button"
+                          title="Remove director"
+                          aria-label={`Remove ${row.label}`}
+                          onClick={() => removeDirector(row.directorId)}
+                          className="grid h-6 w-6 shrink-0 place-items-center rounded text-ink-faint hover:bg-surface hover:text-danger"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
                 if (row.kind === 'group') {
                   const groupSelected = selectedTarget?.kind === row.target.kind && selectedTarget.id === row.target.id;
                   return (
                     <button
-                      key={`g:${row.target.kind}:${row.target.id}`}
+                      key={`g:${row.target.kind}:${row.target.id}:${row.y}`}
                       type="button"
                       draggable
                       onDragStart={(event) => {
@@ -301,7 +386,7 @@ export function TimelinePanel() {
                       onClick={() => select(row.target)}
                       style={{ height: GROUP_HDR_H }}
                       className={cn(
-                        'flex w-full items-center gap-1 px-2 text-left text-[11px] font-semibold',
+                        'flex w-full items-center gap-1 px-2 pl-4 text-left text-[11px] font-semibold',
                         groupSelected ? 'bg-primary/10 text-ink' : 'text-ink-muted hover:bg-surface-2',
                       )}
                     >
@@ -314,7 +399,7 @@ export function TimelinePanel() {
                   && activeTrackResolved.prop === row.prop;
                 return (
                   <div
-                    key={`t:${row.target.kind}:${row.target.id}:${row.prop}`}
+                    key={`t:${row.target.kind}:${row.target.id}:${row.prop}:${row.y}`}
                     draggable
                     onDragStart={(event) => {
                       event.dataTransfer.setData('text/plain', serializeTimelineDrag({
@@ -325,7 +410,7 @@ export function TimelinePanel() {
                     }}
                     style={{ height: row.height }}
                     className={cn(
-                      'flex items-center gap-0.5 border-b border-border/40 pl-2 pr-1',
+                      'flex items-center gap-0.5 border-b border-border/40 pl-5 pr-1',
                       isActive ? 'bg-primary/15 text-ink' : 'text-ink-muted hover:bg-surface-2',
                     )}
                   >
@@ -338,7 +423,7 @@ export function TimelinePanel() {
                       }}
                       className="min-w-0 flex-1 truncate text-left text-[12px] tabular-nums"
                     >
-                      {row.prop}
+                      {timelinePropLabel(row.prop)}
                     </button>
                     <button
                       type="button"
@@ -353,40 +438,6 @@ export function TimelinePanel() {
               })
             )}
           </div>
-          {selectedTarget && (
-            <div className="relative shrink-0 border-t border-border p-1.5">
-              <button
-                type="button"
-                onClick={() => setAddOpen((value) => !value)}
-                disabled={untrackedProps.length === 0}
-                className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border py-1 text-[12px] text-ink-muted hover:text-ink disabled:opacity-40"
-              >
-                <Plus className="h-3.5 w-3.5" /> Track
-              </button>
-              {addOpen && (
-                <>
-                  <div className="fixed inset-0 z-dropdown" onClick={() => setAddOpen(false)} />
-                  <div className="absolute bottom-full left-1.5 z-dropdown mb-1 grid max-h-48 w-28 grid-cols-2 gap-0.5 overflow-auto rounded-md border border-border bg-surface-2 p-1 shadow-xl">
-                    {untrackedProps.map((prop) => (
-                      <button
-                        key={prop}
-                        type="button"
-                        onClick={() => {
-                          addTrackAtPlayhead(selectedTarget, prop);
-                          assignPropertyDirector(selectedTarget, prop, director?.id ?? 'default');
-                          setActiveTrack({ target: selectedTarget, prop });
-                          setAddOpen(false);
-                        }}
-                        className="rounded px-1 py-1 text-left text-[11px] text-ink hover:bg-surface"
-                      >
-                        {prop}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
         </div>
 
         <div
@@ -395,7 +446,7 @@ export function TimelinePanel() {
           onScroll={() => syncScroll('lanes')}
         >
           <div
-            style={{ width: timelineWidth, minHeight: RULER_H + layout.height }}
+            style={{ width: timelineWidth, minHeight: RULER_H + ACTION_LANE_H + layout.height }}
             className="relative"
             onPointerDown={(event) => {
               if (view !== 'dope') return;
@@ -441,18 +492,35 @@ export function TimelinePanel() {
               onSelect={selectCue}
               onMove={moveCue}
             />
-            {view === 'dope' && directorTracks.length > 0 && (
-              <div
-                className="pointer-events-none absolute bottom-0 z-sticky w-px bg-live"
-                style={{ left: playhead * pxPerFrame, top: RULER_H }}
-              >
-                <div className="pointer-events-auto absolute -left-1 top-0 h-2 w-2 rounded-sm bg-live" />
-              </div>
-            )}
+            {view === 'dope' && spans.map((span) => {
+              const dir = directors.find((item) => item.id === span.directorId);
+              if (!dir) return null;
+              const local = directorLocalPlayhead(dir, director, playhead);
+              return (
+                <div
+                  key={`ph:${span.directorId}`}
+                  className="pointer-events-none absolute z-20 w-px bg-live"
+                  style={{
+                    left: local * pxPerFrame,
+                    top: RULER_H + ACTION_LANE_H + span.y,
+                    height: span.height,
+                  }}
+                />
+              );
+            })}
             {view === 'dope' && layout.rows.map((row) => {
+              if (row.kind === 'director') {
+                return (
+                  <div
+                    key={`lane-d:${row.directorId}`}
+                    className="border-b border-border/40 bg-surface-2/80"
+                    style={{ height: DIRECTOR_HDR_H }}
+                  />
+                );
+              }
               if (row.kind === 'group') {
                 return (
-                  <div key={`lane-g:${row.target.id}`} className="relative border-b border-border/25 bg-surface/50" style={{ height: GROUP_HDR_H }}>
+                  <div key={`lane-g:${row.target.id}:${row.y}`} className="relative border-b border-border/25 bg-surface/50" style={{ height: GROUP_HDR_H }}>
                     <SummaryBar
                       target={row.target}
                       start={row.start}
@@ -466,7 +534,7 @@ export function TimelinePanel() {
               }
               return (
                 <DopeLane
-                  key={`lane-t:${row.target.id}:${row.prop}`}
+                  key={`lane-t:${row.target.id}:${row.prop}:${row.y}`}
                   target={row.target}
                   prop={row.prop}
                   pxPerFrame={pxPerFrame}

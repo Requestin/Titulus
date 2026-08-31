@@ -64,14 +64,14 @@ export function createLayer(type: LayerType, name: string): Layer {
     case 'text':
       return {
         ...base, type: 'text',
-        transform: { ...createDefaultTransform(120, 120), ...LAYER_DEFAULT_DIMENSIONS.text },
+        transform: { ...createDefaultTransform(0, 0), ...LAYER_DEFAULT_DIMENSIONS.text },
         content: 'New text',
         style: defaultTextStyle(),
       };
     case 'rect':
       return {
         ...base, type: 'rect',
-        transform: { ...createDefaultTransform(120, 120), ...LAYER_DEFAULT_DIMENSIONS.rect },
+        transform: { ...createDefaultTransform(0, 0), ...LAYER_DEFAULT_DIMENSIONS.rect },
         fill: '#1f2937',
         cornerRadius: 8,
         borderColor: '#000000',
@@ -80,7 +80,7 @@ export function createLayer(type: LayerType, name: string): Layer {
     case 'image':
       return {
         ...base, type: 'image',
-        transform: { ...createDefaultTransform(120, 120), ...LAYER_DEFAULT_DIMENSIONS.image },
+        transform: { ...createDefaultTransform(0, 0), ...LAYER_DEFAULT_DIMENSIONS.image },
         src: '',
         cornerRadius: 0,
         fit: 'cover',
@@ -88,7 +88,7 @@ export function createLayer(type: LayerType, name: string): Layer {
     case 'video':
       return {
         ...base, type: 'video',
-        transform: { ...createDefaultTransform(120, 120), ...LAYER_DEFAULT_DIMENSIONS.video },
+        transform: { ...createDefaultTransform(0, 0), ...LAYER_DEFAULT_DIMENSIONS.video },
         src: '',
         loop: true,
         fit: 'cover',
@@ -96,7 +96,7 @@ export function createLayer(type: LayerType, name: string): Layer {
     case 'clock':
       return {
         ...base, type: 'clock',
-        transform: { ...createDefaultTransform(120, 120), ...LAYER_DEFAULT_DIMENSIONS.clock },
+        transform: { ...createDefaultTransform(0, 0), ...LAYER_DEFAULT_DIMENSIONS.clock },
         mode: 'clock',
         format: 'HH:mm:ss',
         style: { ...defaultTextStyle(), align: 'center' },
@@ -104,7 +104,7 @@ export function createLayer(type: LayerType, name: string): Layer {
     case 'mask':
       return {
         ...base, type: 'mask',
-        transform: { ...createDefaultTransform(120, 120), ...LAYER_DEFAULT_DIMENSIONS.mask },
+        transform: { ...createDefaultTransform(0, 0), ...LAYER_DEFAULT_DIMENSIONS.mask },
         maskMode: 'normal',
         shape: 'rect',
         fill: '#000000',
@@ -115,7 +115,7 @@ export function createLayer(type: LayerType, name: string): Layer {
     case 'crawl':
       return {
         ...base, type: 'crawl',
-        transform: { ...createDefaultTransform(120, 120), ...LAYER_DEFAULT_DIMENSIONS.crawl },
+        transform: { ...createDefaultTransform(0, 0), ...LAYER_DEFAULT_DIMENSIONS.crawl },
         content: 'New crawl',
         style: defaultTextStyle(),
         crawlDirectorId: uuid(),

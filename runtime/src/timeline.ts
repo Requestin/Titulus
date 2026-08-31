@@ -270,7 +270,14 @@ export function directorLocalFrame(d: TimelineDirector, globalFrame: number): nu
   return rel;
 }
 
-/** Interpolate animated values for one target from its compiled track. */
+/**
+ * Interpolate animated values for one target from its compiled track.
+ *
+ * Each property is sampled independently against the nearest keyframes that
+ * actually define that property. Sparse dope-sheet bags (x keyed mid-span, y
+ * only at ends) therefore animate simultaneously instead of snapping the
+ * missing side to the adjacent bag's value.
+ */
 function sampleTargetTrack(
   track: CompiledTargetTracks,
   localFrame: number,
@@ -279,39 +286,44 @@ function sampleTargetTrack(
   const n = entries.length;
   if (n === 0) return {};
 
-  // Before first / after last keyframe: hold the boundary value.
-  if (localFrame <= entries[0].frame) return { ...entries[0].bag };
-  if (localFrame >= entries[n - 1].frame) return { ...entries[n - 1].bag };
-
-  // Binary-search the bracketing pair. Entries are sorted by frame at compile
-  // time, so this is O(log n) per frame instead of the previous linear scan.
-  let lo = 0;
-  let hi = n - 1;
-  while (lo < hi - 1) {
-    const mid = (lo + hi) >> 1;
-    if (entries[mid].frame <= localFrame) lo = mid;
-    else hi = mid;
+  const props = new Set<AnimatableProp>();
+  for (const entry of entries) {
+    for (const key of Object.keys(entry.bag) as AnimatableProp[]) props.add(key);
   }
-  const a = entries[lo];
-  const b = entries[hi];
-
-  const span = b.frame - a.frame || 1;
-  const rawT = (localFrame - a.frame) / span;
-  const eased = a.easing(rawT);
 
   const out: AnimatableValues = {};
-  const props = new Set<AnimatableProp>([
-    ...(Object.keys(a.bag) as AnimatableProp[]),
-    ...(Object.keys(b.bag) as AnimatableProp[]),
-  ]);
-  for (const p of props) {
-    const va = a.bag[p];
-    const vb = b.bag[p];
-    if (va === undefined) out[p] = vb;
-    else if (vb === undefined) out[p] = va;
-    else out[p] = lerp(va, vb, eased);
+  for (const prop of props) {
+    const sampled = samplePropTrack(entries, prop, localFrame);
+    if (sampled !== undefined) out[prop] = sampled;
   }
   return out;
+}
+
+/** Find prev/next keyframes that define `prop` and lerp (or hold) between them. */
+function samplePropTrack(
+  entries: CompiledTrackEntry[],
+  prop: AnimatableProp,
+  localFrame: number,
+): number | undefined {
+  let prev: CompiledTrackEntry | null = null;
+  let next: CompiledTrackEntry | null = null;
+  for (const entry of entries) {
+    if (entry.bag[prop] === undefined) continue;
+    if (entry.frame <= localFrame) prev = entry;
+    if (entry.frame >= localFrame) {
+      next = entry;
+      break;
+    }
+  }
+  if (!prev && !next) return undefined;
+  if (!prev) return next!.bag[prop];
+  if (!next || next === prev) return prev.bag[prop];
+
+  const va = prev.bag[prop]!;
+  const vb = next.bag[prop]!;
+  const span = next.frame - prev.frame || 1;
+  const rawT = (localFrame - prev.frame) / span;
+  return lerp(va, vb, prev.easing(rawT));
 }
 
 export interface DirectorSample {

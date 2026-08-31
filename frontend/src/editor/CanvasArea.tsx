@@ -7,10 +7,11 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
+import { useStore } from 'zustand';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
 import { playheadStore, setLivePlayhead, setWaitingContinue, usePlayhead } from './playheadStore';
-import { clearGesturePreview, scheduleGesturePreview } from './gesturePreview';
+import { clearGesturePreview, gesturePreviewStore, scheduleGesturePreview } from './gesturePreview';
 import { derivedGroupBox } from './groupBounds';
 import {
   ancestorMatrix, canvasDeltaToParent, dragTransform, type AffineMatrix, type DragMode,
@@ -26,8 +27,8 @@ interface Box {
 }
 
 type SelectionOverlay =
-  | { kind: 'box'; box: Box }
-  | { kind: 'polygon'; box: Box; points: Array<{ x: number; y: number }> };
+  | { kind: 'box'; box: Box; pivot: { x: number; y: number } }
+  | { kind: 'polygon'; box: Box; points: Array<{ x: number; y: number }>; pivot: { x: number; y: number } };
 
 interface DragState {
   id: string;
@@ -86,6 +87,7 @@ export function CanvasArea() {
   const rendererRef = useRef<TemplateRenderer | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const [overlay, setOverlay] = useState<SelectionOverlay | null>(null);
+  const gesturePreview = useStore(gesturePreviewStore, (s) => s.preview);
 
   // Renderer lifecycle (static preview: syncTemplate only, no timeline rAF).
   // useLayoutEffect (not useEffect) so the renderer exists before the sync
@@ -111,6 +113,8 @@ export function CanvasArea() {
     const tpl = st.template;
     if (!tpl) return null;
     if (preview && id === (dragRef.current?.id) && dragRef.current?.kind === kind) return preview;
+    const gp = gesturePreviewStore.getState().preview;
+    if (gp && gp.id === id && gp.kind === kind) return gp.transform;
     if (kind === 'layer') {
       const layer = tpl.layers.find((item) => item.id === id);
       if (!layer) return null;
@@ -124,6 +128,10 @@ export function CanvasArea() {
   function overlayForGroup(groupId: string, preview?: Transform): SelectionOverlay | null {
     const tpl = useEditor.getState().template;
     if (!tpl) return null;
+    const pivot = preview
+      ?? resolveLiveTransform('group', groupId)
+      ?? tpl.groups.find((item) => item.id === groupId)?.transform;
+    if (!pivot) return null;
     const box = derivedGroupBox(
       tpl,
       groupId,
@@ -136,6 +144,7 @@ export function CanvasArea() {
     return {
       kind: 'box',
       box: { left: box.x * zoom, top: box.y * zoom, width: box.width * zoom, height: box.height * zoom },
+      pivot: { x: pivot.x * zoom, y: pivot.y * zoom },
     };
   }
 
@@ -144,6 +153,7 @@ export function CanvasArea() {
     if (!tpl) return null;
     const layer = tpl.layers.find((l) => l.id === layerId);
     if (!layer) return null;
+    const pivot = { x: transform.x * zoom, y: transform.y * zoom };
 
     if (layer.type === 'mask') {
       const at = applyTransform(transform, undefined);
@@ -163,6 +173,7 @@ export function CanvasArea() {
         kind: 'polygon',
         box: { left: minX, top: minY, width: maxX - minX, height: maxY - minY },
         points: scaled,
+        pivot,
       };
     }
 
@@ -170,10 +181,11 @@ export function CanvasArea() {
     return {
       kind: 'box',
       box: { left: at.left * zoom, top: at.top * zoom, width: at.width * zoom, height: at.height * zoom },
+      pivot,
     };
   }
 
-  function recomputeBox() {
+  function recomputeBox(previewTransform?: Transform) {
     const stage = stageRef.current;
     const st = useEditor.getState();
     const sel = st.selection;
@@ -184,36 +196,30 @@ export function CanvasArea() {
     }
 
     if (sel.kind === 'group') {
-      setOverlay(overlayForGroup(sel.id));
+      setOverlay(overlayForGroup(sel.id, previewTransform));
       return;
     }
 
     if (sel.kind === 'layer') {
       const layer = tpl.layers.find((l) => l.id === sel.id);
-      if (layer?.type === 'mask') {
-        const t = effectiveTransform(
-          tpl,
-          layer.transform,
-          { kind: 'layer', id: layer.id },
-          playheadStore.getState().playhead,
-          st.activeDirectorId,
-        );
-        setOverlay(overlayForTransform(layer.id, t));
+      if (!layer) {
+        setOverlay(null);
         return;
       }
-    }
-
-    const el = stage.querySelector(`[data-${sel.kind}-id="${sel.id}"]`) as HTMLElement | null;
-    if (!el) {
-      setOverlay(null);
+      const t = previewTransform ?? effectiveTransform(
+        tpl,
+        layer.transform,
+        { kind: 'layer', id: layer.id },
+        playheadStore.getState().playhead,
+        st.activeDirectorId,
+      );
+      // Prefer transform-derived overlay so Axis center / NumberInput preview
+      // update the box and pivot without waiting on a DOM layout pass.
+      setOverlay(overlayForTransform(layer.id, t));
       return;
     }
-    const r = el.getBoundingClientRect();
-    const sr = stage.getBoundingClientRect();
-    setOverlay({
-      kind: 'box',
-      box: { left: r.left - sr.left, top: r.top - sr.top, width: r.width, height: r.height },
-    });
+
+    setOverlay(null);
   }
 
   useLayoutEffect(() => {
@@ -232,6 +238,22 @@ export function CanvasArea() {
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection]);
+
+  // NumberInput drag preview: push into the renderer and refresh the overlay/pivot.
+  useLayoutEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    if (gesturePreview) {
+      renderer.previewLayerTransform(gesturePreview.id, gesturePreview.transform);
+      recomputeBox(gesturePreview.transform);
+      return;
+    }
+    if (!dragRef.current) {
+      renderer.clearEditorTransformPreview();
+      recomputeBox();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gesturePreview]);
 
   // Scrub: seek when the playhead changes and we're not actively playing.
   useLayoutEffect(() => {
@@ -401,13 +423,8 @@ export function CanvasArea() {
       if (next) setOverlay(next);
       return;
     }
-    const layer = useEditor.getState().template?.layers.find((item) => item.id === drag.id);
-    if (layer?.type === 'mask') {
-      const next = overlayForTransform(drag.id, drag.preview);
-      if (next) setOverlay(next);
-    } else {
-      recomputeBox();
-    }
+    const next = overlayForTransform(drag.id, drag.preview);
+    if (next) setOverlay(next);
   }
 
   function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
@@ -511,6 +528,17 @@ export function CanvasArea() {
                     className={`pointer-events-auto absolute h-2.5 w-2.5 rounded-sm border border-primary bg-surface ${HANDLE_POS[h]} ${HANDLE_CURSOR[h]}`}
                   />
                 ))}
+            </div>
+          )}
+          {/* Axis-center crosshair at the transform pivot (x/y). */}
+          {overlay && (
+            <div
+              className="pointer-events-none absolute z-10"
+              style={{ left: overlay.pivot.x, top: overlay.pivot.y }}
+              aria-hidden
+            >
+              <div className="absolute left-1/2 top-1/2 h-px w-2.5 -translate-x-1/2 -translate-y-1/2 bg-primary" />
+              <div className="absolute left-1/2 top-1/2 h-2.5 w-px -translate-x-1/2 -translate-y-1/2 bg-primary" />
             </div>
           )}
         </div>

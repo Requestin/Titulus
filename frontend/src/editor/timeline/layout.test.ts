@@ -11,10 +11,17 @@ import {
   keyframeHits,
   parseTimelineDrag,
   serializeTimelineDrag,
+  timelinePropLabel,
 } from './layout';
 
-test('timeline +K list includes z after the classic transform props', () => {
+test('timeline +K list includes z after y', () => {
   assert.ok(TIMELINE_ANIMATABLE_PROPS.includes('z'));
+  assert.equal(TIMELINE_ANIMATABLE_PROPS.indexOf('z'), TIMELINE_ANIMATABLE_PROPS.indexOf('y') + 1);
+});
+
+test('timelinePropLabel renames rotation to rotationZ', () => {
+  assert.equal(timelinePropLabel('rotation'), 'rotationZ');
+  assert.equal(timelinePropLabel('rotationX'), 'rotationX');
 });
 
 test('buildLaneLayout stacks object headers and property lanes', () => {

@@ -1,4 +1,5 @@
-import { Activity, ChevronsRight, ListTree, Pause, Play, Plus, Square, Trash2 } from 'lucide-react';
+import { Activity, ChevronsRight, ListTree, Pause, Play, Square, Trash2, Plus } from 'lucide-react';
+import type { AnimatableProp } from '@runtime';
 import { cn } from '@/lib/cn';
 
 export function TimelineTransport({
@@ -6,18 +7,10 @@ export function TimelineTransport({
   playhead,
   duration,
   view,
-  canAddKeyframe,
-  canDeleteKeyframes,
   canContinue,
-  canAddCue,
-  canDeleteCue,
   onTogglePlay,
   onStop,
   onContinue,
-  onAddKeyframe,
-  onDeleteKeyframes,
-  onAddCue,
-  onDeleteCue,
   onView,
   onZoomOut,
   onZoomIn,
@@ -26,18 +19,10 @@ export function TimelineTransport({
   playhead: number;
   duration: number;
   view: 'dope' | 'curve';
-  canAddKeyframe: boolean;
-  canDeleteKeyframes: boolean;
   canContinue: boolean;
-  canAddCue: boolean;
-  canDeleteCue: boolean;
   onTogglePlay: () => void;
   onStop: () => void;
   onContinue: () => void;
-  onAddKeyframe: () => void;
-  onDeleteKeyframes: () => void;
-  onAddCue: () => void;
-  onDeleteCue: () => void;
   onView: (view: 'dope' | 'curve') => void;
   onZoomOut: () => void;
   onZoomIn: () => void;
@@ -76,55 +61,6 @@ export function TimelineTransport({
       <span className="w-24 text-center text-[12px] tabular-nums text-ink-muted">
         {Math.round(playhead)} / {duration}
       </span>
-      <div className="mx-1 h-5 w-px bg-border" />
-      <button
-        type="button"
-        disabled={!canAddKeyframe}
-        onClick={onAddKeyframe}
-        title="+K"
-        className={cn(
-          'rounded-md px-1.5 text-[11px] font-semibold',
-          canAddKeyframe ? 'text-ink-muted hover:bg-surface-2 hover:text-ink' : 'cursor-not-allowed text-ink-faint opacity-40',
-        )}
-      >
-        +K
-      </button>
-      <button
-        type="button"
-        disabled={!canDeleteKeyframes}
-        onClick={onDeleteKeyframes}
-        title="-K"
-        className={cn(
-          'rounded-md px-1.5 text-[11px] font-semibold',
-          canDeleteKeyframes ? 'text-ink-muted hover:bg-surface-2 hover:text-danger' : 'cursor-not-allowed text-ink-faint opacity-40',
-        )}
-      >
-        -K
-      </button>
-      <button
-        type="button"
-        disabled={!canAddCue}
-        onClick={onAddCue}
-        title="+A"
-        className={cn(
-          'rounded-md px-1.5 text-[11px] font-semibold',
-          canAddCue ? 'text-ink-muted hover:bg-surface-2 hover:text-ink' : 'cursor-not-allowed text-ink-faint opacity-40',
-        )}
-      >
-        +A
-      </button>
-      <button
-        type="button"
-        disabled={!canDeleteCue}
-        onClick={onDeleteCue}
-        title="-A"
-        className={cn(
-          'rounded-md px-1.5 text-[11px] font-semibold',
-          canDeleteCue ? 'text-ink-muted hover:bg-surface-2 hover:text-danger' : 'cursor-not-allowed text-ink-faint opacity-40',
-        )}
-      >
-        -A
-      </button>
       <div className="ml-auto flex items-center gap-1">
         <button
           type="button"
@@ -181,3 +117,124 @@ export function DirectorToolbar({
     </div>
   );
 }
+
+export function TrackEditToolbar({
+  canAddTrack,
+  canAddKeyframe,
+  canDeleteKeyframes,
+  canAddCue,
+  canDeleteCue,
+  addOpen,
+  untrackedProps,
+  propLabel,
+  onToggleAdd,
+  onAddProp,
+  onAddDirector,
+  onAddKeyframe,
+  onDeleteKeyframes,
+  onAddCue,
+  onDeleteCue,
+}: {
+  canAddTrack: boolean;
+  canAddKeyframe: boolean;
+  canDeleteKeyframes: boolean;
+  canAddCue: boolean;
+  canDeleteCue: boolean;
+  addOpen: boolean;
+  untrackedProps: AnimatableProp[];
+  propLabel: (prop: AnimatableProp) => string;
+  onToggleAdd: () => void;
+  onAddProp: (prop: AnimatableProp) => void;
+  onAddDirector: () => void;
+  onAddKeyframe: () => void;
+  onDeleteKeyframes: () => void;
+  onAddCue: () => void;
+  onDeleteCue: () => void;
+}) {
+  return (
+    <div className="relative flex h-8 shrink-0 items-center gap-1 border-b border-border px-2">
+      <button
+        type="button"
+        onClick={onToggleAdd}
+        disabled={!canAddTrack}
+        className="flex items-center gap-1 rounded-md border border-dashed border-border px-1.5 py-0.5 text-[12px] text-ink-muted hover:text-ink disabled:opacity-40"
+      >
+        <Plus className="h-3.5 w-3.5" /> Track
+      </button>
+      {addOpen && (
+        <>
+          <div className="fixed inset-0 z-dropdown" onClick={onToggleAdd} />
+          <div className="absolute left-2 top-full z-dropdown mt-1 grid max-h-48 w-32 grid-cols-2 gap-0.5 overflow-auto rounded-md border border-border bg-surface-2 p-1 shadow-xl">
+            {untrackedProps.map((prop) => (
+              <button
+                key={prop}
+                type="button"
+                onClick={() => onAddProp(prop)}
+                className="rounded px-1 py-1 text-left text-[11px] text-ink hover:bg-surface"
+              >
+                {propLabel(prop)}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      <button
+        type="button"
+        onClick={onAddDirector}
+        title="Add director"
+        className="rounded-md px-1.5 text-[11px] font-semibold text-ink-muted hover:bg-surface-2 hover:text-ink"
+      >
+        +D
+      </button>
+      <button
+        type="button"
+        disabled={!canAddKeyframe}
+        onClick={onAddKeyframe}
+        title="+K"
+        className={cn(
+          'rounded-md px-1.5 text-[11px] font-semibold',
+          canAddKeyframe ? 'text-ink-muted hover:bg-surface-2 hover:text-ink' : 'cursor-not-allowed text-ink-faint opacity-40',
+        )}
+      >
+        +K
+      </button>
+      <button
+        type="button"
+        disabled={!canDeleteKeyframes}
+        onClick={onDeleteKeyframes}
+        title="-K"
+        className={cn(
+          'rounded-md px-1.5 text-[11px] font-semibold',
+          canDeleteKeyframes ? 'text-ink-muted hover:bg-surface-2 hover:text-danger' : 'cursor-not-allowed text-ink-faint opacity-40',
+        )}
+      >
+        -K
+      </button>
+      <button
+        type="button"
+        disabled={!canAddCue}
+        onClick={onAddCue}
+        title="+A"
+        className={cn(
+          'rounded-md px-1.5 text-[11px] font-semibold',
+          canAddCue ? 'text-ink-muted hover:bg-surface-2 hover:text-ink' : 'cursor-not-allowed text-ink-faint opacity-40',
+        )}
+      >
+        +A
+      </button>
+      <button
+        type="button"
+        disabled={!canDeleteCue}
+        onClick={onDeleteCue}
+        title="-A"
+        className={cn(
+          'rounded-md px-1.5 text-[11px] font-semibold',
+          canDeleteCue ? 'text-ink-muted hover:bg-surface-2 hover:text-danger' : 'cursor-not-allowed text-ink-faint opacity-40',
+        )}
+      >
+        -A
+      </button>
+    </div>
+  );
+}
+

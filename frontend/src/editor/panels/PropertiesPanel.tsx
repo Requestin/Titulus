@@ -12,7 +12,7 @@ import { CrawlProperties } from '../CrawlProperties';
 import { CueInspector } from '../timeline/CueInspector';
 import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
 import { usePlayhead } from '../playheadStore';
-import { gesturePreviewStore } from '../gesturePreview';
+import { clearGesturePreview, gesturePreviewStore, scheduleGesturePreview } from '../gesturePreview';
 import { MediaUploadButton } from '../MediaUploadButton';
 import { MamPicker } from '@/media/MamPicker';
 import {
@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { LAYER_DEFAULT_DIMENSIONS } from '../factories';
+import { DefaultNameInput } from '../DefaultNameInput';
 import { useStore } from 'zustand';
 import { nudgeAngle45 } from '@/ui/numberInputMath';
 import {
@@ -105,6 +106,17 @@ export function PropertiesPanel() {
                   step={1}
                   onChange={(value) => patch((t) => {
                     t.layerId = Math.min(99, Math.max(1, Math.round(value)));
+                  })}
+                />
+              </Field>
+              <Field label="Default DE name">
+                <DefaultNameInput
+                  value={template.defaultNameForDataElements ?? ''}
+                  variables={template.variables}
+                  onChange={(next) => patch((t) => {
+                    const trimmed = next.trim();
+                    if (trimmed) t.defaultNameForDataElements = next;
+                    else delete t.defaultNameForDataElements;
                   })}
                 />
               </Field>
@@ -234,118 +246,241 @@ function TransformSection({
   const setScale = (next: Partial<Pick<Layer['transform'], 'scaleX' | 'scaleY'>>) => {
     set(scaleLocked ? lockedScale(t, next) : next);
   };
+  const previewPartial = (partial: Partial<Layer['transform']> | null) => {
+    if (partial === null) {
+      clearGesturePreview();
+      return;
+    }
+    scheduleGesturePreview({ id, kind, transform: { ...t, ...partial } });
+  };
+  const previewScale = (next: Partial<Pick<Layer['transform'], 'scaleX' | 'scaleY'>> | null) => {
+    if (next === null) {
+      clearGesturePreview();
+      return;
+    }
+    previewPartial(scaleLocked ? lockedScale(t, next) : next);
+  };
   const dimensions = layerType && layerType in LAYER_DEFAULT_DIMENSIONS
     ? LAYER_DEFAULT_DIMENSIONS[layerType as keyof typeof LAYER_DEFAULT_DIMENSIONS]
     : null;
+
   return (
-    <Section title="Transform">
+    <>
       {has25dCost(t) && (
-        <p role="status" className="text-[12px] text-warning">
-          2.5D (Z or tilt) makes the frame more expensive. Use it only when layers need to intersect in depth.
-        </p>
+        <div className="border-b border-border px-3 py-2">
+          <p role="status" className="text-[12px] text-warning">
+            2.5D (Z or tilt) makes the frame more expensive. Use it only when layers need to intersect in depth.
+          </p>
+        </div>
       )}
-      <LabeledNum label="X" value={t.x} resetValue={0} onChange={(v) => set({ x: v })} />
-      <LabeledNum label="Y" value={t.y} resetValue={0} onChange={(v) => set({ y: v })} />
-      <LabeledNum label="Z" value={t.z ?? 0} resetValue={0} onChange={(v) => set({ z: v })} />
+
       {kind === 'layer' && (
-        <>
-          <LabeledNum label="Width" value={t.width} resetValue={dimensions?.width} onChange={(v) => set({ width: v })} />
-          <LabeledNum label="Height" value={t.height} resetValue={dimensions?.height} onChange={(v) => set({ height: v })} />
-          <Field label="Fit canvas">
-            <div className="flex flex-wrap gap-1">
-              <ChromeButton aria-label="Fit to canvas" onClick={() => set(canvasFitSize(canvas, 'screen', t))}>Screen</ChromeButton>
-              <ChromeButton aria-label="Fit width to canvas" onClick={() => set(canvasFitSize(canvas, 'width', t))}>Width</ChromeButton>
-              <ChromeButton aria-label="Fit height to canvas" onClick={() => set(canvasFitSize(canvas, 'height', t))}>Height</ChromeButton>
-            </div>
-          </Field>
-        </>
+        <Section title="Size">
+          <div className="flex flex-wrap gap-1">
+            <ChromeButton aria-label="Fit to canvas" onClick={() => set(canvasFitSize(canvas, 'screen', t))}>Screen</ChromeButton>
+            <ChromeButton aria-label="Fit width to canvas" onClick={() => set(canvasFitSize(canvas, 'width', t))}>Width</ChromeButton>
+            <ChromeButton aria-label="Fit height to canvas" onClick={() => set(canvasFitSize(canvas, 'height', t))}>Height</ChromeButton>
+          </div>
+          <LabeledNum
+            label="Width"
+            value={t.width}
+            resetValue={dimensions?.width}
+            onChange={(v) => set({ width: v })}
+            onPreview={(v) => previewPartial(v === null ? null : { width: v })}
+          />
+          <LabeledNum
+            label="Height"
+            value={t.height}
+            resetValue={dimensions?.height}
+            onChange={(v) => set({ height: v })}
+            onPreview={(v) => previewPartial(v === null ? null : { height: v })}
+          />
+          <ScalePair
+            scaleX={t.scaleX}
+            scaleY={t.scaleY}
+            locked={scaleLocked}
+            onToggleLock={() => setScaleLocked((current) => !current)}
+            onChangeX={(v) => setScale({ scaleX: v })}
+            onChangeY={(v) => setScale({ scaleY: v })}
+            onPreviewX={(v) => previewScale(v === null ? null : { scaleX: v })}
+            onPreviewY={(v) => previewScale(v === null ? null : { scaleY: v })}
+          />
+        </Section>
       )}
-      <LabeledNum
-        label="Rotate"
-        value={t.rotation}
-        resetValue={0}
-        onChange={(v) => set({ rotation: v })}
-        extraActions={(
-          <AngleActions
-            label="rotation"
-            onNudge={(direction) => set({ rotation: nudgeAngle45(t.rotation, direction) })}
+
+      <Section title="Position">
+        <LabeledNum label="X" value={t.x} resetValue={0} onChange={(v) => set({ x: v })} onPreview={(v) => previewPartial(v === null ? null : { x: v })} />
+        <LabeledNum label="Y" value={t.y} resetValue={0} onChange={(v) => set({ y: v })} onPreview={(v) => previewPartial(v === null ? null : { y: v })} />
+        <LabeledNum label="Z" value={t.z ?? 0} resetValue={0} onChange={(v) => set({ z: v })} onPreview={(v) => previewPartial(v === null ? null : { z: v })} />
+
+        <Subheading>Rotation</Subheading>
+        <LabeledNum
+          label="X"
+          value={t.rotationX}
+          resetValue={0}
+          onChange={(v) => set({ rotationX: v })}
+          onPreview={(v) => previewPartial(v === null ? null : { rotationX: v })}
+          extraActions={(
+            <AngleActions
+              label="X rotation"
+              onNudge={(direction) => set({ rotationX: nudgeAngle45(t.rotationX, direction) })}
+            />
+          )}
+        />
+        <LabeledNum
+          label="Y"
+          value={t.rotationY}
+          resetValue={0}
+          onChange={(v) => set({ rotationY: v })}
+          onPreview={(v) => previewPartial(v === null ? null : { rotationY: v })}
+          extraActions={(
+            <AngleActions
+              label="Y rotation"
+              onNudge={(direction) => set({ rotationY: nudgeAngle45(t.rotationY, direction) })}
+            />
+          )}
+        />
+        <LabeledNum
+          label="Z"
+          value={t.rotation}
+          resetValue={0}
+          onChange={(v) => set({ rotation: v })}
+          onPreview={(v) => previewPartial(v === null ? null : { rotation: v })}
+          extraActions={(
+            <AngleActions
+              label="rotation"
+              onNudge={(direction) => set({ rotation: nudgeAngle45(t.rotation, direction) })}
+            />
+          )}
+        />
+
+        <LabeledNum
+          label="Perspective"
+          value={t.perspective}
+          resetValue={1000}
+          onChange={(v) => set({ perspective: v })}
+          onPreview={(v) => previewPartial(v === null ? null : { perspective: v })}
+        />
+
+        {kind === 'group' && (
+          <ScalePair
+            scaleX={t.scaleX}
+            scaleY={t.scaleY}
+            locked={scaleLocked}
+            onToggleLock={() => setScaleLocked((current) => !current)}
+            onChangeX={(v) => setScale({ scaleX: v })}
+            onChangeY={(v) => setScale({ scaleY: v })}
+            onPreviewX={(v) => previewScale(v === null ? null : { scaleX: v })}
+            onPreviewY={(v) => previewScale(v === null ? null : { scaleY: v })}
           />
         )}
-      />
-      <LabeledNum
-        label="Tilt X"
-        value={t.rotationX}
-        resetValue={0}
-        onChange={(v) => set({ rotationX: v })}
-        extraActions={(
-          <AngleActions
-            label="X rotation"
-            onNudge={(direction) => set({ rotationX: nudgeAngle45(t.rotationX, direction) })}
-          />
-        )}
-      />
-      <LabeledNum
-        label="Tilt Y"
-        value={t.rotationY}
-        resetValue={0}
-        onChange={(v) => set({ rotationY: v })}
-        extraActions={(
-          <AngleActions
-            label="Y rotation"
-            onNudge={(direction) => set({ rotationY: nudgeAngle45(t.rotationY, direction) })}
-          />
-        )}
-      />
-      <LabeledNum label="Perspective" value={t.perspective} resetValue={1000} onChange={(v) => set({ perspective: v })} />
-      <LabeledNum
-        label="Scale X"
-        value={t.scaleX}
+
+        <Subheading>Axis center</Subheading>
+        <LabeledNum
+          label="X"
+          value={t.anchorX}
+          resetValue={0}
+          step={0.05}
+          onChange={(v) => set(anchorCompensatedUpdate(t, { anchorX: v }))}
+          onPreview={(v) => previewPartial(v === null ? null : anchorCompensatedUpdate(t, { anchorX: v }))}
+          extraActions={(
+            <AxisPresets
+              axis="x"
+              current={t.anchorX}
+              onPick={(preset) => set(axisPresetX(t, preset))}
+            />
+          )}
+        />
+        <LabeledNum
+          label="Y"
+          value={t.anchorY}
+          resetValue={0}
+          step={0.05}
+          onChange={(v) => set(anchorCompensatedUpdate(t, { anchorY: v }))}
+          onPreview={(v) => previewPartial(v === null ? null : anchorCompensatedUpdate(t, { anchorY: v }))}
+          extraActions={(
+            <AxisPresets
+              axis="y"
+              current={t.anchorY}
+              onPick={(preset) => set(axisPresetY(t, preset))}
+            />
+          )}
+        />
+      </Section>
+    </>
+  );
+}
+
+function Subheading({ children }: { children: ReactNode }) {
+  return (
+    <h4 className="pt-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+      {children}
+    </h4>
+  );
+}
+
+function ScalePair({
+  scaleX,
+  scaleY,
+  locked,
+  onToggleLock,
+  onChangeX,
+  onChangeY,
+  onPreviewX,
+  onPreviewY,
+}: {
+  scaleX: number;
+  scaleY: number;
+  locked: boolean;
+  onToggleLock: () => void;
+  onChangeX: (v: number) => void;
+  onChangeY: (v: number) => void;
+  onPreviewX: (v: number | null) => void;
+  onPreviewY: (v: number | null) => void;
+}) {
+  const xId = useId();
+  const yId = useId();
+  return (
+    <div className="relative grid grid-cols-[88px_1fr] gap-x-2 gap-y-2">
+      <label htmlFor={xId} className="truncate text-[12px] text-ink-muted">Scale X</label>
+      <NumberInput
+        id={xId}
+        value={scaleX}
+        step={0.05}
+        stepper
+        aria-label="Scale X"
         resetValue={1}
-        step={0.05}
-        onChange={(v) => setScale({ scaleX: v })}
-        extraActions={(
-          <ChromeButton
-            pressed={scaleLocked}
-            aria-label={scaleLocked ? 'Unlock scale axes' : 'Lock scale axes'}
-            title={scaleLocked ? 'Unlock scale' : 'Lock scale'}
-            onClick={() => setScaleLocked((current) => !current)}
-          >
-            {scaleLocked
-              ? <Link2 className="h-3.5 w-3.5" aria-hidden />
-              : <Link2Off className="h-3.5 w-3.5" aria-hidden />}
-          </ChromeButton>
-        )}
+        onChange={onChangeX}
+        onPreview={onPreviewX}
       />
-      <LabeledNum label="Scale Y" value={t.scaleY} resetValue={1} step={0.05} onChange={(v) => setScale({ scaleY: v })} />
-      <LabeledNum
-        label="Anchor X"
-        value={t.anchorX}
-        resetValue={0}
+      <label htmlFor={yId} className="truncate text-[12px] text-ink-muted">Scale Y</label>
+      <NumberInput
+        id={yId}
+        value={scaleY}
         step={0.05}
-        onChange={(v) => set(anchorCompensatedUpdate(t, { anchorX: v }))}
-        extraActions={(
-          <AxisPresets
-            axis="x"
-            current={t.anchorX}
-            onPick={(preset) => set(axisPresetX(t, preset))}
-          />
-        )}
+        stepper
+        aria-label="Scale Y"
+        resetValue={1}
+        onChange={onChangeY}
+        onPreview={onPreviewY}
       />
-      <LabeledNum
-        label="Anchor Y"
-        value={t.anchorY}
-        resetValue={0}
-        step={0.05}
-        onChange={(v) => set(anchorCompensatedUpdate(t, { anchorY: v }))}
-        extraActions={(
-          <AxisPresets
-            axis="y"
-            current={t.anchorY}
-            onPick={(preset) => set(axisPresetY(t, preset))}
-          />
+      <button
+        type="button"
+        data-chrome-control
+        aria-label={locked ? 'Unlock scale axes' : 'Lock scale axes'}
+        title={locked ? 'Unlock scale' : 'Lock scale'}
+        aria-pressed={locked}
+        onClick={onToggleLock}
+        className={cn(
+          'absolute left-[70px] top-1/2 z-10 grid h-6 w-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-md border border-border bg-surface-2 text-ink-muted hover:border-ink-faint hover:text-ink',
+          locked && 'border-primary text-primary',
         )}
-      />
-    </Section>
+      >
+        {locked
+          ? <Link2 className="h-3.5 w-3.5" aria-hidden />
+          : <Link2Off className="h-3.5 w-3.5" aria-hidden />}
+      </button>
+    </div>
   );
 }
 
@@ -397,9 +532,9 @@ function AxisPresets({
         { value: 1, label: 'R', name: 'right' },
       ]
     : [
-        { value: 0, label: 'T', name: 'top' },
-        { value: 0.5, label: 'C', name: 'center' },
         { value: 1, label: 'B', name: 'bottom' },
+        { value: 0.5, label: 'C', name: 'center' },
+        { value: 0, label: 'T', name: 'top' },
       ];
   return (
     <>
@@ -422,6 +557,7 @@ function LabeledNum({
   label,
   value,
   onChange,
+  onPreview,
   step,
   resetValue,
   min,
@@ -431,6 +567,7 @@ function LabeledNum({
   label: string;
   value: number;
   onChange: (v: number) => void;
+  onPreview?: (v: number | null) => void;
   step?: number;
   resetValue?: number;
   min?: number;
@@ -451,6 +588,7 @@ function LabeledNum({
         resetValue={resetValue}
         extraActions={extraActions}
         onChange={onChange}
+        onPreview={onPreview}
       />
     </Field>
   );
@@ -511,40 +649,54 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
     case 'rect':
       return (
         <Section title="Rectangle">
-          <Field label="Fill">
-            <BindableField
-              kind="color"
-              value={layer.fill}
-              variables={variables}
-              onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.fill = v; })}
-            />
-          </Field>
           <Field label="Fill mode">
-            <Select
-              value={layer.fillMode ?? 'solid'}
-              onChange={(e) => updateLayer(layer.id, (l) => {
-                if (l.type !== 'rect') return;
-                const mode = e.target.value as 'solid' | 'gradient';
-                if (mode === 'gradient') {
+            <div className="flex flex-wrap gap-1">
+              <ChromeButton
+                pressed={(layer.fillMode ?? 'solid') === 'solid'}
+                aria-label="Solid fill"
+                onClick={() => updateLayer(layer.id, (l) => {
+                  if (l.type !== 'rect') return;
+                  l.fillMode = 'solid';
+                  delete (l as { gradient?: unknown }).gradient;
+                })}
+              >
+                Solid
+              </ChromeButton>
+              <ChromeButton
+                pressed={layer.fillMode === 'gradient'}
+                aria-label="Gradient fill"
+                onClick={() => updateLayer(layer.id, (l) => {
+                  if (l.type !== 'rect') return;
+                  if (l.fillMode === 'gradient') return;
                   const fill = typeof l.fill === 'string' ? l.fill : '#1f2937';
-                  (l as { fillMode: 'gradient'; gradient: {
-                    topLeft: string; topRight: string; bottomLeft: string; bottomRight: string;
-                    weights: { topLeft: number; topRight: number; bottomLeft: number; bottomRight: number };
-                  } }).fillMode = 'gradient';
-                  l.gradient = {
+                  const next = l as unknown as {
+                    fillMode: 'gradient';
+                    gradient: {
+                      topLeft: string; topRight: string; bottomLeft: string; bottomRight: string;
+                      weights: { topLeft: number; topRight: number; bottomLeft: number; bottomRight: number };
+                    };
+                  };
+                  next.fillMode = 'gradient';
+                  next.gradient = {
                     topLeft: fill, topRight: fill, bottomLeft: fill, bottomRight: fill,
                     weights: { topLeft: 100, topRight: 100, bottomLeft: 100, bottomRight: 100 },
                   };
-                } else {
-                  l.fillMode = 'solid';
-                  delete (l as { gradient?: unknown }).gradient;
-                }
-              })}
-            >
-              <option value="solid">solid</option>
-              <option value="gradient">gradient</option>
-            </Select>
+                })}
+              >
+                Gradient
+              </ChromeButton>
+            </div>
           </Field>
+          {(layer.fillMode ?? 'solid') === 'solid' && (
+            <Field label="Fill">
+              <BindableField
+                kind="color"
+                value={layer.fill}
+                variables={variables}
+                onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.fill = v; })}
+              />
+            </Field>
+          )}
           {layer.fillMode === 'gradient' && layer.gradient && (
             <>
               <Field label="Top left">

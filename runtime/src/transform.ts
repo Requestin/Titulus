@@ -74,16 +74,21 @@ export function applyTransform(
   //              applied with CSS transform-origin = originX originY
   //              (CSS wraps the whole list as T(o)·F·T(-o))
   //
-  //   composite: transform = [perspective] translate3d(left,top,z|0)
-  //                          translate(o) [rotateX/Y] [rotate] [scale]
+  //   composite: transform = translate3d(left,top,z|0)
+  //                          translate(o) [perspective] [rotateX/Y] [rotate] [scale]
   //                          translate(-o)
   //              applied with CSS transform-origin = 0 0
+  //
+  // Perspective must sit *inside* the composite pivot wrap. Putting
+  // perspective() before translate3d (outside the wrap) makes rotateX/Y orbit
+  // the element origin instead of the anchor — Axis center would not move the
+  // 2.5D tilt pivot. Legacy mode still relies on transform-origin wrapping.
   //
   // The composite form folds the position into the transform so `left`/`top`
   // style writes can be skipped (left:0, top:0 constants) — this is the whole
   // point of Class A: x/y/rotation animations stop triggering Layout.
   const parts: string[] = [];
-  if (usePerspective) {
+  if (usePerspective && !useComposited) {
     parts.push(`perspective(${t.perspective}px)`);
   }
   if (useComposited) {
@@ -93,6 +98,10 @@ export function applyTransform(
     parts.push(`translate3d(${(t.x - originX).toFixed(2)}px, ${(t.y - originY).toFixed(2)}px, ${depthCss})`);
     // Open the pivot wrap: shift origin to the anchor point inside the box.
     parts.push(`translate(${originX.toFixed(2)}px, ${originY.toFixed(2)}px)`);
+    // Perspective inside the wrap so the projection shares the anchor pivot.
+    if (usePerspective) {
+      parts.push(`perspective(${t.perspective}px)`);
+    }
   }
   if (t.rotationX !== 0) parts.push(`rotateX(${t.rotationX}deg)`);
   if (t.rotationY !== 0) parts.push(`rotateY(${t.rotationY}deg)`);

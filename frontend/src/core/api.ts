@@ -34,10 +34,15 @@ export interface Channel {
 
 export interface RundownSlot {
   slotId: string;
-  templateId: string;
+  /** Required for item slots; omit/empty for primary. */
+  templateId?: string;
   name: string;
   vars: Record<string, string | number>;
   dataElementId?: string;
+  /** Defaults to 'item'. Primary rows group nested item slots. */
+  kind?: 'item' | 'primary';
+  /** Nested item slots when kind === 'primary'. */
+  children?: RundownSlot[];
   // legacy aliases for older persisted data (normalized on backend read).
   id?: string;
   label?: string;

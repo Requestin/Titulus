@@ -42,7 +42,10 @@ test('nonzero z enables perspective without requiring tilt', () => {
   const base = createDefaultTransform(100, 80);
   const at = applyTransform({ ...base, z: 40 }, undefined, { compositePosition: true });
 
-  assert.match(at.transform, /^perspective\(1000px\) translate3d\(100\.00px, 80\.00px, 40\.00px\)/);
+  assert.match(
+    at.transform,
+    /^translate3d\(100\.00px, 80\.00px, 40\.00px\) translate\(0\.00px, 0\.00px\) perspective\(1000px\) translate\(0\.00px, 0\.00px\)$/,
+  );
 });
 
 test('skipPerspective keeps parent-owned perspective and still writes z', () => {
@@ -61,8 +64,30 @@ test('tilt-only composited path keeps the literal zero depth', () => {
 
   assert.match(
     at.transform,
-    /^perspective\(1000px\) translate3d\(100\.00px, 80\.00px, 0\) translate\(0\.00px, 0\.00px\) rotateX\(15deg\) translate\(0\.00px, 0\.00px\)$/,
+    /^translate3d\(100\.00px, 80\.00px, 0\) translate\(0\.00px, 0\.00px\) perspective\(1000px\) rotateX\(15deg\) translate\(0\.00px, 0\.00px\)$/,
   );
+});
+
+test('composited rotateX keeps perspective inside the anchor pivot wrap', () => {
+  const base = {
+    ...createDefaultTransform(100, 80),
+    width: 200,
+    height: 100,
+    anchorX: 0.5,
+    anchorY: 0.5,
+    rotationX: 30,
+  };
+  const at = applyTransform(base, undefined, { compositePosition: true });
+
+  assert.equal(at.originX, 100);
+  assert.equal(at.originY, 50);
+  assert.equal(at.left, 0);
+  assert.equal(at.top, 30);
+  assert.match(
+    at.transform,
+    /^translate3d\(0\.00px, 30\.00px, 0\) translate\(100\.00px, 50\.00px\) perspective\(1000px\) rotateX\(30deg\) translate\(-100\.00px, -50\.00px\)$/,
+  );
+  assert.doesNotMatch(at.transform, /^perspective\(/);
 });
 
 test('legacy split ignores z so overlay boxes stay 2D', () => {

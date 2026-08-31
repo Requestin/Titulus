@@ -585,6 +585,11 @@ export interface Template {
   capabilities?: TemplateCapability[];
   /** Cross-template playout stack rank; valid serialized values are 1..99. */
   layerId?: number;
+  /**
+   * Pattern for new Data Element names in Control.
+   * Use `@variableName` placeholders, e.g. `Гео-@text1` → `Гео-Москва`.
+   */
+  defaultNameForDataElements?: string;
   canvas: Canvas;
   variables: Variable[];
   /** Designer-owned data pipeline. Missing preserves legacy behavior. */

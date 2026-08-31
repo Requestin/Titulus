@@ -55,6 +55,10 @@
       "minimum": 1,
       "maximum": 99
     },
+    "defaultNameForDataElements": {
+      "type": "string",
+      "description": "Default Data Element name pattern. Use @variableName placeholders (e.g. Гео-@text1 → Гео-Москва)."
+    },
     "canvas": {
       "type": "object",
       "required": ["width", "height", "background"],

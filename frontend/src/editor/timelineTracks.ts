@@ -1,6 +1,4 @@
 import {
-  ANIMATABLE_PROPS,
-  VNEXT_ANIMATABLE_PROPS,
   type AnimatableProp,
   type EasingType,
   type Template,
@@ -38,7 +36,18 @@ export type PlannedMove = {
   value: number;
 };
 
-const PROP_ORDER = [...ANIMATABLE_PROPS, ...VNEXT_ANIMATABLE_PROPS] as readonly AnimatableProp[];
+const PROP_ORDER = [
+  'x', 'y', 'z',
+  'width', 'height',
+  'rotation', 'rotationX', 'rotationY', 'perspective',
+  'scaleX', 'scaleY',
+  'opacity',
+  'crawlProgress',
+  'gradient.weights.topLeft',
+  'gradient.weights.topRight',
+  'gradient.weights.bottomLeft',
+  'gradient.weights.bottomRight',
+] as const satisfies readonly AnimatableProp[];
 
 export function trackKey(target: Target, prop: AnimatableProp): string {
   return `${target.kind}:${target.id}:${prop}`;

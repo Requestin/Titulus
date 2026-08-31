@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Variable } from '@runtime';
 import {
-  Plus, FileUp, FileDown, Copy, Trash2, Pencil, Check, ChevronDown, ChevronRight, ArrowUp, ArrowDown,
+  Plus, FileUp, FileDown, Copy, Trash2, Pencil, Check, ChevronDown, ChevronRight,
+  ArrowUp, ArrowDown, GripVertical, Folder,
 } from 'lucide-react';
 import {
   api,
@@ -24,6 +25,10 @@ import { cn } from '@/lib/cn';
 import { toast } from '@/core/toast';
 import { createId } from '@/core/id';
 
+export const MIME_TEMPLATE = 'application/x-titulus-template';
+export const MIME_DATA_ELEMENT = 'application/x-titulus-data-element';
+export const MIME_SLOT_REORDER = 'application/x-titulus-slot-reorder';
+
 type SendControl = (cmd: {
   type: 'take' | 'update' | 'clear' | 'continue';
   channelId: string;
@@ -31,6 +36,19 @@ type SendControl = (cmd: {
   template?: unknown;
   variables?: Record<string, string | number>;
 }) => boolean;
+
+type ReorderPayload = {
+  slotId: string;
+  parentId: string | null;
+};
+
+function isPrimary(slot: RundownSlot): boolean {
+  return slot.kind === 'primary';
+}
+
+function isItem(slot: RundownSlot): boolean {
+  return !isPrimary(slot);
+}
 
 export function RundownTab({
   channels,
@@ -45,6 +63,9 @@ export function RundownTab({
   onAirDetails,
   onPreferredChannelChange,
   dataElements = [],
+  selectedRundownId,
+  onSelectRundown,
+  showRundownList = true,
 }: {
   channels: Channel[];
   templates: TemplateSummary[];
@@ -58,16 +79,29 @@ export function RundownTab({
   onAirDetails?: OnAirDetailsSnapshot | null;
   onPreferredChannelChange?: (channelId: string) => void;
   dataElements?: DataElement[];
+  selectedRundownId?: string | null;
+  onSelectRundown?: (id: string | null) => void;
+  showRundownList?: boolean;
 }) {
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const controlled = selectedRundownId !== undefined;
+  const [internalActiveId, setInternalActiveId] = useState<string | null>(null);
+  const activeId = controlled ? (selectedRundownId ?? null) : internalActiveId;
+  const setActiveId = useCallback((id: string | null) => {
+    if (!controlled) setInternalActiveId(id);
+    onSelectRundown?.(id);
+  }, [controlled, onSelectRundown]);
+
   const [bootstrapping, setBootstrapping] = useState(false);
   const bootstrapAttempted = useRef(false);
-  const [focusIdx, setFocusIdx] = useState(0);
+  const [focusPath, setFocusPath] = useState<{ parentId: string | null; index: number }>({
+    parentId: null,
+    index: 0,
+  });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
-  const [showAdd, setShowAdd] = useState(false);
   const [cache, setCache] = useState<Record<string, TemplateRecord>>({});
+  const [dropHint, setDropHint] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveUpdateTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
   const importRef = useRef<HTMLInputElement>(null);
@@ -75,12 +109,33 @@ export function RundownTab({
   const active = useMemo(() => rundowns.find((r) => r.id === activeId) ?? null, [rundowns, activeId]);
   const channelId = active?.channel_id || fallbackChannelId || 'default';
   const channelLiveSet = new Set(onAir[channelId] ?? []);
-  const activeLiveSet = new Set((active?.slots ?? []).filter((s) => channelLiveSet.has(s.slotId)).map((s) => s.slotId));
+
+  const flatTakeable = useMemo(() => {
+    if (!active) return [] as Array<{ slot: RundownSlot; parentId: string | null; index: number }>;
+    const out: Array<{ slot: RundownSlot; parentId: string | null; index: number }> = [];
+    active.slots.forEach((slot, index) => {
+      if (isItem(slot)) out.push({ slot, parentId: null, index });
+      if (isPrimary(slot)) {
+        (slot.children ?? []).forEach((child, childIndex) => {
+          if (isItem(child)) out.push({ slot: child, parentId: slot.slotId, index: childIndex });
+        });
+      }
+    });
+    return out;
+  }, [active]);
+
+  const activeLiveSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of flatTakeable) {
+      if (channelLiveSet.has(row.slot.slotId)) ids.add(row.slot.slotId);
+    }
+    return ids;
+  }, [flatTakeable, channelLiveSet]);
 
   useEffect(() => {
     if (!activeId && rundowns.length) setActiveId(rundowns[0].id);
     if (activeId && !rundowns.some((r) => r.id === activeId)) setActiveId(rundowns[0]?.id ?? null);
-  }, [rundowns, activeId]);
+  }, [rundowns, activeId, setActiveId]);
 
   useEffect(() => {
     if (!dataLoaded || rundowns.length > 0 || bootstrapAttempted.current) return;
@@ -96,12 +151,7 @@ export function RundownTab({
         toast.error(`Failed to create default rundown: ${(e as Error).message}`);
       })
       .finally(() => setBootstrapping(false));
-  }, [dataLoaded, rundowns.length, setRundowns]);
-
-  useEffect(() => {
-    const max = Math.max(0, (active?.slots.length ?? 1) - 1);
-    setFocusIdx((i) => Math.min(i, max));
-  }, [active?.slots.length]);
+  }, [dataLoaded, rundowns.length, setRundowns, setActiveId]);
 
   useEffect(() => onPreferredChannelChange?.(channelId), [channelId, onPreferredChannelChange]);
 
@@ -124,30 +174,6 @@ export function RundownTab({
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
   }, [active]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!active || active.slots.length === 0) return;
-      const tag = (e.target as HTMLElement | null)?.tagName || '';
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setFocusIdx((i) => Math.min(i + 1, active.slots.length - 1));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setFocusIdx((i) => Math.max(i - 1, 0));
-      } else if (e.key === ' ') {
-        e.preventDefault();
-        void takeAt(focusIdx, true);
-      } else if (e.key === 'Backspace' || e.key === 'Delete') {
-        e.preventDefault();
-        const s = active.slots[focusIdx];
-        if (s && activeLiveSet.has(s.slotId)) clearSlot(s.slotId);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [active, focusIdx, activeLiveSet]);
 
   const patchActive = useCallback((updater: (r: Rundown) => Rundown) => {
     if (!activeId) return;
@@ -173,10 +199,8 @@ export function RundownTab({
     return v;
   }
 
-  async function takeAt(index: number, advanceFocus = false) {
-    if (!active) return;
-    const slot = active.slots[index];
-    if (!slot) return;
+  async function takeSlot(slot: RundownSlot) {
+    if (!isItem(slot) || !slot.templateId) return;
     const tpl = await ensureTemplate(slot.templateId).catch(() => null);
     if (!tpl) return;
     const values = buildPayload(slot, tpl.data.variables);
@@ -191,7 +215,6 @@ export function RundownTab({
     });
     if (!ok) return toast.error('Control socket disconnected');
     patchOnAir(channelId, (cur) => Array.from(new Set([...cur, slot.slotId])));
-    if (advanceFocus) setFocusIdx((i) => Math.min(i + 1, active.slots.length - 1));
   }
 
   function clearSlot(slotId: string) {
@@ -206,19 +229,58 @@ export function RundownTab({
     if (!ok) toast.error('Control socket disconnected');
   }
 
+  function mapSlots(
+    slots: RundownSlot[],
+    parentId: string | null,
+    mapper: (list: RundownSlot[]) => RundownSlot[],
+  ): RundownSlot[] {
+    if (parentId === null) return mapper(slots);
+    return slots.map((slot) => {
+      if (slot.slotId !== parentId || !isPrimary(slot)) return slot;
+      return { ...slot, children: mapper(slot.children ?? []) };
+    });
+  }
+
+  function getList(slots: RundownSlot[], parentId: string | null): RundownSlot[] {
+    if (parentId === null) return slots;
+    const parent = slots.find((s) => s.slotId === parentId && isPrimary(s));
+    return parent?.children ?? [];
+  }
+
   function updateSlotVar(slotId: string, varId: string, value: string | number) {
     if (!active) return;
-    const slot = active.slots.find((s) => s.slotId === slotId);
-    if (!slot) return;
+    const findSlot = (slots: RundownSlot[]): RundownSlot | null => {
+      for (const s of slots) {
+        if (s.slotId === slotId) return s;
+        if (s.children) {
+          const nested = findSlot(s.children);
+          if (nested) return nested;
+        }
+      }
+      return null;
+    };
+    const slot = findSlot(active.slots);
+    if (!slot || !slot.templateId) return;
     const nextVars = { ...slot.vars, [varId]: value };
-    patchActive((r) => ({ ...r, slots: r.slots.map((s) => (s.slotId === slotId ? { ...s, vars: nextVars } : s)) }));
+    patchActive((r) => ({
+      ...r,
+      slots: mapDeep(r.slots, slotId, (s) => ({ ...s, vars: nextVars })),
+    }));
     const timer = liveUpdateTimers.current[slotId];
     if (timer) clearTimeout(timer);
     liveUpdateTimers.current[slotId] = setTimeout(async () => {
-      const tpl = await ensureTemplate(slot.templateId).catch(() => null);
+      const tpl = await ensureTemplate(slot.templateId!).catch(() => null);
       if (!tpl) return;
       void updateLive(slotId, buildPayload({ ...slot, vars: nextVars }, tpl.data.variables));
     }, 300);
+  }
+
+  function mapDeep(slots: RundownSlot[], slotId: string, fn: (s: RundownSlot) => RundownSlot): RundownSlot[] {
+    return slots.map((s) => {
+      if (s.slotId === slotId) return fn(s);
+      if (s.children) return { ...s, children: mapDeep(s.children, slotId, fn) };
+      return s;
+    });
   }
 
   async function createRundown() {
@@ -233,7 +295,7 @@ export function RundownTab({
     const rd = await api.rundowns.create({
       name: `${src.name} (copy)`,
       channel_id: src.channel_id,
-      slots: src.slots.map((s) => ({ ...s, slotId: createId() })),
+      slots: cloneSlotsWithNewIds(src.slots),
     });
     setRundowns((prev) => [rd, ...prev]);
     setActiveId(rd.id);
@@ -261,10 +323,12 @@ export function RundownTab({
   async function importRundown(file: File) {
     const text = await file.text();
     const parsed = JSON.parse(text) as { name?: unknown; slots?: unknown };
-    const slots = Array.isArray(parsed.slots) ? parsed.slots.map((raw, i) => normalizeImportedSlot(raw, i)).filter(Boolean) as RundownSlot[] : [];
+    const slots = Array.isArray(parsed.slots)
+      ? parsed.slots.map((raw, i) => normalizeImportedSlot(raw, i)).filter(Boolean) as RundownSlot[]
+      : [];
     const rd = await api.rundowns.create({
       name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : 'Imported rundown',
-      slots: slots.map((s) => ({ ...s, slotId: createId() })),
+      slots: cloneSlotsWithNewIds(slots),
     });
     setRundowns((prev) => [rd, ...prev]);
     setActiveId(rd.id);
@@ -280,18 +344,170 @@ export function RundownTab({
     URL.revokeObjectURL(url);
   }
 
-  function moveSlot(slotId: string, dir: -1 | 1) {
+  function addPrimary() {
+    patchActive((r) => ({
+      ...r,
+      slots: [...r.slots, { slotId: createId(), kind: 'primary', name: 'Primary', vars: {}, children: [] }],
+    }));
+  }
+
+  function appendItem(parentId: string | null, item: RundownSlot) {
+    patchActive((r) => ({
+      ...r,
+      slots: mapSlots(r.slots, parentId, (list) => [...list, item]),
+    }));
+    if (parentId) {
+      setExpanded((prev) => new Set(prev).add(parentId));
+    }
+  }
+
+  function parseDragPayload(dt: DataTransfer): { kind: 'template' | 'dataElement'; data: Record<string, unknown> } | null {
+    const tplRaw = dt.getData(MIME_TEMPLATE) || dt.getData('text/plain');
+    const deRaw = dt.getData(MIME_DATA_ELEMENT);
+    try {
+      if (deRaw) {
+        const data = JSON.parse(deRaw) as Record<string, unknown>;
+        if (typeof data.templateId === 'string') return { kind: 'dataElement', data };
+      }
+      if (tplRaw) {
+        const data = JSON.parse(tplRaw) as Record<string, unknown>;
+        if (typeof data.templateId === 'string') return { kind: 'template', data };
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  function slotFromDrag(payload: { kind: 'template' | 'dataElement'; data: Record<string, unknown> }): RundownSlot | null {
+    const templateId = typeof payload.data.templateId === 'string' ? payload.data.templateId : '';
+    if (!templateId) return null;
+    if (payload.kind === 'template') {
+      const name = typeof payload.data.name === 'string' ? payload.data.name : 'Slot';
+      return { slotId: createId(), kind: 'item', templateId, name, vars: {} };
+    }
+    const name = typeof payload.data.name === 'string' ? payload.data.name : 'Slot';
+    const dataElementId = typeof payload.data.dataElementId === 'string' ? payload.data.dataElementId : undefined;
+    const varsIn = (payload.data.vars ?? payload.data.payload ?? {}) as Record<string, unknown>;
+    const vars: Record<string, string | number> = {};
+    for (const [k, v] of Object.entries(varsIn)) {
+      if (typeof v === 'string' || typeof v === 'number') vars[k] = v;
+    }
+    return { slotId: createId(), kind: 'item', templateId, name, vars, ...(dataElementId ? { dataElementId } : {}) };
+  }
+
+  function onDropOnto(parentId: string | null, e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropHint(null);
+    const reorderRaw = e.dataTransfer.getData(MIME_SLOT_REORDER);
+    if (reorderRaw) {
+      try {
+        const payload = JSON.parse(reorderRaw) as ReorderPayload;
+        reorderSlot(payload.slotId, payload.parentId, parentId, getList(active?.slots ?? [], parentId).length);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    const dragged = parseDragPayload(e.dataTransfer);
+    if (!dragged) return;
+    const slot = slotFromDrag(dragged);
+    if (slot) appendItem(parentId, slot);
+  }
+
+  function reorderSlot(slotId: string, fromParent: string | null, toParent: string | null, toIndex: number) {
     if (!active) return;
-    const idx = active.slots.findIndex((s) => s.slotId === slotId);
-    const to = idx + dir;
-    if (idx < 0 || to < 0 || to >= active.slots.length) return;
     patchActive((r) => {
-      const next = [...r.slots];
-      const [item] = next.splice(idx, 1);
-      next.splice(to, 0, item);
-      return { ...r, slots: next };
+      let moving: RundownSlot | null = null;
+      const without = mapSlots(r.slots, fromParent, (list) => {
+        const idx = list.findIndex((s) => s.slotId === slotId);
+        if (idx < 0) return list;
+        const next = [...list];
+        [moving] = next.splice(idx, 1);
+        return next;
+      });
+      if (!moving) return r;
+      // Prevent dropping a primary into another primary's children.
+      if (isPrimary(moving) && toParent !== null) return r;
+      return {
+        ...r,
+        slots: mapSlots(without, toParent, (list) => {
+          const next = [...list];
+          const clamped = Math.max(0, Math.min(toIndex, next.length));
+          next.splice(clamped, 0, moving!);
+          return next;
+        }),
+      };
     });
   }
+
+  function onReorderDrop(parentId: string | null, index: number, e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropHint(null);
+    const reorderRaw = e.dataTransfer.getData(MIME_SLOT_REORDER);
+    if (reorderRaw) {
+      try {
+        const payload = JSON.parse(reorderRaw) as ReorderPayload;
+        reorderSlot(payload.slotId, payload.parentId, parentId, index);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    const dragged = parseDragPayload(e.dataTransfer);
+    if (!dragged) return;
+    const slot = slotFromDrag(dragged);
+    if (!slot) return;
+    patchActive((r) => ({
+      ...r,
+      slots: mapSlots(r.slots, parentId, (list) => {
+        const next = [...list];
+        next.splice(Math.max(0, Math.min(index, next.length)), 0, slot);
+        return next;
+      }),
+    }));
+    if (parentId) setExpanded((prev) => new Set(prev).add(parentId));
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!active || flatTakeable.length === 0) return;
+      const tag = (e.target as HTMLElement | null)?.tagName || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const focusIdx = flatTakeable.findIndex(
+        (row) => row.parentId === focusPath.parentId && row.index === focusPath.index,
+      );
+      const safeIdx = focusIdx >= 0 ? focusIdx : 0;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = flatTakeable[Math.min(safeIdx + 1, flatTakeable.length - 1)];
+        if (next) setFocusPath({ parentId: next.parentId, index: next.index });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prev = flatTakeable[Math.max(safeIdx - 1, 0)];
+        if (prev) setFocusPath({ parentId: prev.parentId, index: prev.index });
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        const row = flatTakeable[safeIdx];
+        if (row) void takeSlot(row.slot);
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        const row = flatTakeable[safeIdx];
+        if (row && activeLiveSet.has(row.slot.slotId)) clearSlot(row.slot.slotId);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, flatTakeable, focusPath, activeLiveSet]);
+
+  const focusedTakeable = flatTakeable.find(
+    (row) => row.parentId === focusPath.parentId && row.index === focusPath.index,
+  ) ?? flatTakeable[0] ?? null;
+  const focusFlatIndex = focusedTakeable
+    ? flatTakeable.findIndex((row) => row.slot.slotId === focusedTakeable.slot.slotId)
+    : -1;
 
   if (!dataLoaded || bootstrapping) {
     return (
@@ -325,173 +541,450 @@ export function RundownTab({
     );
   }
 
-  return (
-    <div className="grid h-full grid-cols-[250px_1fr]">
-      <aside className="border-r border-border p-2">
-        <input ref={importRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void importRundown(f).catch((err) => toast.error(`Import failed: ${(err as Error).message}`));
-          e.target.value = '';
-        }} />
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-[12px] font-semibold text-ink-muted">Rundowns</span>
-          <div className="flex items-center gap-1">
-            <button className="text-ink-faint hover:text-ink" onClick={() => importRef.current?.click()}><FileUp className="h-4 w-4" /></button>
-            <button className="text-ink-faint hover:text-ink" onClick={() => void createRundown().catch((e) => toast.error((e as Error).message))}><Plus className="h-4 w-4" /></button>
-          </div>
-        </div>
-        <div className="space-y-1">
-          {rundowns.map((r, idx) => (
-            <div key={r.id} className={cn('rounded border px-2 py-1.5', r.id === activeId ? 'border-primary/60 bg-surface-2' : 'border-border bg-surface')}>
-              <div className="flex items-center gap-1">
-                <button className="min-w-0 flex-1 text-left text-[13px] font-medium" onClick={() => setActiveId(r.id)}>
-                  {renamingId === r.id ? <Input value={renameVal} autoFocus onChange={(e) => setRenameVal(e.target.value)} onKeyDown={(e) => {
-                    if (e.key === 'Enter') { setRenamingId(null); void api.rundowns.update(r.id, { name: renameVal.trim() || r.name }).then((u) => setRundowns((prev) => prev.map((x) => x.id === u.id ? u : x))); }
-                    if (e.key === 'Escape') setRenamingId(null);
-                  }} /> : r.name}
-                </button>
-                <button className="text-ink-faint hover:text-ink" onClick={() => void moveRundown(r.id, -1)} disabled={idx === 0}><ArrowUp className="h-3.5 w-3.5" /></button>
-                <button className="text-ink-faint hover:text-ink" onClick={() => void moveRundown(r.id, 1)} disabled={idx === rundowns.length - 1}><ArrowDown className="h-3.5 w-3.5" /></button>
-                <button className="text-ink-faint hover:text-ink" onClick={() => { setRenamingId(r.id); setRenameVal(r.name); }}><Pencil className="h-3.5 w-3.5" /></button>
-                <button className="text-ink-faint hover:text-ink" onClick={() => void duplicateRundown(r.id).catch((e) => toast.error((e as Error).message))}><Copy className="h-3.5 w-3.5" /></button>
-                <button className="text-ink-faint hover:text-ink" onClick={() => exportRundown(r)}><FileDown className="h-3.5 w-3.5" /></button>
-                <button className="text-ink-faint hover:text-danger" disabled={rundowns.length <= 1} onClick={() => void removeRundown(r.id).catch((e) => toast.error((e as Error).message))}><Trash2 className="h-3.5 w-3.5" /></button>
-              </div>
-              <div className="mt-1 text-[11px] text-ink-faint">{r.slots.length} slots</div>
-            </div>
-          ))}
-        </div>
-      </aside>
+  const listAside = showRundownList ? (
+    <aside className="border-r border-border p-2">
+      <RundownListPanel
+        rundowns={rundowns}
+        activeId={activeId}
+        renamingId={renamingId}
+        renameVal={renameVal}
+        importRef={importRef}
+        onSelect={setActiveId}
+        onCreate={() => void createRundown().catch((e) => toast.error((e as Error).message))}
+        onImport={(file) => void importRundown(file).catch((err) => toast.error(`Import failed: ${(err as Error).message}`))}
+        onRenameStart={(r) => { setRenamingId(r.id); setRenameVal(r.name); }}
+        onRenameChange={setRenameVal}
+        onRenameCommit={(r) => {
+          setRenamingId(null);
+          void api.rundowns.update(r.id, { name: renameVal.trim() || r.name }).then((u) => {
+            setRundowns((prev) => prev.map((x) => (x.id === u.id ? u : x)));
+          });
+        }}
+        onRenameCancel={() => setRenamingId(null)}
+        onMove={(id, dir) => void moveRundown(id, dir)}
+        onDuplicate={(id) => void duplicateRundown(id).catch((e) => toast.error((e as Error).message))}
+        onExport={exportRundown}
+        onRemove={(id) => void removeRundown(id).catch((e) => toast.error((e as Error).message))}
+      />
+    </aside>
+  ) : null;
 
-      <div className="min-h-0 overflow-auto p-3">
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-border bg-surface px-3 py-2">
-          <Button size="sm" variant="neutral" disabled={focusIdx === 0} onClick={() => { const i = Math.max(0, focusIdx - 1); setFocusIdx(i); void takeAt(i); }}>PREV</Button>
-          <Button size="sm" variant="primary" disabled={active.slots.length === 0} onClick={() => void takeAt(focusIdx, true)}>TAKE</Button>
-          <Button
-            size="sm"
-            variant="neutral"
-            disabled={!active.slots[focusIdx] || !isWaitingContinue(onAirDetails, channelId, active.slots[focusIdx].slotId)}
-            onClick={() => {
-              const slot = active.slots[focusIdx];
-              if (slot) send(continueCommand(channelId, slot.slotId));
-            }}
-          >CONTINUE</Button>
-          <Button size="sm" variant="neutral" disabled={focusIdx >= active.slots.length - 1} onClick={() => { const i = Math.min(active.slots.length - 1, focusIdx + 1); setFocusIdx(i); void takeAt(i); }}>NEXT</Button>
-          <Button size="sm" variant="ghost" onClick={() => {
-            for (const slot of active.slots) if (activeLiveSet.has(slot.slotId)) clearSlot(slot.slotId);
-          }}>CLEAR LIVE</Button>
-          <span className="tnum rounded border border-border px-2 py-1 text-[12px] text-ink-muted">
-            {active.slots.length === 0 ? '0 / 0' : `${focusIdx + 1} / ${active.slots.length}`}
-          </span>
-          <div className="min-w-[180px]">
-            <Select value={active.channel_id ?? ''} onChange={(e) => patchActive((r) => ({ ...r, channel_id: e.target.value || null }))}>
-              <option value="">Default channel ({fallbackChannelId || 'default'})</option>
-              {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </Select>
-          </div>
-        </div>
+  function renderSlotRow(slot: RundownSlot, idx: number, parentId: string | null) {
+    const focused = focusPath.parentId === parentId && focusPath.index === idx;
+    const live = activeLiveSet.has(slot.slotId);
+    const primary = isPrimary(slot);
+    const tpl = slot.templateId ? cache[slot.templateId] : undefined;
+    const dropKey = `${parentId ?? 'root'}:${idx}`;
 
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">{active.name}</h3>
-          <div className="relative">
-            <Button size="sm" variant="neutral" onClick={() => setShowAdd((v) => !v)}><Plus className="h-4 w-4" /> Add slot</Button>
-            {showAdd && (
-              <div className="absolute right-0 z-20 mt-1 max-h-64 w-72 overflow-auto rounded border border-border bg-surface p-1 shadow-lg">
-                {templates.map((t) => (
-                  <button
-                    key={t.id}
-                    className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[12px] hover:bg-surface-2"
-                    onClick={() => {
-                      patchActive((r) => ({ ...r, slots: [...r.slots, { slotId: createId(), templateId: t.id, name: t.name, vars: {} }] }));
-                      setShowAdd(false);
-                    }}
-                  >
-                    <span className="truncate">{t.name}</span>
-                    <span className="text-[11px] text-ink-faint">{t.id.slice(0, 8)}</span>
-                  </button>
-                ))}
+    return (
+      <div key={slot.slotId}>
+        <div
+          className={cn(
+            'rounded border px-2 py-2',
+            focused ? 'border-primary/70 bg-surface-2' : 'border-border bg-surface',
+            dropHint === dropKey && 'ring-1 ring-primary',
+          )}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDropHint(dropKey);
+          }}
+          onDragLeave={() => setDropHint((cur) => (cur === dropKey ? null : cur))}
+          onDrop={(e) => onReorderDrop(parentId, idx, e)}
+        >
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              className="cursor-grab text-ink-faint hover:text-ink active:cursor-grabbing"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData(MIME_SLOT_REORDER, JSON.stringify({ slotId: slot.slotId, parentId } satisfies ReorderPayload));
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              aria-label="Drag to reorder"
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className="text-ink-faint hover:text-ink"
+              onClick={() => setExpanded((prev) => {
+                const next = new Set(prev);
+                if (next.has(slot.slotId)) next.delete(slot.slotId); else next.add(slot.slotId);
+                return next;
+              })}
+            >
+              {expanded.has(slot.slotId) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </button>
+            {primary && <Folder className="h-3.5 w-3.5 shrink-0 text-ink-muted" aria-hidden />}
+            <button
+              type="button"
+              className="min-w-0 flex-1 text-left"
+              onClick={() => setFocusPath({ parentId, index: idx })}
+            >
+              <div className="truncate text-sm font-medium">{slot.name}</div>
+              <div className="truncate text-[11px] text-ink-faint">
+                {primary
+                  ? `${(slot.children ?? []).length} items`
+                  : (templates.find((t) => t.id === slot.templateId)?.name ?? slot.templateId)}
               </div>
+            </button>
+            {!primary && (
+              <span className={cn(
+                'rounded px-1.5 py-0.5 text-[11px] font-semibold',
+                live ? 'bg-live text-primary-ink' : focused ? 'bg-primary/20 text-primary' : 'bg-surface-2 text-ink-muted',
+              )}>
+                {live ? 'ON AIR' : focused ? 'NEXT' : 'PENDING'}
+              </span>
+            )}
+            <button
+              type="button"
+              className="text-ink-faint hover:text-danger"
+              onClick={() => patchActive((r) => ({
+                ...r,
+                slots: mapSlots(r.slots, parentId, (list) => list.filter((s) => s.slotId !== slot.slotId)),
+              }))}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+            {!primary && (
+              <Button
+                size="sm"
+                variant={live ? 'neutral' : 'danger'}
+                onClick={() => (live ? clearSlot(slot.slotId) : void takeSlot(slot))}
+              >
+                {live ? 'CLEAR' : 'TAKE'}
+              </Button>
             )}
           </div>
-        </div>
 
-        <div className="space-y-2">
-          {active.slots.map((slot, idx) => {
-            const focused = idx === focusIdx;
-            const live = activeLiveSet.has(slot.slotId);
-            const tpl = cache[slot.templateId];
-            return (
-              <div key={slot.slotId} id={`rd-slot-${slot.slotId}`} className={cn('rounded border px-3 py-2', focused ? 'border-primary/70 bg-surface-2' : 'border-border bg-surface')}>
-                <div className="flex items-center gap-2">
-                  <button className="text-ink-faint hover:text-ink" onClick={() => setExpanded((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(slot.slotId)) next.delete(slot.slotId); else next.add(slot.slotId);
-                    return next;
-                  })}>
-                    {expanded.has(slot.slotId) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  </button>
-                  <button className="min-w-0 flex-1 text-left" onClick={() => setFocusIdx(idx)}>
-                    <div className="truncate text-sm font-medium">{slot.name}</div>
-                    <div className="truncate text-[11px] text-ink-faint">{templates.find((t) => t.id === slot.templateId)?.name ?? slot.templateId}</div>
-                  </button>
-                  <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', live ? 'bg-live text-primary-ink' : focused ? 'bg-primary/20 text-primary' : 'bg-surface-2 text-ink-muted')}>
-                    {live ? 'ON AIR' : focused ? 'NEXT' : 'PENDING'}
-                  </span>
-                  <button className="text-ink-faint hover:text-ink" onClick={() => void moveSlot(slot.slotId, -1)} disabled={idx === 0}><ArrowUp className="h-3.5 w-3.5" /></button>
-                  <button className="text-ink-faint hover:text-ink" onClick={() => void moveSlot(slot.slotId, 1)} disabled={idx === active.slots.length - 1}><ArrowDown className="h-3.5 w-3.5" /></button>
-                  <button className="text-ink-faint hover:text-danger" onClick={() => patchActive((r) => ({ ...r, slots: r.slots.filter((s) => s.slotId !== slot.slotId) }))}><Trash2 className="h-3.5 w-3.5" /></button>
-                  <Button size="sm" variant={live ? 'neutral' : 'danger'} onClick={() => live ? clearSlot(slot.slotId) : void takeAt(idx, true)}>
-                    {live ? 'CLEAR' : 'TAKE'}
-                  </Button>
-                </div>
-                {expanded.has(slot.slotId) && (
-                  <div className="mt-2 space-y-2 border-t border-border pt-2">
-                    <Field label="Slot name">
-                      <Input value={slot.name} onChange={(e) => patchActive((r) => ({ ...r, slots: r.slots.map((s) => s.slotId === slot.slotId ? { ...s, name: e.target.value } : s) }))} />
-                    </Field>
-                    <Field label="Slot ID">
-                      <Input value={slot.slotId} readOnly />
-                    </Field>
-                    <Field label="Data element">
-                      <Select
-                        value={slot.dataElementId ?? ''}
-                        onChange={(e) => patchActive((r) => ({
-                          ...r,
-                          slots: r.slots.map((s) => s.slotId === slot.slotId
-                            ? { ...s, dataElementId: e.target.value || undefined }
-                            : s),
-                        }))}
-                      >
-                        <option value="">None</option>
-                        {dataElements.filter((item) => item.templateId === slot.templateId).map((item) => (
-                          <option key={item.id} value={item.id}>{item.name}</option>
-                        ))}
-                      </Select>
-                    </Field>
-                    <Button size="sm" variant="ghost" onClick={() => {
-                      if (cache[slot.templateId]) return;
+          {expanded.has(slot.slotId) && (
+            <div className="mt-2 space-y-2 border-t border-border pt-2">
+              <Field label="Slot name">
+                <Input
+                  value={slot.name}
+                  onChange={(e) => patchActive((r) => ({
+                    ...r,
+                    slots: mapDeep(r.slots, slot.slotId, (s) => ({ ...s, name: e.target.value })),
+                  }))}
+                />
+              </Field>
+              <Field label="Slot ID">
+                <Input value={slot.slotId} readOnly />
+              </Field>
+              {!primary && (
+                <>
+                  <Field label="Data element">
+                    <Select
+                      value={slot.dataElementId ?? ''}
+                      onChange={(e) => patchActive((r) => ({
+                        ...r,
+                        slots: mapDeep(r.slots, slot.slotId, (s) => ({
+                          ...s,
+                          dataElementId: e.target.value || undefined,
+                        })),
+                      }))}
+                    >
+                      <option value="">None</option>
+                      {dataElements.filter((item) => item.templateId === slot.templateId).map((item) => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      if (!slot.templateId || cache[slot.templateId]) return;
                       void ensureTemplate(slot.templateId).catch((e) => toast.error((e as Error).message));
-                    }}>
-                      {tpl ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-                      {tpl ? 'Template loaded' : 'Load variables'}
-                    </Button>
-                    {tpl && (
-                      <SlotVars
-                        varsDef={tpl.data.variables}
-                        values={buildPayload(slot, tpl.data.variables)}
-                        onChange={(varId, value) => updateSlotVar(slot.slotId, varId, value)}
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {active.slots.length === 0 && <div className="rounded border border-dashed border-border px-4 py-8 text-center text-[13px] text-ink-muted">No slots yet. Add a template slot to start rundown playout.</div>}
+                    }}
+                  >
+                    {tpl ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                    {tpl ? 'Template loaded' : 'Load variables'}
+                  </Button>
+                  {tpl && (
+                    <SlotVars
+                      varsDef={tpl.data.variables}
+                      values={buildPayload(slot, tpl.data.variables)}
+                      onChange={(varId, value) => updateSlotVar(slot.slotId, varId, value)}
+                    />
+                  )}
+                </>
+              )}
+              {primary && (
+                <div
+                  className={cn(
+                    'space-y-2 rounded border border-dashed border-border p-2',
+                    dropHint === `child:${slot.slotId}` && 'border-primary bg-primary/5',
+                  )}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDropHint(`child:${slot.slotId}`);
+                  }}
+                  onDragLeave={() => setDropHint((cur) => (cur === `child:${slot.slotId}` ? null : cur))}
+                  onDrop={(e) => onDropOnto(slot.slotId, e)}
+                >
+                  {(slot.children ?? []).map((child, childIdx) => renderSlotRow(child, childIdx, slot.slotId))}
+                  {(slot.children ?? []).length === 0 && (
+                    <p className="px-1 py-3 text-center text-[12px] text-ink-faint">
+                      Drop templates or data elements here
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
+      </div>
+    );
+  }
+
+  const editor = (
+    <div className="min-h-0 overflow-auto p-3">
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-border bg-surface px-3 py-2">
+        <Button
+          size="sm"
+          variant="neutral"
+          disabled={focusFlatIndex <= 0}
+          onClick={() => {
+            const i = Math.max(0, focusFlatIndex - 1);
+            const row = flatTakeable[i];
+            if (!row) return;
+            setFocusPath({ parentId: row.parentId, index: row.index });
+            void takeSlot(row.slot);
+          }}
+        >
+          PREV
+        </Button>
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={!focusedTakeable}
+          onClick={() => {
+            if (!focusedTakeable) return;
+            void takeSlot(focusedTakeable.slot).then(() => {
+              const next = flatTakeable[Math.min(focusFlatIndex + 1, flatTakeable.length - 1)];
+              if (next) setFocusPath({ parentId: next.parentId, index: next.index });
+            });
+          }}
+        >
+          TAKE
+        </Button>
+        <Button
+          size="sm"
+          variant="neutral"
+          disabled={!focusedTakeable || !isWaitingContinue(onAirDetails, channelId, focusedTakeable.slot.slotId)}
+          onClick={() => {
+            if (focusedTakeable) send(continueCommand(channelId, focusedTakeable.slot.slotId));
+          }}
+        >
+          CONTINUE
+        </Button>
+        <Button
+          size="sm"
+          variant="neutral"
+          disabled={focusFlatIndex < 0 || focusFlatIndex >= flatTakeable.length - 1}
+          onClick={() => {
+            const i = Math.min(flatTakeable.length - 1, focusFlatIndex + 1);
+            const row = flatTakeable[i];
+            if (!row) return;
+            setFocusPath({ parentId: row.parentId, index: row.index });
+            void takeSlot(row.slot);
+          }}
+        >
+          NEXT
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            for (const row of flatTakeable) if (activeLiveSet.has(row.slot.slotId)) clearSlot(row.slot.slotId);
+          }}
+        >
+          CLEAR LIVE
+        </Button>
+        <span className="tnum rounded border border-border px-2 py-1 text-[12px] text-ink-muted">
+          {flatTakeable.length === 0 ? '0 / 0' : `${focusFlatIndex + 1} / ${flatTakeable.length}`}
+        </span>
+        <div className="min-w-[180px]">
+          <Select
+            value={active.channel_id ?? ''}
+            onChange={(e) => patchActive((r) => ({ ...r, channel_id: e.target.value || null }))}
+          >
+            <option value="">Default channel ({fallbackChannelId || 'default'})</option>
+            {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </Select>
+        </div>
+      </div>
+
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold">{active.name}</h3>
+        <Button size="sm" variant="neutral" onClick={addPrimary}>
+          <Plus className="h-4 w-4" /> primary
+        </Button>
+      </div>
+
+      <div
+        className={cn(
+          'space-y-2 rounded-md',
+          dropHint === 'root' && 'ring-1 ring-primary',
+        )}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDropHint('root');
+        }}
+        onDragLeave={() => setDropHint((cur) => (cur === 'root' ? null : cur))}
+        onDrop={(e) => onDropOnto(null, e)}
+      >
+        {active.slots.map((slot, idx) => renderSlotRow(slot, idx, null))}
+        {active.slots.length === 0 && (
+          <div className="rounded border border-dashed border-border px-4 py-8 text-center text-[13px] text-ink-muted">
+            Drop templates or data elements here, or add a Primary group.
+          </div>
+        )}
       </div>
     </div>
   );
+
+  if (!showRundownList) return editor;
+
+  return (
+    <div className="grid h-full grid-cols-[250px_1fr]">
+      {listAside}
+      {editor}
+    </div>
+  );
+}
+
+export function RundownListPanel({
+  rundowns,
+  activeId,
+  renamingId,
+  renameVal,
+  importRef,
+  onSelect,
+  onCreate,
+  onImport,
+  onRenameStart,
+  onRenameChange,
+  onRenameCommit,
+  onRenameCancel,
+  onMove,
+  onDuplicate,
+  onExport,
+  onRemove,
+}: {
+  rundowns: Rundown[];
+  activeId: string | null;
+  renamingId: string | null;
+  renameVal: string;
+  importRef: React.RefObject<HTMLInputElement | null>;
+  onSelect: (id: string) => void;
+  onCreate: () => void;
+  onImport: (file: File) => void;
+  onRenameStart: (r: Rundown) => void;
+  onRenameChange: (value: string) => void;
+  onRenameCommit: (r: Rundown) => void;
+  onRenameCancel: () => void;
+  onMove: (id: string, dir: -1 | 1) => void;
+  onDuplicate: (id: string) => void;
+  onExport: (r: Rundown) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <>
+      <input
+        ref={importRef as React.RefObject<HTMLInputElement>}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onImport(f);
+          e.target.value = '';
+        }}
+      />
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[12px] font-semibold text-ink-muted">Rundowns</span>
+        <div className="flex items-center gap-1">
+          <button type="button" className="text-ink-faint hover:text-ink" onClick={() => importRef.current?.click()}>
+            <FileUp className="h-4 w-4" />
+          </button>
+          <button type="button" className="text-ink-faint hover:text-ink" onClick={onCreate}>
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      <div className="space-y-1">
+        {rundowns.map((r, idx) => (
+          <div
+            key={r.id}
+            className={cn(
+              'rounded border px-2 py-1.5',
+              r.id === activeId ? 'border-primary/60 bg-surface-2' : 'border-border bg-surface',
+            )}
+          >
+            <div className="flex items-center gap-1">
+              <button type="button" className="min-w-0 flex-1 text-left text-[13px] font-medium" onClick={() => onSelect(r.id)}>
+                {renamingId === r.id ? (
+                  <Input
+                    value={renameVal}
+                    autoFocus
+                    onChange={(e) => onRenameChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') onRenameCommit(r);
+                      if (e.key === 'Escape') onRenameCancel();
+                    }}
+                  />
+                ) : r.name}
+              </button>
+              <button type="button" className="text-ink-faint hover:text-ink" onClick={() => onMove(r.id, -1)} disabled={idx === 0}>
+                <ArrowUp className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" className="text-ink-faint hover:text-ink" onClick={() => onMove(r.id, 1)} disabled={idx === rundowns.length - 1}>
+                <ArrowDown className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" className="text-ink-faint hover:text-ink" onClick={() => onRenameStart(r)}>
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" className="text-ink-faint hover:text-ink" onClick={() => onDuplicate(r.id)}>
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" className="text-ink-faint hover:text-ink" onClick={() => onExport(r)}>
+                <FileDown className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className="text-ink-faint hover:text-danger"
+                disabled={rundowns.length <= 1}
+                onClick={() => onRemove(r.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="mt-1 text-[11px] text-ink-faint">{countSlots(r.slots)} slots</div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function countSlots(slots: RundownSlot[]): number {
+  let n = 0;
+  for (const s of slots) {
+    n += 1;
+    if (s.children) n += countSlots(s.children);
+  }
+  return n;
+}
+
+function cloneSlotsWithNewIds(slots: RundownSlot[]): RundownSlot[] {
+  return slots.map((s) => ({
+    ...s,
+    slotId: createId(),
+    children: s.children ? cloneSlotsWithNewIds(s.children) : undefined,
+  }));
 }
 
 function SlotVars({
@@ -538,6 +1031,20 @@ function SlotVars({
 function normalizeImportedSlot(raw: unknown, idx: number): RundownSlot | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const slot = raw as Record<string, unknown>;
+  if (slot.kind === 'ue') return null;
+  if (slot.kind === 'primary') {
+    const childrenRaw = Array.isArray(slot.children) ? slot.children : [];
+    const children = childrenRaw
+      .map((child, i) => normalizeImportedSlot(child, i))
+      .filter((child): child is RundownSlot => !!child && child.kind !== 'primary');
+    return {
+      slotId: typeof slot.slotId === 'string' && slot.slotId.trim() ? slot.slotId.trim() : createId(),
+      kind: 'primary',
+      name: typeof slot.name === 'string' && slot.name.trim() ? slot.name.trim() : 'Primary',
+      vars: {},
+      children,
+    };
+  }
   const templateId = typeof slot.templateId === 'string' ? slot.templateId.trim() : '';
   if (!templateId) return null;
   const name = typeof slot.name === 'string' && slot.name.trim()
@@ -548,11 +1055,16 @@ function normalizeImportedSlot(raw: unknown, idx: number): RundownSlot | null {
   for (const [k, v] of Object.entries(varsIn)) {
     if (typeof v === 'string' || typeof v === 'number') vars[k] = v;
   }
+  const dataElementId = typeof slot.dataElementId === 'string' && slot.dataElementId.trim()
+    ? slot.dataElementId.trim()
+    : undefined;
   return {
     slotId: typeof slot.slotId === 'string' && slot.slotId.trim() ? slot.slotId.trim() : createId(),
+    kind: 'item',
     templateId,
     name,
     vars,
+    ...(dataElementId ? { dataElementId } : {}),
   };
 }
 

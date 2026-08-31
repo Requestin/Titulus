@@ -1,15 +1,38 @@
-import { ANIMATABLE_PROPS, type AnimatableProp, type Template } from '@runtime';
+import { type AnimatableProp, type Template, type TimelineDirector } from '@runtime';
 import type { Target } from '../store';
-import { pointsFor, type TimelineTrack } from '../timelineTracks';
+import { pointsFor, tracksForDirector, type TimelineTrack } from '../timelineTracks';
 import type { KeyframeHit } from '../timelineMarquee';
 
 export const HEADER_W = 168;
 export const RULER_H = 24;
 export const LANE_H = 26;
 export const GROUP_HDR_H = 20;
+export const DIRECTOR_HDR_H = 24;
 export const ACTION_LANE_H = 22;
 
-export const TIMELINE_ANIMATABLE_PROPS = [...ANIMATABLE_PROPS, 'z', 'crawlProgress'] as const satisfies readonly AnimatableProp[];
+/** Addable / sortable timeline props: z sits after y; crawlProgress last. */
+export const TIMELINE_ANIMATABLE_PROPS = [
+  'x', 'y', 'z',
+  'width', 'height',
+  'rotation', 'rotationX', 'rotationY', 'perspective',
+  'scaleX', 'scaleY',
+  'opacity',
+  'crawlProgress',
+] as const satisfies readonly AnimatableProp[];
+
+export function timelinePropLabel(prop: AnimatableProp): string {
+  if (prop === 'rotation') return 'rotationZ';
+  return prop;
+}
+
+export type DirectorLaneRow = {
+  kind: 'director';
+  directorId: string;
+  label: string;
+  collapsed: boolean;
+  y: number;
+  height: number;
+};
 
 export type GroupLaneRow = {
   kind: 'group';
@@ -29,7 +52,7 @@ export type TrackLaneRow = {
   height: number;
 };
 
-export type LaneRow = GroupLaneRow | TrackLaneRow;
+export type LaneRow = DirectorLaneRow | GroupLaneRow | TrackLaneRow;
 
 export function buildLaneLayout(
   template: Template,
@@ -66,6 +89,61 @@ export function buildLaneLayout(
     }
   }
   return { rows, height: y };
+}
+
+/** Stack every director as a collapsible folder of its tracks. */
+export function buildAllDirectorsLaneLayout(
+  template: Template,
+  directors: TimelineDirector[],
+  collapsedDirectors: ReadonlySet<string>,
+  pxPerFrame: number,
+): { rows: LaneRow[]; height: number } {
+  const rows: LaneRow[] = [];
+  let y = 0;
+  for (const director of directors) {
+    const collapsed = collapsedDirectors.has(director.id);
+    rows.push({
+      kind: 'director',
+      directorId: director.id,
+      label: director.name,
+      collapsed,
+      y,
+      height: DIRECTOR_HDR_H,
+    });
+    y += DIRECTOR_HDR_H;
+    if (collapsed) continue;
+    const tracks = tracksForDirector(template, director.id).filter((track) => {
+      if (track.prop !== 'crawlProgress') return true;
+      if (track.target.kind !== 'layer') return false;
+      const layer = template.layers.find((item) => item.id === track.target.id);
+      return layer?.type === 'crawl';
+    });
+    const nested = buildLaneLayout(template, tracks, pxPerFrame);
+    for (const row of nested.rows) {
+      if (row.kind === 'director') continue;
+      rows.push({ ...row, y } as LaneRow);
+      y += row.height;
+    }
+  }
+  return { rows, height: y };
+}
+
+/** Vertical span of each director folder (header + nested rows). */
+export function directorLaneSpans(
+  rows: LaneRow[],
+): Array<{ directorId: string; y: number; height: number }> {
+  const spans: Array<{ directorId: string; y: number; height: number }> = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.kind !== 'director') continue;
+    let end = row.y + row.height;
+    for (let j = i + 1; j < rows.length; j++) {
+      if (rows[j]!.kind === 'director') break;
+      end = rows[j]!.y + rows[j]!.height;
+    }
+    spans.push({ directorId: row.directorId, y: row.y, height: end - row.y });
+  }
+  return spans;
 }
 
 export function keyframeHits(template: Template, rows: LaneRow[], pxPerFrame: number): KeyframeHit[] {

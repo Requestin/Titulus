@@ -93,12 +93,38 @@ export function gradientCacheKey(gradient: RectGradient): string {
   ].join('|');
 }
 
+/**
+ * Soft bilinear 4-corner fill via two horizontal linearGradients cross-faded
+ * with a vertical mask (avoids the old 2×2 pixelated SVG).
+ */
 function buildGradientCss(gradient: RectGradient): string {
   const topLeft = mixCornerTowardNeutral(gradient.topLeft, gradient.weights.topLeft);
   const topRight = mixCornerTowardNeutral(gradient.topRight, gradient.weights.topRight);
   const bottomLeft = mixCornerTowardNeutral(gradient.bottomLeft, gradient.weights.bottomLeft);
   const bottomRight = mixCornerTowardNeutral(gradient.bottomRight, gradient.weights.bottomRight);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2" preserveAspectRatio="none"><rect width="1" height="1" fill="${topLeft}"/><rect x="1" width="1" height="1" fill="${topRight}"/><rect y="1" width="1" height="1" fill="${bottomLeft}"/><rect x="1" y="1" width="1" height="1" fill="${bottomRight}"/></svg>`;
+  const svg = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" preserveAspectRatio="none">',
+    '<defs>',
+    `<linearGradient id="t" x1="0" y1="0" x2="1" y2="0">`,
+    `<stop offset="0" stop-color="${topLeft}"/>`,
+    `<stop offset="1" stop-color="${topRight}"/>`,
+    '</linearGradient>',
+    `<linearGradient id="b" x1="0" y1="0" x2="1" y2="0">`,
+    `<stop offset="0" stop-color="${bottomLeft}"/>`,
+    `<stop offset="1" stop-color="${bottomRight}"/>`,
+    '</linearGradient>',
+    `<linearGradient id="v" x1="0" y1="0" x2="0" y2="1">`,
+    '<stop offset="0" stop-color="#fff"/>',
+    '<stop offset="1" stop-color="#000"/>',
+    '</linearGradient>',
+    '<mask id="m" maskUnits="objectBoundingBox" x="0" y="0" width="1" height="1">',
+    '<rect width="64" height="64" fill="url(#v)"/>',
+    '</mask>',
+    '</defs>',
+    '<rect width="64" height="64" fill="url(#b)"/>',
+    '<rect width="64" height="64" fill="url(#t)" mask="url(#m)"/>',
+    '</svg>',
+  ].join('');
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 0 0 / 100% 100% no-repeat`;
 }
 

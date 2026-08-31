@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
-  ChevronLeft, Undo2, Redo2, ZoomIn, ZoomOut, Grid3x3, Save, Loader2, Copy, Trash2,
+  ChevronLeft, Undo2, Redo2, ZoomIn, ZoomOut, Grid3x3, Save, Loader2, Copy,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
@@ -16,7 +16,6 @@ export function Toolbar({ onSave, saving, readOnly = false, lockOwner }: { onSav
   const setZoom = useEditor((s) => s.setZoom);
   const toggleGridSnap = useEditor((s) => s.toggleGridSnap);
   const duplicateSelected = useEditor((s) => s.duplicateSelected);
-  const deleteSelected = useEditor((s) => s.deleteSelected);
   const canUndo = useCanUndo();
   const canRedo = useCanRedo();
 
@@ -45,7 +44,6 @@ export function Toolbar({ onSave, saving, readOnly = false, lockOwner }: { onSav
       <div className="mx-1 h-6 w-px bg-border" />
 
       <IconBtn onClick={duplicateSelected} disabled={!selection} title="Duplicate (Ctrl+D)"><Copy className="h-4 w-4" /></IconBtn>
-      <IconBtn onClick={deleteSelected} disabled={!selection} title="Delete (Del)"><Trash2 className="h-4 w-4" /></IconBtn>
 
       <div className="mx-1 h-6 w-px bg-border" />
 

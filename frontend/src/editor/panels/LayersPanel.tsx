@@ -16,7 +16,7 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   Type, Square, Image as ImageIcon, Video, Clock, Folder, WrapText,
   Eye, EyeOff, Lock, Unlock, GripVertical, ChevronRight, ChevronDown,
-  Plus, FolderPlus, CheckSquare,
+  Plus, FolderPlus, CheckSquare, Trash2,
 } from 'lucide-react';
 import type { LayerType, RootStackEntry, Template } from '@runtime';
 import { reparentTargetAtPlayhead, useEditor } from '../store';
@@ -411,6 +411,7 @@ function Row({
   const template = useEditor((s) => s.template)!;
   const selection = useEditor((s) => s.selection);
   const select = useEditor((s) => s.select);
+  const deleteSelected = useEditor((s) => s.deleteSelected);
   const toggleVisible = useEditor((s) => s.toggleVisible);
   const toggleLock = useEditor((s) => s.toggleLock);
   const updateLayer = useEditor((s) => s.updateLayer);
@@ -523,6 +524,18 @@ function Row({
           )}
         </div>
 
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            select({ kind: entry.kind, id: entry.id });
+            deleteSelected();
+          }}
+          className="grid h-6 w-6 place-items-center text-ink-faint opacity-0 group-hover:opacity-100 hover:text-danger"
+          aria-label="Delete"
+          title="Delete"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
         <button
           onClick={(e) => { e.stopPropagation(); toggleLock(entry.kind, entry.id); }}
           className={cn('grid h-6 w-6 place-items-center hover:text-ink', obj.locked ? 'text-ink-muted' : 'text-ink-faint opacity-0 group-hover:opacity-100')}

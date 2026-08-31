@@ -1,40 +1,76 @@
 // frontend/src/pages/ControlPage.tsx
 //
-// Operator control panel (DEVELOPMENT_PROMPT §8.4): per-channel TAKE / UPDATE
-// (debounced) / CLEAR / CLEAR ALL over /ws/control, a live program monitor, a
-// Browser Source URL for OBS/vMix, and Templates | Rundowns tabs. On load it
-// restores on-air state from /api/onair (NFR-1).
+// Operator control panel: channel bar, left nav (Rundown | Templates | Data),
+// center rundown editor, right monitor + inspector.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Copy, Check, X, Radio, Trash2 } from 'lucide-react';
-import { api, type Channel, type OnAirDetailsSnapshot, type TemplateFolder, type TemplateSummary, type TemplateRecord, type Rundown } from '@/core/api';
+import {
+  Copy, Check, X, Radio, Trash2, Plus, FileUp, FileDown, Pencil, ArrowUp, ArrowDown,
+} from 'lucide-react';
+import {
+  api,
+  type Channel,
+  type DataElement,
+  type OnAirDetailsSnapshot,
+  type TemplateFolder,
+  type TemplateSummary,
+  type TemplateRecord,
+  type Rundown,
+} from '@/core/api';
 import { continueCommand, formatOnAirRow, isWaitingContinue, onAirOwnerLabel, resolveOnAirRows } from '@/control/onAirContinue';
-import { DataElementsTab } from '@/control/DataElementsTab';
-import { templatesVisibleInControl } from '@/control/visibleControlTemplates';
+import {
+  ControlItemInspector,
+  type InspectorTarget,
+} from '@/control/ControlItemInspector';
+import {
+  foldersVisibleInControl,
+  templatesVisibleInControl,
+} from '@/control/visibleControlTemplates';
+import {
+  readHideAllInControl,
+  readHideUnassignedInControl,
+  readLastRundownId,
+  writeLastRundownId,
+} from '@/control/controlFolderPrefs';
+import {
+  MIME_DATA_ELEMENT,
+  MIME_TEMPLATE,
+  RundownTab,
+} from '@/control/RundownTab';
 import { useControlWs, type WsStatus } from '@/core/controlWs';
 import { prepareForAir } from '@/control/prepareForAir';
 import { toast } from '@/core/toast';
 import { Button } from '@/components/ui/Button';
-import { Select } from '@/components/ui/form';
+import { Input, Select } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { ProgramMonitor } from '@/control/ProgramMonitor';
-import { VariableValues } from '@/control/VariableValues';
-import { RundownTab } from '@/control/RundownTab';
 import { createId } from '@/core/id';
+
+type NavTab = 'rundowns' | 'templates' | 'data';
 
 export function ControlPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [channelId, setChannelId] = useState<string>('');
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [folders, setFolders] = useState<TemplateFolder[]>([]);
-  const [dataElements, setDataElements] = useState<import('@/core/api').DataElement[]>([]);
+  const [dataElements, setDataElements] = useState<DataElement[]>([]);
   const [rundowns, setRundowns] = useState<Rundown[]>([]);
   const [controlDataLoaded, setControlDataLoaded] = useState(false);
   const [onAir, setOnAir] = useState<Record<string, string[]>>({});
   const [onAirDetails, setOnAirDetails] = useState<OnAirDetailsSnapshot | null>(null);
-  const [tab, setTab] = useState<'templates' | 'rundowns' | 'data'>('templates');
+  const [tab, setTab] = useState<NavTab>('rundowns');
   const [rundownMonitorChannel, setRundownMonitorChannel] = useState<string>('');
+  const [selectedRundownId, setSelectedRundownId] = useState<string | null>(null);
+  const [inspectorTarget, setInspectorTarget] = useState<InspectorTarget | null>(null);
+  const [hideAll, setHideAll] = useState(readHideAllInControl);
+  const [hideUnassigned, setHideUnassigned] = useState(readHideUnassignedInControl);
+  const [folderFilter, setFolderFilter] = useState<string>('all');
+  const [dataFolderFilter, setDataFolderFilter] = useState<string>('all');
+  const [dataTemplateFilter, setDataTemplateFilter] = useState<string>('');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameVal, setRenameVal] = useState('');
+  const importRef = useRef<HTMLInputElement>(null);
 
   const status = useControlWs((s) => s.status);
   const connect = useControlWs((s) => s.connect);
@@ -46,13 +82,20 @@ export function ControlPage() {
     (async () => {
       try {
         const [ch, tpl, folderRows, deRows, rd, air, details] = await Promise.all([
-          api.channels.list(), api.templates.list(), api.templateFolders.list(), api.dataElements.list(), api.rundowns.list(), api.onair.get(), api.onair.details(),
+          api.channels.list(),
+          api.templates.list(),
+          api.templateFolders.list(),
+          api.dataElements.list(),
+          api.rundowns.list(),
+          api.onair.get(),
+          api.onair.details(),
         ]);
         setChannels(ch);
         setFolders(folderRows);
         setDataElements(deRows);
         setTemplates(tpl);
-        setRundowns(rd.map(normalizeRundown));
+        const normalized = rd.map(normalizeRundown);
+        setRundowns(normalized);
         setOnAir(air);
         setOnAirDetails(details);
         if (ch.length && !channelId) setChannelId(ch[0].id);
@@ -65,11 +108,80 @@ export function ControlPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const visibleTemplates = templatesVisibleInControl(templates, folders);
+  // Refresh hide prefs when returning to the page (Templates page may change them).
+  useEffect(() => {
+    const sync = () => {
+      setHideAll(readHideAllInControl());
+      setHideUnassigned(readHideUnassignedInControl());
+    };
+    window.addEventListener('focus', sync);
+    sync();
+    return () => window.removeEventListener('focus', sync);
+  }, []);
+
+  useEffect(() => {
+    if (!channelId || rundowns.length === 0) return;
+    const last = readLastRundownId(channelId);
+    const preferred = (last && rundowns.some((r) => r.id === last))
+      ? last
+      : (rundowns.find((r) => (r.channel_id || channelId) === channelId)?.id ?? rundowns[0]?.id ?? null);
+    setSelectedRundownId((cur) => {
+      if (cur && rundowns.some((r) => r.id === cur)) return cur;
+      return preferred;
+    });
+  }, [channelId, rundowns]);
+
+  useEffect(() => {
+    if (channelId && selectedRundownId) writeLastRundownId(channelId, selectedRundownId);
+  }, [channelId, selectedRundownId]);
+
+  const visibleFolders = useMemo(() => foldersVisibleInControl(folders), [folders]);
+  const visibleTemplates = useMemo(
+    () => templatesVisibleInControl(templates, folders, { hideAll, hideUnassigned }),
+    [templates, folders, hideAll, hideUnassigned],
+  );
+
+  const folderSelectOptions = useMemo(() => {
+    const opts: Array<{ value: string; label: string }> = [];
+    if (!hideAll) opts.push({ value: 'all', label: 'All' });
+    if (!hideUnassigned) opts.push({ value: 'unassigned', label: 'Unassigned' });
+    for (const folder of visibleFolders) opts.push({ value: folder.id, label: folder.name });
+    return opts;
+  }, [hideAll, hideUnassigned, visibleFolders]);
+
+  useEffect(() => {
+    if (folderSelectOptions.length === 0) return;
+    if (!folderSelectOptions.some((o) => o.value === folderFilter)) {
+      setFolderFilter(folderSelectOptions[0].value);
+    }
+    if (!folderSelectOptions.some((o) => o.value === dataFolderFilter)) {
+      setDataFolderFilter(folderSelectOptions[0].value);
+    }
+  }, [folderSelectOptions, folderFilter, dataFolderFilter]);
+
+  const templatesInFolder = useCallback((filter: string) => {
+    if (filter === 'all') return visibleTemplates;
+    if (filter === 'unassigned') return visibleTemplates.filter((t) => !t.folder_id);
+    return visibleTemplates.filter((t) => t.folder_id === filter);
+  }, [visibleTemplates]);
+
+  const templatesForTemplatesTab = templatesInFolder(folderFilter);
+  const templatesForDataTab = templatesInFolder(dataFolderFilter);
+
+  useEffect(() => {
+    if (!dataTemplateFilter) return;
+    if (!templatesForDataTab.some((t) => t.id === dataTemplateFilter)) {
+      setDataTemplateFilter('');
+    }
+  }, [templatesForDataTab, dataTemplateFilter]);
+
+  const dataElementsForList = useMemo(() => {
+    if (!dataTemplateFilter) return [];
+    return dataElements.filter((de) => de.templateId === dataTemplateFilter);
+  }, [dataElements, dataTemplateFilter]);
+
   const live = onAir[channelId] ?? [];
-  const monitorChannelId = tab === 'rundowns'
-    ? (rundownMonitorChannel || channelId || 'default')
-    : (channelId || 'default');
+  const monitorChannelId = rundownMonitorChannel || channelId || 'default';
   const monitorLive = onAir[monitorChannelId] ?? [];
   const monitorRows = resolveOnAirRows(onAirDetails, monitorChannelId, monitorLive);
 
@@ -147,6 +259,69 @@ export function ControlPage() {
 
   const browserSourceUrl = monitorChannelId ? `${location.origin}/channel.html?channel=${monitorChannelId}` : '';
 
+  async function createRundown() {
+    const rd = await api.rundowns.create({ name: `Rundown ${rundowns.length + 1}`, slots: [] });
+    setRundowns((prev) => [normalizeRundown(rd), ...prev]);
+    setSelectedRundownId(rd.id);
+  }
+
+  async function duplicateRundown(id: string) {
+    const src = rundowns.find((r) => r.id === id);
+    if (!src) return;
+    const rd = await api.rundowns.create({
+      name: `${src.name} (copy)`,
+      channel_id: src.channel_id,
+      slots: src.slots.map((s) => ({
+        ...s,
+        slotId: createId(),
+        children: s.children?.map((c) => ({ ...c, slotId: createId() })),
+      })),
+    });
+    setRundowns((prev) => [normalizeRundown(rd), ...prev]);
+    setSelectedRundownId(rd.id);
+  }
+
+  async function removeRundown(id: string) {
+    if (rundowns.length <= 1) return toast.error('At least one rundown required');
+    await api.rundowns.remove(id);
+    const next = rundowns.filter((r) => r.id !== id);
+    setRundowns(next);
+    if (selectedRundownId === id) setSelectedRundownId(next[0]?.id ?? null);
+  }
+
+  async function moveRundown(id: string, dir: -1 | 1) {
+    const idx = rundowns.findIndex((r) => r.id === id);
+    const to = idx + dir;
+    if (idx < 0 || to < 0 || to >= rundowns.length) return;
+    const next = [...rundowns];
+    const [item] = next.splice(idx, 1);
+    next.splice(to, 0, item);
+    setRundowns(next);
+    await api.rundowns.reorder(next.map((r) => r.id));
+  }
+
+  async function importRundown(file: File) {
+    const text = await file.text();
+    const parsed = JSON.parse(text) as { name?: unknown; slots?: unknown };
+    const slots = Array.isArray(parsed.slots) ? parsed.slots : [];
+    const rd = await api.rundowns.create({
+      name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : 'Imported rundown',
+      slots: slots as Rundown['slots'],
+    });
+    setRundowns((prev) => [normalizeRundown(rd), ...prev]);
+    setSelectedRundownId(rd.id);
+  }
+
+  function exportRundown(rd: Rundown) {
+    const blob = new Blob([JSON.stringify(rd, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${rd.name.replace(/[^a-zA-Z0-9_-]+/g, '_') || 'rundown'}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   if (channels.length === 0) {
     return (
       <div className="grid h-full place-items-center p-6 text-center">
@@ -162,7 +337,6 @@ export function ControlPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Channel bar */}
       <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-5">
         <Select value={channelId} onChange={(e) => setChannelId(e.target.value)} className="w-48">
           {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -170,96 +344,311 @@ export function ControlPage() {
         <WsBadge status={status} />
         <div className="ml-auto flex items-center gap-2">
           <BrowserSourceUrl url={browserSourceUrl} />
-          {tab === 'templates' && (
-            <Button variant="danger" size="sm" onClick={clearAll} disabled={live.length === 0}>
-              <Trash2 className="h-4 w-4" aria-hidden /> Clear all
-            </Button>
-          )}
+          <Button variant="danger" size="sm" onClick={clearAll} disabled={live.length === 0}>
+            <Trash2 className="h-4 w-4" aria-hidden /> Clear all
+          </Button>
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_380px]">
-        {/* Left: tabs */}
-        <div className="flex min-w-0 flex-col border-r border-border">
-          <div className="flex shrink-0 border-b border-border">
-            {(['templates', 'rundowns', 'data'] as const).map((t) => (
+      <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_360px]">
+        {/* Left: nav + lists */}
+        <div className="flex min-h-0 flex-col border-r border-border">
+          <div className="flex shrink-0 flex-col border-b border-border p-2">
+            {([
+              ['rundowns', 'Rundown'],
+              ['templates', 'Templates'],
+              ['data', 'Data'],
+            ] as const).map(([id, label]) => (
               <button
-                key={t}
-                onClick={() => setTab(t)}
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
                 className={cn(
-                  'px-4 py-2.5 text-sm capitalize transition-colors',
-                  tab === t ? 'border-b-2 border-primary text-ink' : 'text-ink-muted hover:text-ink',
+                  'rounded-md px-3 py-2 text-left text-sm transition-colors',
+                  tab === id ? 'bg-primary/15 text-ink font-medium' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
                 )}
               >
-                {t}
+                {label}
               </button>
             ))}
           </div>
-          <div className="min-h-0 flex-1 overflow-auto">
-            {tab === 'templates'
-              ? <TemplatesTab
-                  templates={visibleTemplates}
-                  live={live}
-                  canContinue={prepId => isWaitingContinue(onAirDetails, channelId, prepId)}
-                  onTake={take}
-                  onUpdate={update}
-                  onClear={clear}
-                  onContinue={continueLive}
-                />
-              : (
-                tab === 'data' ? (
-                <DataElementsTab
-                  templates={visibleTemplates}
-                  onTake={(templateId, values) => {
-                    void (async () => {
-                      try {
-                        const rec = await api.templates.get(templateId);
-                        await take(rec, values);
-                      } catch (error) {
-                        toast.error(error instanceof Error ? error.message : 'TAKE failed');
-                      }
-                    })();
+          <div className="min-h-0 flex-1 overflow-auto p-2">
+            {tab === 'rundowns' && (
+              <>
+                <input
+                  ref={importRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void importRundown(f).catch((err) => toast.error(`Import failed: ${(err as Error).message}`));
+                    e.target.value = '';
                   }}
                 />
-              ) : (
-                <RundownTab
-                  channels={channels}
-                  templates={visibleTemplates}
-                  rundowns={rundowns}
-                  setRundowns={setRundowns}
-                  dataLoaded={controlDataLoaded}
-                  onAir={onAir}
-                  setOnAir={setOnAir}
-                  fallbackChannelId={channelId || 'default'}
-                  send={send}
-                  onAirDetails={onAirDetails}
-                  onPreferredChannelChange={setRundownMonitorChannel}
-                  dataElements={dataElements}
-                />
-              )
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Rundowns</span>
+                  <div className="flex items-center gap-1">
+                    <button type="button" className="text-ink-faint hover:text-ink" onClick={() => importRef.current?.click()} title="Import">
+                      <FileUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      className="text-ink-faint hover:text-ink"
+                      title="New rundown"
+                      onClick={() => void createRundown().catch((e) => toast.error((e as Error).message))}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  {rundowns.map((r, idx) => (
+                    <div
+                      key={r.id}
+                      className={cn(
+                        'rounded border px-2 py-1.5',
+                        r.id === selectedRundownId ? 'border-primary/60 bg-surface-2' : 'border-border bg-surface',
+                      )}
+                    >
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 truncate text-left text-[13px] font-medium"
+                          onClick={() => setSelectedRundownId(r.id)}
+                        >
+                          {renamingId === r.id ? (
+                            <Input
+                              value={renameVal}
+                              autoFocus
+                              onChange={(e) => setRenameVal(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  setRenamingId(null);
+                                  void api.rundowns.update(r.id, { name: renameVal.trim() || r.name }).then((u) => {
+                                    setRundowns((prev) => prev.map((x) => (x.id === u.id ? normalizeRundown(u) : x)));
+                                  });
+                                }
+                                if (e.key === 'Escape') setRenamingId(null);
+                              }}
+                            />
+                          ) : r.name}
+                        </button>
+                        <button type="button" className="text-ink-faint hover:text-ink" disabled={idx === 0} onClick={() => void moveRundown(r.id, -1)}>
+                          <ArrowUp className="h-3 w-3" />
+                        </button>
+                        <button type="button" className="text-ink-faint hover:text-ink" disabled={idx === rundowns.length - 1} onClick={() => void moveRundown(r.id, 1)}>
+                          <ArrowDown className="h-3 w-3" />
+                        </button>
+                        <button type="button" className="text-ink-faint hover:text-ink" onClick={() => { setRenamingId(r.id); setRenameVal(r.name); }}>
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        <button type="button" className="text-ink-faint hover:text-ink" onClick={() => void duplicateRundown(r.id).catch((e) => toast.error((e as Error).message))}>
+                          <Copy className="h-3 w-3" />
+                        </button>
+                        <button type="button" className="text-ink-faint hover:text-ink" onClick={() => exportRundown(r)}>
+                          <FileDown className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          className="text-ink-faint hover:text-danger"
+                          disabled={rundowns.length <= 1}
+                          onClick={() => void removeRundown(r.id).catch((e) => toast.error((e as Error).message))}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-ink-faint">{r.slots.length} slots</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {tab === 'templates' && (
+              <div className="space-y-2">
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  Folder
+                  <Select
+                    className="mt-1"
+                    aria-label="Template folder"
+                    value={folderFilter}
+                    onChange={(e) => setFolderFilter(e.target.value)}
+                    disabled={folderSelectOptions.length === 0}
+                  >
+                    {folderSelectOptions.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </Select>
+                </label>
+                {templatesForTemplatesTab.length === 0 ? (
+                  <p className="px-1 py-4 text-center text-[12px] text-ink-faint">No templates</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {templatesForTemplatesTab.map((t) => (
+                      <li key={t.id}>
+                        <button
+                          type="button"
+                          draggable
+                          onDragStart={(e) => {
+                            const payload = JSON.stringify({ templateId: t.id, name: t.name });
+                            e.dataTransfer.setData(MIME_TEMPLATE, payload);
+                            e.dataTransfer.setData('text/plain', payload);
+                          }}
+                          onClick={() => setInspectorTarget({ kind: 'template', templateId: t.id })}
+                          className={cn(
+                            'flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-[13px]',
+                            inspectorTarget?.kind === 'template' && inspectorTarget.templateId === t.id
+                              ? 'border-primary bg-primary/10'
+                              : 'border-border bg-surface hover:border-ink-faint',
+                          )}
+                        >
+                          {live.includes(t.id) && <span className="h-2 w-2 shrink-0 rounded-full bg-live" aria-label="on air" />}
+                          <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {tab === 'data' && (
+              <div className="space-y-2">
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  Folder
+                  <Select
+                    className="mt-1"
+                    aria-label="Data folder"
+                    value={dataFolderFilter}
+                    onChange={(e) => {
+                      setDataFolderFilter(e.target.value);
+                      setDataTemplateFilter('');
+                    }}
+                    disabled={folderSelectOptions.length === 0}
+                  >
+                    {folderSelectOptions.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </Select>
+                </label>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  Template
+                  <Select
+                    className="mt-1"
+                    aria-label="Data template"
+                    value={dataTemplateFilter}
+                    onChange={(e) => setDataTemplateFilter(e.target.value)}
+                  >
+                    <option value="">Select template…</option>
+                    {templatesForDataTab.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </Select>
+                </label>
+                {dataElementsForList.length === 0 ? (
+                  <p className="px-1 py-4 text-center text-[12px] text-ink-faint">No data elements</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {dataElementsForList.map((de) => (
+                      <li key={de.id}>
+                        <button
+                          type="button"
+                          draggable
+                          onDragStart={(e) => {
+                            const payload = JSON.stringify({
+                              dataElementId: de.id,
+                              templateId: de.templateId,
+                              name: de.name,
+                              payload: de.payload,
+                              vars: de.payload,
+                            });
+                            e.dataTransfer.setData(MIME_DATA_ELEMENT, payload);
+                            e.dataTransfer.setData('text/plain', payload);
+                          }}
+                          onClick={() => setInspectorTarget({ kind: 'dataElement', dataElementId: de.id })}
+                          className={cn(
+                            'flex w-full flex-col rounded-md border px-2.5 py-1.5 text-left text-[13px]',
+                            inspectorTarget?.kind === 'dataElement' && inspectorTarget.dataElementId === de.id
+                              ? 'border-primary bg-primary/10'
+                              : 'border-border bg-surface hover:border-ink-faint',
+                          )}
+                        >
+                          <span className="truncate font-medium">{de.name}</span>
+                          <span className="truncate text-[11px] text-ink-faint">
+                            {templates.find((t) => t.id === de.templateId)?.name ?? de.templateId}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
           </div>
         </div>
 
-        {/* Right: monitor + on-air */}
-        <div className="flex min-h-0 flex-col gap-4 overflow-auto p-4">
-          {monitorChannelId && <ProgramMonitor channelId={monitorChannelId} />}
-          <div>
-            <h3 className="mb-2 text-[12px] font-semibold text-ink-muted">On air ({monitorRows.length})</h3>
-            {monitorRows.length === 0 ? (
-              <p className="text-[12px] text-ink-faint">Nothing on air.</p>
-            ) : (
-              <ul className="space-y-1">
-                {monitorRows.map((item) => (
-                  <li key={item.templateId} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
-                    <span className="min-w-0 flex-1 truncate text-[13px]" title={formatOnAirRow(item, displayOnAirName(item.templateId, templates, rundowns), displayOnAirOwner(item, templates, rundowns))}>
-                      {formatOnAirRow(item, displayOnAirName(item.templateId, templates, rundowns), displayOnAirOwner(item, templates, rundowns))}
-                    </span>
-                    <button onClick={() => clearFromChannel(monitorChannelId, item.templateId)} className="text-ink-faint hover:text-danger" aria-label="Clear"><X className="h-4 w-4" /></button>
-                  </li>
-                ))}
-              </ul>
-            )}
+        {/* Center: rundown editor */}
+        <div className="min-h-0 min-w-0 border-r border-border">
+          <RundownTab
+            channels={channels}
+            templates={visibleTemplates}
+            rundowns={rundowns}
+            setRundowns={setRundowns}
+            dataLoaded={controlDataLoaded}
+            onAir={onAir}
+            setOnAir={setOnAir}
+            fallbackChannelId={channelId || 'default'}
+            send={send}
+            onAirDetails={onAirDetails}
+            onPreferredChannelChange={setRundownMonitorChannel}
+            dataElements={dataElements}
+            selectedRundownId={selectedRundownId}
+            onSelectRundown={setSelectedRundownId}
+            showRundownList={false}
+          />
+        </div>
+
+        {/* Right: monitor + inspector */}
+        <div className="flex min-h-0 flex-col overflow-hidden">
+          <div className="shrink-0 space-y-3 border-b border-border p-3">
+            {monitorChannelId && <ProgramMonitor channelId={monitorChannelId} />}
+            <div>
+              <h3 className="mb-2 text-[12px] font-semibold text-ink-muted">On air ({monitorRows.length})</h3>
+              {monitorRows.length === 0 ? (
+                <p className="text-[12px] text-ink-faint">Nothing on air.</p>
+              ) : (
+                <ul className="max-h-32 space-y-1 overflow-auto">
+                  {monitorRows.map((item) => (
+                    <li key={item.templateId} className="flex items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5">
+                      <span
+                        className="min-w-0 flex-1 truncate text-[13px]"
+                        title={formatOnAirRow(item, displayOnAirName(item.templateId, templates, rundowns), displayOnAirOwner(item, templates, rundowns))}
+                      >
+                        {formatOnAirRow(item, displayOnAirName(item.templateId, templates, rundowns), displayOnAirOwner(item, templates, rundowns))}
+                      </span>
+                      <button type="button" onClick={() => clearFromChannel(monitorChannelId, item.templateId)} className="text-ink-faint hover:text-danger" aria-label="Clear">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto">
+            <ControlItemInspector
+              target={inspectorTarget}
+              dataElements={dataElements}
+              onDataElementsChange={setDataElements}
+              onCancel={() => setInspectorTarget(null)}
+              onTake={take}
+              onUpdate={update}
+              onClear={clear}
+              onContinue={continueLive}
+              live={live}
+              canContinue={(prepId) => isWaitingContinue(onAirDetails, channelId, prepId)}
+            />
           </div>
         </div>
       </div>
@@ -290,6 +679,7 @@ function BrowserSourceUrl({ url }: { url: string }) {
         title="Browser Source URL for OBS / vMix"
       />
       <button
+        type="button"
         onClick={async () => { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
         className="grid h-8 w-8 place-items-center rounded-md border border-border text-ink-muted hover:text-ink"
         title="Copy Browser Source URL"
@@ -300,117 +690,34 @@ function BrowserSourceUrl({ url }: { url: string }) {
   );
 }
 
-function TemplatesTab({
-  templates, live, canContinue, onTake, onUpdate, onClear, onContinue,
-}: {
-  templates: TemplateSummary[];
-  live: string[];
-  canContinue: (templateId: string) => boolean;
-  onTake: (rec: TemplateRecord, values: Record<string, string | number>) => void;
-  onUpdate: (templateId: string, values: Record<string, string | number>) => void;
-  onClear: (templateId: string) => void;
-  onContinue: (templateId: string) => void;
-}) {
-  const [prep, setPrep] = useState<TemplateRecord | null>(null);
-  const [values, setValues] = useState<Record<string, string | number>>({});
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  async function loadPrep(id: string) {
-    try {
-      const rec = await api.templates.get(id);
-      setPrep(rec);
-      const init: Record<string, string | number> = {};
-      for (const v of rec.data.variables) init[v.id] = v.defaultValue;
-      setValues(init);
-    } catch (e) {
-      toast.error(`Failed to load template: ${(e as Error).message}`);
-    }
-  }
-
-  function setValue(varId: string, v: string | number) {
-    setValues((prev) => {
-      const next = { ...prev, [varId]: v };
-      if (prep && live.includes(prep.id)) {
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => onUpdate(prep.id, next), 400);
-      }
-      return next;
-    });
-  }
-
-  return (
-    <div className="grid h-full grid-cols-[1fr_300px]">
-      <div className="overflow-auto p-3">
-        {templates.length === 0 ? (
-          <p className="p-6 text-center text-[13px] text-ink-faint">No templates. Create one in Templates.</p>
-        ) : (
-          <ul className="space-y-1">
-            {templates.map((t) => {
-              const isLive = live.includes(t.id);
-              return (
-                <li key={t.id}>
-                  <button
-                    onClick={() => loadPrep(t.id)}
-                    className={cn(
-                      'flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-[13px] transition-colors',
-                      prep?.id === t.id ? 'border-primary bg-primary/10' : 'border-border bg-surface hover:border-ink-faint',
-                    )}
-                  >
-                    {isLive && <span className="h-2 w-2 shrink-0 rounded-full bg-live" aria-label="on air" />}
-                    <span className="min-w-0 flex-1 truncate">{t.name}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      <div className="flex flex-col border-l border-border">
-        {!prep ? (
-          <p className="p-4 text-[13px] text-ink-faint">Select a template to prepare.</p>
-        ) : (
-          <>
-            <div className="border-b border-border p-3">
-              <div className="truncate text-sm font-medium">{prep.name}</div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto p-3">
-              <VariableValues variables={prep.data.variables} values={values} onChange={setValue} />
-            </div>
-            <div className="grid grid-cols-4 gap-2 border-t border-border p-3">
-              <Button variant="danger" onClick={() => onTake(prep, values)}>TAKE</Button>
-              <Button variant="neutral" onClick={() => onUpdate(prep.id, values)} disabled={!live.includes(prep.id)}>UPDATE</Button>
-              <Button variant="neutral" onClick={() => onClear(prep.id)} disabled={!live.includes(prep.id)}>CLEAR</Button>
-              <Button variant="neutral" onClick={() => onContinue(prep.id)} disabled={!canContinue(prep.id)}>CONTINUE</Button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function normalizeRundown(rundown: Rundown): Rundown {
   const slots = Array.isArray(rundown.slots) ? rundown.slots : [];
   return {
     ...rundown,
-    slots: slots.map((slot, idx) => {
-      const vars = slot.vars ?? slot.variables ?? {};
-      const name = slot.name ?? slot.label ?? `Slot ${idx + 1}`;
-      return {
-        ...slot,
-        slotId: slot.slotId ?? slot.id ?? createId(),
-        name,
-        vars,
-      };
-    }),
+    slots: slots.map((slot, idx) => normalizeSlotTree(slot, idx)),
+  };
+}
+
+function normalizeSlotTree(slot: Rundown['slots'][number], idx: number): Rundown['slots'][number] {
+  const vars = slot.vars ?? slot.variables ?? {};
+  const name = slot.name ?? slot.label ?? (slot.kind === 'primary' ? 'Primary' : `Slot ${idx + 1}`);
+  const children = Array.isArray(slot.children)
+    ? slot.children.map((child, childIdx) => normalizeSlotTree(child, childIdx))
+    : undefined;
+  return {
+    ...slot,
+    slotId: slot.slotId ?? slot.id ?? createId(),
+    name,
+    vars,
+    kind: slot.kind === 'primary' ? 'primary' : (slot.kind ?? 'item'),
+    ...(children ? { children } : {}),
   };
 }
 
 function displayOnAirOwner(item: import('@/core/api').OnAirDetailsItem, templates: TemplateSummary[], rundowns: Rundown[]): string {
   if (templates.some((template) => template.id === item.templateId)) return 'template';
   for (const rundown of rundowns) {
-    const slot = rundown.slots.find((entry) => entry.slotId === item.templateId || entry.slotId === item.slotId);
+    const slot = findSlot(rundown.slots, item.templateId) ?? findSlot(rundown.slots, item.slotId ?? '');
     if (slot) return `slot ${slot.slotId}`;
   }
   return onAirOwnerLabel(item);
@@ -420,8 +727,20 @@ function displayOnAirName(id: string, templates: TemplateSummary[], rundowns: Ru
   const tpl = templates.find((t) => t.id === id);
   if (tpl) return tpl.name;
   for (const rundown of rundowns) {
-    const slot = rundown.slots.find((s) => s.slotId === id);
+    const slot = findSlot(rundown.slots, id);
     if (slot) return `${rundown.name} / ${slot.name}`;
   }
   return id;
+}
+
+function findSlot(slots: Rundown['slots'], id: string): Rundown['slots'][number] | null {
+  if (!id) return null;
+  for (const slot of slots) {
+    if (slot.slotId === id) return slot;
+    if (slot.children) {
+      const nested = findSlot(slot.children, id);
+      if (nested) return nested;
+    }
+  }
+  return null;
 }
