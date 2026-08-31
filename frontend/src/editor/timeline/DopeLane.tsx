@@ -64,11 +64,20 @@ export function DopeLane({
       style={{ height: LANE_H }}
       onPointerDown={(event) => {
         if ((event.target as HTMLElement).dataset.kf) return;
-        event.stopPropagation();
+        // Let marquee bubble to the lanes scroller; only insert a keyframe on a click.
         if (event.shiftKey || event.ctrlKey || event.metaKey) return;
-        const frame = frameFromEvent(event, event.currentTarget);
-        if (points.some((point) => point.frame === frame)) return;
-        setKeyframeValue(target, frame, prop, sampleValue(points, frame));
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const laneEl = event.currentTarget;
+        const onUp = (up: PointerEvent) => {
+          window.removeEventListener('pointerup', onUp);
+          if (Math.hypot(up.clientX - startX, up.clientY - startY) > 4) return;
+          const fake = { clientX: up.clientX } as unknown as ReactPointerEvent;
+          const f = frameFromEvent(fake, laneEl);
+          if (points.some((point) => point.frame === f)) return;
+          setKeyframeValue(target, f, prop, sampleValue(points, f));
+        };
+        window.addEventListener('pointerup', onUp);
       }}
     >
       {points.slice(0, -1).map((a, index) => {

@@ -252,19 +252,26 @@ function pushEntry(
  * Compute the effective local frame for a director given a global playhead,
  * honoring offset, duration, loop and swing. Returns null if the director is
  * outside its active window (not yet started / finished on a bounded, non-loop).
+ *
+ * Swing ping-pongs local time (0→dur→0→…) and repeats for as long as the
+ * director keeps receiving global time (air/actions can stop it later).
  */
 export function directorLocalFrame(d: TimelineDirector, globalFrame: number): number | null {
   const start = d.offsetFrames;
-  const len = d.durationFrames;
+  const len = Math.max(1, d.durationFrames);
   const rel = globalFrame - start;
 
   if (rel < 0) return null;
+
+  if (d.swing) {
+    const period = len * 2;
+    const cycle = rel % period;
+    if (cycle <= len) return cycle;
+    return len - (cycle - len);
+  }
+
   if (rel > len) {
-    if (d.loop) {
-      const mod = rel % len;
-      return d.swing ? (Math.floor(rel / len) % 2 === 1 ? len - mod : mod) : mod;
-    }
-    // Bounded, finished: clamp to last frame (so the final keyframe holds).
+    if (d.loop) return rel % len;
     return len;
   }
   return rel;
@@ -354,13 +361,28 @@ export function sampleAt(
   norm: NormalizedTimeline,
   globalFrame: number,
 ): TimelineSample {
+  const locals: Record<string, number | null> = {};
+  for (const d of norm.directorList) {
+    locals[d.id] = directorLocalFrame(d, globalFrame);
+  }
+  return sampleAtLocals(norm, locals);
+}
+
+/**
+ * Sample with explicit per-director local frames (editor multi-playhead scrub).
+ * `null` / missing means the director is inactive at this moment.
+ */
+export function sampleAtLocals(
+  norm: NormalizedTimeline,
+  locals: Record<string, number | null | undefined>,
+): TimelineSample {
   const perDirector: Record<string, DirectorSample> = {};
   const mergedLayers: Record<string, AnimatableValues> = {};
   const mergedGroups: Record<string, AnimatableValues> = {};
 
   for (const d of norm.directorList) {
-    const local = directorLocalFrame(d, globalFrame);
-    const active = local !== null;
+    const local = locals[d.id];
+    const active = local !== null && local !== undefined;
     const ds: DirectorSample = { layers: {}, groups: {}, active };
     if (active) {
       const compiled = norm.directors[d.id];
@@ -369,7 +391,7 @@ export function sampleAt(
         for (const tid of compiled.targetIds) {
           const track = tracks.get(tid);
           if (!track) continue;
-          const vals = sampleTargetTrack(track, local!);
+          const vals = sampleTargetTrack(track, local);
           if (Object.keys(vals).length === 0) continue;
           if (track.isLayer) {
             ds.layers[tid] = vals;

@@ -195,6 +195,7 @@ export function LayersPanel() {
   const addLayer = useEditor((s) => s.addLayer);
   const addGroup = useEditor((s) => s.addGroup);
   const patch = useEditor((s) => s.patch);
+  const select = useEditor((s) => s.select);
   const checked = useEditor((s) => s.checked);
   const toggleChecked = useEditor((s) => s.toggleChecked);
   const clearChecked = useEditor((s) => s.clearChecked);
@@ -337,7 +338,12 @@ export function LayersPanel() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto py-1">
+      <div
+        className="min-h-0 flex-1 overflow-auto py-1"
+        onPointerDown={(e) => {
+          if (e.target === e.currentTarget) select(null);
+        }}
+      >
         <Container
           entries={template.rootStack}
           depth={0}

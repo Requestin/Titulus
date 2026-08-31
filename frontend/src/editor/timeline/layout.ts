@@ -42,6 +42,7 @@ export type GroupLaneRow = {
   height: number;
   start: number;
   end: number;
+  collapsed: boolean;
 };
 
 export type TrackLaneRow = {
@@ -58,6 +59,7 @@ export function buildLaneLayout(
   template: Template,
   tracks: TimelineTrack[],
   _pxPerFrame: number,
+  collapsedObjects: ReadonlySet<string> = new Set(),
 ): { rows: LaneRow[]; height: number } {
   void _pxPerFrame;
   const rows: LaneRow[] = [];
@@ -81,8 +83,10 @@ export function buildLaneLayout(
     const label = target.kind === 'layer'
       ? template.layers.find((layer) => layer.id === target.id)?.name ?? target.id
       : template.groups.find((group) => group.id === target.id)?.name ?? target.id;
-    rows.push({ kind: 'group', target, label, y, height: GROUP_HDR_H, start, end });
+    const collapsed = collapsedObjects.has(key);
+    rows.push({ kind: 'group', target, label, y, height: GROUP_HDR_H, start, end, collapsed });
     y += GROUP_HDR_H;
+    if (collapsed) continue;
     for (const track of groupTracks) {
       rows.push({ kind: 'track', target: track.target, prop: track.prop, y, height: LANE_H });
       y += LANE_H;
@@ -97,6 +101,7 @@ export function buildAllDirectorsLaneLayout(
   directors: TimelineDirector[],
   collapsedDirectors: ReadonlySet<string>,
   pxPerFrame: number,
+  collapsedObjects: ReadonlySet<string> = new Set(),
 ): { rows: LaneRow[]; height: number } {
   const rows: LaneRow[] = [];
   let y = 0;
@@ -118,7 +123,7 @@ export function buildAllDirectorsLaneLayout(
       const layer = template.layers.find((item) => item.id === track.target.id);
       return layer?.type === 'crawl';
     });
-    const nested = buildLaneLayout(template, tracks, pxPerFrame);
+    const nested = buildLaneLayout(template, tracks, pxPerFrame, collapsedObjects);
     for (const row of nested.rows) {
       if (row.kind === 'director') continue;
       rows.push({ ...row, y } as LaneRow);

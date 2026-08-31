@@ -1,10 +1,19 @@
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
-import type { AnimatableProp, Template, TimelineDirector } from '@runtime';
+import type { AnimatableProp, Template } from '@runtime';
+import { directorLocalFrame } from '@runtime';
 import { Checkbox, NumberInput } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { useEditor, type Target } from '../store';
-import { requestContinue, usePlayhead } from '../playheadStore';
+import {
+  usePlayhead,
+  requestContinue,
+  scrubGlobalPlayhead,
+  scrubLocalPlayhead,
+  playheadStore,
+  preparePlayStart,
+  setLivePlaying,
+} from '../playheadStore';
 import { isCrawlDirector } from '../crawlTimeline';
 import { canRemoveDirector, listCuesForDirector } from '../timelineCues';
 import {
@@ -35,13 +44,8 @@ import {
 
 export type { SelectedKeyframe };
 
-function directorLocalPlayhead(
-  director: TimelineDirector,
-  active: TimelineDirector | undefined,
-  activeLocal: number,
-): number {
-  const global = (active?.offsetFrames ?? 0) + activeLocal;
-  return Math.max(0, Math.min(director.durationFrames, global - director.offsetFrames));
+function objectKey(target: Target): string {
+  return `${target.kind}:${target.id}`;
 }
 
 function Ruler({
@@ -102,7 +106,6 @@ export function TimelinePanel() {
   const selectedKeyframes = useEditor((state) => state.selectedKeyframes);
   const selectedCueId = useEditor((state) => state.selectedCueId);
   const waitingContinue = usePlayhead((state) => state.waitingContinue);
-  const setPlayhead = useEditor((state) => state.setPlayhead);
   const setPlaying = useEditor((state) => state.setPlaying);
   const setActiveDirector = useEditor((state) => state.setActiveDirector);
   const addDirector = useEditor((state) => state.addDirector);
@@ -127,19 +130,27 @@ export function TimelinePanel() {
   const [activeTrack, setActiveTrack] = useState<{ target: Target; prop: AnimatableProp } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [collapsedDirectors, setCollapsedDirectors] = useState<Set<string>>(() => new Set());
+  const [collapsedObjects, setCollapsedObjects] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const headersScrollRef = useRef<HTMLDivElement>(null);
   const lanesScrollRef = useRef<HTMLDivElement>(null);
   const scrollSyncRef = useRef(false);
+  const globalPlayhead = usePlayhead((state) => state.globalPlayhead);
+  const localPlayheads = usePlayhead((state) => state.localPlayheads);
 
   if (!template) return null;
   const current = template;
   const directors = current.timeline.directors;
   const director = directors.find((item) => item.id === activeDirectorId) ?? directors[0];
-  const duration = Math.max(1, ...directors.map((item) => item.durationFrames));
+  const duration = Math.max(
+    1,
+    current.timeline.durationFrames,
+    ...directors.map((item) => item.offsetFrames + item.durationFrames),
+  );
+  const activeLocalDuration = director?.durationFrames ?? duration;
   const selectedTarget: Target | null = selection ? { kind: selection.kind, id: selection.id } : null;
   const allTracks = collectTracks(current);
-  const layout = buildAllDirectorsLaneLayout(current, directors, collapsedDirectors, pxPerFrame);
+  const layout = buildAllDirectorsLaneLayout(current, directors, collapsedDirectors, pxPerFrame, collapsedObjects);
   const spans = directorLaneSpans(layout.rows);
   const untrackedProps = selectedTarget ? untrackedPropsFor(current, selectedTarget) : [];
   const activeTrackResolved = activeTrack
@@ -148,6 +159,29 @@ export function TimelinePanel() {
     : (selectedTarget
       ? allTracks.find((track) => track.target.kind === selectedTarget.kind && track.target.id === selectedTarget.id) ?? allTracks[0] ?? null
       : allTracks[0] ?? null);
+
+  function zoomBy(delta: number) {
+    const area = lanesScrollRef.current;
+    setPxPerFrame((prev) => {
+      const next = Math.min(24, Math.max(2, prev + delta));
+      if (area && next !== prev) {
+        const oldX = playhead * prev;
+        const newX = playhead * next;
+        area.scrollLeft = Math.max(0, area.scrollLeft + (newX - oldX));
+      }
+      return next;
+    });
+  }
+
+  function toggleObjectCollapsed(target: Target) {
+    const key = objectKey(target);
+    setCollapsedObjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   function syncScroll(from: 'headers' | 'lanes') {
     if (view !== 'dope' || scrollSyncRef.current) return;
@@ -166,14 +200,57 @@ export function TimelinePanel() {
     const area = lanesScrollRef.current;
     if (!area) return;
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const frame = Math.min(duration, xToFrame(event.clientX - rect.left + area.scrollLeft));
+    scrubGlobalPlayhead(frame, directors, director?.id ?? activeDirectorId);
     setPlaying(false);
-    setPlayhead(Math.min(duration, xToFrame(event.clientX - rect.left + area.scrollLeft)));
+  }
+
+  function scrubLocalFromEvent(directorId: string, durationFrames: number, event: ReactPointerEvent | PointerEvent) {
+    const area = lanesScrollRef.current;
+    if (!area) return;
+    const content = area.firstElementChild as HTMLElement | null;
+    if (!content) return;
+    const rect = content.getBoundingClientRect();
+    const frame = Math.min(
+      durationFrames,
+      Math.max(0, Math.round((event.clientX - rect.left + area.scrollLeft) / pxPerFrame)),
+    );
+    scrubLocalPlayhead(directorId, frame, durationFrames, director?.id ?? activeDirectorId);
+    setPlaying(false);
+  }
+
+  function startLocalPlayheadDrag(directorId: string, durationFrames: number, event: ReactPointerEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    scrubLocalFromEvent(directorId, durationFrames, event);
+    const onMove = (move: PointerEvent) => scrubLocalFromEvent(directorId, durationFrames, move);
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
+  function togglePlay() {
+    // Always read live store — React `playing` can lag one click behind a
+    // Stop/finish that already cleared the flag, which made Play act as Pause.
+    if (playheadStore.getState().playing) {
+      setLivePlaying(false);
+      setPlaying(false);
+      return;
+    }
+    preparePlayStart(directors, director?.id ?? activeDirectorId);
+    setPlaying(true);
   }
 
   function laneFrameFromEvent(event: ReactPointerEvent, laneEl: Element): number {
     const area = lanesScrollRef.current;
     const rect = laneEl.getBoundingClientRect();
-    return Math.min(duration, Math.max(0, Math.round((event.clientX - rect.left + (area?.scrollLeft ?? 0)) / pxPerFrame)));
+    return Math.min(
+      activeLocalDuration,
+      Math.max(0, Math.round((event.clientX - rect.left + (area?.scrollLeft ?? 0)) / pxPerFrame)),
+    );
   }
 
   function handleDrop(directorId: string, data: string) {
@@ -234,15 +311,23 @@ export function TimelinePanel() {
       <TimelineTransport
         playing={playing}
         playhead={playhead}
-        duration={duration}
+        duration={activeLocalDuration}
         view={view}
         canContinue={waitingContinue}
-        onTogglePlay={() => setPlaying(!playing)}
-        onStop={() => { setPlaying(false); setPlayhead(0); }}
+        onTogglePlay={togglePlay}
+        onStop={() => {
+          setLivePlaying(false);
+          scrubGlobalPlayhead(
+            director?.offsetFrames ?? 0,
+            directors,
+            director?.id ?? activeDirectorId,
+          );
+          setPlaying(false);
+        }}
         onContinue={requestContinue}
         onView={setView}
-        onZoomOut={() => setPxPerFrame((value) => Math.max(2, value - 2))}
-        onZoomIn={() => setPxPerFrame((value) => Math.min(24, value + 2))}
+        onZoomOut={() => zoomBy(-2)}
+        onZoomIn={() => zoomBy(2)}
       />
 
       {director && (
@@ -376,27 +461,42 @@ export function TimelinePanel() {
                 if (row.kind === 'group') {
                   const groupSelected = selectedTarget?.kind === row.target.kind && selectedTarget.id === row.target.id;
                   return (
-                    <button
+                    <div
                       key={`g:${row.target.kind}:${row.target.id}:${row.y}`}
-                      type="button"
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData('text/plain', serializeTimelineDrag({ type: 'object', target: row.target }));
-                      }}
-                      onClick={() => select(row.target)}
                       style={{ height: GROUP_HDR_H }}
                       className={cn(
-                        'flex w-full items-center gap-1 px-2 pl-4 text-left text-[11px] font-semibold',
+                        'flex w-full items-center gap-0.5 px-1 pl-3 text-[11px] font-semibold',
                         groupSelected ? 'bg-primary/10 text-ink' : 'text-ink-muted hover:bg-surface-2',
                       )}
                     >
-                      <span className="truncate">{row.label}</span>
-                    </button>
+                      <button
+                        type="button"
+                        aria-label={row.collapsed ? `Expand ${row.label}` : `Collapse ${row.label}`}
+                        onClick={() => toggleObjectCollapsed(row.target)}
+                        className="grid h-5 w-5 shrink-0 place-items-center hover:text-ink"
+                      >
+                        {row.collapsed
+                          ? <ChevronRight className="h-3 w-3" aria-hidden />
+                          : <ChevronDown className="h-3 w-3" aria-hidden />}
+                      </button>
+                      <button
+                        type="button"
+                        draggable
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData('text/plain', serializeTimelineDrag({ type: 'object', target: row.target }));
+                        }}
+                        onClick={() => select(row.target)}
+                        className="min-w-0 flex-1 truncate text-left"
+                      >
+                        {row.label}
+                      </button>
+                    </div>
                   );
                 }
                 const isActive = activeTrackResolved
                   && activeTrackResolved.target.id === row.target.id
                   && activeTrackResolved.prop === row.prop;
+                const objectSelected = selectedTarget?.kind === row.target.kind && selectedTarget.id === row.target.id;
                 return (
                   <div
                     key={`t:${row.target.kind}:${row.target.id}:${row.prop}:${row.y}`}
@@ -411,7 +511,7 @@ export function TimelinePanel() {
                     style={{ height: row.height }}
                     className={cn(
                       'flex items-center gap-0.5 border-b border-border/40 pl-5 pr-1',
-                      isActive ? 'bg-primary/15 text-ink' : 'text-ink-muted hover:bg-surface-2',
+                      isActive ? 'bg-primary/15 text-ink' : objectSelected ? 'bg-primary/10 text-ink' : 'text-ink-muted hover:bg-surface-2',
                     )}
                   >
                     <button
@@ -444,44 +544,52 @@ export function TimelinePanel() {
           ref={lanesScrollRef}
           className="relative min-h-0 min-w-0 flex-1 overflow-auto"
           onScroll={() => syncScroll('lanes')}
+          onPointerDown={(event) => {
+            if (view !== 'dope') return;
+            if ((event.target as HTMLElement).closest('[data-kf],[data-summary],[data-playhead]')) return;
+            const area = lanesScrollRef.current;
+            if (!area) return;
+            const content = area.firstElementChild as HTMLElement | null;
+            if (!content) return;
+            const rect = content.getBoundingClientRect();
+            const x = event.clientX - rect.left + area.scrollLeft;
+            const y = event.clientY - rect.top + area.scrollTop - RULER_H - ACTION_LANE_H;
+            if (y < 0) return;
+            event.preventDefault();
+            const start = { x0: x, y0: y, x1: x, y1: y };
+            setMarquee(start);
+            const onMove = (move: PointerEvent) => {
+              setMarquee({
+                ...start,
+                x1: move.clientX - rect.left + area.scrollLeft,
+                y1: move.clientY - rect.top + area.scrollTop - RULER_H - ACTION_LANE_H,
+              });
+            };
+            const onUp = (up: PointerEvent) => {
+              const next = {
+                ...start,
+                x1: up.clientX - rect.left + area.scrollLeft,
+                y1: up.clientY - rect.top + area.scrollTop - RULER_H - ACTION_LANE_H,
+              };
+              const rectBox = normalizeMarquee(next.x0, next.y0, next.x1, next.y1);
+              if (Math.abs(rectBox.right - rectBox.left) > 3 || Math.abs(rectBox.bottom - rectBox.top) > 3) {
+                setSelectedKeyframes(keyframesInMarquee(hits, rectBox));
+              }
+              setMarquee(null);
+              window.removeEventListener('pointermove', onMove);
+              window.removeEventListener('pointerup', onUp);
+            };
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+          }}
         >
           <div
-            style={{ width: timelineWidth, minHeight: RULER_H + ACTION_LANE_H + layout.height }}
-            className="relative"
-            onPointerDown={(event) => {
-              if (view !== 'dope') return;
-              if ((event.target as HTMLElement).closest('[data-kf],[data-summary]')) return;
-              const rect = event.currentTarget.getBoundingClientRect();
-              const area = lanesScrollRef.current;
-              const x = event.clientX - rect.left + (area?.scrollLeft ?? 0);
-              const y = event.clientY - rect.top + (area?.scrollTop ?? 0) - RULER_H;
-              if (y < 0) return;
-              const start = { x0: x, y0: y, x1: x, y1: y };
-              setMarquee(start);
-              const onMove = (move: PointerEvent) => {
-                setMarquee({
-                  ...start,
-                  x1: move.clientX - rect.left + (area?.scrollLeft ?? 0),
-                  y1: move.clientY - rect.top + (area?.scrollTop ?? 0) - RULER_H,
-                });
-              };
-              const onUp = (up: PointerEvent) => {
-                const next = {
-                  ...start,
-                  x1: up.clientX - rect.left + (area?.scrollLeft ?? 0),
-                  y1: up.clientY - rect.top + (area?.scrollTop ?? 0) - RULER_H,
-                };
-                const rectBox = normalizeMarquee(next.x0, next.y0, next.x1, next.y1);
-                if (Math.abs(rectBox.right - rectBox.left) > 3 || Math.abs(rectBox.bottom - rectBox.top) > 3) {
-                  setSelectedKeyframes(keyframesInMarquee(hits, rectBox));
-                }
-                setMarquee(null);
-                window.removeEventListener('pointermove', onMove);
-                window.removeEventListener('pointerup', onUp);
-              };
-              window.addEventListener('pointermove', onMove);
-              window.addEventListener('pointerup', onUp);
+            style={{
+              width: timelineWidth,
+              minHeight: '100%',
+              height: RULER_H + ACTION_LANE_H + layout.height,
             }}
+            className="relative"
           >
             <Ruler dur={duration} pxPerFrame={pxPerFrame} onScrub={scrubFromEvent} />
             <ActionLane
@@ -492,29 +600,53 @@ export function TimelinePanel() {
               onSelect={selectCue}
               onMove={moveCue}
             />
+            {view === 'dope' && (
+              <div
+                className="pointer-events-none absolute z-20 w-px bg-warning/80"
+                style={{
+                  left: globalPlayhead * pxPerFrame,
+                  top: RULER_H,
+                  height: ACTION_LANE_H + layout.height,
+                }}
+                title={`Global ${Math.round(globalPlayhead)}`}
+              />
+            )}
             {view === 'dope' && spans.map((span) => {
               const dir = directors.find((item) => item.id === span.directorId);
               if (!dir) return null;
-              const local = directorLocalPlayhead(dir, director, playhead);
+              const local = localPlayheads[dir.id]
+                ?? directorLocalFrame(dir, globalPlayhead)
+                ?? 0;
               return (
                 <div
                   key={`ph:${span.directorId}`}
-                  className="pointer-events-none absolute z-20 w-px bg-live"
+                  data-playhead={dir.id}
+                  className="absolute z-30 w-2 -translate-x-1/2 cursor-ew-resize"
                   style={{
                     left: local * pxPerFrame,
                     top: RULER_H + ACTION_LANE_H + span.y,
                     height: span.height,
                   }}
-                />
+                  title={`${dir.name} local ${Math.round(local)}`}
+                  onPointerDown={(event) => startLocalPlayheadDrag(dir.id, dir.durationFrames, event)}
+                >
+                  <div className="mx-auto h-full w-px bg-live" />
+                </div>
               );
             })}
             {view === 'dope' && layout.rows.map((row) => {
               if (row.kind === 'director') {
+                const dir = directors.find((item) => item.id === row.directorId);
                 return (
                   <div
                     key={`lane-d:${row.directorId}`}
-                    className="border-b border-border/40 bg-surface-2/80"
+                    className="relative border-b border-border/40 bg-surface-2/80"
                     style={{ height: DIRECTOR_HDR_H }}
+                    onPointerDown={(event) => {
+                      if (!dir) return;
+                      if ((event.target as HTMLElement).closest('[data-playhead]')) return;
+                      startLocalPlayheadDrag(dir.id, dir.durationFrames, event);
+                    }}
                   />
                 );
               }
@@ -564,7 +696,7 @@ export function TimelinePanel() {
                 className="pointer-events-none absolute z-20 border border-live/70 bg-live/10"
                 style={{
                   left: Math.min(marquee.x0, marquee.x1),
-                  top: RULER_H + Math.min(marquee.y0, marquee.y1),
+                  top: RULER_H + ACTION_LANE_H + Math.min(marquee.y0, marquee.y1),
                   width: Math.abs(marquee.x1 - marquee.x0),
                   height: Math.abs(marquee.y1 - marquee.y0),
                 }}

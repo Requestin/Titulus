@@ -30,7 +30,7 @@ import {
   isDegenerateProjectedOutline,
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
-import { normalizeTimeline, sampleAt, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
+import { normalizeTimeline, sampleAt, sampleAtLocals, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
 import { reuseOrCreateDirectorMachine, type DirectorMachine } from './directorMachine.js';
 import { effectiveGradient, gradientBackgroundCss } from './rectGradient.js';
 import {
@@ -221,11 +221,49 @@ export class TemplateRenderer {
   /**
    * Seek to an absolute frame and apply state, without playing (editor scrub /
    * preview). Does not fire cue actions (scrubbing is not a linear playthrough).
+   *
+   * Always samples via sampleAt(globalFrame) — never directorMachine.sample().
+   * The machine keeps sticky locals for on-air cue runs; using it here makes
+   * editor Play/scrub freeze on templates that have cues.
    */
   seek(frame: number): void {
     this.frame = Math.max(0, Math.round(frame));
     this.lastFrameSampled = null;
-    this.applyState(this.frame);
+    if (!this.template || !this.norm) return;
+    const sample = sampleAt(this.norm, this.frame);
+    this.lastTimelineSample = sample;
+    this.stats.styleWrites = 0;
+    this.stats.skippedWrites = 0;
+    for (const layer of this.template.layers) {
+      const anim = this.editorTransformPreview.get(layer.id) ?? sample.layers[layer.id];
+      this.applyLayerState(layer, anim);
+    }
+    for (const g of this.template.groups) {
+      const anim = this.editorTransformPreview.get(g.id) ?? sample.groups[g.id];
+      this.applyGroupState(g, anim);
+    }
+    this.applyMaskScopes(sample);
+  }
+
+  /**
+   * Editor multi-playhead scrub: sample each director at an explicit local frame.
+   */
+  seekLocals(locals: Record<string, number | null | undefined>): void {
+    if (!this.template || !this.norm) return;
+    this.lastFrameSampled = null;
+    const sample = sampleAtLocals(this.norm, locals);
+    this.lastTimelineSample = sample;
+    this.stats.styleWrites = 0;
+    this.stats.skippedWrites = 0;
+    for (const layer of this.template.layers) {
+      const anim = this.editorTransformPreview.get(layer.id) ?? sample.layers[layer.id];
+      this.applyLayerState(layer, anim);
+    }
+    for (const g of this.template.groups) {
+      const anim = this.editorTransformPreview.get(g.id) ?? sample.groups[g.id];
+      this.applyGroupState(g, anim);
+    }
+    this.applyMaskScopes(sample);
   }
 
   /**

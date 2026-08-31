@@ -19,7 +19,7 @@ import { attachAllCrawlTimelines, attachCrawlTimeline } from './crawlTimeline';
 import { effectiveAnimatableValues, effectiveTransform } from './effectiveValues';
 import { ancestorMatrix, reparentTransform } from './transformMath';
 import { applyClonedTree, cloneTreeSelection, normalizeTreeSelection, type TreeRef } from './treeClipboard';
-import { playheadStore, syncPlayhead } from './playheadStore';
+import { playheadStore, scrubGlobalPlayhead, syncGlobalPlayhead, syncPlayhead, setLivePlaying } from './playheadStore';
 import { applyObjectStretch } from './timelineSummary';
 import {
   applyKeyframeMoves,
@@ -503,15 +503,35 @@ export const useEditor = create<EditorState>()(
       // --- timeline + playback ---
       setPlayhead: (frame) => {
         const playhead = Math.max(0, Math.round(frame));
-        syncPlayhead(playhead, playheadStore.getState().playing);
-        set({ playhead });
+        const tpl = get().template;
+        const directors = tpl?.timeline.directors ?? [];
+        const dir = directors.find((d) => d.id === get().activeDirectorId);
+        const global = (dir?.offsetFrames ?? 0) + playhead;
+        if (tpl) scrubGlobalPlayhead(global, directors, get().activeDirectorId);
+        else {
+          syncPlayhead(playhead, playheadStore.getState().playing);
+          syncGlobalPlayhead(global);
+        }
+        set({ playhead, playing: false });
       },
       setPlaying: (playing) => {
-        syncPlayhead(playheadStore.getState().playhead, playing);
+        // Play arming is owned by requestEditorPlay / preparePlayStart.
+        // Only clear the live flag here on pause/stop — never re-assert true
+        // (that raced the RAF loop after Go-to-start → Play).
+        if (!playing) setLivePlaying(false);
         set({ playing });
       },
       setActiveDirector: (id) => {
-        syncPlayhead(0, false);
+        const tpl = get().template;
+        const directors = tpl?.timeline.directors ?? [];
+        const dir = directors.find((d) => d.id === id);
+        const global = dir?.offsetFrames ?? 0;
+        if (tpl) scrubGlobalPlayhead(global, directors, id);
+        else {
+          syncPlayhead(0, false);
+          syncGlobalPlayhead(global);
+        }
+        setLivePlaying(false);
         set({ activeDirectorId: id, playhead: 0, playing: false });
       },
       setSelectedKeyframes: (keyframes) => set({ selectedKeyframes: keyframes, selectedCueId: keyframes.length ? null : get().selectedCueId }),

@@ -6,11 +6,18 @@
 // one undoable transform on pointer-up (so a drag is a single history step).
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
+import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, directorLocalFrame, type Transform } from '@runtime';
 import { useStore } from 'zustand';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
-import { playheadStore, setLivePlayhead, setWaitingContinue, usePlayhead } from './playheadStore';
+import {
+  playheadStore,
+  resolveSeekLocals,
+  setLivePlaying,
+  setWaitingContinue,
+  tickPlayhead,
+  usePlayhead,
+} from './playheadStore';
 import { clearGesturePreview, gesturePreviewStore, scheduleGesturePreview } from './gesturePreview';
 import { derivedGroupBox } from './groupBounds';
 import {
@@ -69,18 +76,15 @@ export function CanvasArea() {
   const gridSnap = useEditor((s) => s.gridSnap);
   const gridSize = useEditor((s) => s.gridSize);
   const playhead = usePlayhead((s) => s.playhead);
+  const globalPlayhead = usePlayhead((s) => s.globalPlayhead);
+  const localPlayheads = usePlayhead((s) => s.localPlayheads);
+  const detachedLocals = usePlayhead((s) => s.detachedLocals);
   const playing = usePlayhead((s) => s.playing);
+  const playSessionId = usePlayhead((s) => s.playSessionId);
   const continueRequestId = usePlayhead((s) => s.continueRequestId);
-  const setPlayhead = useEditor((s) => s.setPlayhead);
   const setPlaying = useEditor((s) => s.setPlaying);
   const select = useEditor((s) => s.select);
   const updateTransform = useEditor((s) => s.updateTransform);
-
-  function globalFrame(local: number): number {
-    const st = useEditor.getState();
-    const d = st.template?.timeline.directors.find((x) => x.id === st.activeDirectorId);
-    return (d?.offsetFrames ?? 0) + local;
-  }
 
   const stageRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -227,7 +231,15 @@ export function CanvasArea() {
     if (!r || !template) return;
     r.syncTemplate(template, resolveVariableMap(template));
     r.resize(cw * zoom, ch * zoom);
-    r.seek(globalFrame(playheadStore.getState().playhead));
+    const st = playheadStore.getState();
+    const locals = resolveSeekLocals(
+      template.timeline.directors,
+      st.globalPlayhead,
+      st.localPlayheads,
+      st.detachedLocals,
+    );
+    if (Object.keys(st.detachedLocals).length > 0) r.seekLocals(locals);
+    else r.seek(st.globalPlayhead);
     clearGesturePreview();
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -255,20 +267,24 @@ export function CanvasArea() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gesturePreview]);
 
-  // Scrub: seek when the playhead changes and we're not actively playing.
+  // Scrub: seek when playheads change and we're not actively playing.
   useLayoutEffect(() => {
     const r = rendererRef.current;
-    if (!r || playing) return;
-    r.seek(globalFrame(playhead));
+    const t = useEditor.getState().template;
+    if (!r || !t || playing) return;
+    const st = playheadStore.getState();
+    const locals = resolveSeekLocals(
+      t.timeline.directors,
+      st.globalPlayhead,
+      st.localPlayheads,
+      st.detachedLocals,
+    );
+    const hasDetach = Object.keys(st.detachedLocals).length > 0;
+    if (hasDetach) r.seekLocals(locals);
+    else r.seek(st.globalPlayhead);
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playhead, playing]);
-
-  function applyPreviewFrame(renderer: TemplateRenderer, frame: number): void {
-    if (renderer.hasDirectorRuntime()) renderer.advancePlayback(frame);
-    else renderer.seek(frame);
-    setWaitingContinue(renderer.waitingContinue());
-  }
+  }, [playhead, globalPlayhead, localPlayheads, detachedLocals, playing]);
 
   useEffect(() => {
     if (continueRequestId === 0) return;
@@ -278,40 +294,69 @@ export function CanvasArea() {
     setWaitingContinue(renderer.waitingContinue());
   }, [continueRequestId]);
 
-  // Playback: advance the playhead at fps. Action templates drive the machine;
-  // classic templates keep seek-only preview.
+  // One RAF per explicit Play session. Keeping the loop inside CanvasArea means
+  // its renderer reference cannot be lost when Vite replaces a module via HMR.
   useEffect(() => {
     if (!playing) return;
-    const r = rendererRef.current;
-    const t = useEditor.getState().template;
-    if (!r || !t) return;
-    const dir = t.timeline.directors.find((d) => d.id === useEditor.getState().activeDirectorId);
-    const fps = t.timeline.fps || 50;
-    const dur = dir?.durationFrames ?? t.timeline.durationFrames;
-    const offset = dir?.offsetFrames ?? 0;
-    let local = playheadStore.getState().playhead;
-    let last = performance.now();
+    const renderer = rendererRef.current;
+    const currentTemplate = useEditor.getState().template;
+    if (!renderer || !currentTemplate) {
+      setLivePlaying(false);
+      setPlaying(false);
+      return;
+    }
+
+    const directors = currentTemplate.timeline.directors;
+    const activeId = useEditor.getState().activeDirectorId;
+    const director = directors.find((item) => item.id === activeId);
+    const fps = currentTemplate.timeline.fps || 50;
+    const duration = Math.max(
+      1,
+      director?.durationFrames ?? currentTemplate.timeline.durationFrames,
+    );
+    const offset = director?.offsetFrames ?? 0;
+    let global = playheadStore.getState().globalPlayhead;
+    if (global < offset) global = offset;
+
+    renderer.seek(global);
+    tickPlayhead(global, directors, activeId);
+
     let raf = 0;
+    let last = performance.now();
+    const sessionId = playSessionId;
     const loop = (now: number) => {
-      local += ((now - last) / 1000) * fps;
+      const live = playheadStore.getState();
+      if (!live.playing || live.playSessionId !== sessionId) return;
+
+      global += ((now - last) / 1000) * fps;
       last = now;
-      if (local >= dur) {
-        if (dir?.loop) {
-          local %= dur;
-        } else {
-          applyPreviewFrame(r, offset + dur);
-          setPlayhead(dur);
-          setPlaying(false);
-          return;
-        }
+      const local = director
+        ? directorLocalFrame(director, global)
+        : Math.max(0, global - offset);
+
+      if (local === null) {
+        renderer.seek(offset);
+        tickPlayhead(offset, directors, activeId);
+        setLivePlaying(false);
+        setPlaying(false);
+        return;
       }
-      applyPreviewFrame(r, offset + local);
-      setLivePlayhead(local);
+      if (director && !director.loop && !director.swing && global - offset >= duration) {
+        renderer.seek(offset + duration);
+        tickPlayhead(offset + duration, directors, activeId);
+        setLivePlaying(false);
+        setPlaying(false);
+        return;
+      }
+
+      renderer.seek(global);
+      tickPlayhead(global, directors, activeId);
       raf = requestAnimationFrame(loop);
     };
+
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [playing, setPlayhead, setPlaying]);
+  }, [playing, playSessionId, setPlaying]);
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     const currentTemplate = useEditor.getState().template;

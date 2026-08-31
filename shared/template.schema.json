@@ -381,8 +381,8 @@
             "properties": {
               "mode": { "type": "string", "enum": ["clock", "countup", "countdown"] },
               "format": { "type": "string" },
-              "startTime": { "type": "number" },
-              "targetTime": { "type": "number" },
+              "startTime": { "$ref": "#/$defs/numberOrBinding" },
+              "targetTime": { "$ref": "#/$defs/numberOrBinding" },
               "style": { "$ref": "#/$defs/textStyle" }
             }
           }
