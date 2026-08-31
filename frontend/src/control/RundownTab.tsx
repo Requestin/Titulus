@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Variable } from '@runtime';
 import {
-  Plus, FileUp, FileDown, Copy, Trash2, Pencil, Check, ChevronDown, ChevronRight,
+  Plus, FileUp, FileDown, Copy, Trash2, Pencil, ChevronDown, ChevronRight,
   ArrowUp, ArrowDown, GripVertical, Folder,
 } from 'lucide-react';
 import {
@@ -15,12 +15,10 @@ import {
   type TemplateRecord,
   type TemplateSummary,
 } from '@/core/api';
-import { MamPicker } from '@/media/MamPicker';
 import { prepareForAir } from '@/control/prepareForAir';
 import { continueCommand, isWaitingContinue } from '@/control/onAirContinue';
 import { Button } from '@/components/ui/Button';
-import { Field, Input, NumberInput, ColorInput, Select } from '@/components/ui/form';
-import { MediaUploadButton } from '@/editor/MediaUploadButton';
+import { Input } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { toast } from '@/core/toast';
 import { createId } from '@/core/id';
@@ -51,7 +49,7 @@ function isItem(slot: RundownSlot): boolean {
 }
 
 export function RundownTab({
-  channels,
+  channels: _channels,
   templates,
   rundowns,
   setRundowns,
@@ -100,14 +98,16 @@ export function RundownTab({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
+  const [renamingSlotId, setRenamingSlotId] = useState<string | null>(null);
+  const [renameSlotVal, setRenameSlotVal] = useState('');
   const [cache, setCache] = useState<Record<string, TemplateRecord>>({});
   const [dropHint, setDropHint] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const liveUpdateTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
   const importRef = useRef<HTMLInputElement>(null);
 
   const active = useMemo(() => rundowns.find((r) => r.id === activeId) ?? null, [rundowns, activeId]);
-  const channelId = active?.channel_id || fallbackChannelId || 'default';
+  // Air target is always the Control top-bar channel; rundowns are scoped to that channel.
+  const channelId = fallbackChannelId || 'default';
   const channelLiveSet = new Set(onAir[channelId] ?? []);
 
   const flatTakeable = useMemo(() => {
@@ -138,10 +138,14 @@ export function RundownTab({
   }, [rundowns, activeId, setActiveId]);
 
   useEffect(() => {
+    bootstrapAttempted.current = false;
+  }, [fallbackChannelId]);
+
+  useEffect(() => {
     if (!dataLoaded || rundowns.length > 0 || bootstrapAttempted.current) return;
     bootstrapAttempted.current = true;
     setBootstrapping(true);
-    void api.rundowns.create({ name: 'Rundown 1', slots: [] })
+    void api.rundowns.create({ name: 'Rundown 1', channel_id: fallbackChannelId || null, slots: [] })
       .then((rd) => {
         setRundowns([rd]);
         setActiveId(rd.id);
@@ -151,13 +155,12 @@ export function RundownTab({
         toast.error(`Failed to create default rundown: ${(e as Error).message}`);
       })
       .finally(() => setBootstrapping(false));
-  }, [dataLoaded, rundowns.length, setRundowns, setActiveId]);
+  }, [dataLoaded, rundowns.length, setRundowns, setActiveId, fallbackChannelId]);
 
   useEffect(() => onPreferredChannelChange?.(channelId), [channelId, onPreferredChannelChange]);
 
   useEffect(() => () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    for (const t of Object.values(liveUpdateTimers.current)) if (t) clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -166,14 +169,14 @@ export function RundownTab({
     saveTimer.current = setTimeout(() => {
       void api.rundowns.update(active.id, {
         name: active.name,
-        channel_id: active.channel_id,
+        channel_id: active.channel_id ?? (fallbackChannelId || null),
         slots: active.slots,
       }).catch((e) => toast.error(`Autosave failed: ${(e as Error).message}`));
     }, 450);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [active]);
+  }, [active, fallbackChannelId]);
 
   const patchActive = useCallback((updater: (r: Rundown) => Rundown) => {
     if (!activeId) return;
@@ -217,16 +220,20 @@ export function RundownTab({
     patchOnAir(channelId, (cur) => Array.from(new Set([...cur, slot.slotId])));
   }
 
+  /** TAKE every nested item top→bottom so same-layer ownership keeps the lower row. */
+  async function takePrimary(slot: RundownSlot) {
+    if (!isPrimary(slot)) return;
+    const children = (slot.children ?? []).filter(isItem);
+    if (children.length === 0) return;
+    for (const child of children) {
+      await takeSlot(child);
+    }
+  }
+
   function clearSlot(slotId: string) {
     const ok = send({ type: 'clear', channelId, templateId: slotId });
     if (!ok) return toast.error('Control socket disconnected');
     patchOnAir(channelId, (cur) => cur.filter((id) => id !== slotId));
-  }
-
-  async function updateLive(slotId: string, vars: Record<string, string | number>) {
-    if (!activeLiveSet.has(slotId)) return;
-    const ok = send({ type: 'update', channelId, templateId: slotId, variables: vars });
-    if (!ok) toast.error('Control socket disconnected');
   }
 
   function mapSlots(
@@ -247,34 +254,6 @@ export function RundownTab({
     return parent?.children ?? [];
   }
 
-  function updateSlotVar(slotId: string, varId: string, value: string | number) {
-    if (!active) return;
-    const findSlot = (slots: RundownSlot[]): RundownSlot | null => {
-      for (const s of slots) {
-        if (s.slotId === slotId) return s;
-        if (s.children) {
-          const nested = findSlot(s.children);
-          if (nested) return nested;
-        }
-      }
-      return null;
-    };
-    const slot = findSlot(active.slots);
-    if (!slot || !slot.templateId) return;
-    const nextVars = { ...slot.vars, [varId]: value };
-    patchActive((r) => ({
-      ...r,
-      slots: mapDeep(r.slots, slotId, (s) => ({ ...s, vars: nextVars })),
-    }));
-    const timer = liveUpdateTimers.current[slotId];
-    if (timer) clearTimeout(timer);
-    liveUpdateTimers.current[slotId] = setTimeout(async () => {
-      const tpl = await ensureTemplate(slot.templateId!).catch(() => null);
-      if (!tpl) return;
-      void updateLive(slotId, buildPayload({ ...slot, vars: nextVars }, tpl.data.variables));
-    }, 300);
-  }
-
   function mapDeep(slots: RundownSlot[], slotId: string, fn: (s: RundownSlot) => RundownSlot): RundownSlot[] {
     return slots.map((s) => {
       if (s.slotId === slotId) return fn(s);
@@ -284,7 +263,11 @@ export function RundownTab({
   }
 
   async function createRundown() {
-    const rd = await api.rundowns.create({ name: `Rundown ${rundowns.length + 1}`, slots: [] });
+    const rd = await api.rundowns.create({
+      name: `Rundown ${rundowns.length + 1}`,
+      channel_id: fallbackChannelId || null,
+      slots: [],
+    });
     setRundowns((prev) => [rd, ...prev]);
     setActiveId(rd.id);
   }
@@ -294,7 +277,7 @@ export function RundownTab({
     if (!src) return;
     const rd = await api.rundowns.create({
       name: `${src.name} (copy)`,
-      channel_id: src.channel_id,
+      channel_id: fallbackChannelId || src.channel_id,
       slots: cloneSlotsWithNewIds(src.slots),
     });
     setRundowns((prev) => [rd, ...prev]);
@@ -328,6 +311,7 @@ export function RundownTab({
       : [];
     const rd = await api.rundowns.create({
       name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : 'Imported rundown',
+      channel_id: fallbackChannelId || null,
       slots: cloneSlotsWithNewIds(slots),
     });
     setRundowns((prev) => [rd, ...prev]);
@@ -400,6 +384,9 @@ export function RundownTab({
     e.preventDefault();
     e.stopPropagation();
     setDropHint(null);
+    if (parentId) {
+      setExpanded((prev) => new Set(prev).add(parentId));
+    }
     const reorderRaw = e.dataTransfer.getData(MIME_SLOT_REORDER);
     if (reorderRaw) {
       try {
@@ -571,25 +558,45 @@ export function RundownTab({
 
   function renderSlotRow(slot: RundownSlot, idx: number, parentId: string | null) {
     const focused = focusPath.parentId === parentId && focusPath.index === idx;
-    const live = activeLiveSet.has(slot.slotId);
     const primary = isPrimary(slot);
-    const tpl = slot.templateId ? cache[slot.templateId] : undefined;
-    const dropKey = `${parentId ?? 'root'}:${idx}`;
+    const childItems = primary ? (slot.children ?? []).filter(isItem) : [];
+    const anyChildLive = childItems.some((c) => activeLiveSet.has(c.slotId));
+    const live = primary ? anyChildLive : activeLiveSet.has(slot.slotId);
+    const nestHint = dropHint === `child:${slot.slotId}`;
+    const rowHint = dropHint === `${parentId ?? 'root'}:${idx}`;
+    const renaming = renamingSlotId === slot.slotId;
+
+    function resolveDropMode(clientX: number, el: HTMLElement): 'nest' | 'reorder' {
+      if (!primary) return 'reorder';
+      const rect = el.getBoundingClientRect();
+      return clientX >= rect.left + rect.width * 0.55 ? 'nest' : 'reorder';
+    }
 
     return (
-      <div key={slot.slotId}>
+      <div key={slot.slotId} className={parentId ? 'pl-4' : undefined}>
         <div
           className={cn(
             'rounded border px-2 py-2',
-            focused ? 'border-primary/70 bg-surface-2' : 'border-border bg-surface',
-            dropHint === dropKey && 'ring-1 ring-primary',
+            live && 'border-transparent',
+            !live && (focused ? 'border-primary/70 bg-surface-2' : 'border-border bg-surface'),
+            nestHint && 'bg-warning/25 ring-1 ring-inset ring-warning/80',
+            !nestHint && rowHint && 'ring-1 ring-primary',
           )}
+          style={live ? { backgroundColor: '#371f1f' } : undefined}
           onDragOver={(e) => {
             e.preventDefault();
-            setDropHint(dropKey);
+            e.stopPropagation();
+            const mode = resolveDropMode(e.clientX, e.currentTarget);
+            setDropHint(mode === 'nest' ? `child:${slot.slotId}` : `${parentId ?? 'root'}:${idx}`);
           }}
-          onDragLeave={() => setDropHint((cur) => (cur === dropKey ? null : cur))}
-          onDrop={(e) => onReorderDrop(parentId, idx, e)}
+          onDragLeave={() => setDropHint((cur) => (
+            cur === `child:${slot.slotId}` || cur === `${parentId ?? 'root'}:${idx}` ? null : cur
+          ))}
+          onDrop={(e) => {
+            const mode = resolveDropMode(e.clientX, e.currentTarget);
+            if (mode === 'nest') onDropOnto(slot.slotId, e);
+            else onReorderDrop(parentId, idx, e);
+          }}
         >
           <div className="flex items-center gap-1.5">
             <button
@@ -604,36 +611,89 @@ export function RundownTab({
             >
               <GripVertical className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              className="text-ink-faint hover:text-ink"
-              onClick={() => setExpanded((prev) => {
-                const next = new Set(prev);
-                if (next.has(slot.slotId)) next.delete(slot.slotId); else next.add(slot.slotId);
-                return next;
-              })}
-            >
-              {expanded.has(slot.slotId) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </button>
+            {primary ? (
+              <button
+                type="button"
+                className="text-ink-faint hover:text-ink"
+                aria-label={expanded.has(slot.slotId) ? 'Collapse' : 'Expand'}
+                onClick={() => setExpanded((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(slot.slotId)) next.delete(slot.slotId); else next.add(slot.slotId);
+                  return next;
+                })}
+              >
+                {expanded.has(slot.slotId) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+            ) : (
+              <span className="w-4" />
+            )}
             {primary && <Folder className="h-3.5 w-3.5 shrink-0 text-ink-muted" aria-hidden />}
             <button
               type="button"
               className="min-w-0 flex-1 text-left"
               onClick={() => setFocusPath({ parentId, index: idx })}
             >
-              <div className="truncate text-sm font-medium">{slot.name}</div>
-              <div className="truncate text-[11px] text-ink-faint">
-                {primary
-                  ? `${(slot.children ?? []).length} items`
-                  : (templates.find((t) => t.id === slot.templateId)?.name ?? slot.templateId)}
-              </div>
+              {renaming && primary ? (
+                <Input
+                  value={renameSlotVal}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setRenameSlotVal(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      patchActive((r) => ({
+                        ...r,
+                        slots: mapDeep(r.slots, slot.slotId, (s) => ({
+                          ...s,
+                          name: renameSlotVal.trim() || s.name || 'Primary',
+                        })),
+                      }));
+                      setRenamingSlotId(null);
+                    }
+                    if (e.key === 'Escape') setRenamingSlotId(null);
+                  }}
+                  onBlur={() => {
+                    patchActive((r) => ({
+                      ...r,
+                      slots: mapDeep(r.slots, slot.slotId, (s) => ({
+                        ...s,
+                        name: renameSlotVal.trim() || s.name || 'Primary',
+                      })),
+                    }));
+                    setRenamingSlotId(null);
+                  }}
+                />
+              ) : (
+                <>
+                  <div className="truncate text-sm font-medium">{slot.name}</div>
+                  <div className="truncate text-[11px] text-ink-faint">
+                    {primary
+                      ? `${(slot.children ?? []).length} items`
+                      : (templates.find((t) => t.id === slot.templateId)?.name ?? slot.templateId)}
+                  </div>
+                </>
+              )}
             </button>
+            {primary && (
+              <button
+                type="button"
+                className="text-ink-faint hover:text-ink"
+                title="Rename"
+                onClick={() => {
+                  setRenamingSlotId(slot.slotId);
+                  setRenameSlotVal(slot.name || 'Primary');
+                }}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
             {!primary && (
               <span className={cn(
                 'rounded px-1.5 py-0.5 text-[11px] font-semibold',
-                live ? 'bg-live text-primary-ink' : focused ? 'bg-primary/20 text-primary' : 'bg-surface-2 text-ink-muted',
+                focused ? 'bg-primary/20 text-primary' : 'bg-surface-2 text-ink-muted',
+                live && 'bg-transparent text-ink-muted',
               )}>
-                {live ? 'ON AIR' : focused ? 'NEXT' : 'PENDING'}
+                {focused ? 'NEXT' : 'PENDING'}
               </span>
             )}
             <button
@@ -646,7 +706,17 @@ export function RundownTab({
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
-            {!primary && (
+            {primary ? (
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={childItems.length === 0}
+                title="TAKE all nested items (top to bottom)"
+                onClick={() => void takePrimary(slot)}
+              >
+                TAKE
+              </Button>
+            ) : (
               <Button
                 size="sm"
                 variant={live ? 'neutral' : 'danger'}
@@ -657,80 +727,25 @@ export function RundownTab({
             )}
           </div>
 
-          {expanded.has(slot.slotId) && (
-            <div className="mt-2 space-y-2 border-t border-border pt-2">
-              <Field label="Slot name">
-                <Input
-                  value={slot.name}
-                  onChange={(e) => patchActive((r) => ({
-                    ...r,
-                    slots: mapDeep(r.slots, slot.slotId, (s) => ({ ...s, name: e.target.value })),
-                  }))}
-                />
-              </Field>
-              <Field label="Slot ID">
-                <Input value={slot.slotId} readOnly />
-              </Field>
-              {!primary && (
-                <>
-                  <Field label="Data element">
-                    <Select
-                      value={slot.dataElementId ?? ''}
-                      onChange={(e) => patchActive((r) => ({
-                        ...r,
-                        slots: mapDeep(r.slots, slot.slotId, (s) => ({
-                          ...s,
-                          dataElementId: e.target.value || undefined,
-                        })),
-                      }))}
-                    >
-                      <option value="">None</option>
-                      {dataElements.filter((item) => item.templateId === slot.templateId).map((item) => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      if (!slot.templateId || cache[slot.templateId]) return;
-                      void ensureTemplate(slot.templateId).catch((e) => toast.error((e as Error).message));
-                    }}
-                  >
-                    {tpl ? <Check className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
-                    {tpl ? 'Template loaded' : 'Load variables'}
-                  </Button>
-                  {tpl && (
-                    <SlotVars
-                      varsDef={tpl.data.variables}
-                      values={buildPayload(slot, tpl.data.variables)}
-                      onChange={(varId, value) => updateSlotVar(slot.slotId, varId, value)}
-                    />
-                  )}
-                </>
+          {primary && expanded.has(slot.slotId) && (
+            <div
+              className={cn(
+                'mt-2 space-y-2 rounded border border-dashed border-border p-2',
+                nestHint && 'border-primary bg-primary/5',
               )}
-              {primary && (
-                <div
-                  className={cn(
-                    'space-y-2 rounded border border-dashed border-border p-2',
-                    dropHint === `child:${slot.slotId}` && 'border-primary bg-primary/5',
-                  )}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDropHint(`child:${slot.slotId}`);
-                  }}
-                  onDragLeave={() => setDropHint((cur) => (cur === `child:${slot.slotId}` ? null : cur))}
-                  onDrop={(e) => onDropOnto(slot.slotId, e)}
-                >
-                  {(slot.children ?? []).map((child, childIdx) => renderSlotRow(child, childIdx, slot.slotId))}
-                  {(slot.children ?? []).length === 0 && (
-                    <p className="px-1 py-3 text-center text-[12px] text-ink-faint">
-                      Drop templates or data elements here
-                    </p>
-                  )}
-                </div>
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDropHint(`child:${slot.slotId}`);
+              }}
+              onDragLeave={() => setDropHint((cur) => (cur === `child:${slot.slotId}` ? null : cur))}
+              onDrop={(e) => onDropOnto(slot.slotId, e)}
+            >
+              {(slot.children ?? []).map((child, childIdx) => renderSlotRow(child, childIdx, slot.slotId))}
+              {(slot.children ?? []).length === 0 && (
+                <p className="px-1 py-3 text-center text-[12px] text-ink-faint">
+                  Drop items here, or drag right onto this primary
+                </p>
               )}
             </div>
           )}
@@ -806,15 +821,6 @@ export function RundownTab({
         <span className="tnum rounded border border-border px-2 py-1 text-[12px] text-ink-muted">
           {flatTakeable.length === 0 ? '0 / 0' : `${focusFlatIndex + 1} / ${flatTakeable.length}`}
         </span>
-        <div className="min-w-[180px]">
-          <Select
-            value={active.channel_id ?? ''}
-            onChange={(e) => patchActive((r) => ({ ...r, channel_id: e.target.value || null }))}
-          >
-            <option value="">Default channel ({fallbackChannelId || 'default'})</option>
-            {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </Select>
-        </div>
       </div>
 
       <div className="mb-2 flex items-center justify-between">
@@ -985,47 +991,6 @@ function cloneSlotsWithNewIds(slots: RundownSlot[]): RundownSlot[] {
     slotId: createId(),
     children: s.children ? cloneSlotsWithNewIds(s.children) : undefined,
   }));
-}
-
-function SlotVars({
-  varsDef,
-  values,
-  onChange,
-}: {
-  varsDef: Variable[];
-  values: Record<string, string | number>;
-  onChange: (id: string, value: string | number) => void;
-}) {
-  if (varsDef.length === 0) return <p className="text-[12px] text-ink-faint">Template has no variables.</p>;
-  return (
-    <div className="space-y-2">
-      {varsDef.map((v) => (
-        <Field key={v.id} label={v.label || v.name}>
-          {v.type === 'number' ? (
-            <NumberInput
-              value={Number(values[v.id] ?? 0)}
-              aria-label={v.label || v.name}
-              onChange={(n) => onChange(v.id, n)}
-            />
-          ) : v.type === 'color' ? (
-            <ColorInput value={String(values[v.id] ?? '#ffffff')} onChange={(c) => onChange(v.id, c)} />
-          ) : v.type === 'image' || v.type === 'video' ? (
-            <div className="space-y-1">
-              <Input value={String(values[v.id] ?? '')} onChange={(e) => onChange(v.id, e.target.value)} />
-              <MediaUploadButton
-                accept={v.type === 'video' ? 'video/*' : 'image/*'}
-                onUploaded={(url) => onChange(v.id, url)}
-                label={v.type === 'video' ? 'Upload video' : 'Upload image'}
-              />
-              <MamPicker onPick={(token) => onChange(v.id, token)} accept={v.type === 'video' ? 'video/*' : 'image/*'} />
-            </div>
-          ) : (
-            <Input value={String(values[v.id] ?? '')} onChange={(e) => onChange(v.id, e.target.value)} />
-          )}
-        </Field>
-      ))}
-    </div>
-  );
 }
 
 function normalizeImportedSlot(raw: unknown, idx: number): RundownSlot | null {

@@ -4,6 +4,7 @@ import { api, type DataElement, type TemplateRecord } from '@/core/api';
 import { resolveDefaultDataElementName } from '@/control/resolveDefaultDataElementName';
 import { VariableValues } from '@/control/VariableValues';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/form';
 import { toast } from '@/core/toast';
 
 export type InspectorTarget =
@@ -15,30 +16,18 @@ export function ControlItemInspector({
   dataElements,
   onDataElementsChange,
   onCancel,
-  onTake,
-  onUpdate,
-  onClear,
-  onContinue,
-  live,
-  canContinue,
 }: {
   target: InspectorTarget | null;
   dataElements: DataElement[];
   onDataElementsChange: (next: DataElement[]) => void;
   onCancel: () => void;
-  onTake?: (rec: TemplateRecord, values: Record<string, string | number>) => void;
-  onUpdate?: (templateId: string, values: Record<string, string | number>) => void;
-  onClear?: (templateId: string) => void;
-  onContinue?: (templateId: string) => void;
-  live?: string[];
-  canContinue?: (templateId: string) => boolean;
 }) {
   const [prep, setPrep] = useState<TemplateRecord | null>(null);
   const [values, setValues] = useState<Record<string, string | number>>({});
   const [editingDeId, setEditingDeId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const liveIds = live ?? [];
+  const [nameDialogOpen, setNameDialogOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -47,6 +36,7 @@ export function ControlItemInspector({
         setPrep(null);
         setValues({});
         setEditingDeId(null);
+        setNameDialogOpen(false);
         return;
       }
       try {
@@ -86,35 +76,30 @@ export function ControlItemInspector({
     return () => { cancelled = true; };
   }, [target, dataElements]);
 
-  useEffect(() => () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-  }, []);
-
   function setValue(varId: string, v: string | number) {
-    setValues((prev) => {
-      const next = { ...prev, [varId]: v };
-      if (prep && liveIds.includes(prep.id) && onUpdate) {
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => onUpdate(prep.id, next), 400);
-      }
-      return next;
-    });
+    setValues((prev) => ({ ...prev, [varId]: v }));
   }
 
-  async function saveAsNew() {
+  function openSaveAsNew() {
     if (!prep) return;
-    const prefill = resolveDefaultDataElementName(prep.data, values);
-    const name = window.prompt('Data element name', prefill);
-    if (!name?.trim()) return;
+    setNameDraft(resolveDefaultDataElementName(prep.data, values));
+    setNameDialogOpen(true);
+  }
+
+  async function confirmSaveAsNew(name: string) {
+    if (!prep) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
     setBusy(true);
     try {
       const created = await api.dataElements.create({
-        name: name.trim(),
+        name: trimmed,
         templateId: prep.id,
         payload: { ...values },
       });
       onDataElementsChange([created, ...dataElements.filter((item) => item.id !== created.id)]);
       setEditingDeId(created.id);
+      setNameDialogOpen(false);
       toast.success('Data element created');
     } catch (error) {
       toast.error(`Save as new failed: ${(error as Error).message}`);
@@ -162,9 +147,9 @@ export function ControlItemInspector({
       <div className="min-h-0 flex-1 overflow-auto p-3">
         <VariableValues variables={prep.data.variables} values={values} onChange={setValue} />
       </div>
-      <div className="space-y-2 border-t border-border p-3">
+      <div className="border-t border-border p-3">
         <div className="grid grid-cols-3 gap-2">
-          <Button size="sm" variant="neutral" disabled={busy} onClick={() => void saveAsNew()}>
+          <Button size="sm" variant="neutral" disabled={busy} onClick={openSaveAsNew}>
             Save as new
           </Button>
           <Button size="sm" variant="primary" disabled={busy || !editingDeId} onClick={() => void save()}>
@@ -174,35 +159,111 @@ export function ControlItemInspector({
             Cancel
           </Button>
         </div>
-        {onTake && (
-          <div className="grid grid-cols-4 gap-2">
-            <Button size="sm" variant="danger" onClick={() => onTake(prep, values)}>TAKE</Button>
-            <Button
-              size="sm"
-              variant="neutral"
-              onClick={() => onUpdate?.(prep.id, values)}
-              disabled={!liveIds.includes(prep.id)}
-            >
-              UPDATE
-            </Button>
-            <Button
-              size="sm"
-              variant="neutral"
-              onClick={() => onClear?.(prep.id)}
-              disabled={!liveIds.includes(prep.id)}
-            >
-              CLEAR
-            </Button>
-            <Button
-              size="sm"
-              variant="neutral"
-              onClick={() => onContinue?.(prep.id)}
-              disabled={!canContinue?.(prep.id)}
-            >
-              CONTINUE
-            </Button>
-          </div>
-        )}
+      </div>
+      {nameDialogOpen && (
+        <DataElementNameDialog
+          value={nameDraft}
+          busy={busy}
+          onChange={setNameDraft}
+          onConfirm={() => void confirmSaveAsNew(nameDraft)}
+          onCancel={() => { if (!busy) setNameDialogOpen(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function DataElementNameDialog({
+  value,
+  busy,
+  onChange,
+  onConfirm,
+  onCancel,
+}: {
+  value: string;
+  busy: boolean;
+  onChange: (value: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (!busy) onCancel();
+        return;
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled])',
+      )];
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [busy, onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-modal grid place-items-center bg-bg/70 px-4 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !busy) onCancel();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="de-name-title"
+        className="w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-2xl"
+      >
+        <h2 id="de-name-title" className="text-base font-semibold text-ink">
+          Data element name
+        </h2>
+        <p className="mt-1 text-[13px] text-ink-muted">
+          Name for the new data element.
+        </p>
+        <label className="mt-4 block">
+          <span className="sr-only">Name</span>
+          <Input
+            ref={inputRef}
+            value={value}
+            disabled={busy}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (value.trim() && !busy) onConfirm();
+              }
+            }}
+            placeholder="Name"
+          />
+        </label>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="primary" onClick={onConfirm} disabled={busy || !value.trim()}>
+            {busy ? 'Saving…' : 'Save'}
+          </Button>
+          <Button variant="neutral" onClick={onCancel} disabled={busy}>
+            Cancel
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -15,10 +15,9 @@ import {
   type OnAirDetailsSnapshot,
   type TemplateFolder,
   type TemplateSummary,
-  type TemplateRecord,
   type Rundown,
 } from '@/core/api';
-import { continueCommand, formatOnAirRow, isWaitingContinue, onAirOwnerLabel, resolveOnAirRows } from '@/control/onAirContinue';
+import { formatOnAirRow, onAirOwnerLabel, resolveOnAirRows } from '@/control/onAirContinue';
 import {
   ControlItemInspector,
   type InspectorTarget,
@@ -39,7 +38,6 @@ import {
   RundownTab,
 } from '@/control/RundownTab';
 import { useControlWs, type WsStatus } from '@/core/controlWs';
-import { prepareForAir } from '@/control/prepareForAir';
 import { toast } from '@/core/toast';
 import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/form';
@@ -67,7 +65,7 @@ export function ControlPage() {
   const [hideUnassigned, setHideUnassigned] = useState(readHideUnassignedInControl);
   const [folderFilter, setFolderFilter] = useState<string>('all');
   const [dataFolderFilter, setDataFolderFilter] = useState<string>('all');
-  const [dataTemplateFilter, setDataTemplateFilter] = useState<string>('');
+  const [dataTemplateFilter, setDataTemplateFilter] = useState<string>('all');
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const importRef = useRef<HTMLInputElement>(null);
@@ -119,17 +117,22 @@ export function ControlPage() {
     return () => window.removeEventListener('focus', sync);
   }, []);
 
+  const channelRundowns = useMemo(
+    () => rundowns.filter((r) => r.channel_id === channelId || r.channel_id == null),
+    [rundowns, channelId],
+  );
+
   useEffect(() => {
-    if (!channelId || rundowns.length === 0) return;
+    if (!channelId) return;
     const last = readLastRundownId(channelId);
-    const preferred = (last && rundowns.some((r) => r.id === last))
+    const preferred = (last && channelRundowns.some((r) => r.id === last))
       ? last
-      : (rundowns.find((r) => (r.channel_id || channelId) === channelId)?.id ?? rundowns[0]?.id ?? null);
+      : (channelRundowns[0]?.id ?? null);
     setSelectedRundownId((cur) => {
-      if (cur && rundowns.some((r) => r.id === cur)) return cur;
+      if (cur && channelRundowns.some((r) => r.id === cur)) return cur;
       return preferred;
     });
-  }, [channelId, rundowns]);
+  }, [channelId, channelRundowns]);
 
   useEffect(() => {
     if (channelId && selectedRundownId) writeLastRundownId(channelId, selectedRundownId);
@@ -169,57 +172,25 @@ export function ControlPage() {
   const templatesForDataTab = templatesInFolder(dataFolderFilter);
 
   useEffect(() => {
-    if (!dataTemplateFilter) return;
+    if (dataTemplateFilter === 'all') return;
     if (!templatesForDataTab.some((t) => t.id === dataTemplateFilter)) {
-      setDataTemplateFilter('');
+      setDataTemplateFilter('all');
     }
   }, [templatesForDataTab, dataTemplateFilter]);
 
   const dataElementsForList = useMemo(() => {
-    if (!dataTemplateFilter) return [];
+    if (dataTemplateFilter === 'all') {
+      const ids = new Set(templatesForDataTab.map((t) => t.id));
+      return dataElements.filter((de) => ids.has(de.templateId));
+    }
     return dataElements.filter((de) => de.templateId === dataTemplateFilter);
-  }, [dataElements, dataTemplateFilter]);
+  }, [dataElements, dataTemplateFilter, templatesForDataTab]);
 
   const live = onAir[channelId] ?? [];
-  const monitorChannelId = rundownMonitorChannel || channelId || 'default';
+  const monitorChannelId = channelId || rundownMonitorChannel || 'default';
   const monitorLive = onAir[monitorChannelId] ?? [];
   const monitorRows = resolveOnAirRows(onAirDetails, monitorChannelId, monitorLive);
 
-  const markTaken = useCallback((tid: string) => {
-    setOnAir((prev) => ({ ...prev, [channelId]: Array.from(new Set([...(prev[channelId] ?? []), tid])) }));
-  }, [channelId]);
-  const markCleared = useCallback((tid: string) => {
-    setOnAir((prev) => ({ ...prev, [channelId]: (prev[channelId] ?? []).filter((x) => x !== tid) }));
-  }, [channelId]);
-
-  async function take(rec: TemplateRecord, values: Record<string, string | number>) {
-    if (!channelId) { toast.error('Select a channel first'); return; }
-    try {
-      const prepared = await prepareForAir(rec.data, 'take', values);
-      if (prepared.blocked) {
-        toast.error(prepared.errors[0]?.message || 'Data pipeline blocked TAKE');
-        return;
-      }
-      const ok = send({
-        type: 'take',
-        channelId,
-        templateId: rec.id,
-        template: prepared.template ?? rec.data,
-        variables: { ...values, ...prepared.overrides },
-      });
-      if (!ok) { toast.error('Control WebSocket not connected'); return; }
-      markTaken(rec.id);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Prepare failed');
-    }
-  }
-  function update(templateId: string, values: Record<string, string | number>) {
-    send({ type: 'update', channelId, templateId, variables: values });
-  }
-  function clear(templateId: string) {
-    send({ type: 'clear', channelId, templateId });
-    markCleared(templateId);
-  }
   function clearFromChannel(targetChannelId: string, templateId: string) {
     send({ type: 'clear', channelId: targetChannelId, templateId });
     setOnAir((prev) => ({
@@ -231,10 +202,6 @@ export function ControlPage() {
     if (!channelId) return;
     send({ type: 'clear', channelId });
     setOnAir((prev) => ({ ...prev, [channelId]: [] }));
-  }
-  function continueLive(templateId: string) {
-    if (!channelId) return;
-    send(continueCommand(channelId, templateId));
   }
 
   useEffect(() => {
@@ -260,17 +227,22 @@ export function ControlPage() {
   const browserSourceUrl = monitorChannelId ? `${location.origin}/channel.html?channel=${monitorChannelId}` : '';
 
   async function createRundown() {
-    const rd = await api.rundowns.create({ name: `Rundown ${rundowns.length + 1}`, slots: [] });
+    if (!channelId) return toast.error('Select a channel first');
+    const rd = await api.rundowns.create({
+      name: `Rundown ${channelRundowns.length + 1}`,
+      channel_id: channelId,
+      slots: [],
+    });
     setRundowns((prev) => [normalizeRundown(rd), ...prev]);
     setSelectedRundownId(rd.id);
   }
 
   async function duplicateRundown(id: string) {
     const src = rundowns.find((r) => r.id === id);
-    if (!src) return;
+    if (!src || !channelId) return;
     const rd = await api.rundowns.create({
       name: `${src.name} (copy)`,
-      channel_id: src.channel_id,
+      channel_id: channelId,
       slots: src.slots.map((s) => ({
         ...s,
         slotId: createId(),
@@ -282,30 +254,35 @@ export function ControlPage() {
   }
 
   async function removeRundown(id: string) {
-    if (rundowns.length <= 1) return toast.error('At least one rundown required');
     await api.rundowns.remove(id);
     const next = rundowns.filter((r) => r.id !== id);
     setRundowns(next);
-    if (selectedRundownId === id) setSelectedRundownId(next[0]?.id ?? null);
+    if (selectedRundownId === id) {
+      setSelectedRundownId(next.find((r) => r.channel_id === channelId)?.id ?? null);
+    }
   }
 
   async function moveRundown(id: string, dir: -1 | 1) {
-    const idx = rundowns.findIndex((r) => r.id === id);
+    const idx = channelRundowns.findIndex((r) => r.id === id);
     const to = idx + dir;
-    if (idx < 0 || to < 0 || to >= rundowns.length) return;
-    const next = [...rundowns];
-    const [item] = next.splice(idx, 1);
-    next.splice(to, 0, item);
+    if (idx < 0 || to < 0 || to >= channelRundowns.length) return;
+    const nextChannel = [...channelRundowns];
+    const [item] = nextChannel.splice(idx, 1);
+    nextChannel.splice(to, 0, item);
+    const others = rundowns.filter((r) => r.channel_id !== channelId);
+    const next = [...nextChannel, ...others];
     setRundowns(next);
     await api.rundowns.reorder(next.map((r) => r.id));
   }
 
   async function importRundown(file: File) {
+    if (!channelId) return toast.error('Select a channel first');
     const text = await file.text();
     const parsed = JSON.parse(text) as { name?: unknown; slots?: unknown };
     const slots = Array.isArray(parsed.slots) ? parsed.slots : [];
     const rd = await api.rundowns.create({
       name: typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : 'Imported rundown',
+      channel_id: channelId,
       slots: slots as Rundown['slots'],
     });
     setRundowns((prev) => [normalizeRundown(rd), ...prev]);
@@ -362,7 +339,10 @@ export function ControlPage() {
               <button
                 key={id}
                 type="button"
-                onClick={() => setTab(id)}
+                onClick={() => {
+                  setTab(id);
+                  if (id === 'data') setDataTemplateFilter('all');
+                }}
                 className={cn(
                   'rounded-md px-3 py-2 text-left text-sm transition-colors',
                   tab === id ? 'bg-primary/15 text-ink font-medium' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
@@ -403,7 +383,7 @@ export function ControlPage() {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  {rundowns.map((r, idx) => (
+                  {channelRundowns.map((r, idx) => (
                     <div
                       key={r.id}
                       className={cn(
@@ -437,7 +417,7 @@ export function ControlPage() {
                         <button type="button" className="text-ink-faint hover:text-ink" disabled={idx === 0} onClick={() => void moveRundown(r.id, -1)}>
                           <ArrowUp className="h-3 w-3" />
                         </button>
-                        <button type="button" className="text-ink-faint hover:text-ink" disabled={idx === rundowns.length - 1} onClick={() => void moveRundown(r.id, 1)}>
+                        <button type="button" className="text-ink-faint hover:text-ink" disabled={idx === channelRundowns.length - 1} onClick={() => void moveRundown(r.id, 1)}>
                           <ArrowDown className="h-3 w-3" />
                         </button>
                         <button type="button" className="text-ink-faint hover:text-ink" onClick={() => { setRenamingId(r.id); setRenameVal(r.name); }}>
@@ -452,7 +432,7 @@ export function ControlPage() {
                         <button
                           type="button"
                           className="text-ink-faint hover:text-danger"
-                          disabled={rundowns.length <= 1}
+                          disabled={channelRundowns.length === 0}
                           onClick={() => void removeRundown(r.id).catch((e) => toast.error((e as Error).message))}
                         >
                           <Trash2 className="h-3 w-3" />
@@ -461,6 +441,9 @@ export function ControlPage() {
                       <div className="mt-0.5 text-[11px] text-ink-faint">{r.slots.length} slots</div>
                     </div>
                   ))}
+                  {channelRundowns.length === 0 && (
+                    <p className="px-1 py-4 text-center text-[12px] text-ink-faint">No rundowns for this channel</p>
+                  )}
                 </div>
               </>
             )}
@@ -523,7 +506,7 @@ export function ControlPage() {
                     value={dataFolderFilter}
                     onChange={(e) => {
                       setDataFolderFilter(e.target.value);
-                      setDataTemplateFilter('');
+                      setDataTemplateFilter('all');
                     }}
                     disabled={folderSelectOptions.length === 0}
                   >
@@ -540,7 +523,7 @@ export function ControlPage() {
                     value={dataTemplateFilter}
                     onChange={(e) => setDataTemplateFilter(e.target.value)}
                   >
-                    <option value="">Select template…</option>
+                    <option value="all">All</option>
                     {templatesForDataTab.map((t) => (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
@@ -593,8 +576,17 @@ export function ControlPage() {
           <RundownTab
             channels={channels}
             templates={visibleTemplates}
-            rundowns={rundowns}
-            setRundowns={setRundowns}
+            rundowns={channelRundowns}
+            setRundowns={(next) => {
+              const inChannel = (r: Rundown) => r.channel_id === channelId || r.channel_id == null;
+              setRundowns((prev) => {
+                const channelOnly = prev.filter(inChannel);
+                const updated = typeof next === 'function' ? next(channelOnly) : next;
+                const updatedIds = new Set(updated.map((r) => r.id));
+                const others = prev.filter((r) => !inChannel(r) && !updatedIds.has(r.id));
+                return [...updated, ...others];
+              });
+            }}
             dataLoaded={controlDataLoaded}
             onAir={onAir}
             setOnAir={setOnAir}
@@ -642,12 +634,6 @@ export function ControlPage() {
               dataElements={dataElements}
               onDataElementsChange={setDataElements}
               onCancel={() => setInspectorTarget(null)}
-              onTake={take}
-              onUpdate={update}
-              onClear={clear}
-              onContinue={continueLive}
-              live={live}
-              canContinue={(prepId) => isWaitingContinue(onAirDetails, channelId, prepId)}
             />
           </div>
         </div>
