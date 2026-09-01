@@ -6,11 +6,12 @@
 // one undoable transform on pointer-up (so a drag is a single history step).
 
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, directorLocalFrame, type Transform } from '@runtime';
+import { TemplateRenderer, resolveVariableMap, applyTransform, projectMaskOutline, type Transform } from '@runtime';
 import { useStore } from 'zustand';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
 import {
+  bindPlaybackControls,
   playheadStore,
   resolveSeekLocals,
   setLivePlaying,
@@ -89,6 +90,9 @@ export function CanvasArea() {
   const stageRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<TemplateRenderer | null>(null);
+  const playbackStopRef = useRef<(() => void) | null>(null);
+  const setPlayingRef = useRef(setPlaying);
+  setPlayingRef.current = setPlaying;
   const dragRef = useRef<DragState | null>(null);
   const [overlay, setOverlay] = useState<SelectionOverlay | null>(null);
   const gesturePreview = useStore(gesturePreviewStore, (s) => s.preview);
@@ -294,69 +298,88 @@ export function CanvasArea() {
     setWaitingContinue(renderer.waitingContinue());
   }, [continueRequestId]);
 
-  // One RAF per explicit Play session. Keeping the loop inside CanvasArea means
-  // its renderer reference cannot be lost when Vite replaces a module via HMR.
-  useEffect(() => {
-    if (!playing) return;
-    const renderer = rendererRef.current;
-    const currentTemplate = useEditor.getState().template;
-    if (!renderer || !currentTemplate) {
-      setLivePlaying(false);
-      setPlaying(false);
-      return;
-    }
+  function stopPlaybackLoop() {
+    playbackStopRef.current?.();
+    playbackStopRef.current = null;
+  }
 
-    const directors = currentTemplate.timeline.directors;
-    const activeId = useEditor.getState().activeDirectorId;
-    const director = directors.find((item) => item.id === activeId);
-    const fps = currentTemplate.timeline.fps || 50;
-    const duration = Math.max(
-      1,
-      director?.durationFrames ?? currentTemplate.timeline.durationFrames,
-    );
-    const offset = director?.offsetFrames ?? 0;
-    let global = playheadStore.getState().globalPlayhead;
-    if (global < offset) global = offset;
-
-    renderer.seek(global);
-    tickPlayhead(global, directors, activeId);
-
+  function startPlaybackLoop() {
+    stopPlaybackLoop();
+    const sessionId = playheadStore.getState().playSessionId;
+    let cancelled = false;
     let raf = 0;
-    let last = performance.now();
-    const sessionId = playSessionId;
-    const loop = (now: number) => {
+    let last = 0;
+    let global = playheadStore.getState().globalPlayhead;
+
+    const stop = () => {
+      cancelled = true;
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+    };
+    playbackStopRef.current = stop;
+
+    const tick = (now: number, advance: boolean) => {
+      if (cancelled) return;
       const live = playheadStore.getState();
       if (!live.playing || live.playSessionId !== sessionId) return;
 
-      global += ((now - last) / 1000) * fps;
-      last = now;
-      const local = director
-        ? directorLocalFrame(director, global)
-        : Math.max(0, global - offset);
-
-      if (local === null) {
-        renderer.seek(offset);
-        tickPlayhead(offset, directors, activeId);
-        setLivePlaying(false);
-        setPlaying(false);
+      const renderer = rendererRef.current;
+      const currentTemplate = useEditor.getState().template;
+      if (!renderer || !currentTemplate) {
+        raf = requestAnimationFrame((time) => tick(time, false));
         return;
       }
+
+      const directors = currentTemplate.timeline.directors;
+      const activeId = useEditor.getState().activeDirectorId;
+      const director = directors.find((item) => item.id === activeId);
+      const fps = currentTemplate.timeline.fps || 50;
+      const offset = director?.offsetFrames ?? 0;
+      const duration = Math.max(
+        1,
+        director?.durationFrames ?? currentTemplate.timeline.durationFrames,
+      );
+
+      if (advance && last !== 0) {
+        global += (Math.min(now - last, 100) / 1000) * fps;
+      }
+      last = now;
+      if (global < offset) global = offset;
+
       if (director && !director.loop && !director.swing && global - offset >= duration) {
         renderer.seek(offset + duration);
         tickPlayhead(offset + duration, directors, activeId);
+        setWaitingContinue(renderer.waitingContinue());
+        stop();
         setLivePlaying(false);
-        setPlaying(false);
+        setPlayingRef.current(false);
         return;
       }
 
       renderer.seek(global);
       tickPlayhead(global, directors, activeId);
-      raf = requestAnimationFrame(loop);
+      setWaitingContinue(renderer.waitingContinue());
+      raf = requestAnimationFrame((time) => tick(time, true));
     };
 
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [playing, playSessionId, setPlaying]);
+    tick(performance.now(), false);
+  }
+
+  const startPlaybackLoopRef = useRef(startPlaybackLoop);
+  startPlaybackLoopRef.current = startPlaybackLoop;
+
+  useLayoutEffect(() => {
+    return bindPlaybackControls({
+      start: () => startPlaybackLoopRef.current(),
+      stop: stopPlaybackLoop,
+    });
+  }, []);
+
+  // Resume if Play won the race before Canvas bound, or after a remount.
+  useLayoutEffect(() => {
+    if (playing) startPlaybackLoopRef.current();
+    else stopPlaybackLoop();
+  }, [playing, playSessionId]);
 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     const currentTemplate = useEditor.getState().template;

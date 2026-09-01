@@ -13,6 +13,8 @@ import {
   playheadStore,
   preparePlayStart,
   setLivePlaying,
+  startBoundPlayback,
+  stopBoundPlayback,
 } from '../playheadStore';
 import { isCrawlDirector } from '../crawlTimeline';
 import { canRemoveDirector, listCuesForDirector } from '../timelineCues';
@@ -233,14 +235,14 @@ export function TimelinePanel() {
   }
 
   function togglePlay() {
-    // Always read live store — React `playing` can lag one click behind a
-    // Stop/finish that already cleared the flag, which made Play act as Pause.
     if (playheadStore.getState().playing) {
+      stopBoundPlayback();
       setLivePlaying(false);
       setPlaying(false);
       return;
     }
     preparePlayStart(directors, director?.id ?? activeDirectorId);
+    startBoundPlayback();
     setPlaying(true);
   }
 
@@ -316,6 +318,7 @@ export function TimelinePanel() {
         canContinue={waitingContinue}
         onTogglePlay={togglePlay}
         onStop={() => {
+          stopBoundPlayback();
           setLivePlaying(false);
           scrubGlobalPlayhead(
             director?.offsetFrames ?? 0,

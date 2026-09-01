@@ -174,6 +174,29 @@ export function setWaitingContinue(waiting: boolean): void {
   playheadStore.setState({ waitingContinue: waiting });
 }
 
+type PlaybackControls = {
+  start: () => void;
+  stop: () => void;
+};
+
+let playbackControls: PlaybackControls | null = null;
+
+/** CanvasArea binds the live renderer loop here so Play can start in the click. */
+export function bindPlaybackControls(controls: PlaybackControls): () => void {
+  playbackControls = controls;
+  return () => {
+    if (playbackControls === controls) playbackControls = null;
+  };
+}
+
+export function startBoundPlayback(): void {
+  playbackControls?.start();
+}
+
+export function stopBoundPlayback(): void {
+  playbackControls?.stop();
+}
+
 /** Snapshot of locals for renderer seekLocals (detached overrides mapping). */
 export function resolveSeekLocals(
   directors: TimelineDirector[],
