@@ -12,6 +12,7 @@ export * from './stackOrder.js';
 export * from './timeline.js';
 export * from './crawlSchedule.js';
 export * from './directorMachine.js';
+export * from './updateDirector.js';
 export * from './clock.js';
 export * from './clockBind.js';
 export * from './textStyle.js';

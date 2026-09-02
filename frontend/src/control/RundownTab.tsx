@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Variable } from '@runtime';
+import { hasUpdateDirector } from '@runtime';
 import {
   Plus, FileUp, FileDown, Copy, Trash2, Pencil, ChevronDown, ChevronRight,
-  ArrowUp, ArrowDown, GripVertical, Folder,
+  ArrowUp, ArrowDown, GripVertical, Folder, ArrowRight, Square,
 } from 'lucide-react';
 import {
   api,
@@ -207,6 +208,19 @@ export function RundownTab({
     const tpl = await ensureTemplate(slot.templateId).catch(() => null);
     if (!tpl) return;
     const values = buildPayload(slot, tpl.data.variables);
+    const live = channelLiveSet.has(slot.slotId);
+    if (live && hasUpdateDirector(tpl.data.timeline)) {
+      const prepared = await prepareForAir(tpl.data, 'update', values);
+      if (prepared.blocked) return toast.error(prepared.errors[0]?.message || 'Data pipeline blocked UPDATE');
+      const ok = send({
+        type: 'update',
+        channelId,
+        templateId: slot.slotId,
+        variables: { ...values, ...prepared.overrides },
+      });
+      if (!ok) return toast.error('Control socket disconnected');
+      return;
+    }
     const prepared = await prepareForAir(tpl.data, 'take', values);
     if (prepared.blocked) return toast.error(prepared.errors[0]?.message || 'Data pipeline blocked TAKE');
     const ok = send({
@@ -717,13 +731,13 @@ export function RundownTab({
                 TAKE
               </Button>
             ) : (
-              <Button
-                size="sm"
-                variant={live ? 'neutral' : 'danger'}
-                onClick={() => (live ? clearSlot(slot.slotId) : void takeSlot(slot))}
-              >
-                {live ? 'CLEAR' : 'TAKE'}
-              </Button>
+              <SlotAirButtons
+                live={live}
+                canContinue={isWaitingContinue(onAirDetails, channelId, slot.slotId)}
+                onTake={() => void takeSlot(slot)}
+                onContinue={() => send(continueCommand(channelId, slot.slotId))}
+                onClear={() => clearSlot(slot.slotId)}
+              />
             )}
           </div>
 
@@ -1031,6 +1045,104 @@ function normalizeImportedSlot(raw: unknown, idx: number): RundownSlot | null {
     vars,
     ...(dataElementId ? { dataElementId } : {}),
   };
+}
+
+function SlotAirButtons({
+  live,
+  canContinue,
+  onTake,
+  onContinue,
+  onClear,
+}: {
+  live: boolean;
+  canContinue: boolean;
+  onTake: () => void;
+  onContinue: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-0.5">
+      <AirIconButton
+        label="Take"
+        active={!live}
+        enabled
+        onClick={onTake}
+      >
+        <ArrowRight className="h-3.5 w-3.5" />
+      </AirIconButton>
+      <AirIconButton
+        label="Continue"
+        active={live && canContinue}
+        enabled={live && canContinue}
+        onClick={onContinue}
+      >
+        <ContinueIcon />
+      </AirIconButton>
+      <AirIconButton
+        label="Clear"
+        active={live}
+        enabled={live}
+        onClick={onClear}
+      >
+        <Square className="h-3 w-3 fill-current" />
+      </AirIconButton>
+    </div>
+  );
+}
+
+function AirIconButton({
+  label,
+  active,
+  enabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  enabled: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={!enabled}
+      onClick={onClick}
+      className={cn(
+        'grid h-7 w-7 place-items-center rounded-md',
+        enabled && active && 'bg-live/20 text-live',
+        enabled && !active && 'text-ink hover:bg-surface-2',
+        !enabled && 'cursor-not-allowed text-ink-faint opacity-40',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ContinueIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden>
+      <path
+        d="M2 3.2 L8 8 L2 12.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <path
+        d="M8 2.4 L15 8 L8 13.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
 }
 
 function flattenPayload(payload: Record<string, unknown>): Record<string, string | number> {

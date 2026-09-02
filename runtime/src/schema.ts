@@ -481,20 +481,27 @@ export interface TimelineAction {
 }
 
 export type TimelineCueCommand =
+  | ''
   | 'startDirector'
   | 'stopDirector'
   | 'stopDirectorAndWaitContinue'
   | 'pauseDirector'
   | 'tag';
 export type TimelineCueDirection = 'normal' | 'reverse' | 'both';
-export type TimelineCueTag = 'endScene' | 'updateData';
+export type TimelineCueTag = 'endScene' | 'updateData' | 'previewFrame';
 
-export type TimelineCueDirectorCommand = Exclude<TimelineCueCommand, 'tag'>;
+export type TimelineCueDirectorCommand = Exclude<TimelineCueCommand, '' | 'tag'>;
 
 export interface TimelineCueItemBase {
   id: string;
   lengthFrames: number;
   direction: TimelineCueDirection;
+}
+
+export interface TimelineUnsetCueItem extends TimelineCueItemBase {
+  command: '';
+  parameterDirectorId?: string;
+  parameterTag?: TimelineCueTag;
 }
 
 export interface TimelineDirectorCueItem extends TimelineCueItemBase {
@@ -509,7 +516,7 @@ export interface TimelineTagCueItem extends TimelineCueItemBase {
   parameterDirectorId?: never;
 }
 
-export type TimelineCueItem = TimelineDirectorCueItem | TimelineTagCueItem;
+export type TimelineCueItem = TimelineUnsetCueItem | TimelineDirectorCueItem | TimelineTagCueItem;
 
 export interface TimelineCue {
   id: string;

@@ -31,7 +31,7 @@ import {
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
 import { normalizeTimeline, sampleAt, sampleAtLocals, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
-import { reuseOrCreateDirectorMachine, type DirectorMachine } from './directorMachine.js';
+import { reuseOrCreateDirectorMachine, createDirectorMachine, type DirectorMachine } from './directorMachine.js';
 import { effectiveGradient, gradientBackgroundCss } from './rectGradient.js';
 import {
   crawlPaintText,
@@ -133,6 +133,7 @@ export class TemplateRenderer {
   private lastFrameSampled: number | null = null;
   private directorMachine: DirectorMachine | null = null;
   private lastTimelineSample: TimelineSample | null = null;
+  private pendingVariables: Record<string, string | number> | null = null;
   private rafId: number | null = null;
   private rafPacing: BrowserPacingState = { accumulatedMs: 0, lastTickMs: null };
   private onFrame: OnFrameFn | null = null;
@@ -164,14 +165,19 @@ export class TemplateRenderer {
    * updates, or removes layer/group elements to match. Rebuilds the timeline
    * normalization. Safe to call repeatedly (live take/update).
    */
-  syncTemplate(template: Template, variables: Record<string, string | number> = NO_VARS): void {
+  syncTemplate(
+    template: Template,
+    variables: Record<string, string | number> = NO_VARS,
+    opts: { reuseDirectors?: boolean } = {},
+  ): void {
     this.template = template;
     this.variables = variables;
     this.norm = normalizeTimeline(template.timeline);
     this.directorMachine = reuseOrCreateDirectorMachine(
       this.directorMachine,
       template.timeline,
-      this.template === template,
+      opts.reuseDirectors ?? true,
+      this.directorMachineOptions(),
     );
     this.clockAnchors.clear();
     this.editorTransformPreview.clear();
@@ -193,6 +199,30 @@ export class TemplateRenderer {
     }
   }
 
+  private directorMachineOptions(hydrate = false) {
+    return {
+      onTag: (tag: import('./schema.js').TimelineCueTag) => {
+        if (tag === 'updateData') this.flushPendingVariables();
+      },
+      ...(hydrate ? { hydrateFrame: this.frame } : {}),
+    };
+  }
+
+  private ensureDirectorMachine(hydrate: boolean): void {
+    if (this.directorMachine || !this.template) return;
+    this.directorMachine = createDirectorMachine(
+      this.template.timeline,
+      this.directorMachineOptions(hydrate),
+    );
+  }
+
+  private flushPendingVariables(): void {
+    if (!this.pendingVariables || !this.template) return;
+    const next = this.pendingVariables;
+    this.pendingVariables = null;
+    this.syncTemplate(this.template, next, { reuseDirectors: true });
+  }
+
   /**
    * Play the timeline from the current frame. In 'fixed' mode the caller must
    * drive tick(); in 'raf' mode we start a requestAnimationFrame loop that maps
@@ -203,12 +233,31 @@ export class TemplateRenderer {
     variables: Record<string, string | number> = NO_VARS,
     opts: { onFrame?: OnFrameFn } = {},
   ): void {
-    this.syncTemplate(template, variables);
+    this.syncTemplate(template, variables, { reuseDirectors: false });
     this.onFrame = opts.onFrame ?? null;
     this.playing = true;
     this.lastFrameSampled = null;
     if (this.mode === 'raf') this.startRaf();
     this.startClockTicker();
+  }
+
+  /** Live UPDATE: play the Update director and swap variables at tag=Update data. */
+  playUpdate(variables: Record<string, string | number> = NO_VARS): void {
+    this.pendingVariables = { ...this.variables, ...variables };
+    this.ensureDirectorMachine(true);
+    this.directorMachine?.continue();
+    if (!this.directorMachine?.startUpdate()) this.flushPendingVariables();
+  }
+
+  /** Editor Play: arm a fresh cue machine at the current frame. */
+  beginLivePlayback(): void {
+    if (!this.template) return;
+    this.directorMachine = reuseOrCreateDirectorMachine(
+      null,
+      this.template.timeline,
+      false,
+      this.directorMachineOptions(this.frame > 0),
+    );
   }
 
   /** Stop timeline playback (freeze at the current frame). */
@@ -312,6 +361,18 @@ export class TemplateRenderer {
 
   waitingContinue(): boolean {
     return this.directorMachine?.waitingContinue() ?? false;
+  }
+
+  hasPausedDirector(): boolean {
+    return this.directorMachine?.hasPaused() ?? false;
+  }
+
+  endScene(): boolean {
+    return this.directorMachine?.endScene() ?? false;
+  }
+
+  localFrame(directorId: string): number | null {
+    return this.directorMachine?.localFrame(directorId) ?? null;
   }
 
   hasDirectorRuntime(): boolean {

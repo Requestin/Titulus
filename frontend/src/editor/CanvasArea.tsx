@@ -318,6 +318,8 @@ export function CanvasArea() {
     };
     playbackStopRef.current = stop;
 
+    rendererRef.current?.beginLivePlayback();
+
     const tick = (now: number, advance: boolean) => {
       if (cancelled) return;
       const live = playheadStore.getState();
@@ -341,13 +343,18 @@ export function CanvasArea() {
       );
 
       if (advance && last !== 0) {
-        global += (Math.min(now - last, 100) / 1000) * fps;
+        const waiting = renderer.waitingContinue();
+        const paused = renderer.hasPausedDirector();
+        if (!waiting || paused) {
+          global += (Math.min(now - last, 100) / 1000) * fps;
+        }
       }
       last = now;
       if (global < offset) global = offset;
 
       if (director && !director.loop && !director.swing && global - offset >= duration) {
-        renderer.seek(offset + duration);
+        if (renderer.hasDirectorRuntime()) renderer.advancePlayback(offset + duration);
+        else renderer.seek(offset + duration);
         tickPlayhead(offset + duration, directors, activeId);
         setWaitingContinue(renderer.waitingContinue());
         stop();
@@ -356,8 +363,21 @@ export function CanvasArea() {
         return;
       }
 
-      renderer.seek(global);
-      tickPlayhead(global, directors, activeId);
+      if (renderer.hasDirectorRuntime()) {
+        renderer.advancePlayback(Math.round(global));
+        const locals: Record<string, number> = {};
+        for (const item of directors) {
+          locals[item.id] = renderer.localFrame(item.id) ?? 0;
+        }
+        playheadStore.setState({
+          globalPlayhead: global,
+          localPlayheads: locals,
+          playhead: locals[activeId] ?? 0,
+        });
+      } else {
+        renderer.seek(global);
+        tickPlayhead(global, directors, activeId);
+      }
       setWaitingContinue(renderer.waitingContinue());
       raf = requestAnimationFrame((time) => tick(time, true));
     };

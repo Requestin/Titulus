@@ -13,7 +13,7 @@ import {
 } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '@/core/api';
-import { renderNameCardJpeg } from '@/editor/captureThumbnail';
+import { renderNameCardJpeg, renderTemplateThumbnailJpeg } from '@/editor/captureThumbnail';
 import {
   extractTemplateValidationErrors,
   formatTemplateValidationError,
@@ -161,7 +161,7 @@ export function EditorPage() {
       }
       await api.templates.update(id, { name: t.name, data: t });
       try {
-        const jpeg = await renderNameCardJpeg(t.name);
+        const jpeg = await renderTemplateThumbnailJpeg(t).catch(() => renderNameCardJpeg(t.name));
         await api.templates.putThumbnail(id, jpeg);
       } catch {
         // thumbnail is best-effort; the document save already succeeded

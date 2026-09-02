@@ -34,7 +34,7 @@ export function ActionLane({
           <button
             key={cue.id}
             type="button"
-            title={cue.name}
+            title={cue.name.trim() || undefined}
             onPointerDown={(event) => {
               event.stopPropagation();
               event.preventDefault();

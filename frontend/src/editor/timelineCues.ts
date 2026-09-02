@@ -7,13 +7,14 @@ import {
   type TimelineCueItem,
   type TimelineDirector,
 } from '@runtime';
+import { isUpdateDirectorName } from '@runtime';
 
 export const UPDATE_DIRECTOR_NAME = 'Update';
 
 export function isProtectedUpdateDirector(
   director: Pick<TimelineDirector, 'name'> | null | undefined,
 ): boolean {
-  return director?.name.trim().toLowerCase() === 'update';
+  return isUpdateDirectorName(director?.name);
 }
 
 export function canRenameDirector(director: Pick<TimelineDirector, 'name'>): boolean {
@@ -34,8 +35,8 @@ export function newId(): string {
 }
 
 export function createCueItem(
-  command: TimelineCueCommand = 'startDirector',
-  parameterDirectorId = 'default',
+  command: TimelineCueCommand = '',
+  parameterDirectorId = '',
 ): TimelineCueItem {
   if (command === 'tag') {
     return {
@@ -43,7 +44,15 @@ export function createCueItem(
       command: 'tag',
       parameterTag: 'endScene',
       lengthFrames: 0,
-      direction: 'normal',
+      direction: 'both',
+    };
+  }
+  if (command === '') {
+    return {
+      id: newId(),
+      command: '',
+      lengthFrames: 0,
+      direction: 'both',
     };
   }
   return {
@@ -51,7 +60,7 @@ export function createCueItem(
     command,
     parameterDirectorId,
     lengthFrames: command === 'pauseDirector' ? 1 : 0,
-    direction: 'normal',
+    direction: 'both',
   };
 }
 
@@ -61,8 +70,8 @@ export function createCue(directorId: string, frame: number, fromEnd = false): T
     directorId,
     frame: Math.max(0, Math.round(frame)),
     fromEnd,
-    name: 'Action',
-    items: [createCueItem('startDirector', directorId)],
+    name: '',
+    items: [createCueItem('', directorId)],
   };
 }
 
@@ -119,7 +128,7 @@ export function constrainCueTag(
   if (item.parameterTag === 'updateData' && hasOtherUpdate) {
     return { ...item, parameterTag: 'endScene' };
   }
-  return { ...item, parameterTag: item.parameterTag === 'updateData' ? 'endScene' : item.parameterTag };
+  return item;
 }
 
 export function stripCuesForDirector(timeline: Timeline, directorId: string): TimelineCue[] {

@@ -143,3 +143,64 @@ test('endScene tag is recorded and does not freeze the director', () => {
   assert.equal(machine.endScene(), true);
   assert.equal(machine.status('default'), 'running');
 });
+
+test('startDirector only wakes idle or stopped directors', () => {
+  const tl = baseTimeline();
+  tl.cues = [{
+    id: 'start',
+    directorId: 'default',
+    frame: 1,
+    fromEnd: false,
+    name: '',
+    items: [{
+      id: 's',
+      command: 'startDirector',
+      parameterDirectorId: 'secondary',
+      lengthFrames: 0,
+      direction: 'both',
+    }],
+  }];
+  const machine = createDirectorMachine(tl);
+  machine.advance(1);
+  assert.equal(machine.status('secondary'), 'running');
+  machine.advance(2);
+  assert.equal(machine.status('secondary'), 'running');
+});
+
+test('Update director plays from start, fires updateData, then returns to idle at 0', () => {
+  const tags: string[] = [];
+  const tl = baseTimeline();
+  tl.directors.push({
+    id: 'update',
+    name: 'Update',
+    durationFrames: 4,
+    offsetFrames: 0,
+    autostart: false,
+    loop: false,
+    swing: false,
+  });
+  tl.cues = [{
+    id: 'swap',
+    directorId: 'update',
+    frame: 2,
+    fromEnd: false,
+    name: '',
+    items: [{
+      id: 'u',
+      command: 'tag',
+      parameterTag: 'updateData',
+      lengthFrames: 0,
+      direction: 'both',
+    }],
+  }];
+  const machine = createDirectorMachine(tl, { onTag: (tag) => tags.push(tag) });
+  assert.equal(machine.startUpdate(), true);
+  assert.equal(machine.status('update'), 'running');
+  assert.equal(machine.localFrame('update'), 0);
+  machine.advance(1);
+  machine.advance(2);
+  assert.deepEqual(tags, ['updateData']);
+  machine.advance(4);
+  assert.equal(machine.status('update'), 'idle');
+  assert.equal(machine.localFrame('update'), 0);
+});

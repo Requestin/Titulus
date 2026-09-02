@@ -830,6 +830,19 @@
       "oneOf": [
         {
           "type": "object",
+          "required": ["id", "command", "lengthFrames", "direction"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "command": { "const": "" },
+            "parameterDirectorId": { "type": "string" },
+            "parameterTag": { "type": "string", "enum": ["updateData", "endScene", "previewFrame"] },
+            "lengthFrames": { "type": "integer", "minimum": 0 },
+            "direction": { "type": "string", "enum": ["normal", "reverse", "both"] }
+          }
+        },
+        {
+          "type": "object",
           "required": ["id", "command", "parameterDirectorId", "lengthFrames", "direction"],
           "additionalProperties": false,
           "properties": {
@@ -838,7 +851,7 @@
               "type": "string",
               "enum": ["startDirector", "pauseDirector", "stopDirector", "stopDirectorAndWaitContinue"]
             },
-            "parameterDirectorId": { "type": "string", "minLength": 1 },
+            "parameterDirectorId": { "type": "string" },
             "lengthFrames": { "type": "integer", "minimum": 0 },
             "direction": { "type": "string", "enum": ["normal", "reverse", "both"] }
           }
@@ -850,7 +863,7 @@
           "properties": {
             "id": { "type": "string", "minLength": 1 },
             "command": { "const": "tag" },
-            "parameterTag": { "type": "string", "enum": ["updateData", "endScene"] },
+            "parameterTag": { "type": "string", "enum": ["updateData", "endScene", "previewFrame"] },
             "lengthFrames": { "type": "integer", "minimum": 0 },
             "direction": { "type": "string", "enum": ["normal", "reverse", "both"] }
           }

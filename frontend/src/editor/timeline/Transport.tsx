@@ -1,4 +1,4 @@
-import { Activity, ChevronsRight, ListTree, Pause, Play, Square, Trash2, Plus } from 'lucide-react';
+import { Activity, ChevronsRight, ListTree, Pause, Play, SkipBack, SkipForward, Trash2, Plus } from 'lucide-react';
 import type { AnimatableProp } from '@runtime';
 import { cn } from '@/lib/cn';
 
@@ -9,8 +9,9 @@ export function TimelineTransport({
   view,
   canContinue,
   onTogglePlay,
-  onStop,
+  onGoToStart,
   onContinue,
+  onGoToEnd,
   onView,
   onZoomOut,
   onZoomIn,
@@ -21,8 +22,9 @@ export function TimelineTransport({
   view: 'dope' | 'curve';
   canContinue: boolean;
   onTogglePlay: () => void;
-  onStop: () => void;
+  onGoToStart: () => void;
   onContinue: () => void;
+  onGoToEnd: () => void;
   onView: (view: 'dope' | 'curve') => void;
   onZoomOut: () => void;
   onZoomIn: () => void;
@@ -31,11 +33,11 @@ export function TimelineTransport({
     <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
       <button
         type="button"
-        onClick={onStop}
+        onClick={onGoToStart}
         className="grid h-7 w-7 place-items-center rounded-md text-ink-muted hover:bg-surface-2 hover:text-ink"
         title="Go to start"
       >
-        <Square className="h-3.5 w-3.5" />
+        <SkipBack className="h-3.5 w-3.5" />
       </button>
       <button
         type="button"
@@ -57,6 +59,14 @@ export function TimelineTransport({
         )}
       >
         <ChevronsRight className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        onClick={onGoToEnd}
+        className="grid h-7 w-7 place-items-center rounded-md text-ink-muted hover:bg-surface-2 hover:text-ink"
+        title="Go to end"
+      >
+        <SkipForward className="h-3.5 w-3.5" />
       </button>
       <span className="w-24 text-center text-[12px] tabular-nums text-ink-muted">
         {Math.round(playhead)} / {duration}

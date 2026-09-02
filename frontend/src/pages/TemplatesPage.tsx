@@ -19,7 +19,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
-import { createDefaultTemplate } from '@runtime';
+import { createDefaultTemplate, hasUpdateDirector } from '@runtime';
 import { api, type Channel, type TemplateFolder, type TemplateSummary } from '@/core/api';
 import { useControlWs } from '@/core/controlWs';
 import { prepareForAir } from '@/control/prepareForAir';
@@ -118,6 +118,12 @@ export function TemplatesPage() {
       const rec = await api.templates.get(id);
       const values: Record<string, string | number> = {};
       for (const variable of rec.data.variables) values[variable.id] = variable.defaultValue;
+      const onAir = await api.onair.get().catch(() => ({} as Record<string, string[]>));
+      const live = (onAir[testChannelId] ?? []).includes(rec.id);
+      if (live && hasUpdateDirector(rec.data.timeline)) {
+        await testUpdate(id);
+        return;
+      }
       const prepared = await prepareForAir(rec.data, 'take', values);
       if (prepared.blocked) {
         toast.error(prepared.errors[0]?.message || 'TAKE blocked');
@@ -133,6 +139,33 @@ export function TemplatesPage() {
       if (!ok) toast.error('Control WebSocket not connected');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Test TAKE failed');
+    }
+  }
+
+  async function testUpdate(id: string) {
+    if (!testChannelId) { toast.error('Select a test channel'); return; }
+    try {
+      const rec = await api.templates.get(id);
+      const values: Record<string, string | number> = {};
+      for (const variable of rec.data.variables) values[variable.id] = variable.defaultValue;
+      if (!hasUpdateDirector(rec.data.timeline)) {
+        await testTake(id);
+        return;
+      }
+      const prepared = await prepareForAir(rec.data, 'update', values);
+      if (prepared.blocked) {
+        toast.error(prepared.errors[0]?.message || 'UPDATE blocked');
+        return;
+      }
+      const ok = send({
+        type: 'update',
+        channelId: testChannelId,
+        templateId: rec.id,
+        variables: { ...values, ...prepared.overrides },
+      });
+      if (!ok) toast.error('Control WebSocket not connected');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Test UPDATE failed');
     }
   }
 
@@ -457,6 +490,7 @@ export function TemplatesPage() {
               onRenameCancel={cancelRename}
               onDelete={(trigger) => requestDelete(t, trigger)}
               onTestTake={() => void testTake(t.id)}
+              onTestUpdate={() => void testUpdate(t.id)}
               onTestClear={() => testClear(t.id)}
             />
           ))}
@@ -478,6 +512,7 @@ export function TemplatesPage() {
               onRenameCancel={cancelRename}
               onDelete={(trigger) => requestDelete(t, trigger)}
               onTestTake={() => void testTake(t.id)}
+              onTestUpdate={() => void testUpdate(t.id)}
               onTestClear={() => testClear(t.id)}
             />
           ))}
@@ -503,6 +538,7 @@ export function TemplatesPage() {
 function TemplateCard({
   template,
   onTestTake,
+  onTestUpdate,
   onTestClear,
   duplicating,
   renaming,
@@ -551,6 +587,7 @@ function TemplateCard({
       </div>
       <div className="flex gap-1 px-3 pb-2">
         <button type="button" className="text-[11px] text-danger" onClick={onTestTake}>TAKE</button>
+        <button type="button" className="text-[11px] text-ink-muted" onClick={onTestUpdate}>UPDATE</button>
         <button type="button" className="text-[11px] text-ink-muted" onClick={onTestClear}>CLEAR</button>
       </div>
     </div>
@@ -746,6 +783,7 @@ function IconAction({
 interface TemplateItemProps {
   template: TemplateSummary;
   onTestTake?: () => void;
+  onTestUpdate?: () => void;
   onTestClear?: () => void;
   duplicating: boolean;
   renaming: boolean;

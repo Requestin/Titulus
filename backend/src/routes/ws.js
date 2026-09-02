@@ -30,21 +30,34 @@ export function normalizeRendererMessage(msg) {
   if (!isPlainObject(msg)) {
     return { ok: false, code: 'INVALID_PAYLOAD', message: 'payload must be an object' };
   }
-  if (msg.type !== 'waitingContinue') {
+  if (msg.type !== 'waitingContinue' && msg.type !== 'endScene') {
     return { ok: false, code: 'UNKNOWN_TYPE', message: 'unsupported renderer message' };
   }
   if (typeof msg.templateId !== 'string' || !SAFE_ID_RE.test(msg.templateId)) {
     return { ok: false, code: 'INVALID_TEMPLATE_ID', message: 'templateId is required' };
   }
-  if (typeof msg.waiting !== 'boolean') {
-    return { ok: false, code: 'INVALID_WAITING', message: 'waiting must be a boolean' };
+  if (msg.type === 'waitingContinue') {
+    if (typeof msg.waiting !== 'boolean') {
+      return { ok: false, code: 'INVALID_WAITING', message: 'waiting must be a boolean' };
+    }
+    return {
+      ok: true,
+      value: {
+        type: 'waitingContinue',
+        templateId: msg.templateId,
+        waiting: msg.waiting,
+      },
+    };
+  }
+  if (msg.ended !== true) {
+    return { ok: false, code: 'INVALID_ENDED', message: 'ended must be true' };
   }
   return {
     ok: true,
     value: {
-      type: 'waitingContinue',
+      type: 'endScene',
       templateId: msg.templateId,
-      waiting: msg.waiting,
+      ended: true,
     },
   };
 }
@@ -52,7 +65,12 @@ export function normalizeRendererMessage(msg) {
 export function applyRendererMessage(onAir, channelId, msg) {
   const normalized = normalizeRendererMessage(msg);
   if (!normalized.ok) return normalized;
-  onAir.setWaitingContinue(channelId, normalized.value.templateId, normalized.value.waiting);
+  if (normalized.value.type === 'waitingContinue') {
+    onAir.setWaitingContinue(channelId, normalized.value.templateId, normalized.value.waiting);
+  } else {
+    onAir.applyClear({ type: 'clear', channelId, templateId: normalized.value.templateId });
+    onAir.setWaitingContinue(channelId, normalized.value.templateId, false);
+  }
   return normalized;
 }
 

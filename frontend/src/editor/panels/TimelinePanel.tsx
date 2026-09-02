@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import type { AnimatableProp, Template } from '@runtime';
 import { directorLocalFrame } from '@runtime';
@@ -137,8 +137,44 @@ export function TimelinePanel() {
   const headersScrollRef = useRef<HTMLDivElement>(null);
   const lanesScrollRef = useRef<HTMLDivElement>(null);
   const scrollSyncRef = useRef(false);
+  const pxPerFrameRef = useRef(pxPerFrame);
+  pxPerFrameRef.current = pxPerFrame;
   const globalPlayhead = usePlayhead((state) => state.globalPlayhead);
   const localPlayheads = usePlayhead((state) => state.localPlayheads);
+
+  function zoomTo(nextPx: number, anchorFrame: number) {
+    const area = lanesScrollRef.current;
+    setPxPerFrame((prev) => {
+      const next = Math.min(24, Math.max(2, nextPx));
+      if (!area || next === prev) return next;
+      const anchorScreen = anchorFrame * prev - area.scrollLeft;
+      requestAnimationFrame(() => {
+        area.scrollLeft = Math.max(0, anchorFrame * next - anchorScreen);
+      });
+      return next;
+    });
+  }
+
+  function frameFromClientX(clientX: number, scale = pxPerFrameRef.current): number {
+    const area = lanesScrollRef.current;
+    if (!area) return 0;
+    const rect = area.getBoundingClientRect();
+    return Math.max(0, Math.round((clientX - rect.left + area.scrollLeft) / scale));
+  }
+
+  useEffect(() => {
+    const area = lanesScrollRef.current;
+    if (!area || !template) return undefined;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.altKey) return;
+      event.preventDefault();
+      const currentScale = pxPerFrameRef.current;
+      const zoomIn = event.deltaY > 0;
+      zoomTo(currentScale + (zoomIn ? 2 : -2), frameFromClientX(event.clientX, currentScale));
+    };
+    area.addEventListener('wheel', onWheel, { passive: false });
+    return () => area.removeEventListener('wheel', onWheel);
+  }, [template]);
 
   if (!template) return null;
   const current = template;
@@ -163,16 +199,7 @@ export function TimelinePanel() {
       : allTracks[0] ?? null);
 
   function zoomBy(delta: number) {
-    const area = lanesScrollRef.current;
-    setPxPerFrame((prev) => {
-      const next = Math.min(24, Math.max(2, prev + delta));
-      if (area && next !== prev) {
-        const oldX = playhead * prev;
-        const newX = playhead * next;
-        area.scrollLeft = Math.max(0, area.scrollLeft + (newX - oldX));
-      }
-      return next;
-    });
+    zoomTo(pxPerFrame + delta, globalPlayhead);
   }
 
   function toggleObjectCollapsed(target: Target) {
@@ -196,27 +223,14 @@ export function TimelinePanel() {
     scrollSyncRef.current = false;
   }
 
-  function xToFrame(x: number) { return Math.max(0, Math.round(x / pxPerFrame)); }
-
   function scrubFromEvent(event: ReactPointerEvent) {
-    const area = lanesScrollRef.current;
-    if (!area) return;
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const frame = Math.min(duration, xToFrame(event.clientX - rect.left + area.scrollLeft));
+    const frame = Math.min(duration, frameFromClientX(event.clientX));
     scrubGlobalPlayhead(frame, directors, director?.id ?? activeDirectorId);
     setPlaying(false);
   }
 
   function scrubLocalFromEvent(directorId: string, durationFrames: number, event: ReactPointerEvent | PointerEvent) {
-    const area = lanesScrollRef.current;
-    if (!area) return;
-    const content = area.firstElementChild as HTMLElement | null;
-    if (!content) return;
-    const rect = content.getBoundingClientRect();
-    const frame = Math.min(
-      durationFrames,
-      Math.max(0, Math.round((event.clientX - rect.left + area.scrollLeft) / pxPerFrame)),
-    );
+    const frame = Math.min(durationFrames, frameFromClientX(event.clientX));
     scrubLocalPlayhead(directorId, frame, durationFrames, director?.id ?? activeDirectorId);
     setPlaying(false);
   }
@@ -246,13 +260,8 @@ export function TimelinePanel() {
     setPlaying(true);
   }
 
-  function laneFrameFromEvent(event: ReactPointerEvent, laneEl: Element): number {
-    const area = lanesScrollRef.current;
-    const rect = laneEl.getBoundingClientRect();
-    return Math.min(
-      activeLocalDuration,
-      Math.max(0, Math.round((event.clientX - rect.left + (area?.scrollLeft ?? 0)) / pxPerFrame)),
-    );
+  function laneFrameFromEvent(event: ReactPointerEvent, _laneEl: Element): number {
+    return Math.min(activeLocalDuration, frameFromClientX(event.clientX));
   }
 
   function handleDrop(directorId: string, data: string) {
@@ -317,7 +326,7 @@ export function TimelinePanel() {
         view={view}
         canContinue={waitingContinue}
         onTogglePlay={togglePlay}
-        onStop={() => {
+        onGoToStart={() => {
           stopBoundPlayback();
           setLivePlaying(false);
           scrubGlobalPlayhead(
@@ -328,6 +337,16 @@ export function TimelinePanel() {
           setPlaying(false);
         }}
         onContinue={requestContinue}
+        onGoToEnd={() => {
+          stopBoundPlayback();
+          setLivePlaying(false);
+          scrubGlobalPlayhead(
+            (director?.offsetFrames ?? 0) + (director?.durationFrames ?? duration),
+            directors,
+            director?.id ?? activeDirectorId,
+          );
+          setPlaying(false);
+        }}
         onView={setView}
         onZoomOut={() => zoomBy(-2)}
         onZoomIn={() => zoomBy(2)}
@@ -597,7 +616,7 @@ export function TimelinePanel() {
             <Ruler dur={duration} pxPerFrame={pxPerFrame} onScrub={scrubFromEvent} />
             <ActionLane
               cues={listCuesForDirector(current.timeline.cues, director?.id ?? 'default')}
-              duration={duration}
+              duration={director?.durationFrames ?? duration}
               pxPerFrame={pxPerFrame}
               selectedCueId={selectedCueId}
               onSelect={selectCue}

@@ -1,4 +1,4 @@
-import type { Timeline, TimelineCueItem } from './schema.js';
+import type { Timeline, TimelineCueItem, TimelineCueTag } from './schema.js';
 import {
   compileCues,
   cuesCrossed,
@@ -9,6 +9,7 @@ import {
   type NormalizedTimeline,
   type TimelineSample,
 } from './timeline.js';
+import { isUpdateDirectorName } from './updateDirector.js';
 
 export type DirectorStatus = 'idle' | 'running' | 'paused' | 'waiting' | 'stopped';
 
@@ -18,12 +19,20 @@ interface DirectorRuntime {
   pauseRemaining: number;
 }
 
+export interface DirectorMachineOptions {
+  onTag?: (tag: TimelineCueTag) => void;
+  /** Restore locals at this global frame without firing cues (live UPDATE). */
+  hydrateFrame?: number;
+}
+
 export interface DirectorMachine {
   advance(globalFrame: number): TimelineSample;
   continue(): void;
+  startUpdate(): boolean;
   status(directorId: string): DirectorStatus;
   localFrame(directorId: string): number | null;
   waitingContinue(): boolean;
+  hasPaused(): boolean;
   endScene(): boolean;
   sample(): TimelineSample;
 }
@@ -32,13 +41,17 @@ export function reuseOrCreateDirectorMachine(
   existing: DirectorMachine | null,
   timeline: Timeline,
   reuse: boolean,
+  opts?: DirectorMachineOptions,
 ): DirectorMachine | null {
-  if (!timelineNeedsDirectorRuntime(timeline)) return null;
+  if (!timelineNeedsDirectorRuntime(timeline)) return reuse && existing ? existing : null;
   if (reuse && existing) return existing;
-  return createDirectorMachine(timeline);
+  return createDirectorMachine(timeline, opts);
 }
 
-export function createDirectorMachine(timeline: Timeline): DirectorMachine {
+export function createDirectorMachine(
+  timeline: Timeline,
+  opts: DirectorMachineOptions = {},
+): DirectorMachine {
   const norm = normalizeTimeline(timeline);
   const compiled = compileCues(timeline);
   const directors = new Map<string, DirectorRuntime>();
@@ -50,18 +63,27 @@ export function createDirectorMachine(timeline: Timeline): DirectorMachine {
     });
   }
 
-  let lastGlobal: number | null = null;
+  let lastGlobal: number | null = opts.hydrateFrame == null ? null : Math.max(0, Math.round(opts.hydrateFrame));
   let sawEndScene = false;
+  if (lastGlobal !== null) {
+    for (const director of timeline.directors) {
+      const state = directors.get(director.id);
+      if (!state || state.status !== 'running') continue;
+      state.local = Math.max(0, lastGlobal - director.offsetFrames);
+    }
+  }
 
   function applyItem(item: TimelineCueItem): void {
+    if (item.command === '') return;
     if (item.command === 'tag') {
       if (item.parameterTag === 'endScene') sawEndScene = true;
+      opts.onTag?.(item.parameterTag);
       return;
     }
     const target = directors.get(item.parameterDirectorId);
     if (!target) return;
     if (item.command === 'startDirector') {
-      if (target.status === 'idle' || target.status === 'stopped' || target.status === 'waiting') {
+      if (target.status === 'idle' || target.status === 'stopped') {
         target.status = 'running';
       }
       return;
@@ -95,6 +117,18 @@ export function createDirectorMachine(timeline: Timeline): DirectorMachine {
     ordered.sort((left, right) => left.frame - right.frame);
     for (const cue of ordered) {
       for (const item of cue.items) applyItem(item);
+    }
+  }
+
+  function resetFinishedUpdateDirectors(): void {
+    for (const director of timeline.directors) {
+      if (!isUpdateDirectorName(director.name)) continue;
+      const state = directors.get(director.id);
+      if (!state || state.status !== 'running') continue;
+      if (state.local >= director.durationFrames) {
+        state.local = 0;
+        state.status = 'idle';
+      }
     }
   }
 
@@ -140,12 +174,24 @@ export function createDirectorMachine(timeline: Timeline): DirectorMachine {
         if (delta > 0) state.local += delta;
         fire(id, prevLocal, state.local);
       }
+      resetFinishedUpdateDirectors();
       return sample();
     },
     continue() {
       for (const state of directors.values()) {
         if (state.status === 'waiting') state.status = 'running';
       }
+    },
+    startUpdate() {
+      const director = timeline.directors.find((item) => isUpdateDirectorName(item.name));
+      if (!director) return false;
+      const state = directors.get(director.id);
+      if (!state) return false;
+      state.status = 'running';
+      state.local = 0;
+      state.pauseRemaining = 0;
+      fire(director.id, null, 0);
+      return true;
     },
     status(directorId: string) {
       return directors.get(directorId)?.status ?? 'idle';
@@ -156,6 +202,12 @@ export function createDirectorMachine(timeline: Timeline): DirectorMachine {
     waitingContinue() {
       for (const state of directors.values()) {
         if (state.status === 'waiting') return true;
+      }
+      return false;
+    },
+    hasPaused() {
+      for (const state of directors.values()) {
+        if (state.status === 'paused') return true;
       }
       return false;
     },

@@ -634,6 +634,9 @@ export function ControlPage() {
               dataElements={dataElements}
               onDataElementsChange={setDataElements}
               onCancel={() => setInspectorTarget(null)}
+              channelId={channelId}
+              live={inspectorTarget?.kind === 'template' && live.includes(inspectorTarget.templateId)}
+              send={send}
             />
           </div>
         </div>

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Template } from '@runtime';
+import { hasUpdateDirector } from '@runtime';
 import { api, type DataElement, type TemplateRecord } from '@/core/api';
 import { resolveDefaultDataElementName } from '@/control/resolveDefaultDataElementName';
 import { VariableValues } from '@/control/VariableValues';
+import { prepareForAir } from '@/control/prepareForAir';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/form';
 import { toast } from '@/core/toast';
@@ -16,11 +18,23 @@ export function ControlItemInspector({
   dataElements,
   onDataElementsChange,
   onCancel,
+  channelId,
+  live = false,
+  send,
 }: {
   target: InspectorTarget | null;
   dataElements: DataElement[];
   onDataElementsChange: (next: DataElement[]) => void;
   onCancel: () => void;
+  channelId?: string;
+  live?: boolean;
+  send?: (cmd: {
+    type: 'take' | 'update' | 'clear';
+    channelId: string;
+    templateId?: string;
+    template?: unknown;
+    variables?: Record<string, string | number>;
+  }) => boolean;
 }) {
   const [prep, setPrep] = useState<TemplateRecord | null>(null);
   const [values, setValues] = useState<Record<string, string | number>>({});
@@ -122,6 +136,65 @@ export function ControlItemInspector({
     }
   }
 
+  async function playTake() {
+    if (!prep || !channelId || !send) return;
+    if (live && hasUpdateDirector(prep.data.timeline)) {
+      await playUpdate();
+      return;
+    }
+    setBusy(true);
+    try {
+      const prepared = await prepareForAir(prep.data, 'take', values);
+      if (prepared.blocked) {
+        toast.error(prepared.errors[0]?.message || 'TAKE blocked');
+        return;
+      }
+      const ok = send({
+        type: 'take',
+        channelId,
+        templateId: prep.id,
+        template: prepared.template ?? prep.data,
+        variables: { ...values, ...prepared.overrides },
+      });
+      if (!ok) toast.error('Control socket disconnected');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'TAKE failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function playUpdate() {
+    if (!prep || !channelId || !send) return;
+    setBusy(true);
+    try {
+      const prepared = await prepareForAir(prep.data, 'update', values);
+      if (prepared.blocked) {
+        toast.error(prepared.errors[0]?.message || 'UPDATE blocked');
+        return;
+      }
+      const ok = send({
+        type: 'update',
+        channelId,
+        templateId: prep.id,
+        variables: { ...values, ...prepared.overrides },
+      });
+      if (!ok) toast.error('Control socket disconnected');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'UPDATE failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function playClear() {
+    if (!prep || !channelId || !send) return;
+    send({ type: 'clear', channelId, templateId: prep.id });
+  }
+
+  const canPlay = Boolean(channelId && send && target?.kind === 'template');
+  const canUpdate = canPlay && live && Boolean(prep && hasUpdateDirector(prep.data.timeline));
+
   if (!target) {
     return (
       <p className="p-3 text-[12px] text-ink-faint">
@@ -148,6 +221,19 @@ export function ControlItemInspector({
         <VariableValues variables={prep.data.variables} values={values} onChange={setValue} />
       </div>
       <div className="border-t border-border p-3">
+        {canPlay && (
+          <div className="mb-2 grid grid-cols-3 gap-2">
+            <Button size="sm" variant="danger" disabled={busy} onClick={() => void playTake()}>
+              Take
+            </Button>
+            <Button size="sm" variant="neutral" disabled={busy || !canUpdate} onClick={() => void playUpdate()}>
+              Update
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy || !live} onClick={playClear}>
+              Clear
+            </Button>
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-2">
           <Button size="sm" variant="neutral" disabled={busy} onClick={openSaveAsNew}>
             Save as new

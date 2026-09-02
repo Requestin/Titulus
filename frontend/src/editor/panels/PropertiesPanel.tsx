@@ -62,6 +62,7 @@ export function PropertiesPanel() {
   const updateCue = useEditor((s) => s.updateCue);
   const updateCueItem = useEditor((s) => s.updateCueItem);
   const addCueItem = useEditor((s) => s.addCueItem);
+  const removeCueItem = useEditor((s) => s.removeCueItem);
 
   if (template && selectedCueId) {
     const cue = (template.timeline.cues ?? []).find((item) => item.id === selectedCueId);
@@ -76,6 +77,7 @@ export function PropertiesPanel() {
               onUpdateCue={(partial) => updateCue(cue.id, partial)}
               onUpdateItem={(itemId, item) => updateCueItem(cue.id, itemId, item)}
               onAddItem={() => addCueItem(cue.id)}
+              onRemoveItem={(itemId) => removeCueItem(cue.id, itemId)}
             />
           </div>
         </div>

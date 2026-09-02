@@ -1,21 +1,52 @@
-import type { TimelineCue, TimelineCueCommand, TimelineCueItem, TimelineDirector } from '@runtime';
-import { Field, Input, NumberInput, Select, Checkbox } from '@/components/ui/form';
+import type {
+  TimelineCue,
+  TimelineCueCommand,
+  TimelineCueDirection,
+  TimelineCueItem,
+  TimelineCueTag,
+  TimelineDirector,
+} from '@runtime';
+import { Field, Input, NumberInput, Select } from '@/components/ui/form';
+import { cn } from '@/lib/cn';
 import {
-  CUE_DIRECTIONS,
   constrainCueTag,
   createCueItem,
-  cueFrameFromEffective,
-  effectiveCueFrame,
   isProtectedUpdateDirector,
 } from '../timelineCues';
 
-const COMMANDS: TimelineCueCommand[] = [
-  'startDirector',
-  'stopDirector',
-  'stopDirectorAndWaitContinue',
-  'pauseDirector',
-  'tag',
+const COMMANDS: Array<{ value: TimelineCueCommand; label: string }> = [
+  { value: '', label: '' },
+  { value: 'startDirector', label: 'Start director' },
+  { value: 'stopDirector', label: 'Stop director' },
+  { value: 'stopDirectorAndWaitContinue', label: 'Stop director and wait continue' },
+  { value: 'pauseDirector', label: 'Pause director' },
+  { value: 'tag', label: 'Tag' },
 ];
+
+const TAGS: Array<{ value: TimelineCueTag; label: string }> = [
+  { value: 'endScene', label: 'End scene' },
+  { value: 'updateData', label: 'Update data' },
+  { value: 'previewFrame', label: 'Preview frame' },
+];
+
+const DIRECTION_BUTTONS: Array<{ value: TimelineCueDirection; label: string }> = [
+  { value: 'both', label: 'Both' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'reverse', label: 'Reverse' },
+];
+
+function itemFromCommand(
+  command: TimelineCueCommand,
+  hostDirectorId: string,
+  previous: TimelineCueItem,
+): TimelineCueItem {
+  if (command === previous.command) return previous;
+  const next = createCueItem(
+    command,
+    command === 'startDirector' ? '' : hostDirectorId,
+  );
+  return next;
+}
 
 export function CueInspector({
   cue,
@@ -23,129 +54,133 @@ export function CueInspector({
   onUpdateCue,
   onUpdateItem,
   onAddItem,
+  onRemoveItem,
 }: {
   cue: TimelineCue;
   directors: TimelineDirector[];
   onUpdateCue: (partial: Partial<Pick<TimelineCue, 'name' | 'fromEnd' | 'frame'>>) => void;
   onUpdateItem: (itemId: string, item: TimelineCueItem) => void;
   onAddItem: () => void;
+  onRemoveItem: (itemId: string) => void;
 }) {
   const host = directors.find((item) => item.id === cue.directorId);
-  const duration = host?.durationFrames ?? 0;
-  const visual = effectiveCueFrame(cue, duration);
+  const multiple = cue.items.length > 1;
 
   return (
     <div className="space-y-3 p-3">
-      <Field label="Action">
-        <Input value={cue.name} onChange={(event) => onUpdateCue({ name: event.target.value })} />
-      </Field>
-      <Field label="Frame">
-        <NumberInput
-          value={visual}
-          min={0}
-          max={duration}
-          step={1}
-          onChange={(value) => onUpdateCue({
-            frame: cueFrameFromEffective(value, cue.fromEnd, duration),
-          })}
+      <Field label="Name">
+        <Input
+          value={cue.name}
+          placeholder="Optional"
+          onChange={(event) => onUpdateCue({ name: event.target.value })}
         />
       </Field>
-      <Checkbox
-        label="from end"
-        checked={cue.fromEnd}
-        onChange={(fromEnd) => onUpdateCue({
-          fromEnd,
-          frame: cueFrameFromEffective(visual, fromEnd, duration),
-        })}
-      />
-      <div className="space-y-2">
-        {cue.items.map((item, index) => (
-          <div key={item.id} className="rounded-md border border-border p-2">
-            <Field label={`Item ${index + 1}`}>
+      {cue.items.map((item) => (
+        <div key={item.id} className="space-y-2 rounded-md border border-border p-2.5">
+          <Field label="Command">
+            <Select
+              value={item.command}
+              onChange={(event) => {
+                const command = event.target.value as TimelineCueCommand;
+                onUpdateItem(
+                  item.id,
+                  constrainCueTag(itemFromCommand(command, cue.directorId, item), host ?? { name: '' }, [], cue.id),
+                );
+              }}
+            >
+              {COMMANDS.map((command) => (
+                <option key={command.value || 'none'} value={command.value}>{command.label}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Parameter">
+            {item.command === '' ? (
+              <Select value="" disabled>
+                <option value="" />
+              </Select>
+            ) : item.command === 'tag' ? (
               <Select
-                value={item.command}
-                onChange={(event) => {
-                  const command = event.target.value as TimelineCueCommand;
-                  const next = command === item.command
-                    ? item
-                    : createCueItem(command, item.command === 'tag' ? cue.directorId : item.parameterDirectorId);
-                  onUpdateItem(item.id, constrainCueTag(next, host ?? { name: '' }, [], cue.id));
-                }}
+                value={item.parameterTag}
+                disabled={isProtectedUpdateDirector(host)}
+                onChange={(event) => onUpdateItem(item.id, constrainCueTag(
+                  { ...item, parameterTag: event.target.value as TimelineCueTag },
+                  host ?? { name: '' },
+                  [],
+                  cue.id,
+                ))}
               >
-                {COMMANDS.map((command) => (
-                  <option key={command} value={command}>{command}</option>
+                {TAGS.map((tag) => (
+                  <option key={tag.value} value={tag.value}>{tag.label}</option>
                 ))}
               </Select>
-            </Field>
-            {item.command === 'tag' ? (
-              <Field label="Tag">
-                <Select
-                  value={item.parameterTag}
-                  disabled={isProtectedUpdateDirector(host)}
-                  onChange={(event) => onUpdateItem(item.id, constrainCueTag(
-                    { ...item, parameterTag: event.target.value as 'endScene' | 'updateData' },
-                    host ?? { name: '' },
-                    [],
-                    cue.id,
-                  ))}
-                >
-                  <option value="endScene">endScene</option>
-                  <option value="updateData">updateData</option>
-                </Select>
-              </Field>
             ) : (
-              <>
-                <Field label="Director">
-                  <Select
-                    value={item.parameterDirectorId}
-                    onChange={(event) => onUpdateItem(item.id, {
-                      ...item,
-                      parameterDirectorId: event.target.value,
-                    })}
-                  >
-                    {directors.map((director) => (
-                      <option key={director.id} value={director.id}>{director.name}</option>
-                    ))}
-                  </Select>
-                </Field>
-                {item.command === 'pauseDirector' && (
-                  <Field label="Pause frames">
-                    <NumberInput
-                      value={item.lengthFrames}
-                      min={0}
-                      step={1}
-                      onChange={(value) => onUpdateItem(item.id, {
-                        ...item,
-                        lengthFrames: Math.max(0, Math.round(value)),
-                      })}
-                    />
-                  </Field>
-                )}
-              </>
-            )}
-            <Field label="Direction">
               <Select
-                value={item.direction}
+                value={item.parameterDirectorId}
                 onChange={(event) => onUpdateItem(item.id, {
                   ...item,
-                  direction: event.target.value as TimelineCueItem['direction'],
+                  parameterDirectorId: event.target.value,
                 })}
               >
-                {CUE_DIRECTIONS.map((direction) => (
-                  <option key={direction} value={direction}>{direction}</option>
+                {item.command === 'startDirector' && <option value="" />}
+                {directors.map((director) => (
+                  <option key={director.id} value={director.id}>{director.name}</option>
                 ))}
               </Select>
-            </Field>
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={onAddItem}
-          className="rounded-md border border-dashed border-border px-2 py-1 text-[12px] text-ink-muted hover:text-ink"
-        >
-          Add item
-        </button>
-      </div>
+            )}
+          </Field>
+          <Field label="Length">
+            <NumberInput
+              value={item.lengthFrames}
+              min={0}
+              step={1}
+              stepper
+              resetValue={0}
+              disabled={item.command !== 'pauseDirector'}
+              aria-label="Length"
+              onChange={(value) => onUpdateItem(item.id, {
+                ...item,
+                lengthFrames: Math.max(0, Math.round(value)),
+              })}
+            />
+          </Field>
+          <Field label="Direction">
+            <div className="flex rounded-md border border-border p-0.5">
+              {DIRECTION_BUTTONS.map((direction) => (
+                <button
+                  key={direction.value}
+                  type="button"
+                  aria-pressed={item.direction === direction.value}
+                  onClick={() => onUpdateItem(item.id, { ...item, direction: direction.value })}
+                  className={cn(
+                    'h-7 flex-1 rounded-[5px] px-1 text-[11px] font-medium',
+                    item.direction === direction.value
+                      ? 'bg-primary/20 text-ink'
+                      : 'text-ink-muted hover:text-ink',
+                  )}
+                >
+                  {direction.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          {multiple && (
+            <button
+              type="button"
+              onClick={() => onRemoveItem(item.id)}
+              className="rounded-md border border-border px-2 py-1 text-[12px] text-ink-muted hover:text-danger"
+            >
+              -Action
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={onAddItem}
+        className="rounded-md border border-dashed border-border px-2 py-1 text-[12px] text-ink-muted hover:text-ink"
+      >
+        +Action
+      </button>
     </div>
   );
 }

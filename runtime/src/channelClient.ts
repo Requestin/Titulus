@@ -28,6 +28,7 @@ import {
 } from './pacingProtocol.js';
 import { diffWaitingContinue } from './waitingContinueReport.js';
 import { compareAirRoots, resolveLayerId } from './airStack.js';
+import { hasUpdateDirector } from './updateDirector.js';
 export type WsStatus = 'connecting' | 'connected' | 'disconnected';
 
 /** A take/update/clear message on /ws/renderer (mirrors §7.4). */
@@ -92,6 +93,7 @@ export class ChannelClient {
   private disposed = false;
   private nextGraphRevision = 1;
   private lastWaitingContinue = new Map<string, boolean>();
+  private lastEndScene = new Set<string>();
   private takeSeq = 0;
 
   constructor(opts: ChannelClientOptions) {
@@ -135,6 +137,7 @@ export class ChannelClient {
     if (this.opts.playbackMode !== 'fixed') return;
     for (const a of this.active.values()) a.renderer.tick();
     this.reportWaitingContinue();
+    this.reportEndScene();
   }
 
   /** Current on-air template count (for the control-panel status badge). */
@@ -228,11 +231,28 @@ export class ChannelClient {
     }
   }
 
+  private reportEndScene(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    const current = new Set<string>();
+    for (const [templateId, active] of this.active) {
+      if (!active.renderer.endScene()) continue;
+      current.add(templateId);
+      if (this.lastEndScene.has(templateId)) continue;
+      this.ws.send(JSON.stringify({
+        type: 'endScene',
+        templateId,
+        ended: true,
+      }));
+    }
+    this.lastEndScene = current;
+  }
+
   private onContinue(msg: ChannelMessage): void {
     const active = this.active.get(msg.templateId);
     if (!active) return;
     active.renderer.continueDirectors();
     this.reportWaitingContinue();
+    this.reportEndScene();
   }
 
   private rendererOpts(): TemplateRendererOptions {
@@ -254,7 +274,11 @@ export class ChannelClient {
     const id = msg.templateId;
     // Replace if already on air (re-take = update template structure + restart).
     const prev = this.active.get(id);
-    if (prev) { prev.renderer.destroy(); this.active.delete(id); }
+    if (prev) {
+      prev.renderer.destroy();
+      this.active.delete(id);
+      this.lastEndScene.delete(id);
+    }
     const renderer = new TemplateRenderer(this.opts.stage, this.rendererOpts());
     const analysis = classifyRenderGraph(msg.template);
     const active: ActiveTemplate = {
@@ -279,11 +303,13 @@ export class ChannelClient {
           this.opts.onFrame?.(info);
           this.publishGraphFrame(id);
           this.reportWaitingContinue();
+          this.reportEndScene();
         },
       });
     this.opts.onActiveCount?.(this.active.size);
     this.publishCurrentGraph();
     this.reportWaitingContinue();
+    this.reportEndScene();
   }
 
   private emitGraphLine(line: string | null): void {
@@ -375,13 +401,16 @@ export class ChannelClient {
   private onUpdate(msg: ChannelMessage): void {
     const a = this.active.get(msg.templateId);
     if (!a) return;
-    // Live variable change: re-sync the same template with new variables without
-    // restarting the timeline (keeps the current playhead).
     const tpl = a.renderer.getTemplate();
-    if (tpl) {
-      a.renderer.syncTemplate(tpl, msg.variables ?? {});
-      this.publishContentUpdate(a);
+    if (!tpl) return;
+    if (hasUpdateDirector(tpl.timeline)) {
+      a.renderer.playUpdate(msg.variables ?? {});
+    } else {
+      a.renderer.syncTemplate(tpl, msg.variables ?? {}, { reuseDirectors: true });
     }
+    this.publishContentUpdate(a);
+    this.reportWaitingContinue();
+    this.reportEndScene();
   }
 
   private onClear(msg: ChannelMessage): void {
@@ -392,6 +421,7 @@ export class ChannelClient {
     a.renderer.destroy();
     this.active.delete(msg.templateId);
     this.lastWaitingContinue.delete(msg.templateId);
+    this.lastEndScene.delete(msg.templateId);
     this.restackRoots();
     this.opts.onActiveCount?.(this.active.size);
     this.publishCurrentGraph();

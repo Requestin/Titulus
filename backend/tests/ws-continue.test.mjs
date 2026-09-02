@@ -210,6 +210,39 @@ test('update after take still merges variables without a z-order bump', () => {
   }
 });
 
+test('normalizeRendererMessage accepts endScene', () => {
+  const result = normalizeRendererMessage({
+    type: 'endScene',
+    templateId: 'tpl-1',
+    ended: true,
+    extra: 1,
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value, {
+    type: 'endScene',
+    templateId: 'tpl-1',
+    ended: true,
+  });
+});
+
+test('renderer endScene clears the on-air take', () => {
+  const db = openDb(':memory:');
+  try {
+    const manager = new OnAirManager(db);
+    const fixture = readFixture('old', 'test');
+    manager.handleControlCommand(takeCommand(fixture));
+    const applied = applyRendererMessage(manager, channelId, {
+      type: 'endScene',
+      templateId: fixture.id,
+      ended: true,
+    });
+    assert.equal(applied.ok, true);
+    assert.deepEqual(manager.onAirTemplateIds(), {});
+  } finally {
+    db.close();
+  }
+});
+
 test('normalizeRendererMessage accepts waitingContinue', () => {
   const result = normalizeRendererMessage({
     type: 'waitingContinue',

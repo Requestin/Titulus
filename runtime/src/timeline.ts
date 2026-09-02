@@ -442,7 +442,7 @@ export function resolveCueFrame(
 }
 
 function cueItemIsStateful(item: TimelineCueItem): boolean {
-  return item.command !== 'tag';
+  return item.command !== '' && item.command !== 'tag';
 }
 
 export function timelineNeedsDirectorRuntime(tl: Timeline): boolean {

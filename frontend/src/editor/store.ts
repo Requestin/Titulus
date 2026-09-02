@@ -743,7 +743,7 @@ export const useEditor = create<EditorState>()(
           get().patch((t) => {
             const cue = (t.timeline.cues ?? []).find((item) => item.id === existing.id);
             if (!cue) return;
-            cue.items = mergeCueItems(cue, [createCueItem('startDirector', directorId)]).items;
+            cue.items = mergeCueItems(cue, [createCueItem('', directorId)]).items;
           });
           set({ selectedCueId: existing.id, selectedKeyframes: [] });
           return;
@@ -797,7 +797,7 @@ export const useEditor = create<EditorState>()(
           if (cue) Object.assign(cue, partial);
         }),
 
-      addCueItem: (cueId, command = 'startDirector') =>
+      addCueItem: (cueId, command = '') =>
         get().patch((t) => {
           const cue = (t.timeline.cues ?? []).find((item) => item.id === cueId);
           if (!cue) return;
