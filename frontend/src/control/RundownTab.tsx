@@ -72,6 +72,9 @@ export function RundownTab({
   selectedRundownId,
   onSelectRundown,
   showRundownList = true,
+  selectedSlotId = null,
+  onSelectSlot,
+  takeVariableOverrides = null,
 }: {
   channels: Channel[];
   templates: TemplateSummary[];
@@ -88,6 +91,10 @@ export function RundownTab({
   selectedRundownId?: string | null;
   onSelectRundown?: (id: string | null) => void;
   showRundownList?: boolean;
+  selectedSlotId?: string | null;
+  onSelectSlot?: (slot: RundownSlot | null) => void;
+  /** Unsaved inspector draft for the focused slot — TAKE uses these when present. */
+  takeVariableOverrides?: { slotId: string; values: Record<string, string | number> } | null;
 }) {
   const controlled = selectedRundownId !== undefined;
   const [internalActiveId, setInternalActiveId] = useState<string | null>(null);
@@ -205,8 +212,18 @@ export function RundownTab({
   function buildPayload(slot: RundownSlot, varsDef: Variable[]) {
     const de = dataElements.find((item) => item.id === slot.dataElementId);
     const fromDe = de ? flattenPayload(de.payload) : {};
+    const draft = takeVariableOverrides?.slotId === slot.slotId
+      ? takeVariableOverrides.values
+      : null;
     const v: Record<string, string | number> = { ...fromDe };
-    for (const d of varsDef) v[d.id] = slot.vars[d.id] ?? v[d.id] ?? d.defaultValue;
+    for (const d of varsDef) {
+      v[d.id] = draft?.[d.id] ?? slot.vars[d.id] ?? v[d.id] ?? d.defaultValue;
+    }
+    if (draft) {
+      for (const [k, val] of Object.entries(draft)) {
+        if (typeof val === 'string' || typeof val === 'number') v[k] = val;
+      }
+    }
     return v;
   }
 
@@ -513,7 +530,9 @@ export function RundownTab({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, flatTakeable, focusPath, activeLiveSet]);
+    // takeSlot/clearSlot close over takeVariableOverrides + on-air state
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, flatTakeable, focusPath, activeLiveSet, takeVariableOverrides, onAirDetails, dataElements, cache]);
 
   const focusedTakeable = flatTakeable.find(
     (row) => row.parentId === focusPath.parentId && row.index === focusPath.index,
@@ -582,21 +601,41 @@ export function RundownTab({
     </aside>
   ) : null;
 
+  function renderInsertLine(parentId: string | null, index: number) {
+    const hintKey = `insert:${parentId ?? 'root'}:${index}`;
+    const activeHint = dropHint === hintKey;
+    return (
+      <div
+        key={hintKey}
+        className={cn('relative shrink-0 transition-[height]', activeHint ? 'h-3' : 'h-2')}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDropHint(hintKey);
+        }}
+        onDragLeave={() => setDropHint((cur) => (cur === hintKey ? null : cur))}
+        onDrop={(e) => onReorderDrop(parentId, index, e)}
+        aria-hidden
+      >
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-x-1 top-1/2 h-0.5 -translate-y-1/2 rounded-full transition-colors',
+            activeHint ? 'bg-primary shadow-[0_0_0_2px_oklch(var(--primary)/0.35)]' : 'bg-transparent',
+          )}
+        />
+      </div>
+    );
+  }
+
   function renderSlotRow(slot: RundownSlot, idx: number, parentId: string | null) {
     const focused = focusPath.parentId === parentId && focusPath.index === idx;
+    const selected = selectedSlotId === slot.slotId;
     const primary = isPrimary(slot);
     const childItems = primary ? (slot.children ?? []).filter(isItem) : [];
     const anyChildLive = childItems.some((c) => activeLiveSet.has(c.slotId));
     const live = primary ? anyChildLive : activeLiveSet.has(slot.slotId);
     const nestHint = dropHint === `child:${slot.slotId}`;
-    const rowHint = dropHint === `${parentId ?? 'root'}:${idx}`;
     const renaming = renamingSlotId === slot.slotId;
-
-    function resolveDropMode(clientX: number, el: HTMLElement): 'nest' | 'reorder' {
-      if (!primary) return 'reorder';
-      const rect = el.getBoundingClientRect();
-      return clientX >= rect.left + rect.width * 0.55 ? 'nest' : 'reorder';
-    }
 
     return (
       <div key={slot.slotId} className={parentId ? 'pl-4' : undefined}>
@@ -604,24 +643,38 @@ export function RundownTab({
           className={cn(
             'rounded border px-2 py-2',
             live && 'border-transparent',
-            !live && (focused ? 'border-primary/70 bg-surface-2' : 'border-border bg-surface'),
+            !live && (selected || focused ? 'border-primary/70 bg-surface-2' : 'border-border bg-surface'),
             nestHint && 'bg-warning/25 ring-1 ring-inset ring-warning/80',
-            !nestHint && rowHint && 'ring-1 ring-primary',
           )}
           style={live ? { backgroundColor: '#371f1f' } : undefined}
           onDragOver={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            const mode = resolveDropMode(e.clientX, e.currentTarget);
-            setDropHint(mode === 'nest' ? `child:${slot.slotId}` : `${parentId ?? 'root'}:${idx}`);
+            if (primary) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              if (e.clientX >= rect.left + rect.width * 0.55) {
+                setDropHint(`child:${slot.slotId}`);
+                return;
+              }
+            }
+            const rect = e.currentTarget.getBoundingClientRect();
+            const insertAt = e.clientY < rect.top + rect.height / 2 ? idx : idx + 1;
+            setDropHint(`insert:${parentId ?? 'root'}:${insertAt}`);
           }}
-          onDragLeave={() => setDropHint((cur) => (
-            cur === `child:${slot.slotId}` || cur === `${parentId ?? 'root'}:${idx}` ? null : cur
-          ))}
+          onDragLeave={() => setDropHint((cur) => (cur === `child:${slot.slotId}` ? null : cur))}
           onDrop={(e) => {
-            const mode = resolveDropMode(e.clientX, e.currentTarget);
-            if (mode === 'nest') onDropOnto(slot.slotId, e);
-            else onReorderDrop(parentId, idx, e);
+            e.preventDefault();
+            e.stopPropagation();
+            if (primary) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              if (e.clientX >= rect.left + rect.width * 0.55) {
+                onDropOnto(slot.slotId, e);
+                return;
+              }
+            }
+            const rect = e.currentTarget.getBoundingClientRect();
+            const insertAt = e.clientY < rect.top + rect.height / 2 ? idx : idx + 1;
+            onReorderDrop(parentId, insertAt, e);
           }}
         >
           <div className="flex items-center gap-1.5">
@@ -657,7 +710,11 @@ export function RundownTab({
             <button
               type="button"
               className="min-w-0 flex-1 text-left"
-              onClick={() => setFocusPath({ parentId, index: idx })}
+              onClick={() => {
+                setFocusPath({ parentId, index: idx });
+                if (isItem(slot) && slot.templateId) onSelectSlot?.(slot);
+                else onSelectSlot?.(null);
+              }}
             >
               {renaming && primary ? (
                 <Input
@@ -716,7 +773,7 @@ export function RundownTab({
             {!primary && (
               <span className={cn(
                 'rounded px-1.5 py-0.5 text-[11px] font-semibold',
-                focused ? 'bg-primary/20 text-primary' : 'bg-surface-2 text-ink-muted',
+                focused || selected ? 'bg-primary/20 text-primary' : 'bg-surface-2 text-ink-muted',
                 live && 'bg-transparent text-ink-muted',
               )}>
                 {focused ? 'NEXT' : 'PENDING'}
@@ -725,10 +782,13 @@ export function RundownTab({
             <button
               type="button"
               className="text-ink-faint hover:text-danger"
-              onClick={() => patchActive((r) => ({
-                ...r,
-                slots: mapSlots(r.slots, parentId, (list) => list.filter((s) => s.slotId !== slot.slotId)),
-              }))}
+              onClick={() => {
+                if (selectedSlotId === slot.slotId) onSelectSlot?.(null);
+                patchActive((r) => ({
+                  ...r,
+                  slots: mapSlots(r.slots, parentId, (list) => list.filter((s) => s.slotId !== slot.slotId)),
+                }));
+              }}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -756,7 +816,7 @@ export function RundownTab({
           {primary && expanded.has(slot.slotId) && (
             <div
               className={cn(
-                'mt-2 space-y-2 rounded border border-dashed border-border p-2',
+                'mt-2 flex min-h-[4rem] flex-col rounded border border-dashed border-border p-2',
                 nestHint && 'border-primary bg-primary/5',
               )}
               onDragOver={(e) => {
@@ -767,12 +827,31 @@ export function RundownTab({
               onDragLeave={() => setDropHint((cur) => (cur === `child:${slot.slotId}` ? null : cur))}
               onDrop={(e) => onDropOnto(slot.slotId, e)}
             >
-              {(slot.children ?? []).map((child, childIdx) => renderSlotRow(child, childIdx, slot.slotId))}
+              {renderInsertLine(slot.slotId, 0)}
+              {(slot.children ?? []).map((child, childIdx) => (
+                <div key={child.slotId}>
+                  {renderSlotRow(child, childIdx, slot.slotId)}
+                  {renderInsertLine(slot.slotId, childIdx + 1)}
+                </div>
+              ))}
               {(slot.children ?? []).length === 0 && (
                 <p className="px-1 py-3 text-center text-[12px] text-ink-faint">
                   Drop items here, or drag right onto this primary
                 </p>
               )}
+              <div
+                className={cn(
+                  'min-h-[1.5rem] flex-1 rounded transition-colors',
+                  dropHint === `append:${slot.slotId}` && 'bg-primary/10 ring-1 ring-inset ring-primary/50',
+                )}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDropHint(`append:${slot.slotId}`);
+                }}
+                onDragLeave={() => setDropHint((cur) => (cur === `append:${slot.slotId}` ? null : cur))}
+                onDrop={(e) => onDropOnto(slot.slotId, e)}
+              />
             </div>
           )}
         </div>
@@ -781,99 +860,126 @@ export function RundownTab({
   }
 
   const editor = (
-    <div className="min-h-0 overflow-auto p-3">
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-border bg-surface px-3 py-2">
-        <Button
-          size="sm"
-          variant="neutral"
-          disabled={focusFlatIndex <= 0}
-          onClick={() => {
-            const i = Math.max(0, focusFlatIndex - 1);
-            const row = flatTakeable[i];
-            if (!row) return;
-            setFocusPath({ parentId: row.parentId, index: row.index });
-            void takeSlot(row.slot);
-          }}
-        >
-          PREV
-        </Button>
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={!focusedTakeable}
-          onClick={() => {
-            if (!focusedTakeable) return;
-            void takeSlot(focusedTakeable.slot).then(() => {
-              const next = flatTakeable[Math.min(focusFlatIndex + 1, flatTakeable.length - 1)];
-              if (next) setFocusPath({ parentId: next.parentId, index: next.index });
-            });
-          }}
-        >
-          TAKE
-        </Button>
-        <Button
-          size="sm"
-          variant="neutral"
-          disabled={!focusedTakeable || !isWaitingContinue(onAirDetails, channelId, focusedTakeable.slot.slotId)}
-          onClick={() => {
-            if (focusedTakeable) send(continueCommand(channelId, runtimeIdForSlot(onAirDetails, channelId, focusedTakeable.slot.slotId)));
-          }}
-        >
-          CONTINUE
-        </Button>
-        <Button
-          size="sm"
-          variant="neutral"
-          disabled={focusFlatIndex < 0 || focusFlatIndex >= flatTakeable.length - 1}
-          onClick={() => {
-            const i = Math.min(flatTakeable.length - 1, focusFlatIndex + 1);
-            const row = flatTakeable[i];
-            if (!row) return;
-            setFocusPath({ parentId: row.parentId, index: row.index });
-            void takeSlot(row.slot);
-          }}
-        >
-          NEXT
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            for (const row of flatTakeable) if (activeLiveSet.has(row.slot.slotId)) clearSlot(row.slot.slotId);
-          }}
-        >
-          CLEAR LIVE
-        </Button>
-        <span className="tnum rounded border border-border px-2 py-1 text-[12px] text-ink-muted">
-          {flatTakeable.length === 0 ? '0 / 0' : `${focusFlatIndex + 1} / ${flatTakeable.length}`}
-        </span>
-      </div>
+    <div className="flex min-h-0 flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-border p-3 pb-0">
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-border bg-surface px-3 py-2">
+          <Button
+            size="sm"
+            variant="neutral"
+            disabled={focusFlatIndex <= 0}
+            onClick={() => {
+              const i = Math.max(0, focusFlatIndex - 1);
+              const row = flatTakeable[i];
+              if (!row) return;
+              setFocusPath({ parentId: row.parentId, index: row.index });
+              void takeSlot(row.slot);
+            }}
+          >
+            PREV
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!focusedTakeable}
+            onClick={() => {
+              if (!focusedTakeable) return;
+              void takeSlot(focusedTakeable.slot).then(() => {
+                const next = flatTakeable[Math.min(focusFlatIndex + 1, flatTakeable.length - 1)];
+                if (next) setFocusPath({ parentId: next.parentId, index: next.index });
+              });
+            }}
+          >
+            TAKE
+          </Button>
+          <Button
+            size="sm"
+            variant="neutral"
+            disabled={!focusedTakeable || !isWaitingContinue(onAirDetails, channelId, focusedTakeable.slot.slotId)}
+            onClick={() => {
+              if (focusedTakeable) send(continueCommand(channelId, runtimeIdForSlot(onAirDetails, channelId, focusedTakeable.slot.slotId)));
+            }}
+          >
+            CONTINUE
+          </Button>
+          <Button
+            size="sm"
+            variant="neutral"
+            disabled={focusFlatIndex < 0 || focusFlatIndex >= flatTakeable.length - 1}
+            onClick={() => {
+              const i = Math.min(flatTakeable.length - 1, focusFlatIndex + 1);
+              const row = flatTakeable[i];
+              if (!row) return;
+              setFocusPath({ parentId: row.parentId, index: row.index });
+              void takeSlot(row.slot);
+            }}
+          >
+            NEXT
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              for (const row of flatTakeable) if (activeLiveSet.has(row.slot.slotId)) clearSlot(row.slot.slotId);
+            }}
+          >
+            CLEAR LIVE
+          </Button>
+          <span className="tnum rounded border border-border px-2 py-1 text-[12px] text-ink-muted">
+            {flatTakeable.length === 0 ? '0 / 0' : `${focusFlatIndex + 1} / ${flatTakeable.length}`}
+          </span>
+        </div>
 
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold">{active.name}</h3>
-        <Button size="sm" variant="neutral" onClick={addPrimary}>
-          <Plus className="h-4 w-4" /> primary
-        </Button>
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{active.name}</h3>
+          <Button size="sm" variant="neutral" onClick={addPrimary}>
+            <Plus className="h-4 w-4" /> primary
+          </Button>
+        </div>
       </div>
 
       <div
-        className={cn(
-          'space-y-2 rounded-md',
-          dropHint === 'root' && 'ring-1 ring-primary',
-        )}
+        className="flex min-h-0 flex-1 flex-col overflow-auto p-3 pt-0"
         onDragOver={(e) => {
-          e.preventDefault();
-          setDropHint('root');
+          // Empty lower area of the list cell → append at root
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            setDropHint('append:root');
+          }
         }}
-        onDragLeave={() => setDropHint((cur) => (cur === 'root' ? null : cur))}
-        onDrop={(e) => onDropOnto(null, e)}
+        onDragLeave={(e) => {
+          if (e.target === e.currentTarget) setDropHint((cur) => (cur === 'append:root' ? null : cur));
+        }}
+        onDrop={(e) => {
+          if (e.target === e.currentTarget) onDropOnto(null, e);
+        }}
       >
-        {active.slots.map((slot, idx) => renderSlotRow(slot, idx, null))}
-        {active.slots.length === 0 && (
-          <div className="rounded border border-dashed border-border px-4 py-8 text-center text-[13px] text-ink-muted">
-            Drop templates or data elements here, or add a Primary group.
-          </div>
-        )}
+        <div className="flex min-h-full flex-1 flex-col">
+          {renderInsertLine(null, 0)}
+          {active.slots.map((slot, idx) => (
+            <div key={slot.slotId}>
+              {renderSlotRow(slot, idx, null)}
+              {renderInsertLine(null, idx + 1)}
+            </div>
+          ))}
+          {active.slots.length === 0 && (
+            <div className="rounded border border-dashed border-border px-4 py-8 text-center text-[13px] text-ink-muted">
+              Drop templates or data elements here, or add a Primary group.
+            </div>
+          )}
+          <div
+            className={cn(
+              'min-h-[3rem] flex-1 rounded transition-colors',
+              dropHint === 'append:root' && 'bg-primary/10 ring-1 ring-inset ring-primary/40',
+            )}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setDropHint('append:root');
+            }}
+            onDragLeave={() => setDropHint((cur) => (cur === 'append:root' ? null : cur))}
+            onDrop={(e) => onDropOnto(null, e)}
+          />
+        </div>
       </div>
     </div>
   );

@@ -61,6 +61,10 @@ export function ControlPage() {
   const [rundownMonitorChannel, setRundownMonitorChannel] = useState<string>('');
   const [selectedRundownId, setSelectedRundownId] = useState<string | null>(null);
   const [inspectorTarget, setInspectorTarget] = useState<InspectorTarget | null>(null);
+  const [slotDraft, setSlotDraft] = useState<{
+    slotId: string;
+    values: Record<string, string | number>;
+  } | null>(null);
   const [hideAll, setHideAll] = useState(readHideAllInControl);
   const [hideUnassigned, setHideUnassigned] = useState(readHideUnassignedInControl);
   const [folderFilter, setFolderFilter] = useState<string>('all');
@@ -330,11 +334,11 @@ export function ControlPage() {
       <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_360px]">
         {/* Left: nav + lists */}
         <div className="flex min-h-0 flex-col border-r border-border">
-          <div className="flex shrink-0 flex-col border-b border-border p-2">
+          <div className="flex shrink-0 flex-col gap-1 border-b border-border bg-surface-2 p-2">
             {([
-              ['rundowns', 'Rundown'],
-              ['templates', 'Templates'],
-              ['data', 'Data'],
+              ['rundowns', 'RUNDOWN'],
+              ['templates', 'TEMPLATES'],
+              ['data', 'DATA'],
             ] as const).map(([id, label]) => (
               <button
                 key={id}
@@ -344,14 +348,71 @@ export function ControlPage() {
                   if (id === 'data') setDataTemplateFilter('all');
                 }}
                 className={cn(
-                  'rounded-md px-3 py-2 text-left text-sm transition-colors',
-                  tab === id ? 'bg-primary/15 text-ink font-medium' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
+                  'rounded-md px-3 py-2 text-center text-sm uppercase tracking-wide transition-colors',
+                  tab === id ? 'bg-primary/15 text-ink font-semibold' : 'text-ink-muted hover:bg-surface hover:text-ink',
                 )}
               >
                 {label}
               </button>
             ))}
           </div>
+
+          {(tab === 'templates' || tab === 'data') && (
+            <div className="shrink-0 space-y-2 border-b border-border bg-surface p-2">
+              {tab === 'templates' && (
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  Folder
+                  <Select
+                    className="mt-1"
+                    aria-label="Template folder"
+                    value={folderFilter}
+                    onChange={(e) => setFolderFilter(e.target.value)}
+                    disabled={folderSelectOptions.length === 0}
+                  >
+                    {folderSelectOptions.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </Select>
+                </label>
+              )}
+              {tab === 'data' && (
+                <>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                    Folder
+                    <Select
+                      className="mt-1"
+                      aria-label="Data folder"
+                      value={dataFolderFilter}
+                      onChange={(e) => {
+                        setDataFolderFilter(e.target.value);
+                        setDataTemplateFilter('all');
+                      }}
+                      disabled={folderSelectOptions.length === 0}
+                    >
+                      {folderSelectOptions.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </Select>
+                  </label>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                    Template
+                    <Select
+                      className="mt-1"
+                      aria-label="Data template"
+                      value={dataTemplateFilter}
+                      onChange={(e) => setDataTemplateFilter(e.target.value)}
+                    >
+                      <option value="all">All</option>
+                      {templatesForDataTab.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </Select>
+                  </label>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="min-h-0 flex-1 overflow-auto p-2">
             {tab === 'rundowns' && (
               <>
@@ -449,21 +510,7 @@ export function ControlPage() {
             )}
 
             {tab === 'templates' && (
-              <div className="space-y-2">
-                <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                  Folder
-                  <Select
-                    className="mt-1"
-                    aria-label="Template folder"
-                    value={folderFilter}
-                    onChange={(e) => setFolderFilter(e.target.value)}
-                    disabled={folderSelectOptions.length === 0}
-                  >
-                    {folderSelectOptions.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </Select>
-                </label>
+              <div>
                 {templatesForTemplatesTab.length === 0 ? (
                   <p className="px-1 py-4 text-center text-[12px] text-ink-faint">No templates</p>
                 ) : (
@@ -478,7 +525,10 @@ export function ControlPage() {
                             e.dataTransfer.setData(MIME_TEMPLATE, payload);
                             e.dataTransfer.setData('text/plain', payload);
                           }}
-                          onClick={() => setInspectorTarget({ kind: 'template', templateId: t.id })}
+                          onClick={() => {
+                            setSlotDraft(null);
+                            setInspectorTarget({ kind: 'template', templateId: t.id });
+                          }}
                           className={cn(
                             'flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-[13px]',
                             inspectorTarget?.kind === 'template' && inspectorTarget.templateId === t.id
@@ -497,38 +547,7 @@ export function ControlPage() {
             )}
 
             {tab === 'data' && (
-              <div className="space-y-2">
-                <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                  Folder
-                  <Select
-                    className="mt-1"
-                    aria-label="Data folder"
-                    value={dataFolderFilter}
-                    onChange={(e) => {
-                      setDataFolderFilter(e.target.value);
-                      setDataTemplateFilter('all');
-                    }}
-                    disabled={folderSelectOptions.length === 0}
-                  >
-                    {folderSelectOptions.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </Select>
-                </label>
-                <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                  Template
-                  <Select
-                    className="mt-1"
-                    aria-label="Data template"
-                    value={dataTemplateFilter}
-                    onChange={(e) => setDataTemplateFilter(e.target.value)}
-                  >
-                    <option value="all">All</option>
-                    {templatesForDataTab.map((t) => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </Select>
-                </label>
+              <div>
                 {dataElementsForList.length === 0 ? (
                   <p className="px-1 py-4 text-center text-[12px] text-ink-faint">No data elements</p>
                 ) : (
@@ -549,7 +568,10 @@ export function ControlPage() {
                             e.dataTransfer.setData(MIME_DATA_ELEMENT, payload);
                             e.dataTransfer.setData('text/plain', payload);
                           }}
-                          onClick={() => setInspectorTarget({ kind: 'dataElement', dataElementId: de.id })}
+                          onClick={() => {
+                            setSlotDraft(null);
+                            setInspectorTarget({ kind: 'dataElement', dataElementId: de.id });
+                          }}
                           className={cn(
                             'flex w-full flex-col rounded-md border px-2.5 py-1.5 text-left text-[13px]',
                             inspectorTarget?.kind === 'dataElement' && inspectorTarget.dataElementId === de.id
@@ -598,6 +620,24 @@ export function ControlPage() {
             selectedRundownId={selectedRundownId}
             onSelectRundown={setSelectedRundownId}
             showRundownList={false}
+            selectedSlotId={inspectorTarget?.kind === 'slot' ? inspectorTarget.slotId : null}
+            takeVariableOverrides={slotDraft}
+            onSelectSlot={(slot) => {
+              if (!slot || !selectedRundownId || !slot.templateId) {
+                setSlotDraft(null);
+                setInspectorTarget(null);
+                return;
+              }
+              setInspectorTarget({
+                kind: 'slot',
+                rundownId: selectedRundownId,
+                slotId: slot.slotId,
+                templateId: slot.templateId,
+                dataElementId: slot.dataElementId,
+                name: slot.name,
+                seedVars: { ...slot.vars },
+              });
+            }}
           />
         </div>
 
@@ -633,10 +673,29 @@ export function ControlPage() {
               target={inspectorTarget}
               dataElements={dataElements}
               onDataElementsChange={setDataElements}
-              onCancel={() => setInspectorTarget(null)}
-              channelId={channelId}
-              live={inspectorTarget?.kind === 'template' && live.includes(inspectorTarget.templateId)}
-              send={send}
+              onCancel={() => {
+                setSlotDraft(null);
+                setInspectorTarget(null);
+              }}
+              onDraftValuesChange={setSlotDraft}
+              onSlotVarsSave={(rundownId, slotId, vars, dataElementId) => {
+                setRundowns((prev) => prev.map((rd) => {
+                  if (rd.id !== rundownId) return rd;
+                  return {
+                    ...rd,
+                    slots: patchSlotTree(rd.slots, slotId, (s) => ({
+                      ...s,
+                      vars: { ...vars },
+                      ...(dataElementId ? { dataElementId } : {}),
+                    })),
+                  };
+                }));
+                setInspectorTarget((cur) => (
+                  cur?.kind === 'slot' && cur.slotId === slotId
+                    ? { ...cur, seedVars: { ...vars }, ...(dataElementId ? { dataElementId } : {}) }
+                    : cur
+                ));
+              }}
             />
           </div>
         </div>
@@ -732,4 +791,16 @@ function findSlot(slots: Rundown['slots'], id: string): Rundown['slots'][number]
     }
   }
   return null;
+}
+
+function patchSlotTree(
+  slots: Rundown['slots'],
+  slotId: string,
+  fn: (slot: Rundown['slots'][number]) => Rundown['slots'][number],
+): Rundown['slots'] {
+  return slots.map((slot) => {
+    if (slot.slotId === slotId) return fn(slot);
+    if (slot.children) return { ...slot, children: patchSlotTree(slot.children, slotId, fn) };
+    return slot;
+  });
 }

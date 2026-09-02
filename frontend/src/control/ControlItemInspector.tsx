@@ -1,40 +1,50 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Template } from '@runtime';
-import { hasUpdateDirectorTracks } from '@runtime';
 import { api, type DataElement, type TemplateRecord } from '@/core/api';
 import { resolveDefaultDataElementName } from '@/control/resolveDefaultDataElementName';
 import { VariableValues } from '@/control/VariableValues';
-import { prepareForAir } from '@/control/prepareForAir';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/form';
 import { toast } from '@/core/toast';
 
 export type InspectorTarget =
   | { kind: 'template'; templateId: string }
-  | { kind: 'dataElement'; dataElementId: string };
+  | { kind: 'dataElement'; dataElementId: string }
+  | {
+      kind: 'slot';
+      rundownId: string;
+      slotId: string;
+      templateId: string;
+      dataElementId?: string;
+      name?: string;
+      /** Current slot.vars used to seed the form (TAKE-without-save reads live draft). */
+      seedVars?: Record<string, string | number>;
+    };
 
 export function ControlItemInspector({
   target,
   dataElements,
   onDataElementsChange,
   onCancel,
-  channelId,
-  live = false,
-  send,
+  onSlotVarsSave,
+  onDraftValuesChange,
 }: {
   target: InspectorTarget | null;
   dataElements: DataElement[];
   onDataElementsChange: (next: DataElement[]) => void;
   onCancel: () => void;
-  channelId?: string;
-  live?: boolean;
-  send?: (cmd: {
-    type: 'take' | 'update' | 'clear';
-    channelId: string;
-    templateId?: string;
-    template?: unknown;
-    variables?: Record<string, string | number>;
-  }) => boolean;
+  /** Persist edited variable values onto a rundown slot (and optional linked DE). */
+  onSlotVarsSave?: (
+    rundownId: string,
+    slotId: string,
+    vars: Record<string, string | number>,
+    dataElementId?: string | null,
+  ) => void;
+  /** Live draft values for TAKE without Save (slot inspector). */
+  onDraftValuesChange?: (draft: {
+    slotId: string;
+    values: Record<string, string | number>;
+  } | null) => void;
 }) {
   const [prep, setPrep] = useState<TemplateRecord | null>(null);
   const [values, setValues] = useState<Record<string, string | number>>({});
@@ -42,6 +52,11 @@ export function ControlItemInspector({
   const [busy, setBusy] = useState(false);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+  const [slotMeta, setSlotMeta] = useState<{
+    rundownId: string;
+    slotId: string;
+    name?: string;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +65,9 @@ export function ControlItemInspector({
         setPrep(null);
         setValues({});
         setEditingDeId(null);
+        setSlotMeta(null);
         setNameDialogOpen(false);
+        onDraftValuesChange?.(null);
         return;
       }
       try {
@@ -59,21 +76,48 @@ export function ControlItemInspector({
           if (cancelled) return;
           setPrep(rec);
           setEditingDeId(null);
+          setSlotMeta(null);
           const init: Record<string, string | number> = {};
           for (const v of rec.data.variables) init[v.id] = v.defaultValue;
           setValues(init);
+          onDraftValuesChange?.(null);
+          return;
+        }
+        if (target.kind === 'slot') {
+          const rec = await api.templates.get(target.templateId);
+          if (cancelled) return;
+          setPrep(rec);
+          setSlotMeta({
+            rundownId: target.rundownId,
+            slotId: target.slotId,
+            name: target.name,
+          });
+          const de = target.dataElementId
+            ? dataElements.find((item) => item.id === target.dataElementId)
+            : undefined;
+          setEditingDeId(de?.id ?? null);
+          const fromDe = de ? flattenPayload(de.payload) : {};
+          const seed = target.seedVars ?? {};
+          const init: Record<string, string | number> = {};
+          for (const v of rec.data.variables) {
+            init[v.id] = seed[v.id] ?? seed[v.name] ?? fromDe[v.id] ?? fromDe[v.name] ?? v.defaultValue;
+          }
+          setValues(init);
+          onDraftValuesChange?.({ slotId: target.slotId, values: init });
           return;
         }
         const de = dataElements.find((item) => item.id === target.dataElementId);
         if (!de) {
           setPrep(null);
           setEditingDeId(null);
+          setSlotMeta(null);
           return;
         }
         const rec = await api.templates.get(de.templateId);
         if (cancelled) return;
         setPrep(rec);
         setEditingDeId(de.id);
+        setSlotMeta(null);
         const init: Record<string, string | number> = {};
         for (const v of rec.data.variables) {
           const fromPayload = de.payload[v.id] ?? de.payload[v.name];
@@ -82,16 +126,23 @@ export function ControlItemInspector({
             : v.defaultValue;
         }
         setValues(init);
+        onDraftValuesChange?.(null);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to load inspector');
       }
     }
     void load();
     return () => { cancelled = true; };
+    // Intentionally omit onDraftValuesChange from deps — parent passes stable setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target, dataElements]);
 
   function setValue(varId: string, v: string | number) {
-    setValues((prev) => ({ ...prev, [varId]: v }));
+    setValues((prev) => {
+      const next = { ...prev, [varId]: v };
+      if (slotMeta) onDraftValuesChange?.({ slotId: slotMeta.slotId, values: next });
+      return next;
+    });
   }
 
   function openSaveAsNew() {
@@ -113,6 +164,9 @@ export function ControlItemInspector({
       });
       onDataElementsChange([created, ...dataElements.filter((item) => item.id !== created.id)]);
       setEditingDeId(created.id);
+      if (slotMeta) {
+        onSlotVarsSave?.(slotMeta.rundownId, slotMeta.slotId, { ...values }, created.id);
+      }
       setNameDialogOpen(false);
       toast.success('Data element created');
     } catch (error) {
@@ -123,12 +177,24 @@ export function ControlItemInspector({
   }
 
   async function save() {
-    if (!prep || !editingDeId) return;
+    if (!prep) return;
     setBusy(true);
     try {
-      const updated = await api.dataElements.update(editingDeId, { payload: { ...values } });
-      onDataElementsChange(dataElements.map((item) => (item.id === updated.id ? updated : item)));
-      toast.success('Data element saved');
+      let deId = editingDeId;
+      if (editingDeId) {
+        const updated = await api.dataElements.update(editingDeId, { payload: { ...values } });
+        onDataElementsChange(dataElements.map((item) => (item.id === updated.id ? updated : item)));
+        deId = updated.id;
+      }
+      if (slotMeta) {
+        onSlotVarsSave?.(slotMeta.rundownId, slotMeta.slotId, { ...values }, deId);
+        toast.success('Slot variables saved');
+      } else if (editingDeId) {
+        toast.success('Data element saved');
+      } else {
+        toast.error('Nothing to save — use Save as new');
+        return;
+      }
     } catch (error) {
       toast.error(`Save failed: ${(error as Error).message}`);
     } finally {
@@ -136,69 +202,13 @@ export function ControlItemInspector({
     }
   }
 
-  async function playTake() {
-    if (!prep || !channelId || !send) return;
-    if (live && hasUpdateDirectorTracks(prep.data.timeline)) {
-      await playUpdate();
-      return;
-    }
-    setBusy(true);
-    try {
-      const prepared = await prepareForAir(prep.data, 'take', values);
-      if (prepared.blocked) {
-        toast.error(prepared.errors[0]?.message || 'TAKE blocked');
-        return;
-      }
-      const ok = send({
-        type: 'take',
-        channelId,
-        templateId: prep.id,
-        template: prepared.template ?? prep.data,
-        variables: { ...values, ...prepared.overrides },
-      });
-      if (!ok) toast.error('Control socket disconnected');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'TAKE failed');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function playUpdate() {
-    if (!prep || !channelId || !send) return;
-    setBusy(true);
-    try {
-      const prepared = await prepareForAir(prep.data, 'update', values);
-      if (prepared.blocked) {
-        toast.error(prepared.errors[0]?.message || 'UPDATE blocked');
-        return;
-      }
-      const ok = send({
-        type: 'update',
-        channelId,
-        templateId: prep.id,
-        variables: { ...values, ...prepared.overrides },
-      });
-      if (!ok) toast.error('Control socket disconnected');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'UPDATE failed');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function playClear() {
-    if (!prep || !channelId || !send) return;
-    send({ type: 'clear', channelId, templateId: prep.id });
-  }
-
-  const canPlay = Boolean(channelId && send && target?.kind === 'template');
-  const canUpdate = canPlay && live && Boolean(prep && hasUpdateDirectorTracks(prep.data.timeline));
+  const canSave = Boolean(editingDeId || slotMeta);
+  const title = slotMeta?.name || prep?.name || 'Item';
 
   if (!target) {
     return (
       <p className="p-3 text-[12px] text-ink-faint">
-        Select a template or data element to prepare variables.
+        Select a rundown item, template, or data element to prepare variables.
       </p>
     );
   }
@@ -210,7 +220,10 @@ export function ControlItemInspector({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border p-3">
-        <div className="truncate text-sm font-medium">{prep.name}</div>
+        <div className="truncate text-sm font-medium">{title}</div>
+        {slotMeta && prep.name !== title && (
+          <div className="truncate text-[11px] text-ink-faint">{prep.name}</div>
+        )}
         {editingDeId && (
           <div className="truncate text-[11px] text-ink-faint">
             Editing DE: {dataElements.find((item) => item.id === editingDeId)?.name ?? editingDeId}
@@ -221,27 +234,22 @@ export function ControlItemInspector({
         <VariableValues variables={prep.data.variables} values={values} onChange={setValue} />
       </div>
       <div className="border-t border-border p-3">
-        {canPlay && (
-          <div className="mb-2 grid grid-cols-3 gap-2">
-            <Button size="sm" variant="danger" disabled={busy} onClick={() => void playTake()}>
-              Take
-            </Button>
-            <Button size="sm" variant="neutral" disabled={busy || !canUpdate} onClick={() => void playUpdate()}>
-              Update
-            </Button>
-            <Button size="sm" variant="ghost" disabled={busy || !live} onClick={playClear}>
-              Clear
-            </Button>
-          </div>
-        )}
         <div className="grid grid-cols-3 gap-2">
           <Button size="sm" variant="neutral" disabled={busy} onClick={openSaveAsNew}>
             Save as new
           </Button>
-          <Button size="sm" variant="primary" disabled={busy || !editingDeId} onClick={() => void save()}>
+          <Button size="sm" variant="primary" disabled={busy || !canSave} onClick={() => void save()}>
             Save
           </Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              onDraftValuesChange?.(null);
+              onCancel();
+            }}
+          >
             Cancel
           </Button>
         </div>
@@ -257,6 +265,14 @@ export function ControlItemInspector({
       )}
     </div>
   );
+}
+
+function flattenPayload(payload: Record<string, unknown>): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  for (const [key, value] of Object.entries(payload ?? {})) {
+    if (typeof value === 'string' || typeof value === 'number') out[key] = value;
+  }
+  return out;
 }
 
 function DataElementNameDialog({
