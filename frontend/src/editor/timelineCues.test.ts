@@ -30,6 +30,15 @@ test('protected Update director cannot be renamed or removed', () => {
   assert.equal(canRemoveDirector([other], 'default'), false);
 });
 
+test('createCue assigns ids without requiring crypto.randomUUID', () => {
+  const cue = createCue('default', 12);
+  assert.equal(cue.directorId, 'default');
+  assert.equal(cue.frame, 12);
+  assert.ok(cue.id.length > 0);
+  assert.ok(cue.items[0]!.id.length > 0);
+  assert.equal(cue.items[0]!.command, '');
+});
+
 test('fromEnd round-trips against director duration', () => {
   const duration = 150;
   const effective = 125;

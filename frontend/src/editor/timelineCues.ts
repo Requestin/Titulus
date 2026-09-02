@@ -8,6 +8,7 @@ import {
   type TimelineDirector,
 } from '@runtime';
 import { isUpdateDirectorName } from '@runtime';
+import { createId } from '@/core/id';
 
 export const UPDATE_DIRECTOR_NAME = 'Update';
 
@@ -31,7 +32,7 @@ export function canRemoveDirector(
 }
 
 export function newId(): string {
-  return crypto.randomUUID();
+  return createId();
 }
 
 export function createCueItem(

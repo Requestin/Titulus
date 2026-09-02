@@ -755,9 +755,9 @@ export const useEditor = create<EditorState>()(
         if (!director) return;
         const directorId = director.id;
         const locals = playheadStore.getState().localPlayheads;
-        const playhead = Math.max(
-          0,
-          Math.round(locals[directorId] ?? currentPlayhead()),
+        const playhead = Math.min(
+          director.durationFrames,
+          Math.max(0, Math.round(locals[directorId] ?? currentPlayhead())),
         );
         const existing = findCueAtEffectiveFrame(
           t0.timeline.cues,

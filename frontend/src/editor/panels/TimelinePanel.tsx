@@ -417,6 +417,7 @@ export function TimelinePanel() {
         onAddKeyframe={handleAddKeyframe}
         onDeleteKeyframes={deleteSelectedKeyframes}
         onAddCue={() => {
+          setView('dope');
           if (director) {
             setCollapsedDirectors((prev) => {
               if (!prev.has(director.id)) return prev;
@@ -695,6 +696,16 @@ export function TimelinePanel() {
               playhead={view === 'curve' ? playhead : globalPlayhead}
               onScrub={scrubFromEvent}
             />
+            {view === 'curve' && director && (
+              <ActionLane
+                cues={listCuesForDirector(current.timeline.cues, director.id)}
+                duration={director.durationFrames}
+                pxPerFrame={pxPerFrame}
+                selectedCueId={selectedCueId}
+                onSelect={selectCue}
+                onMove={moveCue}
+              />
+            )}
             {view === 'dope' && layout.rows.map((row) => {
               if (row.kind === 'director') {
                 const dir = directors.find((item) => item.id === row.directorId);
@@ -767,7 +778,7 @@ export function TimelinePanel() {
               <div className="p-3 text-[12px] text-ink-faint">Add a track to edit its curve.</div>
             )}
             <div
-              className="pointer-events-none absolute z-50 w-px bg-warning/90"
+              className="pointer-events-none absolute z-20 w-px bg-warning/90"
               style={{
                 left: (view === 'curve' ? playhead : globalPlayhead) * pxPerFrame,
                 top: RULER_H,

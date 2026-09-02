@@ -23,7 +23,7 @@ export function ActionLane({
 
   return (
     <div
-      className="relative border-b border-border/60 bg-surface-2/70"
+      className="relative z-[70] border-b border-border/60 bg-surface-2/40"
       style={{ height: ACTION_LANE_H }}
       data-action-lane=""
     >
@@ -57,10 +57,10 @@ export function ActionLane({
               window.addEventListener('pointerup', onUp);
             }}
             className={cn(
-              'absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border',
+              'absolute top-1/2 z-[70] h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow',
               selectedCueId === cue.id
-                ? 'border-warning bg-warning'
-                : 'border-warning/80 bg-warning/80 hover:bg-warning',
+                ? 'border-ink bg-warning'
+                : 'border-warning bg-warning hover:brightness-110',
             )}
             style={{ left: frame * pxPerFrame }}
           />
