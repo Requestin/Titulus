@@ -129,7 +129,7 @@ export function CurveView({
           <span>easing</span>
           <Select
             value={points.find((point) => point.frame === selFrame)?.easing}
-            onChange={(event) => setKeyframeEasing(selFrame, event.target.value as EasingType)}
+            onChange={(event) => setKeyframeEasing(target, prop, selFrame, event.target.value as EasingType)}
             className="h-7 w-32"
           >
             {EASINGS.map((easing) => <option key={easing} value={easing}>{easing}</option>)}

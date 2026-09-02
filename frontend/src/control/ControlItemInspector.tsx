@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Template } from '@runtime';
-import { hasUpdateDirector } from '@runtime';
+import { hasUpdateDirectorTracks } from '@runtime';
 import { api, type DataElement, type TemplateRecord } from '@/core/api';
 import { resolveDefaultDataElementName } from '@/control/resolveDefaultDataElementName';
 import { VariableValues } from '@/control/VariableValues';
@@ -138,7 +138,7 @@ export function ControlItemInspector({
 
   async function playTake() {
     if (!prep || !channelId || !send) return;
-    if (live && hasUpdateDirector(prep.data.timeline)) {
+    if (live && hasUpdateDirectorTracks(prep.data.timeline)) {
       await playUpdate();
       return;
     }
@@ -193,7 +193,7 @@ export function ControlItemInspector({
   }
 
   const canPlay = Boolean(channelId && send && target?.kind === 'template');
-  const canUpdate = canPlay && live && Boolean(prep && hasUpdateDirector(prep.data.timeline));
+  const canUpdate = canPlay && live && Boolean(prep && hasUpdateDirectorTracks(prep.data.timeline));
 
   if (!target) {
     return (

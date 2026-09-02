@@ -12,7 +12,7 @@ import type {
   TimelineDirector, TimelineKeyframe, AnimatableProp, EasingType,
   TimelineCue, TimelineCueCommand, TimelineCueItem,
 } from '@runtime';
-import { ANIMATABLE_PROPS, createDefaultTransform } from '@runtime';
+import { ANIMATABLE_PROPS, createDefaultTransform, ensureUpdateDirector } from '@runtime';
 import { createId } from '@/core/id';
 import { createLayer, createVariable, LAYER_LABEL } from './factories';
 import { attachAllCrawlTimelines, attachCrawlTimeline } from './crawlTimeline';
@@ -49,11 +49,23 @@ function currentPlayhead(): number {
   return playheadStore.getState().playhead;
 }
 
+function gradientWeightKey(
+  prop: AnimatableProp,
+): 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' | null {
+  if (prop === 'gradient.weights.topLeft') return 'topLeft';
+  if (prop === 'gradient.weights.topRight') return 'topRight';
+  if (prop === 'gradient.weights.bottomLeft') return 'bottomLeft';
+  if (prop === 'gradient.weights.bottomRight') return 'bottomRight';
+  return null;
+}
+
 function baseValue(t: Template, target: Target, prop: AnimatableProp): number {
   if (target.kind === 'layer') {
     const l = t.layers.find((x) => x.id === target.id);
     if (!l) return 0;
     if (prop === 'opacity') return l.opacity;
+    const weight = gradientWeightKey(prop);
+    if (weight && l.type === 'rect' && l.gradient) return l.gradient.weights[weight];
     return (l.transform as unknown as Record<string, number>)[prop] ?? 0;
   }
   const g = t.groups.find((x) => x.id === target.id);
@@ -227,7 +239,7 @@ interface EditorState {
   movePoint: (target: Target, prop: AnimatableProp, fromFrame: number, toFrame: number) => void;
   deletePoint: (target: Target, prop: AnimatableProp, frame: number) => void;
   removeTrack: (target: Target, prop: AnimatableProp) => void;
-  setKeyframeEasing: (frame: number, easing: EasingType) => void;
+  setKeyframeEasing: (target: Target, prop: AnimatableProp, frame: number, easing: EasingType) => void;
   addTrackAtPlayhead: (target: Target, prop: AnimatableProp) => void;
   selectCue: (id: string | null) => void;
   addCueAtPlayhead: () => void;
@@ -276,6 +288,7 @@ export const useEditor = create<EditorState>()(
 
       load: (t) => {
         attachAllCrawlTimelines(t);
+        ensureUpdateDirector(t.timeline);
         syncPlayhead(0, false);
         set({
           template: t,
@@ -720,19 +733,32 @@ export const useEditor = create<EditorState>()(
           }
         }),
 
-      setKeyframeEasing: (frame, easing) =>
+      setKeyframeEasing: (target, prop, frame, easing) =>
         get().patch((t) => {
           const kf = t.timeline.keyframes.find((k) => k.frame === frame);
-          if (kf) { kf.easing = easing; delete kf.bezier; }
+          if (!kf) return;
+          const bag = target.kind === 'layer' ? kf.layers[target.id] : kf.groups[target.id];
+          if (!bag || bag[prop] === undefined) return;
+          const field = target.kind === 'layer' ? 'layerEasings' : 'groupEasings';
+          const maps = kf[field] ?? {};
+          kf[field] = {
+            ...maps,
+            [target.id]: { ...maps[target.id], [prop]: easing },
+          };
         }),
 
       addCueAtPlayhead: () => {
         const t0 = get().template;
         if (!t0) return;
-        const directorId = get().activeDirectorId;
-        const director = t0.timeline.directors.find((item) => item.id === directorId);
+        const director = t0.timeline.directors.find((item) => item.id === get().activeDirectorId)
+          ?? t0.timeline.directors[0];
         if (!director) return;
-        const playhead = Math.max(0, Math.round(currentPlayhead()));
+        const directorId = director.id;
+        const locals = playheadStore.getState().localPlayheads;
+        const playhead = Math.max(
+          0,
+          Math.round(locals[directorId] ?? currentPlayhead()),
+        );
         const existing = findCueAtEffectiveFrame(
           t0.timeline.cues,
           directorId,
@@ -745,14 +771,14 @@ export const useEditor = create<EditorState>()(
             if (!cue) return;
             cue.items = mergeCueItems(cue, [createCueItem('', directorId)]).items;
           });
-          set({ selectedCueId: existing.id, selectedKeyframes: [] });
+          set({ selectedCueId: existing.id, selectedKeyframes: [], activeDirectorId: directorId });
           return;
         }
         const cue = createCue(directorId, playhead, false);
         get().patch((t) => {
           t.timeline.cues = [...(t.timeline.cues ?? []), cue];
         });
-        set({ selectedCueId: cue.id, selectedKeyframes: [] });
+        set({ selectedCueId: cue.id, selectedKeyframes: [], activeDirectorId: directorId });
       },
 
       removeSelectedCue: () => {

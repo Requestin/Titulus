@@ -95,3 +95,18 @@ test('keyframe identity is target+prop+frame', () => {
   const target = { kind: 'layer' as const, id: 'box' };
   assert.equal(keyframeKey({ target, prop: 'x', frame: 12 }), 'layer:box:x@12');
 });
+
+test('pointsFor reads per-property easing instead of the shared keyframe easing', () => {
+  const template = createDefaultTemplate();
+  const target = { kind: 'layer' as const, id: 'box' };
+  template.timeline.keyframes.push({
+    id: 'a',
+    frame: 0,
+    layers: { box: { x: 0, y: 0 } },
+    groups: {},
+    easing: 'linear',
+    layerEasings: { box: { x: 'power2.in', y: 'linear' } },
+  });
+  assert.equal(pointsFor(template, target, 'x')[0]?.easing, 'power2.in');
+  assert.equal(pointsFor(template, target, 'y')[0]?.easing, 'linear');
+});

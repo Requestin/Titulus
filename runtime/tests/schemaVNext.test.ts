@@ -277,16 +277,38 @@ assertJsonEqual(defaultTemplateWithoutId, {
       autostart: true,
       loop: false,
       swing: false,
+    }, {
+      id: 'update',
+      name: 'Update',
+      durationFrames: 100,
+      offsetFrames: 0,
+      autostart: false,
+      loop: false,
+      swing: false,
     }],
     trackDirectors: {},
     keyframes: [],
     actions: [],
+    cues: [{
+      id: 'update-data',
+      directorId: 'update',
+      frame: 50,
+      fromEnd: false,
+      name: '',
+      items: [{
+        id: 'update-data-tag',
+        command: 'tag',
+        parameterTag: 'updateData',
+        lengthFrames: 0,
+        direction: 'both',
+      }],
+    }],
   },
-}, 'createDefaultTemplate must preserve the legacy serialized shape');
+}, 'createDefaultTemplate must preserve the default serialized shape');
 for (const optionalField of ['capabilities', 'data', 'layerId']) {
   assert(!(optionalField in defaultTemplate), `createDefaultTemplate must not materialize ${optionalField}`);
 }
-for (const optionalField of ['cues', 'propertyTrackDirectors']) {
+for (const optionalField of ['propertyTrackDirectors']) {
   assert(
     !(optionalField in defaultTemplate.timeline),
     `createDefaultTemplate must not materialize timeline.${optionalField}`,

@@ -450,6 +450,19 @@ export interface TimelineKeyframe {
   groups: Record<string, AnimatableValues>; // groupId -> animated values
   easing: EasingType;
   bezier?: BezierHandle;
+  /** Per-property easing; falls back to `easing` when a prop is missing. */
+  layerEasings?: Record<string, Partial<Record<AnimatableProp, EasingType>>>;
+  groupEasings?: Record<string, Partial<Record<AnimatableProp, EasingType>>>;
+}
+
+export function keyframePropEasing(
+  keyframe: TimelineKeyframe,
+  kind: 'layer' | 'group',
+  id: string,
+  prop: AnimatableProp,
+): EasingType {
+  const map = kind === 'layer' ? keyframe.layerEasings?.[id] : keyframe.groupEasings?.[id];
+  return map?.[prop] ?? keyframe.easing;
 }
 
 /**
@@ -642,6 +655,35 @@ export function createDefaultTransform(x = 100, y = 100): Transform {
   };
 }
 
+export function createDefaultUpdateDirector(): TimelineDirector {
+  return {
+    id: 'update',
+    name: 'Update',
+    durationFrames: 100,
+    offsetFrames: 0,
+    autostart: false,
+    loop: false,
+    swing: false,
+  };
+}
+
+export function createDefaultUpdateCue(directorId = 'update'): TimelineCue {
+  return {
+    id: 'update-data',
+    directorId,
+    frame: 50,
+    fromEnd: false,
+    name: '',
+    items: [{
+      id: 'update-data-tag',
+      command: 'tag',
+      parameterTag: 'updateData',
+      lengthFrames: 0,
+      direction: 'both',
+    }],
+  };
+}
+
 export function createDefaultTimeline(): Timeline {
   const defaultDirector: TimelineDirector = {
     id: 'default',
@@ -652,14 +694,16 @@ export function createDefaultTimeline(): Timeline {
     loop: false,
     swing: false,
   };
+  const updateDirector = createDefaultUpdateDirector();
   return {
     fps: 50,
     durationFrames: 500,
     playbackMode: 'bounded',
-    directors: [defaultDirector],
+    directors: [defaultDirector, updateDirector],
     trackDirectors: {},
     keyframes: [],
     actions: [],
+    cues: [createDefaultUpdateCue(updateDirector.id)],
   };
 }
 

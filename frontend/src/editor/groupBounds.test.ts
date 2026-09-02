@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createDefaultTemplate, createDefaultTransform } from '@runtime';
 import { createLayer } from './factories';
-import { derivedGroupBox, descendantLayerIds, unionBoxes } from './groupBounds';
+import { derivedGroupBox, descendantLayerIds, layerBoxInCanvas, unionBoxes } from './groupBounds';
+import { ancestorMatrix } from './transformMath';
 
 function groupTemplate() {
   const template = createDefaultTemplate();
@@ -79,6 +80,19 @@ test('derivedGroupBox follows a previewed group translate without changing child
   assert.deepEqual(box, { x: 160, y: 80, width: 200, height: 80 });
   assert.equal(template.layers.find((layer) => layer.id === 'a')!.transform.x, 20);
   assert.equal(template.layers.find((layer) => layer.id === 'b')!.transform.x, 30);
+});
+
+test('layerBoxInCanvas applies ancestor group translation', () => {
+  const template = groupTemplate();
+  const layer = template.layers.find((item) => item.id === 'a')!;
+  const box = layerBoxInCanvas(
+    layer.transform,
+    ancestorMatrix(template, layer.groupId, (group) => group.transform),
+  );
+  assert.equal(box.x, 120);
+  assert.equal(box.y, 50);
+  assert.equal(box.width, 200);
+  assert.equal(box.height, 80);
 });
 
 test('derivedGroupBox is null for a group with no descendant layers', () => {

@@ -40,3 +40,25 @@ test('property with a single keyframe holds that value', () => {
   assert.equal(sampleAt(n, 40).layers.L1?.opacity, 0.5);
   assert.equal(sampleAt(n, 20).layers.L1?.x, 50);
 });
+
+test('per-property easing interpolates independently at the same keyframe', () => {
+  const tl = createDefaultTimeline();
+  tl.durationFrames = 100;
+  tl.directors[0]!.durationFrames = 100;
+  tl.trackDirectors = { L1: 'default' };
+  tl.keyframes = [
+    {
+      id: 'k0',
+      frame: 0,
+      easing: 'linear',
+      layers: { L1: { x: 0, y: 0 } },
+      groups: {},
+      layerEasings: { L1: { x: 'linear', y: 'power2.in' } },
+    },
+    { id: 'k1', frame: 100, easing: 'linear', layers: { L1: { x: 100, y: 100 } }, groups: {} },
+  ];
+  const n = normalizeTimeline(tl);
+  const mid = sampleAt(n, 50).layers.L1;
+  assert.equal(mid?.x, 50);
+  assert.equal(mid?.y, 25);
+});

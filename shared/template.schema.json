@@ -756,7 +756,21 @@
           "additionalProperties": { "$ref": "#/$defs/animatableValues" }
         },
         "easing": { "$ref": "#/$defs/easingType" },
-        "bezier": { "$ref": "#/$defs/bezier" }
+        "bezier": { "$ref": "#/$defs/bezier" },
+        "layerEasings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/$defs/easingType" }
+          }
+        },
+        "groupEasings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/$defs/easingType" }
+          }
+        }
       }
     },
     "animatableValues": {

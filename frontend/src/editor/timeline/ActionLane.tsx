@@ -57,10 +57,10 @@ export function ActionLane({
               window.addEventListener('pointerup', onUp);
             }}
             className={cn(
-              'absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 border',
+              'absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border',
               selectedCueId === cue.id
-                ? 'border-live bg-live'
-                : 'border-primary/70 bg-primary/30 hover:bg-primary/50',
+                ? 'border-warning bg-warning'
+                : 'border-warning/80 bg-warning/80 hover:bg-warning',
             )}
             style={{ left: frame * pxPerFrame }}
           />

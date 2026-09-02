@@ -19,7 +19,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
-import { createDefaultTemplate, hasUpdateDirector } from '@runtime';
+import { createDefaultTemplate, hasUpdateDirectorTracks } from '@runtime';
 import { api, type Channel, type TemplateFolder, type TemplateSummary } from '@/core/api';
 import { useControlWs } from '@/core/controlWs';
 import { prepareForAir } from '@/control/prepareForAir';
@@ -120,7 +120,7 @@ export function TemplatesPage() {
       for (const variable of rec.data.variables) values[variable.id] = variable.defaultValue;
       const onAir = await api.onair.get().catch(() => ({} as Record<string, string[]>));
       const live = (onAir[testChannelId] ?? []).includes(rec.id);
-      if (live && hasUpdateDirector(rec.data.timeline)) {
+      if (live && hasUpdateDirectorTracks(rec.data.timeline)) {
         await testUpdate(id);
         return;
       }
@@ -148,7 +148,7 @@ export function TemplatesPage() {
       const rec = await api.templates.get(id);
       const values: Record<string, string | number> = {};
       for (const variable of rec.data.variables) values[variable.id] = variable.defaultValue;
-      if (!hasUpdateDirector(rec.data.timeline)) {
+      if (!hasUpdateDirectorTracks(rec.data.timeline)) {
         await testTake(id);
         return;
       }

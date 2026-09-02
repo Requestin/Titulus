@@ -7,15 +7,6 @@ import { playheadStore, requestContinue } from './playheadStore';
 function loadCueTemplate() {
   const template = createDefaultTemplate();
   template.timeline.directors[0]!.durationFrames = 150;
-  template.timeline.directors.push({
-    id: 'update',
-    name: 'Update',
-    durationFrames: 100,
-    offsetFrames: 0,
-    autostart: false,
-    loop: false,
-    swing: false,
-  });
   template.timeline.cues = [];
   useEditor.getState().load(template);
   useEditor.getState().setActiveDirector('default');

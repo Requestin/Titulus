@@ -23,6 +23,7 @@ import type {
   TimelineCueItem,
   AnimatableValues,
   AnimatableProp,
+  EasingType,
 } from './schema.js';
 import { getEasing, makeBezierEasing, lerp, type EasingFn } from './easing.js';
 
@@ -36,6 +37,7 @@ interface CompiledTrackEntry {
   frame: number;
   bag: AnimatableValues;
   easing: EasingFn;
+  propEasing?: Partial<Record<AnimatableProp, EasingFn>>;
 }
 
 /**
@@ -205,10 +207,10 @@ export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
     for (const kf of kfs) {
       const easing = kf.bezier ? makeBezierEasing(kf.bezier) : getEasing(kf.easing);
       for (const [tid, bag] of Object.entries(kf.layers)) {
-        pushEntry(tracks, tid, kf.frame, bag, easing, true);
+        pushEntry(tracks, tid, kf.frame, bag, easing, true, compilePropEasing(kf.layerEasings?.[tid]));
       }
       for (const [tid, bag] of Object.entries(kf.groups)) {
-        pushEntry(tracks, tid, kf.frame, bag, easing, false);
+        pushEntry(tracks, tid, kf.frame, bag, easing, false, compilePropEasing(kf.groupEasings?.[tid]));
       }
     }
     directors[d.id] = {
@@ -235,6 +237,17 @@ export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
   };
 }
 
+function compilePropEasing(
+  map: Partial<Record<AnimatableProp, EasingType>> | undefined,
+): Partial<Record<AnimatableProp, EasingFn>> | undefined {
+  if (!map) return undefined;
+  const out: Partial<Record<AnimatableProp, EasingFn>> = {};
+  for (const [prop, type] of Object.entries(map) as [AnimatableProp, EasingType][]) {
+    if (type) out[prop] = getEasing(type);
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function pushEntry(
   tracks: Map<string, CompiledTargetTracks>,
   tid: string,
@@ -242,10 +255,11 @@ function pushEntry(
   bag: AnimatableValues,
   easing: EasingFn,
   isLayer: boolean,
+  propEasing?: Partial<Record<AnimatableProp, EasingFn>>,
 ): void {
   let t = tracks.get(tid);
   if (!t) { t = { entries: [], isLayer }; tracks.set(tid, t); }
-  t.entries.push({ frame, bag, easing });
+  t.entries.push({ frame, bag, easing, propEasing });
 }
 
 /**
@@ -330,7 +344,8 @@ function samplePropTrack(
   const vb = next.bag[prop]!;
   const span = next.frame - prev.frame || 1;
   const rawT = (localFrame - prev.frame) / span;
-  return lerp(va, vb, prev.easing(rawT));
+  const ease = prev.propEasing?.[prop] ?? prev.easing;
+  return lerp(va, vb, ease(rawT));
 }
 
 export interface DirectorSample {

@@ -20,9 +20,9 @@ import {
   usePlayhead,
 } from './playheadStore';
 import { clearGesturePreview, gesturePreviewStore, scheduleGesturePreview } from './gesturePreview';
-import { derivedGroupBox } from './groupBounds';
+import { derivedGroupBox, layerBoxInCanvas } from './groupBounds';
 import {
-  ancestorMatrix, canvasDeltaToParent, dragTransform, type AffineMatrix, type DragMode,
+  ancestorMatrix, canvasDeltaToParent, dragTransform, transformPoint, type AffineMatrix, type DragMode,
 } from './transformMath';
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -161,7 +161,13 @@ export function CanvasArea() {
     if (!tpl) return null;
     const layer = tpl.layers.find((l) => l.id === layerId);
     if (!layer) return null;
-    const pivot = { x: transform.x * zoom, y: transform.y * zoom };
+    const parent = ancestorMatrix(
+      tpl,
+      layer.groupId,
+      (group) => resolveLiveTransform('group', group.id) ?? group.transform,
+    );
+    const origin = transformPoint(parent, { x: transform.x, y: transform.y });
+    const pivot = { x: origin.x * zoom, y: origin.y * zoom };
 
     if (layer.type === 'mask') {
       const at = applyTransform(transform, undefined);
@@ -170,7 +176,10 @@ export function CanvasArea() {
         transform,
         at,
       );
-      const scaled = outline.map((p) => ({ x: p.x * zoom, y: p.y * zoom }));
+      const scaled = outline.map((p) => {
+        const world = transformPoint(parent, p);
+        return { x: world.x * zoom, y: world.y * zoom };
+      });
       const xs = scaled.map((p) => p.x);
       const ys = scaled.map((p) => p.y);
       const minX = Math.min(...xs);
@@ -185,10 +194,10 @@ export function CanvasArea() {
       };
     }
 
-    const at = applyTransform(transform, undefined);
+    const box = layerBoxInCanvas(transform, parent);
     return {
       kind: 'box',
-      box: { left: at.left * zoom, top: at.top * zoom, width: at.width * zoom, height: at.height * zoom },
+      box: { left: box.x * zoom, top: box.y * zoom, width: box.width * zoom, height: box.height * zoom },
       pivot,
     };
   }

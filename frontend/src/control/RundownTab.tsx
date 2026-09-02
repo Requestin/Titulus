@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Variable } from '@runtime';
-import { hasUpdateDirector } from '@runtime';
+import { hasUpdateDirectorTracks } from '@runtime';
 import {
   Plus, FileUp, FileDown, Copy, Trash2, Pencil, ChevronDown, ChevronRight,
   ArrowUp, ArrowDown, GripVertical, Folder, ArrowRight, Square,
@@ -209,7 +209,7 @@ export function RundownTab({
     if (!tpl) return;
     const values = buildPayload(slot, tpl.data.variables);
     const live = channelLiveSet.has(slot.slotId);
-    if (live && hasUpdateDirector(tpl.data.timeline)) {
+    if (live && hasUpdateDirectorTracks(tpl.data.timeline)) {
       const prepared = await prepareForAir(tpl.data, 'update', values);
       if (prepared.blocked) return toast.error(prepared.errors[0]?.message || 'Data pipeline blocked UPDATE');
       const ok = send({

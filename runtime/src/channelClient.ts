@@ -28,7 +28,7 @@ import {
 } from './pacingProtocol.js';
 import { diffWaitingContinue } from './waitingContinueReport.js';
 import { compareAirRoots, resolveLayerId } from './airStack.js';
-import { hasUpdateDirector } from './updateDirector.js';
+import { hasUpdateDirectorTracks } from './updateDirector.js';
 export type WsStatus = 'connecting' | 'connected' | 'disconnected';
 
 /** A take/update/clear message on /ws/renderer (mirrors §7.4). */
@@ -403,7 +403,7 @@ export class ChannelClient {
     if (!a) return;
     const tpl = a.renderer.getTemplate();
     if (!tpl) return;
-    if (hasUpdateDirector(tpl.timeline)) {
+    if (hasUpdateDirectorTracks(tpl.timeline)) {
       a.renderer.playUpdate(msg.variables ?? {});
     } else {
       a.renderer.syncTemplate(tpl, msg.variables ?? {}, { reuseDirectors: true });

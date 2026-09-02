@@ -4,9 +4,12 @@ import { createDefaultTemplate } from '@runtime';
 import { createLayer } from '../factories';
 import { collectTracks } from '../timelineTracks';
 import {
+  ACTION_LANE_H,
+  DIRECTOR_HDR_H,
   GROUP_HDR_H,
   LANE_H,
   TIMELINE_ANIMATABLE_PROPS,
+  buildAllDirectorsLaneLayout,
   buildLaneLayout,
   keyframeHits,
   parseTimelineDrag,
@@ -22,6 +25,7 @@ test('timeline +K list includes z after y', () => {
 test('timelinePropLabel renames rotation to rotationZ', () => {
   assert.equal(timelinePropLabel('rotation'), 'rotationZ');
   assert.equal(timelinePropLabel('rotationX'), 'rotationX');
+  assert.equal(timelinePropLabel('gradient.weights.topLeft'), 'Weight TL');
 });
 
 test('buildLaneLayout stacks object headers and property lanes', () => {
@@ -51,4 +55,20 @@ test('timeline drag payload round-trips track and object drops', () => {
   const object = serializeTimelineDrag({ type: 'object', target: { kind: 'group', id: 'folder' } });
   assert.deepEqual(parseTimelineDrag(object), { type: 'object', target: { kind: 'group', id: 'folder' } });
   assert.equal(parseTimelineDrag('nope'), null);
+});
+
+test('each expanded director gets an Action lane', () => {
+  const template = createDefaultTemplate();
+  const layout = buildAllDirectorsLaneLayout(template, template.timeline.directors, new Set(), 6);
+  const actions = layout.rows.filter((row) => row.kind === 'action');
+  assert.equal(actions.length, template.timeline.directors.length);
+  assert.equal(layout.rows[0]?.kind, 'director');
+  assert.equal(layout.rows[1]?.kind, 'action');
+  assert.equal(layout.rows[1]?.kind === 'action' && layout.rows[1].height, ACTION_LANE_H);
+  assert.ok(layout.height >= DIRECTOR_HDR_H + ACTION_LANE_H);
+});
+
+test('gradient weight props are addable timeline tracks', () => {
+  assert.ok(TIMELINE_ANIMATABLE_PROPS.includes('gradient.weights.topLeft'));
+  assert.ok(TIMELINE_ANIMATABLE_PROPS.includes('gradient.weights.bottomRight'));
 });

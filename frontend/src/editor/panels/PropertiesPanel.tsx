@@ -590,7 +590,7 @@ function LabeledNum({
         resetValue={resetValue}
         extraActions={extraActions}
         onChange={onChange}
-        onPreview={onPreview}
+        onPreview={onPreview ?? ((v) => { if (v !== null) onChange(v); })}
       />
     </Field>
   );

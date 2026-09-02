@@ -1,4 +1,5 @@
 import {
+  keyframePropEasing,
   type AnimatableProp,
   type EasingType,
   type Template,
@@ -126,7 +127,11 @@ export function pointsFor(template: Template, target: Target, prop: AnimatablePr
   for (const keyframe of template.timeline.keyframes) {
     const value = bagFor(keyframe, target)?.[prop];
     if (value === undefined) continue;
-    points.push({ frame: keyframe.frame, value, easing: keyframe.easing });
+    points.push({
+      frame: keyframe.frame,
+      value,
+      easing: keyframePropEasing(keyframe, target.kind, target.id, prop),
+    });
   }
   return points.sort((left, right) => left.frame - right.frame);
 }

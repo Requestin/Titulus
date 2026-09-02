@@ -1,5 +1,10 @@
 import { resolveCueFrame } from './timeline.js';
-import type { Timeline, TimelineDirector } from './schema.js';
+import {
+  createDefaultUpdateCue,
+  createDefaultUpdateDirector,
+  type Timeline,
+  type TimelineDirector,
+} from './schema.js';
 
 export function isUpdateDirectorName(name: string | null | undefined): boolean {
   return name?.trim().toLowerCase() === 'update';
@@ -13,6 +18,34 @@ export function findUpdateDirector(
 
 export function hasUpdateDirector(timeline: Pick<Timeline, 'directors'>): boolean {
   return Boolean(findUpdateDirector(timeline.directors));
+}
+
+/** Control only runs Update when that director actually has animation tracks. */
+export function hasUpdateDirectorTracks(timeline: Timeline): boolean {
+  const director = findUpdateDirector(timeline.directors);
+  if (!director) return false;
+  if (Object.values(timeline.trackDirectors).some((id) => id === director.id)) return true;
+  const byProp = timeline.propertyTrackDirectors;
+  if (!byProp) return false;
+  return Object.values(byProp).some((bag) => Object.values(bag).some((id) => id === director.id));
+}
+
+export function ensureUpdateDirector(timeline: Timeline): void {
+  if (findUpdateDirector(timeline.directors)) return;
+  const used = new Set(timeline.directors.map((director) => director.id));
+  const director = createDefaultUpdateDirector();
+  let id = director.id;
+  let suffix = 2;
+  while (used.has(id)) {
+    id = `update-${suffix}`;
+    suffix += 1;
+  }
+  director.id = id;
+  timeline.directors.push(director);
+  const cue = createDefaultUpdateCue(director.id);
+  cue.id = `${director.id}-data`;
+  cue.items[0]!.id = `${director.id}-data-tag`;
+  timeline.cues = [...(timeline.cues ?? []), cue];
 }
 
 /** Frame used for the saved template thumbnail: Preview frame tag, else mid default. */

@@ -161,6 +161,7 @@ export function NumberInput({
     drag.draftValue = bounded(roundForStep(drag.value + dx * scale, scale));
     setDraft(formatNumber(drag.draftValue));
     onPreview?.(drag.draftValue);
+    if (!onPreview) onChange(drag.draftValue);
   }
 
   function releasePointer(e: PointerEvent<HTMLInputElement>) {

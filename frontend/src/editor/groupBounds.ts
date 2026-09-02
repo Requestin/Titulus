@@ -41,7 +41,7 @@ export function descendantLayerIds(template: Template, groupId: string): string[
   return out;
 }
 
-function layerBoxInCanvas(
+export function layerBoxInCanvas(
   transform: Transform,
   parentMatrix: AffineMatrix,
 ): BoundsBox {

@@ -3,7 +3,7 @@ import type { Target } from '../store';
 import { pointsFor, tracksForDirector, type TimelineTrack } from '../timelineTracks';
 import type { KeyframeHit } from '../timelineMarquee';
 
-export const HEADER_W = 168;
+export const HEADER_W = 184;
 export const RULER_H = 24;
 export const LANE_H = 26;
 export const GROUP_HDR_H = 20;
@@ -17,11 +17,19 @@ export const TIMELINE_ANIMATABLE_PROPS = [
   'rotation', 'rotationX', 'rotationY', 'perspective',
   'scaleX', 'scaleY',
   'opacity',
+  'gradient.weights.topLeft',
+  'gradient.weights.topRight',
+  'gradient.weights.bottomLeft',
+  'gradient.weights.bottomRight',
   'crawlProgress',
 ] as const satisfies readonly AnimatableProp[];
 
 export function timelinePropLabel(prop: AnimatableProp): string {
   if (prop === 'rotation') return 'rotationZ';
+  if (prop === 'gradient.weights.topLeft') return 'Weight TL';
+  if (prop === 'gradient.weights.topRight') return 'Weight TR';
+  if (prop === 'gradient.weights.bottomLeft') return 'Weight BL';
+  if (prop === 'gradient.weights.bottomRight') return 'Weight BR';
   return prop;
 }
 
@@ -53,7 +61,14 @@ export type TrackLaneRow = {
   height: number;
 };
 
-export type LaneRow = DirectorLaneRow | GroupLaneRow | TrackLaneRow;
+export type ActionLaneRow = {
+  kind: 'action';
+  directorId: string;
+  y: number;
+  height: number;
+};
+
+export type LaneRow = DirectorLaneRow | GroupLaneRow | TrackLaneRow | ActionLaneRow;
 
 export function buildLaneLayout(
   template: Template,
@@ -117,6 +132,13 @@ export function buildAllDirectorsLaneLayout(
     });
     y += DIRECTOR_HDR_H;
     if (collapsed) continue;
+    rows.push({
+      kind: 'action',
+      directorId: director.id,
+      y,
+      height: ACTION_LANE_H,
+    });
+    y += ACTION_LANE_H;
     const tracks = tracksForDirector(template, director.id).filter((track) => {
       if (track.prop !== 'crawlProgress') return true;
       if (track.target.kind !== 'layer') return false;

@@ -177,9 +177,10 @@ export function CueInspector({
       <button
         type="button"
         onClick={onAddItem}
-        className="rounded-md border border-dashed border-border px-2 py-1 text-[12px] text-ink-muted hover:text-ink"
+        className="rounded-md border border-dashed border-border px-2 py-1 text-[12px] font-semibold text-ink-muted hover:text-ink"
+        title="Add Action"
       >
-        +Action
+        +
       </button>
     </div>
   );
