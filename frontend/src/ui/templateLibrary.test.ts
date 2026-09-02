@@ -10,15 +10,16 @@ function item(
   id: string,
   name: string,
   updated_at: string,
+  created_at?: string,
 ): TemplateLibraryItem {
-  return { id, name, updated_at };
+  return { id, name, updated_at, created_at };
 }
 
 const SAMPLE: TemplateLibraryItem[] = [
-  item('b', 'bravo', '2026-08-20T12:00:00.000Z'),
-  item('a', 'Alpha', '2026-08-22T09:00:00.000Z'),
-  item('c', 'alpha', '2026-08-21T18:00:00.000Z'),
-  item('d', 'Zulu', 'not-a-date'),
+  item('b', 'bravo', '2026-08-20T12:00:00.000Z', '2026-08-10T12:00:00.000Z'),
+  item('a', 'Alpha', '2026-08-22T09:00:00.000Z', '2026-08-21T09:00:00.000Z'),
+  item('c', 'alpha', '2026-08-21T18:00:00.000Z', '2026-08-22T18:00:00.000Z'),
+  item('d', 'Zulu', 'not-a-date', 'also-bad'),
 ];
 
 test('sort by name is case-insensitive and does not mutate the source', () => {
@@ -54,6 +55,11 @@ test('sort by modified uses name then id when timestamps match', () => {
   ];
 
   assert.deepEqual(sortTemplates(twins, 'modified').map((entry) => entry.id), ['a', 'b', 'z']);
+});
+
+test('sort by created puts newest created_at first', () => {
+  const sorted = sortTemplates(SAMPLE, 'created');
+  assert.deepEqual(sorted.map((entry) => entry.id), ['c', 'a', 'b', 'd']);
 });
 
 test('nextTemplateName trims and rejects empty or unchanged names', () => {

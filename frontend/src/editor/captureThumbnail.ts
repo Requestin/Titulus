@@ -1,4 +1,12 @@
-import { TemplateRenderer, resolveThumbnailFrame, resolveVariableMap, type Template } from '@runtime';
+import {
+  TemplateRenderer,
+  collectFonts,
+  ensureFonts,
+  resolveCueFrame,
+  resolveThumbnailFrame,
+  resolveVariableMap,
+  type Template,
+} from '@runtime';
 
 export function thumbnailLabel(name: string, max = 42): string {
   const trimmed = name.trim();
@@ -13,6 +21,13 @@ export function ensureXhtmlNamespace(serialized: string): string {
 export function wrapForeignObjectSvg(xhtml: string, width: number, height: number): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`
     + `<foreignObject width="100%" height="100%">${xhtml}</foreignObject></svg>`;
+}
+
+/** Public URL for a saved template thumbnail (served via /api/ so nginx /api proxy works). */
+export function templateThumbnailUrl(templateId: string, cacheKey?: string): string {
+  const base = `/api/templates/${encodeURIComponent(templateId)}/thumbnail`;
+  if (!cacheKey) return base;
+  return `${base}?v=${encodeURIComponent(cacheKey)}`;
 }
 
 export function renderNameCardJpeg(name: string, width = 320, height = 180): Promise<Blob> {
@@ -32,26 +47,129 @@ export function renderNameCardJpeg(name: string, width = 320, height = 180): Pro
 }
 
 export async function renderTemplateThumbnailJpeg(template: Template, width = 320, height = 180): Promise<Blob> {
-  const frame = resolveThumbnailFrame(template.timeline);
+  const target = resolveThumbnailTarget(template);
   const host = document.createElement('div');
   host.style.cssText = 'position:fixed;left:-12000px;top:0;pointer-events:none;';
   document.body.appendChild(host);
   const renderer = new TemplateRenderer(host, { playbackMode: 'raf' });
   try {
     renderer.syncTemplate(template, resolveVariableMap(template), { reuseDirectors: false });
-    renderer.seek(frame);
+    await ensureFonts(collectFonts(template.layers)).catch(() => undefined);
     if (document.fonts?.ready) await document.fonts.ready.catch(() => undefined);
-    // ensureFonts().then(applyState) from syncTemplate can run after seek;
-    // re-assert the preview frame once those microtasks have flushed.
-    await Promise.resolve();
-    renderer.seek(frame);
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    });
-    return await captureElementJpeg(renderer.getRoot(), width, height);
+    // A global seek samples every director whose time window is active. That
+    // is wrong for thumbnails: an Update track can overwrite the default
+    // preview at the same frame. Sample only the director that owns the
+    // previewFrame tag.
+    renderer.seekLocals({ [target.directorId]: target.frame });
+    // syncTemplate schedules ensureFonts().then(applyState); flush before capture.
+    await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+    renderer.seekLocals({ [target.directorId]: target.frame });
+    await waitForPaint();
+    await prepareMediaForCapture(renderer.getRoot());
+    return captureElementJpeg(renderer.getRoot(), width, height);
   } finally {
     renderer.destroy();
     host.remove();
+  }
+}
+
+function resolveThumbnailTarget(template: Template): { directorId: string; frame: number } {
+  for (const cue of template.timeline.cues ?? []) {
+    if (!cue.items.some((item) => item.command === 'tag' && item.parameterTag === 'previewFrame')) {
+      continue;
+    }
+    const director = template.timeline.directors.find((item) => item.id === cue.directorId);
+    return {
+      directorId: cue.directorId,
+      frame: resolveCueFrame(cue, director?.durationFrames ?? template.timeline.durationFrames),
+    };
+  }
+  const fallbackDirector = template.timeline.directors.find((item) => item.id === 'default')
+    ?? template.timeline.directors[0];
+  return {
+    directorId: fallbackDirector?.id ?? 'default',
+    frame: resolveThumbnailFrame(template.timeline),
+  };
+}
+
+async function waitForPaint(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+/** Wait for images/videos and rasterize video frames so foreignObject SVG can paint them. */
+export async function prepareMediaForCapture(root: HTMLElement): Promise<void> {
+  const images = [...root.querySelectorAll('img')];
+  await Promise.all(images.map((img) => waitForImage(img)));
+
+  const videos = [...root.querySelectorAll('video')];
+  await Promise.all(videos.map(async (video) => {
+    await waitForVideoFrame(video);
+    const snapshot = snapshotVideoAsImage(video);
+    if (snapshot) video.replaceWith(snapshot);
+  }));
+}
+
+function waitForImage(img: HTMLImageElement): Promise<void> {
+  if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => resolve();
+    img.addEventListener('load', done, { once: true });
+    img.addEventListener('error', done, { once: true });
+    window.setTimeout(done, 1500);
+  });
+}
+
+function waitForVideoFrame(video: HTMLVideoElement): Promise<void> {
+  if (video.readyState >= 2 && video.videoWidth > 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    const onReady = () => {
+      try {
+        // Prefer an early frame so stills/WebP and short clips both show content.
+        if (Number.isFinite(video.duration) && video.duration > 0) {
+          const target = Math.min(0.1, Math.max(0, video.duration * 0.05));
+          if (Math.abs(video.currentTime - target) > 0.01) {
+            video.currentTime = target;
+            video.addEventListener('seeked', finish, { once: true });
+            window.setTimeout(finish, 800);
+            return;
+          }
+        }
+      } catch {
+        // seek may fail for some sources; fall through
+      }
+      finish();
+    };
+    video.addEventListener('loadeddata', onReady, { once: true });
+    video.addEventListener('error', finish, { once: true });
+    try { video.load(); } catch { /* ignore */ }
+    window.setTimeout(finish, 2000);
+  });
+}
+
+function snapshotVideoAsImage(video: HTMLVideoElement): HTMLImageElement | null {
+  if (!video.videoWidth || !video.videoHeight) return null;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0);
+    const img = document.createElement('img');
+    img.src = canvas.toDataURL('image/jpeg', 0.85);
+    img.setAttribute('aria-hidden', 'true');
+    img.style.cssText = video.getAttribute('style') || 'width:100%;height:100%;display:block;object-fit:cover';
+    return img;
+  } catch {
+    return null;
   }
 }
 
@@ -74,14 +192,62 @@ async function captureElementJpeg(el: HTMLElement, outW: number, outH: number): 
   return canvasToJpeg(canvas);
 }
 
+const CAPTURE_STYLE_PROPS = [
+  'display', 'visibility', 'opacity', 'position', 'top', 'left', 'right', 'bottom', 'width', 'height',
+  'transform', 'transform-origin', 'transform-style', 'perspective', 'backface-visibility',
+  'background', 'background-color', 'background-image', 'background-size', 'background-position', 'background-repeat',
+  'color', 'font-family', 'font-size', 'font-weight', 'font-style', 'letter-spacing', 'line-height',
+  'text-align', 'white-space', 'text-shadow', 'clip-path', 'border-radius', 'overflow', 'z-index',
+  'mix-blend-mode', 'filter', 'box-shadow', 'padding', 'border', 'border-color', 'border-width', 'border-style',
+] as const;
+
+export function inlineCaptureStyles(source: HTMLElement, clone: HTMLElement): void {
+  const computed = getComputedStyle(source);
+  for (const prop of CAPTURE_STYLE_PROPS) {
+    const value = computed.getPropertyValue(prop);
+    if (value) clone.style.setProperty(prop, value);
+  }
+}
+
+/** Data-URI CSS backgrounds (rect gradients) fail inside nested SVG foreignObject — flatten to an image layer. */
+export function flattenDataUriBackgrounds(source: HTMLElement, clone: HTMLElement): void {
+  const bgImage = getComputedStyle(source).backgroundImage;
+  if (!bgImage || bgImage === 'none' || !bgImage.includes('data:')) return;
+  const match = bgImage.match(/url\(["']?(data:[^"')]+)["']?\)/);
+  const dataUri = match?.[1]?.trim();
+  if (!dataUri) return;
+  const layer = document.createElement('img');
+  layer.setAttribute('aria-hidden', 'true');
+  layer.setAttribute('src', dataUri);
+  layer.style.cssText = [
+    'position:absolute',
+    'inset:0',
+    'width:100%',
+    'height:100%',
+    'pointer-events:none',
+    'object-fit:fill',
+  ].join(';');
+  clone.style.backgroundImage = 'none';
+  if (!clone.style.position || clone.style.position === 'static') clone.style.position = 'relative';
+  clone.insertBefore(layer, clone.firstChild);
+}
+
 function prepareCaptureClone(el: HTMLElement): HTMLElement {
   const clone = el.cloneNode(true) as HTMLElement;
+  const sourceNodes = [el, ...el.querySelectorAll<HTMLElement>('*')];
+  const cloneNodes = [clone, ...clone.querySelectorAll<HTMLElement>('*')];
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  if (!origin) return clone;
-  clone.querySelectorAll('img, video, source').forEach((node) => {
-    const src = node.getAttribute('src');
-    if (src && src.startsWith('/')) node.setAttribute('src', origin + src);
-  });
+  for (let i = 0; i < sourceNodes.length; i += 1) {
+    const source = sourceNodes[i];
+    const node = cloneNodes[i];
+    if (!source || !node) continue;
+    inlineCaptureStyles(source, node);
+    flattenDataUriBackgrounds(source, node);
+    node.querySelectorAll('img, video, source').forEach((media) => {
+      const src = media.getAttribute('src');
+      if (src && src.startsWith('/') && origin) media.setAttribute('src', origin + src);
+    });
+  }
   return clone;
 }
 

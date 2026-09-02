@@ -164,7 +164,7 @@ export function templatesRouter(db, options = {}) {
       const dir = resolve(dataDir, 'thumbnails');
       mkdirSync(dir, { recursive: true });
       writeFileSync(resolve(dir, `${id}.jpg`), buffer);
-      res.json({ url: `/thumbnails/${id}.jpg` });
+      res.json({ url: `/api/templates/${id}/thumbnail` });
     });
   });
 

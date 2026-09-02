@@ -2,11 +2,12 @@ export interface TemplateLibraryItem {
   id: string;
   name: string;
   updated_at: string;
+  created_at?: string;
 }
 
-export type TemplateSortBy = 'name' | 'modified';
+export type TemplateSortBy = 'name' | 'modified' | 'created';
 
-export const TEMPLATE_SORT_BY = ['modified', 'name'] as const satisfies readonly TemplateSortBy[];
+export const TEMPLATE_SORT_BY = ['modified', 'created', 'name'] as const satisfies readonly TemplateSortBy[];
 
 function compareName(a: TemplateLibraryItem, b: TemplateLibraryItem): number {
   const byName = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
@@ -14,8 +15,8 @@ function compareName(a: TemplateLibraryItem, b: TemplateLibraryItem): number {
   return a.id.localeCompare(b.id);
 }
 
-function timestamp(value: string): number {
-  const parsed = Date.parse(value);
+function timestamp(value: string | undefined): number {
+  const parsed = Date.parse(value ?? '');
   return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
 }
 
@@ -29,8 +30,9 @@ export function sortTemplates<T extends TemplateLibraryItem>(
     return copy;
   }
 
+  const field = by === 'created' ? 'created_at' : 'updated_at';
   copy.sort((left, right) => {
-    const delta = timestamp(right.updated_at) - timestamp(left.updated_at);
+    const delta = timestamp(right[field]) - timestamp(left[field]);
     if (delta !== 0) return delta;
     return compareName(left, right);
   });

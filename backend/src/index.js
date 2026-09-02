@@ -11,7 +11,7 @@ import express from 'express';
 import expressWs from 'express-ws';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, existsSync } from 'node:fs';
 
 import { openDb, settingsDao } from './db.js';
 import { createAuth } from './auth.js';
@@ -107,6 +107,20 @@ app.use('/api', audit.appendAudit);
 app.use('/api/auth', authRouter(auth));
 app.use('/api/billing', billingRouter(db, auth));
 app.use('/api/audit', auth.requireAuth, auth.requireRole('admin'), auditRouter(audit));
+// Unauthenticated JPEG preview for template library cards (browser image requests).
+app.get('/api/templates/:id/thumbnail', (req, res) => {
+  const id = req.params.id;
+  if (!/^[a-zA-Z0-9._:-]{1,128}$/.test(id)) {
+    return res.status(400).json({ error: { code: 'INVALID_ID', message: 'unsafe id' } });
+  }
+  const filePath = resolve(THUMBNAILS_DIR, `${id}.jpg`);
+  if (!existsSync(filePath)) {
+    return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'thumbnail not found' } });
+  }
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.type('jpeg');
+  res.sendFile(filePath);
+});
 app.use('/api/templates', auth.requireAuth, templatesRouter(db, { dataDir: DATA_DIR }));
 app.use('/api/channels', auth.requireAuth, auth.requireRole('admin'), channelsRouter(db));
 app.use('/api/rundowns', auth.requireAuth, rundownsRouter(db));

@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent,
   type MouseEvent,
   type ReactNode,
 } from 'react';
@@ -29,6 +30,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/form';
 import { toast } from '@/core/toast';
 import { cn } from '@/lib/cn';
+import { TemplateThumb } from '@/ui/TemplateThumb';
 import {
   readHideAllInControl,
   readHideUnassignedInControl,
@@ -92,6 +94,7 @@ export function TemplatesPage() {
   const [sortBy, setSortBy] = useState<TemplateSortBy>(readSortBy);
   const [hideAllInControl, setHideAllInControl] = useState(readHideAllInControl);
   const [hideUnassignedInControl, setHideUnassignedInControl] = useState(readHideUnassignedInControl);
+  const [dropFolderTarget, setDropFolderTarget] = useState<string | null>(null);
   const deleteTriggerRef = useRef<HTMLElement | null>(null);
 
   const load = useCallback(async () => {
@@ -205,15 +208,61 @@ export function TemplatesPage() {
     }
   }
 
-  async function dropOnFolder(folderId: string | null, templateId: string) {
+  async function dropOnFolder(targetFolderId: string | null, templateId: string) {
+    setDropFolderTarget(null);
+    if (!templateId) return;
     try {
-      if (folderId) await api.templateFolders.assign(folderId, templateId);
+      if (targetFolderId) await api.templateFolders.assign(targetFolderId, templateId);
       else await api.templateFolders.unfile(templateId);
       await load();
     } catch (error) {
       toast.error(`Move failed: ${(error as Error).message}`);
     }
   }
+
+  function folderDropProps(targetKey: string, targetFolderId: string | null) {
+    const active = dropFolderTarget === targetKey;
+    const selected = targetFolderId === null
+      ? folderId === 'unassigned'
+      : folderId === targetFolderId;
+    return {
+      onDragOver: (e: DragEvent) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dropFolderTarget !== targetKey) setDropFolderTarget(targetKey);
+      },
+      onDragEnter: (e: DragEvent) => {
+        e.preventDefault();
+        setDropFolderTarget(targetKey);
+      },
+      onDragLeave: (e: DragEvent) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setDropFolderTarget((cur) => (cur === targetKey ? null : cur));
+      },
+      onDrop: (e: DragEvent) => {
+        e.preventDefault();
+        void dropOnFolder(targetFolderId, e.dataTransfer.getData('text/template-id'));
+      },
+      className: cn(
+        'flex items-center gap-1 rounded-md border px-2 py-1.5 text-[12px] transition-colors',
+        active
+          ? 'border-primary bg-primary/25 text-ink ring-2 ring-primary/50'
+          : selected
+            ? 'border-primary/60 bg-surface'
+            : 'border-border bg-surface hover:border-ink-faint',
+      ),
+    };
+  }
+
+  useEffect(() => {
+    const clear = () => setDropFolderTarget(null);
+    window.addEventListener('titulus-template-drag-end', clear);
+    window.addEventListener('dragend', clear);
+    return () => {
+      window.removeEventListener('titulus-template-drag-end', clear);
+      window.removeEventListener('dragend', clear);
+    };
+  }, []);
 
   const visibleItems = useMemo(() => {
     const rows = items ? sortTemplates(items, sortBy) : [];
@@ -335,6 +384,7 @@ export function TemplatesPage() {
               className="w-[10.5rem]"
             >
               <option value="modified">Date modified</option>
+              <option value="created">Data created</option>
               <option value="name">Name</option>
             </Select>
           </label>
@@ -390,7 +440,10 @@ export function TemplatesPage() {
             <Button size="sm" variant="neutral" onClick={() => void createFolder()}>Add</Button>
           </div>
           <div
-            className={`flex items-center gap-1 rounded-md border px-2 py-1.5 text-[12px] ${folderId === 'all' ? 'border-primary' : 'border-border'}`}
+            className={cn(
+              'flex items-center gap-1 rounded-md border px-2 py-1.5 text-[12px]',
+              folderId === 'all' ? 'border-primary/60 bg-surface' : 'border-border bg-surface',
+            )}
           >
             <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setFolderId('all')}>
               {'<All>'}
@@ -407,11 +460,7 @@ export function TemplatesPage() {
               {hideAllInControl ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
             </button>
           </div>
-          <div
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => { e.preventDefault(); void dropOnFolder(null, e.dataTransfer.getData('text/template-id')); }}
-            className={`flex items-center gap-1 rounded-md border px-2 py-1.5 text-[12px] ${folderId === 'unassigned' ? 'border-primary' : 'border-border'}`}
-          >
+          <div {...folderDropProps('unassigned', null)}>
             <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setFolderId('unassigned')}>
               {'<Unassigned>'}
             </button>
@@ -428,12 +477,7 @@ export function TemplatesPage() {
             </button>
           </div>
           {folders.map((folder) => (
-            <div
-              key={folder.id}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); void dropOnFolder(folder.id, e.dataTransfer.getData('text/template-id')); }}
-              className={`flex items-center gap-1 rounded-md border px-2 py-1.5 text-[12px] ${folderId === folder.id ? 'border-primary' : 'border-border'}`}
-            >
+            <div key={folder.id} {...folderDropProps(folder.id, folder.id)}>
               <button type="button" className="min-w-0 flex-1 truncate text-left" onClick={() => setFolderId(folder.id)}>{folder.name}</button>
               <button type="button" title={folder.hide_in_control ? 'Show in Control' : 'Hide in Control'} onClick={() => void toggleFolderHidden(folder)}>
                 {folder.hide_in_control ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -555,16 +599,27 @@ function TemplateCard({
     <div
       className="group flex flex-col overflow-hidden rounded-lg border border-border bg-surface transition-colors hover:border-ink-faint"
       draggable
-      onDragStart={(e) => e.dataTransfer.setData("text/template-id", template.id)}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/template-id', template.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragEnd={() => {
+        // parent clears highlight via drop / leave; also broadcast end
+        window.dispatchEvent(new CustomEvent('titulus-template-drag-end'));
+      }}
     >
       <button
         type="button"
         onClick={onOpen}
-        className="relative grid aspect-video place-items-center overflow-hidden bg-surface-2 text-ink-faint"
+        className="relative aspect-video overflow-hidden"
         aria-label={`Open ${template.name}`}
       >
-        <img src={`/thumbnails/${template.id}.jpg?v=${encodeURIComponent(template.updated_at)}`} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-        <LayoutTemplate className="relative h-7 w-7" aria-hidden />
+        <TemplateThumb
+          templateId={template.id}
+          cacheKey={template.updated_at}
+          className="absolute inset-0 h-full w-full"
+          iconClassName="h-7 w-7"
+        />
       </button>
       <div className="flex items-center justify-between gap-2 px-3 py-2.5">
         <TemplateIdentity
@@ -608,14 +663,30 @@ function TemplateRow({
   onDelete,
 }: TemplateItemProps) {
   return (
-    <div className="group flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-surface-2/60">
+    <div
+      className="group flex cursor-grab items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 hover:bg-surface-2/60 active:cursor-grabbing"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/template-id', template.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragEnd={() => {
+        window.dispatchEvent(new CustomEvent('titulus-template-drag-end'));
+      }}
+    >
       <button
         type="button"
         onClick={onOpen}
-        className="grid h-10 w-14 shrink-0 place-items-center rounded-md bg-surface-2 text-ink-faint"
+        className="relative h-10 w-14 shrink-0 overflow-hidden rounded-md"
         aria-label={`Open ${template.name}`}
+        draggable={false}
       >
-        <LayoutTemplate className="h-4 w-4" aria-hidden />
+        <TemplateThumb
+          templateId={template.id}
+          cacheKey={template.updated_at}
+          className="h-full w-full"
+          iconClassName="h-4 w-4"
+        />
       </button>
       <TemplateIdentity
         template={template}

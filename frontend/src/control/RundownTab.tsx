@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
 import { toast } from '@/core/toast';
 import { createId } from '@/core/id';
+import { TemplateThumb } from '@/ui/TemplateThumb';
 
 export const MIME_TEMPLATE = 'application/x-titulus-template';
 export const MIME_DATA_ELEMENT = 'application/x-titulus-data-element';
@@ -707,6 +708,14 @@ export function RundownTab({
               <span className="w-4" />
             )}
             {primary && <Folder className="h-3.5 w-3.5 shrink-0 text-ink-muted" aria-hidden />}
+            {!primary && slot.templateId && (
+              <TemplateThumb
+                templateId={slot.templateId}
+                cacheKey={templates.find((t) => t.id === slot.templateId)?.updated_at}
+                className="h-9 w-14 shrink-0 rounded border border-border"
+                iconClassName="h-3.5 w-3.5"
+              />
+            )}
             <button
               type="button"
               className="min-w-0 flex-1 text-left"

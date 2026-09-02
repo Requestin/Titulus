@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { thumbnailLabel, ensureXhtmlNamespace, wrapForeignObjectSvg } from './captureThumbnail';
+import {
+  thumbnailLabel,
+  ensureXhtmlNamespace,
+  wrapForeignObjectSvg,
+  templateThumbnailUrl,
+} from './captureThumbnail';
 import { resolveThumbnailFrame } from '@runtime';
 import { createDefaultTemplate } from '@runtime';
 
@@ -20,6 +25,22 @@ test('foreignObject SVG wraps HTML with an XHTML namespace', () => {
   const svg = wrapForeignObjectSvg(xhtml, 1920, 1080);
   assert.match(svg, /<foreignObject/);
   assert.match(svg, /width="1920"/);
+});
+
+test('templateThumbnailUrl uses the API route with optional cache key', () => {
+  assert.equal(
+    templateThumbnailUrl('abc-123'),
+    '/api/templates/abc-123/thumbnail',
+  );
+  assert.equal(
+    templateThumbnailUrl('abc-123', '2026-09-02T13:27:30.000Z'),
+    '/api/templates/abc-123/thumbnail?v=2026-09-02T13%3A27%3A30.000Z',
+  );
+});
+
+test('prepareMediaForCapture is exported for thumbnail video/image wait', async () => {
+  const { prepareMediaForCapture } = await import('./captureThumbnail');
+  assert.equal(typeof prepareMediaForCapture, 'function');
 });
 
 test('resolveThumbnailFrame uses previewFrame tag then mid default', () => {
