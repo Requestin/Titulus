@@ -756,6 +756,7 @@
           "additionalProperties": { "$ref": "#/$defs/animatableValues" }
         },
         "easing": { "$ref": "#/$defs/easingType" },
+        "directorId": { "type": "string" },
         "bezier": { "$ref": "#/$defs/bezier" },
         "layerEasings": {
           "type": "object",

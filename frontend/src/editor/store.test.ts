@@ -4,6 +4,7 @@ import { createDefaultTemplate, createDefaultTransform } from '@runtime';
 import { createLayer, LAYER_DEFAULT_DIMENSIONS, LAYER_TYPES } from './factories';
 import { affineFromTransform, multiplyAffine } from './transformMath';
 import { useEditor } from './store';
+import { playheadStore, scrubGlobalPlayhead } from './playheadStore';
 
 function loadAnimatedRectangle() {
   const template = createDefaultTemplate();
@@ -300,4 +301,16 @@ test("selecting a crawl layer focuses its director", () => {
   useEditor.getState().setActiveDirector("default");
   useEditor.getState().select({ kind: "layer", id: layer.id });
   assert.equal(useEditor.getState().activeDirectorId, layer.crawlDirectorId);
+});
+
+test('selecting a director keeps the global playhead', () => {
+  const template = createDefaultTemplate();
+  useEditor.getState().load(template);
+  scrubGlobalPlayhead(40, template.timeline.directors, 'default');
+  useEditor.getState().setPlayhead(40);
+  assert.equal(playheadStore.getState().globalPlayhead, 40);
+  useEditor.getState().setActiveDirector('update');
+  assert.equal(playheadStore.getState().globalPlayhead, 40);
+  assert.equal(useEditor.getState().activeDirectorId, 'update');
+  assert.notEqual(playheadStore.getState().playhead, undefined);
 });

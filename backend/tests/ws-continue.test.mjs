@@ -59,9 +59,10 @@ test('normalizeControlMessage accepts continue and drops unknown fields', () => 
     templateId: 'tpl-1',
     template: undefined,
     variables: undefined,
+    slotId: 'slot-9',
   });
   assert.equal('directorId' in result.value, false);
-  assert.equal('slotId' in result.value, false);
+  assert.equal('waiting' in result.value, false);
 });
 
 test('normalizeControlMessage still rejects unknown types without an ACK-shaped success', () => {
@@ -134,7 +135,7 @@ test('reconnect replays takes only and never a continue', () => {
 
     const reconnect = fakeOpenRenderer();
     manager.registerRenderer(channelId, reconnect);
-    assert.deepEqual(reconnect.messages, [{ ...legacyTake, layerId: 50 }]);
+    assert.deepEqual(reconnect.messages, [{ ...legacyTake, layerId: 50, slotId: legacyTake.templateId }]);
     assert.equal(reconnect.messages.some((msg) => msg.type === 'continue'), false);
   } finally {
     db.close();

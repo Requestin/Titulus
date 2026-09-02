@@ -4,8 +4,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { createDirectorMachine } from '../src/directorMachine.js';
-import { timelineNeedsDirectorRuntime } from '../src/timeline.js';
+import { createDirectorMachine, sampleForApplyState } from '../src/directorMachine.js';
+import { normalizeTimeline, timelineNeedsDirectorRuntime } from '../src/timeline.js';
 import type { Template, Timeline } from '../src/schema.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -203,4 +203,124 @@ test('Update director plays from start, fires updateData, then returns to idle a
   machine.advance(4);
   assert.equal(machine.status('update'), 'idle');
   assert.equal(machine.localFrame('update'), 0);
+});
+
+function waitContinueFlyIn(): Timeline {
+  return {
+    fps: 50,
+    durationFrames: 101,
+    playbackMode: 'bounded',
+    directors: [
+      {
+        id: 'default',
+        name: 'default',
+        durationFrames: 101,
+        offsetFrames: 0,
+        autostart: true,
+        loop: false,
+        swing: false,
+      },
+    ],
+    trackDirectors: { geo: 'default' },
+    keyframes: [
+      { id: 'k0', frame: 0, layers: {}, groups: { geo: { x: -424, y: -67 } }, easing: 'linear' },
+      { id: 'k50', frame: 50, layers: {}, groups: { geo: { x: 302.75, y: 118 } }, easing: 'linear' },
+      { id: 'k100', frame: 100, layers: {}, groups: { geo: { x: -424, y: -67 } }, easing: 'linear' },
+    ],
+    actions: [],
+    cues: [{
+      id: 'wait',
+      directorId: 'default',
+      frame: 50,
+      fromEnd: false,
+      name: '',
+      items: [{
+        id: 'w',
+        command: 'stopDirectorAndWaitContinue',
+        parameterDirectorId: 'default',
+        lengthFrames: 0,
+        direction: 'normal',
+      }],
+    }],
+  };
+}
+
+test('editor idle apply after seek follows global frame, not unadvanced machine locals', () => {
+  const timeline = waitContinueFlyIn();
+  assert.equal(timelineNeedsDirectorRuntime(timeline), true);
+  const norm = normalizeTimeline(timeline);
+  const machine = createDirectorMachine(timeline);
+  const idle = sampleForApplyState(norm, 50, machine, {
+    playbackMode: 'raf',
+    playing: false,
+    livePlayback: false,
+  });
+  assert.equal(idle.groups.geo?.x, 302.75);
+  assert.equal(idle.groups.geo?.y, 118);
+  assert.equal(machine.sample().groups.geo?.x, -424);
+  assert.equal(machine.localFrame('default'), 0);
+});
+
+test('live play and engine ticks keep the wait-continue machine pose', () => {
+  const timeline = waitContinueFlyIn();
+  const norm = normalizeTimeline(timeline);
+  const machine = createDirectorMachine(timeline);
+  machine.advance(50);
+  machine.advance(80);
+  assert.equal(machine.status('default'), 'waiting');
+  assert.equal(machine.localFrame('default'), 50);
+
+  const live = sampleForApplyState(norm, 80, machine, {
+    playbackMode: 'raf',
+    playing: false,
+    livePlayback: true,
+  });
+  assert.equal(live.groups.geo?.x, 302.75);
+
+  const engine = sampleForApplyState(norm, 80, machine, {
+    playbackMode: 'fixed',
+    playing: false,
+    livePlayback: false,
+  });
+  assert.equal(engine.groups.geo?.x, 302.75);
+
+  const scrub = sampleForApplyState(norm, 80, machine, {
+    playbackMode: 'raf',
+    playing: false,
+    livePlayback: false,
+  });
+  assert.notEqual(scrub.groups.geo?.x, 302.75);
+});
+
+test('startUpdate keeps a waiting default director frozen', () => {
+  const timeline = waitContinueFlyIn();
+  timeline.directors.push({
+    id: 'update',
+    name: 'Update',
+    durationFrames: 100,
+    offsetFrames: 0,
+    autostart: false,
+    loop: false,
+    swing: false,
+  });
+  timeline.keyframes.push({
+    id: 'u0',
+    frame: 0,
+    directorId: 'update',
+    layers: { text: { x: -290 } },
+    groups: {},
+    easing: 'linear',
+  });
+  const machine = createDirectorMachine(timeline);
+  machine.advance(50);
+  assert.equal(machine.status('default'), 'waiting');
+  assert.equal(machine.sample().groups.geo?.x, 302.75);
+  machine.startUpdate();
+  assert.equal(machine.status('default'), 'waiting');
+  assert.equal(machine.status('update'), 'running');
+  machine.advance(51);
+  assert.equal(machine.status('default'), 'waiting');
+  assert.equal(machine.localFrame('default'), 50);
+  assert.equal(machine.localFrame('update'), 1);
+  assert.equal(machine.sample().groups.geo?.x, 302.75);
 });

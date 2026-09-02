@@ -13,6 +13,7 @@ export interface ControlCommand {
   type: 'take' | 'update' | 'clear' | 'continue';
   channelId: string;
   templateId?: string;
+  slotId?: string;
   template?: unknown;
   variables?: Record<string, string | number>;
 }

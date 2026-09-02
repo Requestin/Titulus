@@ -26,7 +26,7 @@ function takeCommand(template) {
 }
 
 function withLayerId(cmd, layerId) {
-  return { ...cmd, layerId };
+  return { ...cmd, layerId, slotId: cmd.slotId || cmd.templateId };
 }
 
 function undeclaredZTemplate(id) {

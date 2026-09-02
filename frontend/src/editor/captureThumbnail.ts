@@ -5,6 +5,16 @@ export function thumbnailLabel(name: string, max = 42): string {
   return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1)}…`;
 }
 
+export function ensureXhtmlNamespace(serialized: string): string {
+  if (serialized.includes('xmlns="http://www.w3.org/1999/xhtml"')) return serialized;
+  return serialized.replace(/^\s*<([a-zA-Z][\w:-]*)/, '<$1 xmlns="http://www.w3.org/1999/xhtml"');
+}
+
+export function wrapForeignObjectSvg(xhtml: string, width: number, height: number): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`
+    + `<foreignObject width="100%" height="100%">${xhtml}</foreignObject></svg>`;
+}
+
 export function renderNameCardJpeg(name: string, width = 320, height = 180): Promise<Blob> {
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -24,11 +34,16 @@ export function renderNameCardJpeg(name: string, width = 320, height = 180): Pro
 export async function renderTemplateThumbnailJpeg(template: Template, width = 320, height = 180): Promise<Blob> {
   const frame = resolveThumbnailFrame(template.timeline);
   const host = document.createElement('div');
-  host.style.cssText = 'position:fixed;left:-12000px;top:0;pointer-events:none;opacity:0;';
+  host.style.cssText = 'position:fixed;left:-12000px;top:0;pointer-events:none;';
   document.body.appendChild(host);
   const renderer = new TemplateRenderer(host, { playbackMode: 'raf' });
   try {
     renderer.syncTemplate(template, resolveVariableMap(template), { reuseDirectors: false });
+    renderer.seek(frame);
+    if (document.fonts?.ready) await document.fonts.ready.catch(() => undefined);
+    // ensureFonts().then(applyState) from syncTemplate can run after seek;
+    // re-assert the preview frame once those microtasks have flushed.
+    await Promise.resolve();
     renderer.seek(frame);
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
@@ -41,26 +56,33 @@ export async function renderTemplateThumbnailJpeg(template: Template, width = 32
 }
 
 async function captureElementJpeg(el: HTMLElement, outW: number, outH: number): Promise<Blob> {
-  const sourceW = Math.max(1, el.offsetWidth || 1920);
-  const sourceH = Math.max(1, el.offsetHeight || 1080);
-  const serialized = new XMLSerializer().serializeToString(el);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sourceW}" height="${sourceH}">`
-    + `<foreignObject width="100%" height="100%">${serialized}</foreignObject></svg>`;
-  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
-  try {
-    const image = await loadImage(url);
-    const canvas = document.createElement('canvas');
-    canvas.width = outW;
-    canvas.height = outH;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('canvas unsupported');
-    ctx.fillStyle = '#14161a';
-    ctx.fillRect(0, 0, outW, outH);
-    ctx.drawImage(image, 0, 0, outW, outH);
-    return await canvasToJpeg(canvas);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  const sourceW = Math.max(1, el.offsetWidth || Number.parseInt(el.style.width, 10) || 1920);
+  const sourceH = Math.max(1, el.offsetHeight || Number.parseInt(el.style.height, 10) || 1080);
+  const clone = prepareCaptureClone(el);
+  const xhtml = ensureXhtmlNamespace(new XMLSerializer().serializeToString(clone));
+  const svg = wrapForeignObjectSvg(xhtml, sourceW, sourceH);
+  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  const image = await loadImage(url);
+  const canvas = document.createElement('canvas');
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas unsupported');
+  ctx.fillStyle = '#14161a';
+  ctx.fillRect(0, 0, outW, outH);
+  ctx.drawImage(image, 0, 0, outW, outH);
+  return canvasToJpeg(canvas);
+}
+
+function prepareCaptureClone(el: HTMLElement): HTMLElement {
+  const clone = el.cloneNode(true) as HTMLElement;
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  if (!origin) return clone;
+  clone.querySelectorAll('img, video, source').forEach((node) => {
+    const src = node.getAttribute('src');
+    if (src && src.startsWith('/')) node.setAttribute('src', origin + src);
+  });
+  return clone;
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {

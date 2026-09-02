@@ -26,6 +26,7 @@ export default defineConfig({
     proxy: {
       '/api': BACKEND,
       '/uploads': BACKEND,
+      '/thumbnails': BACKEND,
       '/fonts': BACKEND,
       '/channel.html': BACKEND,
       '/bg-runtime.js': BACKEND,

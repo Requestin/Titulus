@@ -5,8 +5,9 @@ import { useEditor, type Target } from '../store';
 import { pointsFor as trackPoints, type SelectedKeyframe } from '../timelineTracks';
 import { LANE_H } from './layout';
 
-function isSame(a: SelectedKeyframe, target: Target, prop: AnimatableProp, frame: number): boolean {
-  return a.target.kind === target.kind && a.target.id === target.id && a.prop === prop && a.frame === frame;
+function isSame(a: SelectedKeyframe, target: Target, prop: AnimatableProp, frame: number, directorId?: string): boolean {
+  return a.target.kind === target.kind && a.target.id === target.id && a.prop === prop && a.frame === frame
+    && (a.directorId ?? undefined) === (directorId ?? undefined);
 }
 
 function sampleValue(points: { frame: number; value: number; easing: string }[], frame: number): number {
@@ -28,6 +29,7 @@ function sampleValue(points: { frame: number; value: number; easing: string }[],
 export function DopeLane({
   target,
   prop,
+  directorId,
   pxPerFrame,
   frameFromEvent,
   selected,
@@ -36,6 +38,7 @@ export function DopeLane({
 }: {
   target: Target;
   prop: AnimatableProp;
+  directorId?: string;
   pxPerFrame: number;
   frameFromEvent: (event: ReactPointerEvent, laneEl: Element) => number;
   selected: SelectedKeyframe[];
@@ -46,13 +49,13 @@ export function DopeLane({
   const movePoint = useEditor((state) => state.movePoint);
   const deletePoint = useEditor((state) => state.deletePoint);
   const [drag, setDrag] = useState<{ from: number; cur: number; group: boolean } | null>(null);
-  const points = trackPoints(useEditor.getState().template!, target, prop);
+  const points = trackPoints(useEditor.getState().template!, target, prop, directorId);
 
   function frameAt(point: { frame: number }): number {
     if (drag && drag.from === point.frame) return drag.cur;
     if (drag?.group) {
       const delta = drag.cur - drag.from;
-      const hit = selected.find((item) => isSame(item, target, prop, point.frame));
+      const hit = selected.find((item) => isSame(item, target, prop, point.frame, directorId));
       if (hit) return Math.max(0, point.frame + delta);
     }
     return point.frame;
@@ -94,7 +97,7 @@ export function DopeLane({
         );
       })}
       {points.map((point) => {
-        const selectedHere = selected.some((item) => isSame(item, target, prop, point.frame));
+        const selectedHere = selected.some((item) => isSame(item, target, prop, point.frame, directorId));
         return (
           <div
             key={point.frame}
@@ -104,7 +107,7 @@ export function DopeLane({
               event.stopPropagation();
               event.currentTarget.setPointerCapture(event.pointerId);
               const mode = event.shiftKey || event.ctrlKey || event.metaKey ? 'toggle' : 'replace';
-              const next = { target, prop, frame: point.frame };
+              const next = { target, prop, frame: point.frame, directorId };
               onSelect(next, selectedHere && mode === 'replace' ? 'replace' : mode);
               setDrag({ from: point.frame, cur: point.frame, group: selectedHere || mode === 'replace' });
             }}
@@ -121,7 +124,7 @@ export function DopeLane({
                 if (drag.group && selected.length > 1) onMoveSelected(delta);
                 else {
                   movePoint(target, prop, drag.from, drag.cur);
-                  onSelect({ target, prop, frame: drag.cur }, 'replace');
+                  onSelect({ target, prop, frame: drag.cur, directorId }, 'replace');
                 }
               }
               setDrag(null);

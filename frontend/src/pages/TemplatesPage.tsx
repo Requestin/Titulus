@@ -563,7 +563,7 @@ function TemplateCard({
         className="relative grid aspect-video place-items-center overflow-hidden bg-surface-2 text-ink-faint"
         aria-label={`Open ${template.name}`}
       >
-        <img src={`/thumbnails/${template.id}.jpg`} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+        <img src={`/thumbnails/${template.id}.jpg?v=${encodeURIComponent(template.updated_at)}`} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
         <LayoutTemplate className="relative h-7 w-7" aria-hidden />
       </button>
       <div className="flex items-center justify-between gap-2 px-3 py-2.5">

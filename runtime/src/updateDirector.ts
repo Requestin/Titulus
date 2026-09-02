@@ -26,8 +26,10 @@ export function hasUpdateDirectorTracks(timeline: Timeline): boolean {
   if (!director) return false;
   if (Object.values(timeline.trackDirectors).some((id) => id === director.id)) return true;
   const byProp = timeline.propertyTrackDirectors;
-  if (!byProp) return false;
-  return Object.values(byProp).some((bag) => Object.values(bag).some((id) => id === director.id));
+  if (byProp && Object.values(byProp).some((bag) => Object.values(bag).some((id) => id === director.id))) {
+    return true;
+  }
+  return timeline.keyframes.some((keyframe) => keyframe.directorId === director.id);
 }
 
 export function ensureUpdateDirector(timeline: Timeline): void {

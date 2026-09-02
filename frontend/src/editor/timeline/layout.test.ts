@@ -4,7 +4,6 @@ import { createDefaultTemplate } from '@runtime';
 import { createLayer } from '../factories';
 import { collectTracks } from '../timelineTracks';
 import {
-  ACTION_LANE_H,
   DIRECTOR_HDR_H,
   GROUP_HDR_H,
   LANE_H,
@@ -57,15 +56,16 @@ test('timeline drag payload round-trips track and object drops', () => {
   assert.equal(parseTimelineDrag('nope'), null);
 });
 
-test('each expanded director gets an Action lane', () => {
+test('Action lane is only created when the director has cues', () => {
   const template = createDefaultTemplate();
   const layout = buildAllDirectorsLaneLayout(template, template.timeline.directors, new Set(), 6);
   const actions = layout.rows.filter((row) => row.kind === 'action');
-  assert.equal(actions.length, template.timeline.directors.length);
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0]?.kind === 'action' && actions[0].directorId, 'update');
   assert.equal(layout.rows[0]?.kind, 'director');
-  assert.equal(layout.rows[1]?.kind, 'action');
-  assert.equal(layout.rows[1]?.kind === 'action' && layout.rows[1].height, ACTION_LANE_H);
-  assert.ok(layout.height >= DIRECTOR_HDR_H + ACTION_LANE_H);
+  assert.equal(layout.rows[1]?.kind, 'director');
+  assert.equal(layout.rows[2]?.kind, 'action');
+  assert.ok(layout.height >= DIRECTOR_HDR_H);
 });
 
 test('gradient weight props are addable timeline tracks', () => {

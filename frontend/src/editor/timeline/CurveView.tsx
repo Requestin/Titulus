@@ -29,7 +29,7 @@ export function CurveView({
   const deletePoint = useEditor((state) => state.deletePoint);
   const setKeyframeEasing = useEditor((state) => state.setKeyframeEasing);
   const [drag, setDrag] = useState<{ from: number; curFrame: number; curValue: number } | null>(null);
-  const points = pointsFor(useEditor.getState().template!, target, prop);
+  const points = pointsFor(useEditor.getState().template!, target, prop, useEditor.getState().activeDirectorId);
   const selFrame = selected.find((item) => (
     item.target.kind === target.kind && item.target.id === target.id && item.prop === prop
   ))?.frame ?? null;
@@ -96,7 +96,7 @@ export function CurveView({
               onPointerDown={(event) => {
                 event.stopPropagation();
                 (event.currentTarget as SVGCircleElement).setPointerCapture(event.pointerId);
-                onSelect({ target, prop, frame: point.frame });
+                onSelect({ target, prop, frame: point.frame, directorId: useEditor.getState().activeDirectorId });
                 setDrag({ from: point.frame, curFrame: point.frame, curValue: point.value });
               }}
               onPointerMove={(event) => {
@@ -114,7 +114,7 @@ export function CurveView({
                   const moved = drag.curFrame !== drag.from;
                   const changed = drag.curValue !== point.value || moved;
                   if (changed) commitCurveDrag(target, prop, drag.from, drag.curFrame, drag.curValue);
-                  if (moved) onSelect({ target, prop, frame: drag.curFrame });
+                  if (moved) onSelect({ target, prop, frame: drag.curFrame, directorId: useEditor.getState().activeDirectorId });
                 }
                 setDrag(null);
               }}

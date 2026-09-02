@@ -18,7 +18,7 @@
 // The engine host calls ChannelClient.tick() each fixed-step frame; the browser
 // page just lets the rAF loop run.
 
-import type { Template } from './schema.js';
+import { resolveVariableMap, type Template } from './schema.js';
 import { TemplateRenderer, type TemplateRendererOptions, type OnFrameFn } from './domRenderer.js';
 import { classifyRenderGraph } from './layerPromote.js';
 import { isGraphPublishingEnabled, publishTemplateGraph } from './graphPublisher.js';
@@ -272,8 +272,12 @@ export class ChannelClient {
   private onTake(msg: ChannelMessage): void {
     if (!msg.template) return;
     const id = msg.templateId;
-    // Replace if already on air (re-take = update template structure + restart).
     const prev = this.active.get(id);
+    // Re-TAKE of an armed Update occupant plays Update, not Clear+IN.
+    if (prev && hasUpdateDirectorTracks(prev.template.timeline)) {
+      this.onUpdate(msg);
+      return;
+    }
     if (prev) {
       prev.renderer.destroy();
       this.active.delete(id);
@@ -297,7 +301,7 @@ export class ChannelClient {
     };
     this.active.set(id, active);
     this.restackRoots();
-    renderer.playTimeline(msg.template, msg.variables ?? {},
+    renderer.playTimeline(msg.template, resolveVariableMap(msg.template, msg.variables ?? {}),
       {
         onFrame: (info) => {
           this.opts.onFrame?.(info);
@@ -404,9 +408,9 @@ export class ChannelClient {
     const tpl = a.renderer.getTemplate();
     if (!tpl) return;
     if (hasUpdateDirectorTracks(tpl.timeline)) {
-      a.renderer.playUpdate(msg.variables ?? {});
+      a.renderer.playUpdate(resolveVariableMap(tpl, msg.variables ?? {}));
     } else {
-      a.renderer.syncTemplate(tpl, msg.variables ?? {}, { reuseDirectors: true });
+      a.renderer.syncTemplate(tpl, resolveVariableMap(tpl, msg.variables ?? {}), { reuseDirectors: true });
     }
     this.publishContentUpdate(a);
     this.reportWaitingContinue();

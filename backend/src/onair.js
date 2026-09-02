@@ -15,6 +15,7 @@
 
 import { onAirDao, settingsDao } from './db.js';
 import { validateTemplateForAir } from './templateValidation.js';
+import { hasUpdateDirectorTracks, sourceTemplateId } from './updateDirector.js';
 
 function airValidationError(validation) {
   const reason = validation.errors
@@ -130,14 +131,35 @@ export class OnAirManager {
       };
     }
     const layerId = resolveLayerId(cmd.template);
-    cmd = { ...cmd, layerId };
+    cmd = { ...cmd, layerId, slotId: cmd.slotId || cmd.templateId };
+    const existing = (this.state[cmd.channelId] || []).find((c) => c.templateId === cmd.templateId);
+    if (existing && hasUpdateDirectorTracks(existing.template?.timeline)) {
+      return this.applyUpdate({
+        type: 'update',
+        channelId: cmd.channelId,
+        templateId: existing.templateId,
+        variables: cmd.variables,
+        slotId: cmd.slotId,
+      });
+    }
     if (layerIdPlayoutEnabled(this.db)) {
       const occupants = this.state[cmd.channelId] || [];
       for (const occupant of occupants) {
         if (occupant.templateId === cmd.templateId) continue;
-        if ((occupant.layerId ?? resolveLayerId(occupant.template)) === layerId) {
-          this.applyClear({ type: 'clear', channelId: cmd.channelId, templateId: occupant.templateId });
+        if ((occupant.layerId ?? resolveLayerId(occupant.template)) !== layerId) continue;
+        if (
+          sourceTemplateId(occupant) === sourceTemplateId(cmd)
+          && hasUpdateDirectorTracks(occupant.template?.timeline)
+        ) {
+          return this.applyUpdate({
+            type: 'update',
+            channelId: cmd.channelId,
+            templateId: occupant.templateId,
+            variables: cmd.variables,
+            slotId: cmd.slotId,
+          });
         }
+        this.applyClear({ type: 'clear', channelId: cmd.channelId, templateId: occupant.templateId });
       }
     }
     this.dao.set(cmd, { bringToFront: true }); // persist with z-order bump
@@ -175,7 +197,11 @@ export class OnAirManager {
       incoming = { ...incoming, ...prepared.overrides };
       stored.template = prepared.template;
     }
-    const next = { ...stored, variables: { ...(stored.variables || {}), ...incoming } };
+    const next = {
+      ...stored,
+      variables: { ...(stored.variables || {}), ...incoming },
+      slotId: cmd.slotId || stored.slotId || stored.templateId,
+    };
     this.dao.set(next, { bringToFront: false });
     arr[idx] = next;
     this.state[cmd.channelId] = arr;
@@ -251,7 +277,7 @@ export class OnAirManager {
     for (const [ch, cmds] of Object.entries(this.state)) {
       channels[ch] = cmds.map((c) => ({
         templateId: c.templateId,
-        slotId: c.templateId,
+        slotId: c.slotId || c.templateId,
         sourceTemplateId: c.template?.id || c.templateId,
         layerId: c.layerId ?? resolveLayerId(c.template),
         waitingContinue: this.isWaitingContinue(ch, c.templateId),

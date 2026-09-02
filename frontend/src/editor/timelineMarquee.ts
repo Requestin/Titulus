@@ -15,6 +15,7 @@ export type KeyframeHit = {
   frame: number;
   x: number;
   y: number;
+  directorId?: string;
 };
 
 export function normalizeMarquee(x0: number, y0: number, x1: number, y1: number): MarqueeRect {
@@ -34,7 +35,11 @@ export function keyframesInMarquee(hits: KeyframeHit[], rect: MarqueeRect): Sele
       && hit.y >= rect.top
       && hit.y <= rect.bottom
     ))
-    .map((hit) => ({ target: hit.target, prop: hit.prop, frame: hit.frame }));
+    .map((hit) => (
+      hit.directorId
+        ? { target: hit.target, prop: hit.prop, frame: hit.frame, directorId: hit.directorId }
+        : { target: hit.target, prop: hit.prop, frame: hit.frame }
+    ));
 }
 
 export function toggleKeyframeSelection(

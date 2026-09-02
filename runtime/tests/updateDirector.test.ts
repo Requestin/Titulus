@@ -35,6 +35,19 @@ test('hasUpdateDirectorTracks is true only when Update owns a track', () => {
   assert.equal(hasUpdateDirectorTracks(template.timeline), true);
 });
 
+test('hasUpdateDirectorTracks sees director-scoped duplicate keyframes', () => {
+  const template = createDefaultTemplate();
+  template.timeline.keyframes.push({
+    id: 'dup',
+    frame: 0,
+    directorId: 'update',
+    layers: { box: { x: 1 } },
+    groups: {},
+    easing: 'linear',
+  });
+  assert.equal(hasUpdateDirectorTracks(template.timeline), true);
+});
+
 test('ensureUpdateDirector is a no-op when Update already exists', () => {
   const template = createDefaultTemplate();
   const before = template.timeline.directors.length;

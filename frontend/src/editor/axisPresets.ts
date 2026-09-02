@@ -17,6 +17,40 @@ export function axisPresetY(
   return anchorCompensatedUpdate(transform, { anchorY: preset });
 }
 
+/**
+ * Axis presets against a visual AABB in the same space as `transform.x/y`
+ * (group parent space). Dummy 1×1 / 300×80 group sizes are ignored.
+ */
+export function axisPresetXForBox(
+  transform: Transform,
+  box: { x: number; y: number; width: number; height: number },
+  preset: AxisPreset,
+): Partial<Transform> {
+  return { anchorX: preset, x: box.x + box.width * preset, y: transform.y };
+}
+
+export function axisPresetYForBox(
+  transform: Transform,
+  box: { x: number; y: number; width: number; height: number },
+  preset: AxisPreset,
+): Partial<Transform> {
+  return { anchorY: preset, x: transform.x, y: box.y + box.height * preset };
+}
+
+export function anchorCompensatedUpdateForBox(
+  transform: Transform,
+  box: { x: number; y: number; width: number; height: number },
+  next: Partial<Pick<Transform, 'anchorX' | 'anchorY'>>,
+): Partial<Transform> {
+  const anchorX = next.anchorX ?? transform.anchorX;
+  const anchorY = next.anchorY ?? transform.anchorY;
+  return {
+    ...next,
+    x: next.anchorX === undefined ? transform.x : box.x + box.width * anchorX,
+    y: next.anchorY === undefined ? transform.y : box.y + box.height * anchorY,
+  };
+}
+
 export function canvasFitSize(
   canvas: { width: number; height: number },
   mode: CanvasFitMode,

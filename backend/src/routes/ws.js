@@ -78,7 +78,7 @@ export function normalizeControlMessage(msg) {
   if (!isPlainObject(msg)) {
     return { ok: false, code: 'INVALID_PAYLOAD', message: 'payload must be an object' };
   }
-  const { type, channelId, templateId, template, variables } = msg;
+  const { type, channelId, templateId, template, variables, slotId } = msg;
   if (typeof type !== 'string') {
     return { ok: false, code: 'TYPE_REQUIRED', message: 'type is required' };
   }
@@ -133,6 +133,7 @@ export function normalizeControlMessage(msg) {
       templateId,
       template,
       variables,
+      slotId: typeof slotId === 'string' && SAFE_ID_RE.test(slotId) ? slotId : undefined,
     },
   };
 }

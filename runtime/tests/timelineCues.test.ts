@@ -74,6 +74,19 @@ test('empty or dormant Update and tags-only cues do not enable the director runt
   assert.equal(timelineNeedsDirectorRuntime(legacyTag), false);
 });
 
+test('director-scoped keyframes enable the director runtime', () => {
+  const timeline = emptyTimeline();
+  timeline.keyframes.push({
+    id: 'dup',
+    frame: 0,
+    directorId: 'update',
+    layers: { box: { x: 1 } },
+    groups: {},
+    easing: 'linear',
+  });
+  assert.equal(timelineNeedsDirectorRuntime(timeline), true);
+});
+
 test('stateful cue commands and legacy start/stop enable the director runtime', () => {
   const wait = emptyTimeline();
   wait.cues = [{

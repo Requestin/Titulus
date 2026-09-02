@@ -450,6 +450,11 @@ export interface TimelineKeyframe {
   groups: Record<string, AnimatableValues>; // groupId -> animated values
   easing: EasingType;
   bezier?: BezierHandle;
+  /**
+   * When set, this keyframe belongs only to that director. Lets the same
+   * property exist independently on more than one director (Update vs IN).
+   */
+  directorId?: string;
   /** Per-property easing; falls back to `easing` when a prop is missing. */
   layerEasings?: Record<string, Partial<Record<AnimatableProp, EasingType>>>;
   groupEasings?: Record<string, Partial<Record<AnimatableProp, EasingType>>>;

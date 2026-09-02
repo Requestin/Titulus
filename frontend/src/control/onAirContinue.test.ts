@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { continueCommand, formatOnAirRow, isWaitingContinue, resolveOnAirRows } from './onAirContinue';
+import {
+  continueCommand,
+  formatOnAirRow,
+  isWaitingContinue,
+  liveSlotIdSet,
+  occupantForSourceLayer,
+  resolveOnAirRows,
+  runtimeIdForSlot,
+} from './onAirContinue';
 
 test('isWaitingContinue reads the versioned details sibling', () => {
   const details = {
@@ -45,4 +53,23 @@ test('resolveOnAirRows prefers details and sorts by LayerID', () => {
     formatOnAirRow({ templateId: 'front', layerId: 90, slotId: 'front', sourceTemplateId: 'front', waitingContinue: false }, 'Bug'),
     'L90 · Bug · template',
   );
+});
+
+test('Update ownership transfer keeps renderer id and highlights the new slot', () => {
+  const details = {
+    schemaVersion: 'onair-details-v1' as const,
+    channels: {
+      ch1: [{
+        templateId: 'slot-spb',
+        slotId: 'slot-msk',
+        sourceTemplateId: 'geo',
+        layerId: 50,
+        waitingContinue: true,
+      }],
+    },
+  };
+  assert.deepEqual([...liveSlotIdSet(details, 'ch1', ['slot-spb'])], ['slot-msk']);
+  assert.equal(runtimeIdForSlot(details, 'ch1', 'slot-msk'), 'slot-spb');
+  assert.equal(isWaitingContinue(details, 'ch1', 'slot-msk'), true);
+  assert.equal(occupantForSourceLayer(details, 'ch1', 'geo', 50)?.templateId, 'slot-spb');
 });

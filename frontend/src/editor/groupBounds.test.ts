@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createDefaultTemplate, createDefaultTransform } from '@runtime';
 import { createLayer } from './factories';
-import { derivedGroupBox, descendantLayerIds, layerBoxInCanvas, unionBoxes } from './groupBounds';
+import { derivedGroupBox, descendantLayerIds, groupVisualPivot, layerBoxInCanvas, offsetDirectChildren, unionBoxes } from './groupBounds';
 import { ancestorMatrix } from './transformMath';
 
 function groupTemplate() {
@@ -110,4 +110,17 @@ test('derivedGroupBox is null for a group with no descendant layers', () => {
     derivedGroupBox(template, 'empty', () => createDefaultTransform(), () => createDefaultTransform()),
     null,
   );
+});
+
+test('groupVisualPivot sits on the visual AABB, not the dummy 1x1 origin', () => {
+  const box = { x: 120, y: 50, width: 200, height: 80 };
+  assert.deepEqual(groupVisualPivot(box, 0, 0), { x: 120, y: 50 });
+  assert.deepEqual(groupVisualPivot(box, 0.5, 0.5), { x: 220, y: 90 });
+});
+
+test('offsetDirectChildren keeps descendants put when the group origin moves', () => {
+  const template = groupTemplate();
+  offsetDirectChildren(template, 'group', -40, -10);
+  assert.equal(template.layers.find((item) => item.id === 'a')!.transform.x, -20);
+  assert.equal(template.groups.find((item) => item.id === 'inner')!.transform.x, -30);
 });

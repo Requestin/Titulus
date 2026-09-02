@@ -158,6 +158,23 @@ export function setLivePlaying(playing: boolean): void {
   playheadStore.setState({ playing });
 }
 
+/** Keep global playhead; only switch the local readout to this director. */
+export function activateDirectorPlayhead(
+  directorId: string,
+  directors: TimelineDirector[],
+): void {
+  const state = playheadStore.getState();
+  const director = directors.find((item) => item.id === directorId);
+  const mapped = director ? directorLocalFrame(director, state.globalPlayhead) : null;
+  const local = state.detachedLocals[directorId]
+    ? (state.localPlayheads[directorId] ?? 0)
+    : (mapped ?? 0);
+  playheadStore.setState({
+    playhead: local,
+    playing: false,
+  });
+}
+
 export function syncPlayhead(frame: number, playing = playheadStore.getState().playing): void {
   playheadStore.setState({ playhead: Math.max(0, Math.round(frame)), playing });
 }

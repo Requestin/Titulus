@@ -141,6 +141,63 @@ test('LayerID playout default ON; OFF stacks same layer, ON replaces occupant', 
   db.close();
 });
 
+test('same-layer re-TAKE of a template with Update tracks fans UPDATE, not clear+take', async () => {
+  const db = openDb(':memory:');
+  const cues = JSON.parse(readFileSync(new URL('../../tests/fixtures/p21/draft/timeline-action-cues.json', import.meta.url), 'utf8'));
+  const withUpdateTracks = {
+    ...cues,
+    id: 'geo-src',
+    timeline: {
+      ...cues.timeline,
+      keyframes: [
+        ...(cues.timeline.keyframes || []),
+        {
+          id: 'upd-x',
+          frame: 0,
+          directorId: 'update',
+          layers: { text: { x: 10 } },
+          groups: {},
+          easing: 'linear',
+        },
+      ],
+    },
+  };
+  const renderer = {
+    readyState: 1,
+    messages: [],
+    send(payload) { this.messages.push(JSON.parse(payload)); },
+  };
+  const manager = new OnAirManager(db);
+  manager.registerRenderer('ch1', renderer);
+
+  await manager.handleControlCommand({
+    type: 'take',
+    channelId: 'ch1',
+    templateId: 'slot-spb',
+    template: withUpdateTracks,
+    variables: { city: 'Санкт-Петербург' },
+  });
+  renderer.messages.length = 0;
+
+  await manager.handleControlCommand({
+    type: 'take',
+    channelId: 'ch1',
+    templateId: 'slot-msk',
+    slotId: 'slot-msk',
+    template: withUpdateTracks,
+    variables: { city: 'москва' },
+  });
+
+  assert.deepEqual(manager.onAirTemplateIds().ch1, ['slot-spb']);
+  assert.equal(manager.onAirDetails().channels.ch1[0].slotId, 'slot-msk');
+  assert.equal(manager.onAirDetails().channels.ch1[0].sourceTemplateId, 'geo-src');
+  assert.equal(renderer.messages.length, 1);
+  assert.equal(renderer.messages[0].type, 'update');
+  assert.equal(renderer.messages[0].templateId, 'slot-spb');
+  assert.equal(renderer.messages[0].variables.city, 'москва');
+  db.close();
+});
+
 test('rundown rejects kind:ue and keeps legacy slots', async () => {
   const db = openDb(':memory:');
   const app = express();

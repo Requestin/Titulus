@@ -152,7 +152,10 @@ export function CanvasArea() {
     return {
       kind: 'box',
       box: { left: box.x * zoom, top: box.y * zoom, width: box.width * zoom, height: box.height * zoom },
-      pivot: { x: pivot.x * zoom, y: pivot.y * zoom },
+      pivot: {
+        x: (box.x + box.width * pivot.anchorX) * zoom,
+        y: (box.y + box.height * pivot.anchorY) * zoom,
+      },
     };
   }
 
@@ -245,14 +248,16 @@ export function CanvasArea() {
     r.syncTemplate(template, resolveVariableMap(template));
     r.resize(cw * zoom, ch * zoom);
     const st = playheadStore.getState();
-    const locals = resolveSeekLocals(
-      template.timeline.directors,
-      st.globalPlayhead,
-      st.localPlayheads,
-      st.detachedLocals,
-    );
-    if (Object.keys(st.detachedLocals).length > 0) r.seekLocals(locals);
-    else r.seek(st.globalPlayhead);
+    if (!st.playing) {
+      const locals = resolveSeekLocals(
+        template.timeline.directors,
+        st.globalPlayhead,
+        st.localPlayheads,
+        st.detachedLocals,
+      );
+      if (Object.keys(st.detachedLocals).length > 0) r.seekLocals(locals);
+      else r.seek(st.globalPlayhead);
+    }
     clearGesturePreview();
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps

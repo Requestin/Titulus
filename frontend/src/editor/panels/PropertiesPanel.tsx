@@ -32,9 +32,14 @@ import { LAYER_DEFAULT_DIMENSIONS } from '../factories';
 import { DefaultNameInput } from '../DefaultNameInput';
 import { useStore } from 'zustand';
 import { nudgeAngle45 } from '@/ui/numberInputMath';
+import { boxInParentSpace, derivedGroupBox } from '../groupBounds';
+import { ancestorMatrix } from '../transformMath';
 import {
   axisPresetX,
+  axisPresetXForBox,
   axisPresetY,
+  axisPresetYForBox,
+  anchorCompensatedUpdateForBox,
   canvasFitSize,
   has25dCost,
   lockedScale,
@@ -49,6 +54,7 @@ export function PropertiesPanel() {
   const updateLayer = useEditor((s) => s.updateLayer);
   const setLayerOpacity = useEditor((s) => s.setLayerOpacity);
   const updateTransform = useEditor((s) => s.updateTransform);
+  const updateGroupPivot = useEditor((s) => s.updateGroupPivot);
   const playhead = usePlayhead((s) => s.playhead);
   const activeDirectorId = useEditor((s) => s.activeDirectorId);
   const setLayerGroup = useEditor((s) => s.setLayerGroup);
@@ -151,7 +157,33 @@ export function PropertiesPanel() {
                 ? gesturePreview.transform
                 : effectiveTransform(template, g.transform, { kind: 'group', id: g.id }, playhead, activeDirectorId)}
               canvas={template.canvas}
+              visualBox={(() => {
+                const canvasBox = derivedGroupBox(
+                  template,
+                  g.id,
+                  (id) => {
+                    const layer = template.layers.find((item) => item.id === id);
+                    return layer
+                      ? effectiveTransform(template, layer.transform, { kind: 'layer', id }, playhead, activeDirectorId)
+                      : g.transform;
+                  },
+                  (id) => {
+                    const group = template.groups.find((item) => item.id === id);
+                    return group
+                      ? effectiveTransform(template, group.transform, { kind: 'group', id }, playhead, activeDirectorId)
+                      : g.transform;
+                  },
+                );
+                if (!canvasBox) return null;
+                return boxInParentSpace(
+                  canvasBox,
+                  ancestorMatrix(template, g.parentId, (group) => (
+                    effectiveTransform(template, group.transform, { kind: 'group', id: group.id }, playhead, activeDirectorId)
+                  )),
+                );
+              })()}
               updateTransform={updateTransform}
+              updateGroupPivot={updateGroupPivot}
             />
           </SectionCollapseProvider>
         </div>
@@ -234,17 +266,26 @@ function PropertiesToolbar({
 }
 
 function TransformSection({
-  id, kind, t, layerType, canvas, updateTransform,
+  id, kind, t, layerType, canvas, visualBox, updateTransform, updateGroupPivot,
 }: {
   id: string;
   kind: 'layer' | 'group';
   t: Layer['transform'];
   layerType?: Layer['type'];
   canvas: { width: number; height: number };
+  visualBox?: { x: number; y: number; width: number; height: number } | null;
   updateTransform: (id: string, partial: Partial<Layer['transform']>, kind?: 'layer' | 'group') => void;
+  updateGroupPivot?: (id: string, partial: Partial<Layer['transform']>) => void;
 }) {
   const [scaleLocked, setScaleLocked] = useState(false);
   const set = (partial: Partial<Layer['transform']>) => updateTransform(id, partial, kind);
+  const setPivot = (partial: Partial<Layer['transform']>) => {
+    if (kind === 'group' && visualBox && updateGroupPivot) {
+      updateGroupPivot(id, partial);
+      return;
+    }
+    set(partial);
+  };
   const setScale = (next: Partial<Pick<Layer['transform'], 'scaleX' | 'scaleY'>>) => {
     set(scaleLocked ? lockedScale(t, next) : next);
   };
@@ -383,13 +424,17 @@ function TransformSection({
           value={t.anchorX}
           resetValue={0}
           step={0.05}
-          onChange={(v) => set(anchorCompensatedUpdate(t, { anchorX: v }))}
-          onPreview={(v) => previewPartial(v === null ? null : anchorCompensatedUpdate(t, { anchorX: v }))}
+          onChange={(v) => setPivot(visualBox
+            ? anchorCompensatedUpdateForBox(t, visualBox, { anchorX: v })
+            : anchorCompensatedUpdate(t, { anchorX: v }))}
+          onPreview={(v) => previewPartial(v === null ? null : (visualBox
+            ? anchorCompensatedUpdateForBox(t, visualBox, { anchorX: v })
+            : anchorCompensatedUpdate(t, { anchorX: v })))}
           extraActions={(
             <AxisPresets
               axis="x"
               current={t.anchorX}
-              onPick={(preset) => set(axisPresetX(t, preset))}
+              onPick={(preset) => setPivot(visualBox ? axisPresetXForBox(t, visualBox, preset) : axisPresetX(t, preset))}
             />
           )}
         />
@@ -398,13 +443,17 @@ function TransformSection({
           value={t.anchorY}
           resetValue={0}
           step={0.05}
-          onChange={(v) => set(anchorCompensatedUpdate(t, { anchorY: v }))}
-          onPreview={(v) => previewPartial(v === null ? null : anchorCompensatedUpdate(t, { anchorY: v }))}
+          onChange={(v) => setPivot(visualBox
+            ? anchorCompensatedUpdateForBox(t, visualBox, { anchorY: v })
+            : anchorCompensatedUpdate(t, { anchorY: v }))}
+          onPreview={(v) => previewPartial(v === null ? null : (visualBox
+            ? anchorCompensatedUpdateForBox(t, visualBox, { anchorY: v })
+            : anchorCompensatedUpdate(t, { anchorY: v })))}
           extraActions={(
             <AxisPresets
               axis="y"
               current={t.anchorY}
-              onPick={(preset) => set(axisPresetY(t, preset))}
+              onPick={(preset) => setPivot(visualBox ? axisPresetYForBox(t, visualBox, preset) : axisPresetY(t, preset))}
             />
           )}
         />

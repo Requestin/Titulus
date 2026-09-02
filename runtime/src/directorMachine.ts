@@ -48,6 +48,35 @@ export function reuseOrCreateDirectorMachine(
   return createDirectorMachine(timeline, opts);
 }
 
+export interface ApplySampleOptions {
+  /** Engine channel ticks (`fixed`) always follow the cue machine. */
+  playbackMode: 'fixed' | 'raf';
+  /** `playTimeline()` rAF loop. */
+  playing: boolean;
+  /** Editor Play via `beginLivePlayback()` + `advancePlayback()`. */
+  livePlayback: boolean;
+}
+
+/**
+ * Pick the sample for applyState.
+ *
+ * Engine ticks and live play must use the cue machine (wait-continue, pause,
+ * idle Update overlay). Editor idle/scrub must use sampleAt(globalFrame):
+ * seek() never advances machine locals, so machine.sample() would snap to
+ * local 0 (or a sticky wait pose) after any template edit / font reload.
+ */
+export function sampleForApplyState(
+  norm: NormalizedTimeline,
+  frame: number,
+  machine: DirectorMachine | null,
+  opts: ApplySampleOptions,
+): TimelineSample {
+  const useMachine = Boolean(machine) && (
+    opts.playbackMode === 'fixed' || opts.playing || opts.livePlayback
+  );
+  return useMachine && machine ? machine.sample() : sampleAt(norm, frame);
+}
+
 export function createDirectorMachine(
   timeline: Timeline,
   opts: DirectorMachineOptions = {},

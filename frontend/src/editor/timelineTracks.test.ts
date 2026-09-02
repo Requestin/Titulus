@@ -110,3 +110,29 @@ test('pointsFor reads per-property easing instead of the shared keyframe easing'
   assert.equal(pointsFor(template, target, 'x')[0]?.easing, 'power2.in');
   assert.equal(pointsFor(template, target, 'y')[0]?.easing, 'linear');
 });
+
+test('the same property can exist independently on two directors', () => {
+  const template = animatedRect();
+  template.timeline.directors.push({
+    id: 'update',
+    name: 'Update',
+    durationFrames: 100,
+    offsetFrames: 0,
+    autostart: false,
+    loop: false,
+    swing: false,
+  });
+  template.timeline.keyframes.push({
+    id: 'u',
+    frame: 0,
+    directorId: 'update',
+    layers: { box: { x: 99 } },
+    groups: {},
+    easing: 'linear',
+  });
+  const target = { kind: 'layer' as const, id: 'box' };
+  assert.deepEqual(tracksForDirector(template, 'default').map((item) => item.prop).sort(), ['x', 'y']);
+  assert.deepEqual(tracksForDirector(template, 'update').map((item) => item.prop), ['x']);
+  assert.deepEqual(pointsFor(template, target, 'x', 'default').map((item) => item.value), [10, 40]);
+  assert.deepEqual(pointsFor(template, target, 'x', 'update').map((item) => item.value), [99]);
+});

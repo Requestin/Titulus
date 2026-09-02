@@ -27,6 +27,7 @@ export type SelectedKeyframe = {
   target: Target;
   prop: AnimatableProp;
   frame: number;
+  directorId?: string;
 };
 
 export type PlannedMove = {
@@ -35,6 +36,7 @@ export type PlannedMove = {
   fromFrame: number;
   toFrame: number;
   value: number;
+  directorId?: string;
 };
 
 const PROP_ORDER = [
@@ -122,9 +124,58 @@ export function bagFor(keyframe: TimelineKeyframe, target: Target) {
   return target.kind === 'layer' ? keyframe.layers[target.id] : keyframe.groups[target.id];
 }
 
-export function pointsFor(template: Template, target: Target, prop: AnimatableProp): KeyframePoint[] {
+export function directorForTrack(timeline: Timeline, target: Target, prop: AnimatableProp): string {
+  return timeline.propertyTrackDirectors?.[target.id]?.[prop]
+    ?? timeline.trackDirectors[target.id]
+    ?? 'default';
+}
+
+/** Whether this keyframe's value for (target, prop) belongs to `directorId`. */
+export function keyframeBelongsToDirector(
+  timeline: Timeline,
+  keyframe: TimelineKeyframe,
+  target: Target,
+  prop: AnimatableProp,
+  directorId: string,
+): boolean {
+  if (bagFor(keyframe, target)?.[prop] === undefined) return false;
+  if (keyframe.directorId) return keyframe.directorId === directorId;
+  return directorForTrack(timeline, target, prop) === directorId;
+}
+
+/**
+ * Untagged keyframes follow propertyTrackDirectors. Tagged keyframes are a
+ * second copy of the same prop on another director.
+ */
+export function keyframeScopeForWrite(
+  template: Template,
+  target: Target,
+  prop: AnimatableProp,
+  activeDirectorId: string,
+): string | undefined {
+  const taggedHere = template.timeline.keyframes.some((keyframe) => (
+    keyframe.directorId === activeDirectorId && bagFor(keyframe, target)?.[prop] !== undefined
+  ));
+  if (taggedHere) return activeDirectorId;
+  const existsElsewhere = template.timeline.keyframes.some((keyframe) => (
+    keyframeBelongsToDirector(template.timeline, keyframe, target, prop, activeDirectorId) === false
+    && bagFor(keyframe, target)?.[prop] !== undefined
+  ));
+  if (existsElsewhere) return activeDirectorId;
+  return undefined;
+}
+
+export function pointsFor(
+  template: Template,
+  target: Target,
+  prop: AnimatableProp,
+  directorId?: string,
+): KeyframePoint[] {
   const points: KeyframePoint[] = [];
   for (const keyframe of template.timeline.keyframes) {
+    if (directorId && !keyframeBelongsToDirector(template.timeline, keyframe, target, prop, directorId)) {
+      continue;
+    }
     const value = bagFor(keyframe, target)?.[prop];
     if (value === undefined) continue;
     points.push({
@@ -134,12 +185,6 @@ export function pointsFor(template: Template, target: Target, prop: AnimatablePr
     });
   }
   return points.sort((left, right) => left.frame - right.frame);
-}
-
-export function directorForTrack(timeline: Timeline, target: Target, prop: AnimatableProp): string {
-  return timeline.propertyTrackDirectors?.[target.id]?.[prop]
-    ?? timeline.trackDirectors[target.id]
-    ?? 'default';
 }
 
 export function assignPropertyDirector(
@@ -165,9 +210,26 @@ export function assignPropertyDirector(
 }
 
 export function tracksForDirector(template: Template, directorId: string): TimelineTrack[] {
-  return collectTracks(template).filter((track) => (
-    directorForTrack(template.timeline, track.target, track.prop) === directorId
-  ));
+  const seen = new Set<string>();
+  const tracks: TimelineTrack[] = [];
+  for (const keyframe of template.timeline.keyframes) {
+    const visit = (kind: Target['kind'], id: string, bag: Record<string, unknown>) => {
+      for (const prop of Object.keys(bag) as AnimatableProp[]) {
+        if (!keyframeBelongsToDirector(template.timeline, keyframe, { kind, id }, prop, directorId)) continue;
+        const key = trackKey({ kind, id }, prop);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        tracks.push({ target: { kind, id }, prop });
+      }
+    };
+    for (const [id, bag] of Object.entries(keyframe.layers)) visit('layer', id, bag);
+    for (const [id, bag] of Object.entries(keyframe.groups)) visit('group', id, bag);
+  }
+  return tracks.sort((left, right) => {
+    const byName = targetLabel(template, left.target).localeCompare(targetLabel(template, right.target));
+    if (byName !== 0) return byName;
+    return PROP_ORDER.indexOf(left.prop) - PROP_ORDER.indexOf(right.prop);
+  });
 }
 
 /**
@@ -185,7 +247,7 @@ export function planKeyframeMoves(
   if (delta === 0 || selected.length === 0) return [];
   const byTrack = new Map<string, SelectedKeyframe[]>();
   for (const keyframe of selected) {
-    const key = trackKey(keyframe.target, keyframe.prop);
+    const key = `${trackKey(keyframe.target, keyframe.prop)}:${keyframe.directorId ?? ''}`;
     const list = byTrack.get(key) ?? [];
     list.push(keyframe);
     byTrack.set(key, list);
@@ -200,7 +262,7 @@ export function planKeyframeMoves(
     }
     for (const [toFrame, keyframe] of winner) {
       if (toFrame === keyframe.frame) continue;
-      const point = pointsFor(template, keyframe.target, keyframe.prop)
+      const point = pointsFor(template, keyframe.target, keyframe.prop, keyframe.directorId)
         .find((item) => item.frame === keyframe.frame);
       if (!point) continue;
       moves.push({
@@ -209,6 +271,7 @@ export function planKeyframeMoves(
         fromFrame: keyframe.frame,
         toFrame,
         value: point.value,
+        ...(keyframe.directorId ? { directorId: keyframe.directorId } : {}),
       });
     }
   }
@@ -218,11 +281,14 @@ export function planKeyframeMoves(
   ));
 }
 
-export function kfAt(template: Template, frame: number): TimelineKeyframe {
+export function kfAt(template: Template, frame: number, directorId?: string): TimelineKeyframe {
   const snapped = Math.round(frame);
-  let keyframe = template.timeline.keyframes.find((item) => item.frame === snapped);
+  let keyframe = template.timeline.keyframes.find((item) => (
+    item.frame === snapped && (item.directorId ?? undefined) === directorId
+  ));
   if (!keyframe) {
     keyframe = { id: createId(), frame: snapped, layers: {}, groups: {}, easing: 'power2.out' };
+    if (directorId) keyframe.directorId = directorId;
     template.timeline.keyframes.push(keyframe);
     template.timeline.keyframes.sort((left, right) => left.frame - right.frame);
   }
@@ -241,8 +307,9 @@ export function writePoint(
   frame: number,
   prop: AnimatableProp,
   value: number,
+  directorId?: string,
 ): void {
-  const keyframe = kfAt(template, frame);
+  const keyframe = kfAt(template, frame, directorId);
   const section = target.kind === 'layer' ? keyframe.layers : keyframe.groups;
   (section[target.id] ??= {})[prop] = value;
 }
@@ -252,8 +319,11 @@ export function erasePoint(
   target: Target,
   frame: number,
   prop: AnimatableProp,
+  directorId?: string,
 ): void {
-  const keyframe = template.timeline.keyframes.find((item) => item.frame === frame);
+  const keyframe = template.timeline.keyframes.find((item) => (
+    item.frame === frame && (item.directorId ?? undefined) === directorId
+  ));
   if (!keyframe) return;
   const section = target.kind === 'layer' ? keyframe.layers : keyframe.groups;
   const bag = section[target.id];
@@ -265,10 +335,10 @@ export function erasePoint(
 
 export function applyKeyframeMoves(template: Template, moves: PlannedMove[]): void {
   for (const move of moves) {
-    erasePoint(template, move.target, move.fromFrame, move.prop);
+    erasePoint(template, move.target, move.fromFrame, move.prop, move.directorId);
   }
   for (const move of moves) {
-    writePoint(template, move.target, move.toFrame, move.prop, move.value);
+    writePoint(template, move.target, move.toFrame, move.prop, move.value, move.directorId);
   }
 }
 
@@ -282,6 +352,7 @@ export function retargetSelected(
       && item.target.id === key.target.id
       && item.prop === key.prop
       && item.fromFrame === key.frame
+      && (item.directorId ?? undefined) === (key.directorId ?? undefined)
     ));
     return move ? { ...key, frame: move.toFrame } : key;
   });

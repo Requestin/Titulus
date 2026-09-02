@@ -72,6 +72,19 @@ test('stretchObjectSummary is one undoable gesture', () => {
   );
 });
 
+test('a director can add a property that another director already animates', () => {
+  const { target } = loadTwoKeys();
+  useEditor.getState().setActiveDirector('extra');
+  useEditor.getState().addTrackAtPlayhead(target, 'x');
+  const template = useEditor.getState().template!;
+  assert.ok(template.timeline.keyframes.some((keyframe) => (
+    keyframe.directorId === 'extra' && keyframe.layers.box?.x !== undefined
+  )));
+  assert.ok(pointsFor(template, target, 'x', 'default').length > 0);
+  assert.ok(pointsFor(template, target, 'x', 'extra').length > 0);
+  assert.equal(directorForTrack(template.timeline, target, 'x'), 'default');
+});
+
 test('live playhead does not mutate the editor store', () => {
   loadTwoKeys();
   useEditor.getState().setPlayhead(4);

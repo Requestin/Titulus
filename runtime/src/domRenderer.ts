@@ -31,7 +31,12 @@ import {
 } from './maskGeometry.js';
 import type { RootStackEntry } from './schema.js';
 import { normalizeTimeline, sampleAt, sampleAtLocals, actionsCrossed, type NormalizedTimeline, type TimelineSample } from './timeline.js';
-import { reuseOrCreateDirectorMachine, createDirectorMachine, type DirectorMachine } from './directorMachine.js';
+import {
+  reuseOrCreateDirectorMachine,
+  createDirectorMachine,
+  sampleForApplyState,
+  type DirectorMachine,
+} from './directorMachine.js';
 import { effectiveGradient, gradientBackgroundCss } from './rectGradient.js';
 import {
   crawlPaintText,
@@ -129,6 +134,8 @@ export class TemplateRenderer {
   private mode: 'fixed' | 'raf';
   private fixedTickRate: number;
   private playing = false;
+  /** Editor Play is driven by advancePlayback without playTimeline(). */
+  private livePlayback = false;
   private frame = 0;                  // global playhead (frames)
   private lastFrameSampled: number | null = null;
   private directorMachine: DirectorMachine | null = null;
@@ -245,13 +252,16 @@ export class TemplateRenderer {
   playUpdate(variables: Record<string, string | number> = NO_VARS): void {
     this.pendingVariables = { ...this.variables, ...variables };
     this.ensureDirectorMachine(true);
-    this.directorMachine?.continue();
+    // Do not continue() here: default is often waiting on stopDirectorAndWaitContinue.
+    // continue() would resume IN/OUT. Update is a separate director and advances
+    // while default stays frozen.
     if (!this.directorMachine?.startUpdate()) this.flushPendingVariables();
   }
 
   /** Editor Play: arm a fresh cue machine at the current frame. */
   beginLivePlayback(): void {
     if (!this.template) return;
+    this.livePlayback = true;
     this.directorMachine = reuseOrCreateDirectorMachine(
       null,
       this.template.timeline,
@@ -263,6 +273,7 @@ export class TemplateRenderer {
   /** Stop timeline playback (freeze at the current frame). */
   stopTimeline(): void {
     this.playing = false;
+    this.livePlayback = false;
     this.stopRaf();
     this.stopClockTicker();
   }
@@ -276,6 +287,7 @@ export class TemplateRenderer {
    * editor Play/scrub freeze on templates that have cues.
    */
   seek(frame: number): void {
+    this.livePlayback = false;
     this.frame = Math.max(0, Math.round(frame));
     this.lastFrameSampled = null;
     if (!this.template || !this.norm) return;
@@ -299,6 +311,7 @@ export class TemplateRenderer {
    */
   seekLocals(locals: Record<string, number | null | undefined>): void {
     if (!this.template || !this.norm) return;
+    this.livePlayback = false;
     this.lastFrameSampled = null;
     const sample = sampleAtLocals(this.norm, locals);
     this.lastTimelineSample = sample;
@@ -835,9 +848,16 @@ export class TemplateRenderer {
     this.stats.maskWrites = 0;
     this.stats.textWrites = 0;
 
-    const sample: TimelineSample = this.directorMachine
-      ? this.directorMachine.sample()
-      : sampleAt(this.norm, frame);
+    const sample: TimelineSample = sampleForApplyState(
+      this.norm,
+      frame,
+      this.directorMachine,
+      {
+        playbackMode: this.mode,
+        playing: this.playing,
+        livePlayback: this.livePlayback,
+      },
+    );
     this.lastTimelineSample = sample;
 
     // Fire actions crossed since the last sampled frame (cue points).

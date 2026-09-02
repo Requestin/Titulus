@@ -159,6 +159,48 @@ function splitKeyframeByPropertyDirector(
   }
 }
 
+function objectDirector(tl: Timeline, targetId: string): string {
+  return tl.trackDirectors[targetId] ?? 'default';
+}
+
+/**
+ * Partition one unscope keyframe into per-director slices so a shared frame
+ * that carries both a default-owned group and an Update-owned layer does not
+ * leak the layer bag into default (or the group bag into Update).
+ */
+function splitKeyframeByObjectDirector(
+  tl: Timeline,
+  kf: TimelineKeyframe,
+  rawByDirector: Record<string, TimelineKeyframe[]>,
+): void {
+  const layersByDirector: Record<string, Record<string, AnimatableValues>> = {};
+  const groupsByDirector: Record<string, Record<string, AnimatableValues>> = {};
+  for (const [targetId, bag] of Object.entries(kf.layers)) {
+    const directorId = objectDirector(tl, targetId);
+    (layersByDirector[directorId] ??= {})[targetId] = bag;
+  }
+  for (const [targetId, bag] of Object.entries(kf.groups)) {
+    const directorId = objectDirector(tl, targetId);
+    (groupsByDirector[directorId] ??= {})[targetId] = bag;
+  }
+  const directorIds = new Set([
+    ...Object.keys(layersByDirector),
+    ...Object.keys(groupsByDirector),
+  ]);
+  if (directorIds.size === 0) {
+    if (rawByDirector['default']) rawByDirector['default'].push(kf);
+    return;
+  }
+  for (const directorId of directorIds) {
+    if (!rawByDirector[directorId]) continue;
+    rawByDirector[directorId].push({
+      ...kf,
+      layers: layersByDirector[directorId] ?? {},
+      groups: groupsByDirector[directorId] ?? {},
+    });
+  }
+}
+
 export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
   // trackDirectors: targetId -> directorId. Build the reverse: directorId -> targets.
   const directorTargets: Record<string, Set<string>> = {};
@@ -173,23 +215,15 @@ export function normalizeTimeline(tl: Timeline): NormalizedTimeline {
 
   const propertyOverrides = hasPropertyOverrides(tl);
   for (const kf of tl.keyframes) {
+    if (kf.directorId) {
+      if (rawByDirector[kf.directorId]) rawByDirector[kf.directorId].push(kf);
+      continue;
+    }
     if (propertyOverrides) {
       splitKeyframeByPropertyDirector(tl, kf, rawByDirector);
       continue;
     }
-    const allTargets = new Set([...Object.keys(kf.layers), ...Object.keys(kf.groups)]);
-    // If no explicit track mapping, default director 'default' owns it.
-    let assigned = false;
-    for (const target of allTargets) {
-      const did = tl.trackDirectors[target];
-      if (did && rawByDirector[did]) {
-        rawByDirector[did].push(kf);
-        assigned = true;
-      }
-    }
-    if (!assigned && rawByDirector['default']) {
-      rawByDirector['default'].push(kf);
-    }
+    splitKeyframeByObjectDirector(tl, kf, rawByDirector);
   }
   for (const did of Object.keys(rawByDirector)) {
     rawByDirector[did].sort((a, b) => a.frame - b.frame);
@@ -467,6 +501,7 @@ export function timelineNeedsDirectorRuntime(tl: Timeline): boolean {
   for (const cue of tl.cues ?? []) {
     if (cue.items.some(cueItemIsStateful)) return true;
   }
+  if (tl.keyframes.some((keyframe) => Boolean(keyframe.directorId))) return true;
   return false;
 }
 

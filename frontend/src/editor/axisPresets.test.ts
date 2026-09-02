@@ -3,11 +3,20 @@ import test from 'node:test';
 import { createDefaultTransform } from '@runtime';
 import {
   axisPresetX,
+  axisPresetXForBox,
   axisPresetY,
+  axisPresetYForBox,
   canvasFitSize,
   has25dCost,
   lockedScale,
 } from './axisPresets';
+
+test('axis presets against a visual box ignore dummy group width/height', () => {
+  const t = { ...createDefaultTransform(100, 40), width: 1, height: 1, anchorX: 0, anchorY: 0 };
+  const box = { x: 120, y: 50, width: 200, height: 80 };
+  assert.deepEqual(axisPresetXForBox(t, box, 0.5), { anchorX: 0.5, x: 220, y: 40 });
+  assert.deepEqual(axisPresetYForBox(t, box, 0.5), { anchorY: 0.5, x: 100, y: 90 });
+});
 
 test('horizontal axis presets compensate x so the unrotated box stays put', () => {
   const t = { ...createDefaultTransform(200, 100), width: 200, height: 80, anchorX: 0, anchorY: 0 };

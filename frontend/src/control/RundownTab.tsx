@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Variable } from '@runtime';
-import { hasUpdateDirectorTracks } from '@runtime';
+import { hasUpdateDirectorTracks, resolveLayerId } from '@runtime';
 import {
   Plus, FileUp, FileDown, Copy, Trash2, Pencil, ChevronDown, ChevronRight,
   ArrowUp, ArrowDown, GripVertical, Folder, ArrowRight, Square,
@@ -17,7 +17,13 @@ import {
   type TemplateSummary,
 } from '@/core/api';
 import { prepareForAir } from '@/control/prepareForAir';
-import { continueCommand, isWaitingContinue } from '@/control/onAirContinue';
+import {
+  continueCommand,
+  isWaitingContinue,
+  liveSlotIdSet,
+  occupantForSourceLayer,
+  runtimeIdForSlot,
+} from '@/control/onAirContinue';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/form';
 import { cn } from '@/lib/cn';
@@ -32,6 +38,7 @@ type SendControl = (cmd: {
   type: 'take' | 'update' | 'clear' | 'continue';
   channelId: string;
   templateId?: string;
+  slotId?: string;
   template?: unknown;
   variables?: Record<string, string | number>;
 }) => boolean;
@@ -109,7 +116,7 @@ export function RundownTab({
   const active = useMemo(() => rundowns.find((r) => r.id === activeId) ?? null, [rundowns, activeId]);
   // Air target is always the Control top-bar channel; rundowns are scoped to that channel.
   const channelId = fallbackChannelId || 'default';
-  const channelLiveSet = new Set(onAir[channelId] ?? []);
+  const channelLiveSet = liveSlotIdSet(onAirDetails, channelId, onAir[channelId] ?? []);
 
   const flatTakeable = useMemo(() => {
     if (!active) return [] as Array<{ slot: RundownSlot; parentId: string | null; index: number }>;
@@ -208,14 +215,17 @@ export function RundownTab({
     const tpl = await ensureTemplate(slot.templateId).catch(() => null);
     if (!tpl) return;
     const values = buildPayload(slot, tpl.data.variables);
-    const live = channelLiveSet.has(slot.slotId);
+    const layerId = resolveLayerId(tpl.data.layerId);
+    const occupant = occupantForSourceLayer(onAirDetails, channelId, tpl.data.id, layerId);
+    const live = Boolean(occupant) || channelLiveSet.has(slot.slotId);
     if (live && hasUpdateDirectorTracks(tpl.data.timeline)) {
       const prepared = await prepareForAir(tpl.data, 'update', values);
       if (prepared.blocked) return toast.error(prepared.errors[0]?.message || 'Data pipeline blocked UPDATE');
       const ok = send({
         type: 'update',
         channelId,
-        templateId: slot.slotId,
+        templateId: occupant?.templateId ?? runtimeIdForSlot(onAirDetails, channelId, slot.slotId),
+        slotId: slot.slotId,
         variables: { ...values, ...prepared.overrides },
       });
       if (!ok) return toast.error('Control socket disconnected');
@@ -227,6 +237,7 @@ export function RundownTab({
       type: 'take',
       channelId,
       templateId: slot.slotId,
+      slotId: slot.slotId,
       template: prepared.template ?? tpl.data,
       variables: { ...values, ...prepared.overrides },
     });
@@ -245,7 +256,8 @@ export function RundownTab({
   }
 
   function clearSlot(slotId: string) {
-    const ok = send({ type: 'clear', channelId, templateId: slotId });
+    const runtimeId = runtimeIdForSlot(onAirDetails, channelId, slotId);
+    const ok = send({ type: 'clear', channelId, templateId: runtimeId });
     if (!ok) return toast.error('Control socket disconnected');
     patchOnAir(channelId, (cur) => cur.filter((id) => id !== slotId));
   }
@@ -735,7 +747,7 @@ export function RundownTab({
                 live={live}
                 canContinue={isWaitingContinue(onAirDetails, channelId, slot.slotId)}
                 onTake={() => void takeSlot(slot)}
-                onContinue={() => send(continueCommand(channelId, slot.slotId))}
+                onContinue={() => send(continueCommand(channelId, runtimeIdForSlot(onAirDetails, channelId, slot.slotId)))}
                 onClear={() => clearSlot(slot.slotId)}
               />
             )}
@@ -804,7 +816,7 @@ export function RundownTab({
           variant="neutral"
           disabled={!focusedTakeable || !isWaitingContinue(onAirDetails, channelId, focusedTakeable.slot.slotId)}
           onClick={() => {
-            if (focusedTakeable) send(continueCommand(channelId, focusedTakeable.slot.slotId));
+            if (focusedTakeable) send(continueCommand(channelId, runtimeIdForSlot(onAirDetails, channelId, focusedTakeable.slot.slotId)));
           }}
         >
           CONTINUE

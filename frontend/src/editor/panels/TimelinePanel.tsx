@@ -20,6 +20,7 @@ import { isCrawlDirector } from '../crawlTimeline';
 import { canRemoveDirector, canRenameDirector, listCuesForDirector } from '../timelineCues';
 import {
   collectTracks,
+  tracksForDirector,
   type SelectedKeyframe,
 } from '../timelineTracks';
 import { objectSummary as objectRange } from '../timelineSummary';
@@ -94,9 +95,9 @@ function Ruler({
   );
 }
 
-function untrackedPropsFor(template: Template, target: Target): AnimatableProp[] {
+function untrackedPropsFor(template: Template, target: Target, directorId: string): AnimatableProp[] {
   const tracked = new Set(
-    collectTracks(template)
+    tracksForDirector(template, directorId)
       .filter((track) => track.target.kind === target.kind && track.target.id === target.id)
       .map((track) => track.prop),
   );
@@ -130,7 +131,6 @@ export function TimelinePanel() {
   const removeDirector = useEditor((state) => state.removeDirector);
   const addTrackAtPlayhead = useEditor((state) => state.addTrackAtPlayhead);
   const addKeyframeAtPlayhead = useEditor((state) => state.addKeyframeAtPlayhead);
-  const assignPropertyDirector = useEditor((state) => state.assignPropertyDirector);
   const assignTracksToDirector = useEditor((state) => state.assignTracksToDirector);
   const removeTrack = useEditor((state) => state.removeTrack);
   const setSelectedKeyframes = useEditor((state) => state.setSelectedKeyframes);
@@ -207,7 +207,7 @@ export function TimelinePanel() {
   const allTracks = collectTracks(current);
   const layout = buildAllDirectorsLaneLayout(current, directors, collapsedDirectors, pxPerFrame, collapsedObjects);
   const spans = directorLaneSpans(layout.rows);
-  const untrackedProps = selectedTarget ? untrackedPropsFor(current, selectedTarget) : [];
+  const untrackedProps = selectedTarget ? untrackedPropsFor(current, selectedTarget, activeDirectorId) : [];
   const activeTrackResolved = activeTrack
     && allTracks.some((track) => track.target.id === activeTrack.target.id && track.prop === activeTrack.prop)
     ? activeTrack
@@ -415,7 +415,6 @@ export function TimelinePanel() {
         onAddProp={(prop) => {
           if (!selectedTarget) return;
           addTrackAtPlayhead(selectedTarget, prop);
-          assignPropertyDirector(selectedTarget, prop, director?.id ?? 'default');
           setActiveTrack({ target: selectedTarget, prop });
           setAddOpen(false);
         }}
@@ -706,7 +705,7 @@ export function TimelinePanel() {
               playhead={view === 'curve' ? playhead : globalPlayhead}
               onScrub={scrubFromEvent}
             />
-            {view === 'curve' && director && (
+            {view === 'curve' && director && listCuesForDirector(current.timeline.cues, director.id).length > 0 && (
               <ActionLane
                 cues={listCuesForDirector(current.timeline.cues, director.id)}
                 duration={director.durationFrames}
@@ -765,6 +764,7 @@ export function TimelinePanel() {
                   key={`lane-t:${row.target.id}:${row.prop}:${row.y}`}
                   target={row.target}
                   prop={row.prop}
+                  directorId={row.directorId}
                   pxPerFrame={pxPerFrame}
                   frameFromEvent={laneFrameFromEvent}
                   selected={selectedKeyframes}

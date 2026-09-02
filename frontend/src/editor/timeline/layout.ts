@@ -57,6 +57,7 @@ export type TrackLaneRow = {
   kind: 'track';
   target: Target;
   prop: AnimatableProp;
+  directorId?: string;
   y: number;
   height: number;
 };
@@ -132,13 +133,17 @@ export function buildAllDirectorsLaneLayout(
     });
     y += DIRECTOR_HDR_H;
     if (collapsed) continue;
-    rows.push({
-      kind: 'action',
-      directorId: director.id,
-      y,
-      height: ACTION_LANE_H,
-    });
-    y += ACTION_LANE_H;
+    const cues = template.timeline.cues ?? [];
+    const hasActions = cues.some((cue) => cue.directorId === director.id);
+    if (hasActions) {
+      rows.push({
+        kind: 'action',
+        directorId: director.id,
+        y,
+        height: ACTION_LANE_H,
+      });
+      y += ACTION_LANE_H;
+    }
     const tracks = tracksForDirector(template, director.id).filter((track) => {
       if (track.prop !== 'crawlProgress') return true;
       if (track.target.kind !== 'layer') return false;
@@ -148,7 +153,11 @@ export function buildAllDirectorsLaneLayout(
     const nested = buildLaneLayout(template, tracks, pxPerFrame, collapsedObjects);
     for (const row of nested.rows) {
       if (row.kind === 'director') continue;
-      rows.push({ ...row, y } as LaneRow);
+      if (row.kind === 'track') {
+        rows.push({ ...row, y, directorId: director.id });
+      } else {
+        rows.push({ ...row, y } as LaneRow);
+      }
       y += row.height;
     }
   }
@@ -177,13 +186,14 @@ export function keyframeHits(template: Template, rows: LaneRow[], pxPerFrame: nu
   const hits: KeyframeHit[] = [];
   for (const row of rows) {
     if (row.kind !== 'track') continue;
-    for (const point of pointsFor(template, row.target, row.prop)) {
+    for (const point of pointsFor(template, row.target, row.prop, row.directorId)) {
       hits.push({
         target: row.target,
         prop: row.prop,
         frame: point.frame,
         x: point.frame * pxPerFrame,
         y: row.y + row.height / 2,
+        directorId: row.directorId,
       });
     }
   }

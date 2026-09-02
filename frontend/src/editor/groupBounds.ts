@@ -2,6 +2,7 @@ import type { Template, Transform } from '@runtime';
 import {
   affineFromTransform,
   ancestorMatrix,
+  invertAffine,
   multiplyAffine,
   transformPoint,
   type AffineMatrix,
@@ -80,4 +81,67 @@ export function derivedGroupBox(
     );
   }).filter((box): box is BoundsBox => box !== null);
   return unionBoxes(boxes);
+}
+
+/** Visual axis-center in the same space as `box` (canvas for overlay). */
+export function groupVisualPivot(
+  box: BoundsBox,
+  anchorX: number,
+  anchorY: number,
+): { x: number; y: number } {
+  return {
+    x: box.x + box.width * anchorX,
+    y: box.y + box.height * anchorY,
+  };
+}
+
+/** Map a canvas-space AABB into a group's parent space. */
+export function boxInParentSpace(box: BoundsBox, parentMatrix: AffineMatrix): BoundsBox {
+  const inverse = invertAffine(parentMatrix);
+  if (!inverse) return box;
+  return unionBoxes([
+    pointBox(transformPoint(inverse, { x: box.x, y: box.y })),
+    pointBox(transformPoint(inverse, { x: box.x + box.width, y: box.y })),
+    pointBox(transformPoint(inverse, { x: box.x + box.width, y: box.y + box.height })),
+    pointBox(transformPoint(inverse, { x: box.x, y: box.y + box.height })),
+  ]) ?? box;
+}
+
+function pointBox(point: { x: number; y: number }): BoundsBox {
+  return { x: point.x, y: point.y, width: 0, height: 0 };
+}
+
+/** Shift direct children so a group origin change does not move them on canvas. */
+export function offsetDirectChildren(
+  template: Template,
+  groupId: string,
+  dx: number,
+  dy: number,
+): void {
+  if (dx === 0 && dy === 0) return;
+  for (const entry of template.groupStacks[groupId] ?? []) {
+    if (entry.kind === 'layer') {
+      const layer = template.layers.find((item) => item.id === entry.id);
+      if (!layer) continue;
+      layer.transform.x += dx;
+      layer.transform.y += dy;
+      for (const keyframe of template.timeline.keyframes) {
+        const bag = keyframe.layers[entry.id];
+        if (!bag) continue;
+        if (bag.x !== undefined) bag.x += dx;
+        if (bag.y !== undefined) bag.y += dy;
+      }
+      continue;
+    }
+    const group = template.groups.find((item) => item.id === entry.id);
+    if (!group) continue;
+    group.transform.x += dx;
+    group.transform.y += dy;
+    for (const keyframe of template.timeline.keyframes) {
+      const bag = keyframe.groups[entry.id];
+      if (!bag) continue;
+      if (bag.x !== undefined) bag.x += dx;
+      if (bag.y !== undefined) bag.y += dy;
+    }
+  }
 }
