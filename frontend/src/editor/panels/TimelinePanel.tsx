@@ -68,7 +68,13 @@ function Ruler({
     <div
       className="sticky left-0 top-0 z-sticky cursor-pointer select-none border-b border-border bg-surface-2"
       style={{ height: RULER_H }}
-      onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); onScrub(event); }}
+      draggable={false}
+      onDragStart={(event) => event.preventDefault()}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        onScrub(event);
+      }}
       onPointerMove={(event) => { if (event.buttons === 1) onScrub(event); }}
     >
       {ticks.map((frame) => (
@@ -641,7 +647,9 @@ export function TimelinePanel() {
 
         <div
           ref={lanesScrollRef}
-          className="relative min-h-0 min-w-0 flex-1 overflow-auto"
+          className="timeline-no-drag relative min-h-0 min-w-0 flex-1 overflow-auto"
+          draggable={false}
+          onDragStart={(event) => event.preventDefault()}
           onScroll={() => syncScroll('lanes')}
           onPointerDown={(event) => {
             if (view !== 'dope') return;
@@ -683,6 +691,8 @@ export function TimelinePanel() {
           }}
         >
           <div
+            draggable={false}
+            onDragStart={(event) => event.preventDefault()}
             style={{
               width: timelineWidth,
               minHeight: '100%',
@@ -796,13 +806,15 @@ export function TimelinePanel() {
                 <div
                   key={`ph:${span.directorId}`}
                   data-playhead={dir.id}
-                  className="absolute z-[60] w-2 -translate-x-1/2 cursor-ew-resize"
+                  className="absolute z-[60] w-2 -translate-x-1/2 cursor-ew-resize select-none"
+                  draggable={false}
                   style={{
                     left: local * pxPerFrame,
                     top: RULER_H + span.y,
                     height: span.height,
                   }}
                   title={`${dir.name} local ${Math.round(local)}`}
+                  onDragStart={(event) => event.preventDefault()}
                   onPointerDown={(event) => startLocalPlayheadDrag(dir.id, dir.durationFrames, event)}
                 >
                   <div className="mx-auto h-full w-px bg-live" />

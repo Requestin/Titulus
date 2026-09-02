@@ -64,6 +64,16 @@
   }
 }
 
+@layer utilities {
+  /* Native HTML drag of the timeline strip steals playhead scrub. */
+  .timeline-no-drag,
+  .timeline-no-drag * {
+    -webkit-user-drag: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
