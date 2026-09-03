@@ -28,7 +28,7 @@ import { keyframesInMarquee, normalizeMarquee, toggleKeyframeSelection } from '.
 import { CurveView } from '../timeline/CurveView';
 import { TimelineTransport, TrackEditToolbar } from '../timeline/Transport';
 import { ActionLane } from '../timeline/ActionLane';
-import { DopeLane } from '../timeline/DopeLane';
+import { DopeLane, type LiveDragState } from '../timeline/DopeLane';
 import { SummaryBar } from '../timeline/SummaryBar';
 import {
   ACTION_LANE_H,
@@ -151,6 +151,7 @@ export function TimelinePanel() {
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [editingDirectorId, setEditingDirectorId] = useState<string | null>(null);
   const [directorNameDraft, setDirectorNameDraft] = useState('');
+  const [liveDrag, setLiveDrag] = useState<LiveDragState | null>(null);
   const headersScrollRef = useRef<HTMLDivElement>(null);
   const lanesScrollRef = useRef<HTMLDivElement>(null);
   const scrollSyncRef = useRef(false);
@@ -770,6 +771,8 @@ export function TimelinePanel() {
                   selected={selectedKeyframes}
                   onSelect={(keyframe, mode) => setSelectedKeyframes(toggleKeyframeSelection(selectedKeyframes, keyframe, mode))}
                   onMoveSelected={moveSelectedKeyframes}
+                  liveDrag={liveDrag}
+                  onLiveDragChange={setLiveDrag}
                 />
               );
             })}

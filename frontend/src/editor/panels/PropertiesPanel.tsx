@@ -15,6 +15,7 @@ import { usePlayhead } from '../playheadStore';
 import { clearGesturePreview, gesturePreviewStore, scheduleGesturePreview } from '../gesturePreview';
 import { MediaUploadButton } from '../MediaUploadButton';
 import { MamPicker, SelectedMediaInfo } from '@/media/MamPicker';
+import { FontFamilySelect, FontMamDialog } from '@/media/FontMamDialog';
 import {
   Checkbox,
   CollapseAllButton,
@@ -65,6 +66,7 @@ export function PropertiesPanel() {
     version: 0,
     open: true,
   });
+  const [fontMamOpen, setFontMamOpen] = useState(false);
   const selectedCueId = useEditor((s) => s.selectedCueId);
   const updateCue = useEditor((s) => s.updateCue);
   const updateCueItem = useEditor((s) => s.updateCueItem);
@@ -249,6 +251,7 @@ export function PropertiesPanel() {
             variables={variables}
             updateLayer={updateLayer}
             setGradientWeight={setGradientWeight}
+            onOpenFontMam={() => setFontMamOpen(true)}
             weightValue={(prop, base) => effectiveGradientWeight(
               template,
               base,
@@ -260,6 +263,7 @@ export function PropertiesPanel() {
           />
         </SectionCollapseProvider>
       </div>
+      <FontMamDialog open={fontMamOpen} onClose={() => setFontMamOpen(false)} />
     </div>
   );
 }
@@ -701,12 +705,14 @@ function TypeSection({
   variables,
   updateLayer,
   setGradientWeight,
+  onOpenFontMam,
   weightValue,
 }: {
   layer: Layer;
   variables: Variable[];
   updateLayer: UpdateLayer;
   setGradientWeight?: SetGradientWeight;
+  onOpenFontMam?: () => void;
   weightValue?: (prop: AnimatableProp, base: number) => number;
 }) {
   switch (layer.type) {
@@ -721,7 +727,7 @@ function TypeSection({
               onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'text') l.content = v; })}
             />
           </Section>
-          <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} />
+          <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} onOpenFontMam={onOpenFontMam ?? (() => {})} />
         </>
       );
     case 'rect':
@@ -943,7 +949,7 @@ function TypeSection({
               </Field>
             )}
           </Section>
-          <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} />
+          <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} onOpenFontMam={onOpenFontMam ?? (() => {})} />
         </>
       );
     case 'crawl':
@@ -960,20 +966,30 @@ function TypeSection({
           <Section title="Crawl">
             <CrawlProperties layer={layer} updateLayer={(id, mutator) => updateLayer(id, (l) => { if (l.type === 'crawl') mutator(l); })} />
           </Section>
-          <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} />
+          <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} onOpenFontMam={onOpenFontMam ?? (() => {})} />
         </>
       );
   }
 }
 
-function TextStyleSection({ layer, variables, updateLayer }: { layer: Extract<Layer, { style: import('@runtime').TextStyle }>; variables: Variable[]; updateLayer: UpdateLayer }) {
+function TextStyleSection({ layer, variables, updateLayer, onOpenFontMam }: { layer: Extract<Layer, { style: import('@runtime').TextStyle }>; variables: Variable[]; updateLayer: UpdateLayer; onOpenFontMam: () => void }) {
   const s = layer.style;
   const setStyle = (mutator: (st: import('@runtime').TextStyle) => void) =>
     updateLayer(layer.id, (l) => { if ('style' in l) mutator(l.style); });
   return (
     <Section title="Text style">
       <Field label="Font">
-        <Input value={s.fontFamily} onChange={(e) => setStyle((st) => { st.fontFamily = e.target.value; })} />
+        <div className="flex gap-1">
+          <FontFamilySelect value={s.fontFamily} onChange={(family) => setStyle((st) => { st.fontFamily = family; })} />
+          <button
+            type="button"
+            title="Font MAM"
+            onClick={onOpenFontMam}
+            className="shrink-0 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-2"
+          >
+            MAM
+          </button>
+        </div>
       </Field>
       <LabeledNum label="Size" value={s.fontSize} resetValue={48} onChange={(v) => setStyle((st) => { st.fontSize = v; })} />
       <Field label="Weight">

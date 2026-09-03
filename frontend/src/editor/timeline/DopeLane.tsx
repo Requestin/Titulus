@@ -26,39 +26,34 @@ function sampleValue(points: { frame: number; value: number; easing: string }[],
   return points[0]!.value;
 }
 
-/**
- * Find the maximal chain of connected keyframes containing the segment
- * between a and b. A "chain" is a run of consecutive keyframes where each
- * pair has a line (different values). The chain breaks when two adjacent
- * keyframes have the same value (no line drawn).
- */
+/** Find the maximal chain of connected keyframes containing segment at segIndex. */
 function connectedChain(
   points: { frame: number; value: number }[],
   segIndex: number,
 ): number[] {
   if (points.length === 0) return [];
-  // Expand left from segment start
   const frames: number[] = [];
   let left = segIndex;
   while (left >= 0) {
     frames.unshift(points[left]!.frame);
     if (left === 0) break;
-    const prev = points[left - 1]!;
-    const cur = points[left]!;
-    if (prev.value === cur.value) break; // line breaks
+    if (points[left - 1]!.value === points[left]!.value) break;
     left -= 1;
   }
-  // Expand right from segment end
   let right = segIndex + 1;
   while (right < points.length) {
     frames.push(points[right]!.frame);
     if (right === points.length - 1) break;
-    const cur = points[right]!;
-    const next = points[right + 1]!;
-    if (cur.value === next.value) break; // line breaks
+    if (points[right]!.value === points[right + 1]!.value) break;
     right += 1;
   }
   return frames;
+}
+
+export interface LiveDragState {
+  delta: number;
+  selected: SelectedKeyframe[];
+  chain: { target: Target; prop: AnimatableProp; directorId: string | undefined; frames: number[] } | null;
 }
 
 export function DopeLane({
@@ -70,6 +65,8 @@ export function DopeLane({
   selected,
   onSelect,
   onMoveSelected,
+  liveDrag,
+  onLiveDragChange,
 }: {
   target: Target;
   prop: AnimatableProp;
@@ -79,6 +76,8 @@ export function DopeLane({
   selected: SelectedKeyframe[];
   onSelect: (keyframe: SelectedKeyframe, mode: 'replace' | 'add' | 'toggle') => void;
   onMoveSelected: (delta: number) => void;
+  liveDrag: LiveDragState | null;
+  onLiveDragChange: (drag: LiveDragState | null) => void;
 }) {
   const setKeyframeValue = useEditor((state) => state.setKeyframeValue);
   const movePoint = useEditor((state) => state.movePoint);
@@ -88,26 +87,56 @@ export function DopeLane({
   const [drag, setDrag] = useState<{ from: number; cur: number; group: boolean; chain: number[] | null } | null>(null);
   const points = trackPoints(useEditor.getState().template!, target, prop, directorId);
 
+  // Check if the shared liveDrag affects this lane
+  const liveDelta = liveDrag && (liveDrag.chain
+    ? (liveDrag.chain.target === target && liveDrag.chain.prop === prop && (liveDrag.chain.directorId ?? undefined) === (directorId ?? undefined))
+    : selected.some((item) => isSame(item, target, prop, item.frame, directorId)))
+    ? liveDrag.delta
+    : 0;
+
   function frameAt(point: { frame: number }): number {
-    if (drag && drag.from === point.frame) return drag.cur;
+    // Local drag (this lane is being dragged)
+    if (drag?.chain) {
+      if (drag.chain.includes(point.frame)) return Math.max(0, point.frame + (drag.cur - drag.from));
+      return point.frame;
+    }
     if (drag?.group) {
       const delta = drag.cur - drag.from;
-      if (drag.chain) {
-        // Chain drag: only move keyframes in the chain
-        if (drag.chain.includes(point.frame)) return Math.max(0, point.frame + delta);
+      const hit = selected.find((item) => isSame(item, target, prop, point.frame, directorId));
+      if (hit) return Math.max(0, point.frame + delta);
+    }
+    // Shared liveDrag from another lane
+    if (liveDelta !== 0 && !drag) {
+      if (liveDrag!.chain) {
+        if (liveDrag!.chain.frames.includes(point.frame)) return Math.max(0, point.frame + liveDelta);
       } else {
         const hit = selected.find((item) => isSame(item, target, prop, point.frame, directorId));
-        if (hit) return Math.max(0, point.frame + delta);
+        if (hit) return Math.max(0, point.frame + liveDelta);
       }
     }
     return point.frame;
   }
 
+  function reportDrag(curDelta: number) {
+    if (drag?.chain) {
+      onLiveDragChange({
+        delta: curDelta,
+        selected: [],
+        chain: { target, prop, directorId, frames: drag.chain },
+      });
+    } else {
+      onLiveDragChange({
+        delta: curDelta,
+        selected,
+        chain: null,
+      });
+    }
+  }
+
   function commitDrag() {
-    if (!drag || drag.cur === drag.from) { setDrag(null); return; }
+    if (!drag || drag.cur === drag.from) { setDrag(null); onLiveDragChange(null); return; }
     const delta = drag.cur - drag.from;
     if (drag.chain) {
-      // Move all keyframes in the chain by setting selection directly, then moving
       const chainSelection: SelectedKeyframe[] = drag.chain.map((frame) => ({
         target, prop, frame, directorId,
       }));
@@ -120,6 +149,7 @@ export function DopeLane({
       onSelect({ target, prop, frame: drag.cur, directorId }, 'replace');
     }
     setDrag(null);
+    onLiveDragChange(null);
   }
 
   return (
@@ -129,7 +159,6 @@ export function DopeLane({
       onPointerDown={(event) => {
         if ((event.target as HTMLElement).dataset.kf) return;
         if ((event.target as HTMLElement).dataset.bar) return;
-        // Let marquee bubble to the lanes scroller; only insert a keyframe on a click.
         if (event.shiftKey || event.ctrlKey || event.metaKey) return;
         const startX = event.clientX;
         const startY = event.clientY;
@@ -164,14 +193,11 @@ export function DopeLane({
             }}
             onPointerMove={(event) => {
               if (!drag || !drag.chain) return;
-              setDrag({
-                ...drag,
-                cur: frameFromEvent(event, event.currentTarget.parentElement as HTMLElement),
-              });
+              const cur = frameFromEvent(event, event.currentTarget.parentElement as HTMLElement);
+              setDrag({ ...drag, cur });
+              reportDrag(cur - drag.from);
             }}
-            onPointerUp={() => {
-              commitDrag();
-            }}
+            onPointerUp={() => { commitDrag(); }}
           />
         );
       })}
@@ -188,23 +214,19 @@ export function DopeLane({
               const mode = event.shiftKey || event.ctrlKey || event.metaKey ? 'toggle' : 'replace';
               const next = { target, prop, frame: point.frame, directorId };
               if (selectedHere && mode === 'replace') {
-                // Already selected — keep multi-selection for group drag
                 setDrag({ from: point.frame, cur: point.frame, group: true, chain: null });
               } else {
                 onSelect(next, mode);
-                setDrag({ from: point.frame, cur: point.frame, group: !selectedHere && mode === 'replace' ? true : selectedHere, chain: null });
+                setDrag({ from: point.frame, cur: point.frame, group: true, chain: null });
               }
             }}
             onPointerMove={(event) => {
               if (!drag) return;
-              setDrag({
-                ...drag,
-                cur: frameFromEvent(event, event.currentTarget.parentElement as HTMLElement),
-              });
+              const cur = frameFromEvent(event, event.currentTarget.parentElement as HTMLElement);
+              setDrag({ ...drag, cur });
+              reportDrag(cur - drag.from);
             }}
-            onPointerUp={() => {
-              commitDrag();
-            }}
+            onPointerUp={() => { commitDrag(); }}
             onDoubleClick={(event) => {
               event.stopPropagation();
               deletePoint(target, prop, point.frame);

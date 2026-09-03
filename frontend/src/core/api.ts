@@ -496,4 +496,36 @@ export const api = {
       req<LicenseState>('/api/license/check', { method: 'POST', body: JSON.stringify(body) }),
   },
   health: () => req<{ ok: boolean; service: string }>('/api/health'),
+  fonts: {
+    list: () => req<FontAsset[]>('/api/fonts'),
+    manifest: () => '/api/fonts/manifest.css',
+    upload: (file: File, meta: { family?: string; weight?: string; style?: string; title?: string }) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      if (meta.family) fd.append('family', meta.family);
+      if (meta.weight) fd.append('weight', meta.weight);
+      if (meta.style) fd.append('style', meta.style);
+      if (meta.title) fd.append('title', meta.title);
+      return req<FontAsset>('/api/fonts', { method: 'POST', body: fd });
+    },
+    update: (id: string, body: { title?: string; locked?: boolean }) =>
+      req<FontAsset>(`/api/fonts/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    remove: (id: string) =>
+      req<{ ok: boolean }>(`/api/fonts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    refresh: () => req<{ imported: FontAsset[] }>('/api/fonts/refresh', { method: 'POST' }),
+  },
 };
+
+export interface FontAsset {
+  id: string;
+  family: string;
+  weight: string;
+  style: string;
+  filePath: string;
+  originalName: string;
+  title: string;
+  locked: boolean;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -5,6 +5,7 @@ import { id as deId, up as deUp } from './004_data_elements.js';
 import { id as locksId, up as locksUp } from './005_template_locks.js';
 import { id as rbacId, up as rbacUp } from './006_rbac_groups.js';
 import { id as mamId, up as mamUp } from './007_media_library_mam.js';
+import { id as fontMamId, up as fontMamUp } from './008_font_mam.js';
 
 export const MIGRATIONS = [
   { id: dataFilesId, up: dataFilesUp },
@@ -14,6 +15,7 @@ export const MIGRATIONS = [
   { id: locksId, up: locksUp },
   { id: rbacId, up: rbacUp },
   { id: mamId, up: mamUp },
+  { id: fontMamId, up: fontMamUp },
 ];
 export function runMigrations(db) {
   db.exec(`

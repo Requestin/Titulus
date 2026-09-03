@@ -28,6 +28,7 @@ import { rundownsRouter } from './routes/rundowns.js';
 import { uploadsRouter } from './routes/uploads.js';
 import { filesRouter } from './routes/files.js';
 import { mediaLibraryRouter } from './routes/media.js';
+import { fontsRouter } from './routes/fonts.js';
 import { templateFoldersRouter } from './routes/templateFolders.js';
 import { dataElementsRouter } from './routes/dataElements.js';
 import { ensureDataFilesDir } from './filesAccess.js';
@@ -87,6 +88,8 @@ mkdirSync(UPLOADS_DIR, { recursive: true });
 ensureDataFilesDir(DATA_DIR);
 const THUMBNAILS_DIR = resolve(DATA_DIR, 'thumbnails');
 mkdirSync(THUMBNAILS_DIR, { recursive: true });
+const FONTS_DIR = resolve(DATA_DIR, 'fonts');
+mkdirSync(FONTS_DIR, { recursive: true });
 
 app.locals.db = db;
 const auth = createAuth(db);
@@ -127,6 +130,7 @@ app.use('/api/rundowns', auth.requireAuth, rundownsRouter(db));
 app.use('/api/uploads', auth.requireAuth, uploadsCors, uploadsRouter(media, UPLOADS_DIR));
 app.use('/api/files', auth.requireAuth, auth.requirePermission('files.read'), filesRouter({ db, dataDir: DATA_DIR }));
 app.use('/api/media', auth.requireAuth, mediaLibraryRouter({ db, media, uploadsDir: UPLOADS_DIR }));
+app.use('/api/fonts', auth.requireAuth, fontsRouter({ db, fontsDir: FONTS_DIR }));
 app.use('/api/template-folders', auth.requireAuth, templateFoldersRouter(db));
 app.use('/api/data-elements', auth.requireAuth, dataElementsRouter(db));
 app.use('/api/license', auth.requireAuth, auth.requireRole('admin'), licenseRouter(db));
@@ -162,6 +166,14 @@ app.use('/thumbnails', express.static(THUMBNAILS_DIR, {
   },
 }));
 app.use('/uploads', uploadsCors, express.static(UPLOADS_DIR, {
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  },
+}));
+// Serve fonts from the data dir (MAM-managed) first, then fall back to the
+// repo fonts dir (bundled defaults like Inter).
+app.use('/fonts', express.static(FONTS_DIR, {
   setHeaders: (res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');

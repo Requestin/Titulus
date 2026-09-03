@@ -19,12 +19,19 @@ export function TemplateThumb({
   const [loaded, setLoaded] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const retryTimer = useRef<number | null>(null);
-  // Include a mount-id so the first load is never accidentally cached as 404.
-  const mountId = useRef(Math.random().toString(36).slice(2));
+  const imgRef = useRef<HTMLImageElement | null>(null);
   const url = templateThumbnailUrl(
     templateId,
-    `${cacheKey ?? mountId.current}${attempt > 0 ? `-r${attempt}` : ''}`,
+    `${cacheKey ?? ''}${attempt > 0 ? `-r${attempt}` : ''}`,
   );
+
+  // Check if the image is already complete (cached) after mount and after url changes.
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      setLoaded(true);
+    }
+  }, [url]);
 
   useEffect(() => {
     setFailed(false);
@@ -41,7 +48,6 @@ export function TemplateThumb({
       setFailed(true);
       return;
     }
-    // First retry is immediate; later retries back off.
     const delays = [0, 200, 500, 1000, 2000, 4000];
     retryTimer.current = window.setTimeout(() => {
       setAttempt((value) => value + 1);
@@ -52,11 +58,12 @@ export function TemplateThumb({
     <div className={cn('relative grid place-items-center overflow-hidden bg-surface-2 text-ink-faint', className)}>
       {!failed && (
         <img
+          ref={imgRef}
           key={url}
           src={url}
           alt=""
           className={cn(
-            'absolute inset-0 h-full w-full object-cover transition-opacity',
+            'absolute inset-0 h-full w-full object-cover',
             loaded ? 'opacity-100' : 'opacity-0',
           )}
           onLoad={() => setLoaded(true)}

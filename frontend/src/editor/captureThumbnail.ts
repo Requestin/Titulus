@@ -107,6 +107,12 @@ async function waitForPaint(): Promise<void> {
 
 /** Wait for images/videos and rasterize video frames so foreignObject SVG can paint them. */
 export async function prepareMediaForCapture(root: HTMLElement): Promise<void> {
+  // Convert data-URI CSS backgrounds (rect gradients) to blob URLs so they
+  // render inside SVG foreignObject. Nested data URIs are blocked by browsers,
+  // but blob: URLs work. We patch the inline style on the live DOM element,
+  // which inlineCaptureStyles then copies to the clone.
+  await convertDataUriBackgrounds(root);
+
   const images = [...root.querySelectorAll('img')];
   await Promise.all(images.map((img) => waitForImage(img)));
 
@@ -116,6 +122,42 @@ export async function prepareMediaForCapture(root: HTMLElement): Promise<void> {
     const snapshot = snapshotVideoAsImage(video);
     if (snapshot) video.replaceWith(snapshot);
   }));
+}
+
+/** Find elements with data: URI backgrounds, convert to blob: URLs, and wait for load. */
+async function convertDataUriBackgrounds(root: HTMLElement): Promise<void> {
+  const elements = [root, ...root.querySelectorAll<HTMLElement>('*')];
+  const tasks: Promise<void>[] = [];
+  for (const el of elements) {
+    const bg = getComputedStyle(el).backgroundImage;
+    if (!bg || bg === 'none' || !bg.includes('data:')) continue;
+    const match = bg.match(/url\(["']?(data:[^"')]+)["']?\)/);
+    const dataUri = match?.[1]?.trim();
+    if (!dataUri) continue;
+    tasks.push(loadDataUriAsBlobUrl(dataUri).then((blobUrl) => {
+      if (blobUrl) {
+        // Preserve background-size/position/repeat from computed style
+        const bgSize = getComputedStyle(el).backgroundSize;
+        const bgPos = getComputedStyle(el).backgroundPosition;
+        const bgRepeat = getComputedStyle(el).backgroundRepeat;
+        el.style.backgroundImage = `url("${blobUrl}")`;
+        if (bgSize) el.style.backgroundSize = bgSize;
+        if (bgPos) el.style.backgroundPosition = bgPos;
+        if (bgRepeat) el.style.backgroundRepeat = bgRepeat;
+      }
+    }));
+  }
+  await Promise.all(tasks);
+}
+
+async function loadDataUriAsBlobUrl(dataUri: string): Promise<string | null> {
+  try {
+    const response = await fetch(dataUri);
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
 }
 
 function waitForImage(img: HTMLImageElement): Promise<void> {
@@ -184,7 +226,6 @@ async function captureElementJpeg(el: HTMLElement, outW: number, outH: number): 
   const sourceW = Math.max(1, el.offsetWidth || Number.parseInt(el.style.width, 10) || 1920);
   const sourceH = Math.max(1, el.offsetHeight || Number.parseInt(el.style.height, 10) || 1080);
   const clone = prepareCaptureClone(el);
-  await waitForCloneImages(clone);
   const xhtml = ensureXhtmlNamespace(new XMLSerializer().serializeToString(clone));
   const svg = wrapForeignObjectSvg(xhtml, sourceW, sourceH);
   const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -250,27 +291,15 @@ function prepareCaptureClone(el: HTMLElement): HTMLElement {
     const node = cloneNodes[i];
     if (!source || !node) continue;
     inlineCaptureStyles(source, node);
-    flattenDataUriBackgrounds(source, node);
+    // flattenDataUriBackgrounds is no longer needed here — prepareMediaForCapture
+    // already converted data: URI backgrounds to blob: URLs on the live DOM,
+    // and inlineCaptureStyles copies the blob: URL to the clone.
     node.querySelectorAll('img, video, source').forEach((media) => {
       const src = media.getAttribute('src');
       if (src && src.startsWith('/') && origin) media.setAttribute('src', origin + src);
     });
   }
   return clone;
-}
-
-/** Wait for all img elements inside a cloned subtree to load (data-URI backgrounds, etc). */
-async function waitForCloneImages(clone: HTMLElement): Promise<void> {
-  const images = [...clone.querySelectorAll('img')];
-  await Promise.all(images.map((img) => {
-    if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      const done = () => resolve();
-      img.addEventListener('load', done, { once: true });
-      img.addEventListener('error', done, { once: true });
-      window.setTimeout(done, 2000);
-    });
-  }));
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
