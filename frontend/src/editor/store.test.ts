@@ -54,6 +54,40 @@ test('resetting a tracked opacity only writes the current keyframe', () => {
   assert.equal(updated.timeline.keyframes[0]!.layers[id]?.opacity, 0.2);
 });
 
+test('editing a tracked gradient weight only writes the current keyframe', () => {
+  const template = createDefaultTemplate();
+  const layer = createLayer('rect', 'Gradient rectangle');
+  layer.id = 'gradient-rectangle';
+  layer.fillMode = 'gradient';
+  layer.gradient = {
+    topLeft: '#111111',
+    topRight: '#222222',
+    bottomLeft: '#333333',
+    bottomRight: '#444444',
+    weights: { topLeft: 100, topRight: 100, bottomLeft: 100, bottomRight: 100 },
+  };
+  template.layers.push(layer);
+  template.rootStack.push({ kind: 'layer', id: layer.id });
+  template.timeline.keyframes.push({
+    id: 'weight-start',
+    frame: 0,
+    layers: { [layer.id]: { 'gradient.weights.topLeft': 100 } },
+    groups: {},
+    easing: 'power2.out',
+  });
+  template.timeline.trackDirectors[layer.id] = 'default';
+  useEditor.getState().load(template);
+  useEditor.getState().setPlayhead(20);
+
+  useEditor.getState().setGradientWeight(layer.id, 'gradient.weights.topLeft', 25);
+
+  const updated = useEditor.getState().template!;
+  const current = updated.timeline.keyframes.find((keyframe) => keyframe.frame === 20)!;
+  assert.equal(updated.layers.find((item) => item.id === layer.id)!.gradient?.weights.topLeft, 100);
+  assert.equal(current.layers[layer.id]?.['gradient.weights.topLeft'], 25);
+  assert.equal(updated.timeline.keyframes[0]!.layers[layer.id]?.['gradient.weights.topLeft'], 100);
+});
+
 test('reparenting a layer preserves its world geometry at the current playhead', () => {
   const template = createDefaultTemplate();
   const layer = createLayer('rect', 'Rectangle');

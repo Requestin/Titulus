@@ -53,3 +53,15 @@ export function effectiveOpacity(
   const anim = effectiveAnimatableValues(template, target, localPlayhead, directorId);
   return anim.opacity ?? base;
 }
+
+export function effectiveGradientWeight(
+  template: Template,
+  base: number,
+  target: Target,
+  prop: AnimatableProp,
+  localPlayhead: number,
+  directorId: string,
+): number {
+  const anim = effectiveAnimatableValues(template, target, localPlayhead, directorId);
+  return anim[prop] ?? base;
+}

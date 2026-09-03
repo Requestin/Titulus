@@ -5,12 +5,12 @@
 
 import { useId, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { Braces, Link2, Link2Off } from 'lucide-react';
-import type { Layer, Variable, VariableBinding, BlendMode } from '@runtime';
+import type { AnimatableProp, Layer, Variable, VariableBinding, BlendMode } from '@runtime';
 import { anchorCompensatedUpdate } from '@runtime';
 import { useEditor } from '../store';
 import { CrawlProperties } from '../CrawlProperties';
 import { CueInspector } from '../timeline/CueInspector';
-import { effectiveOpacity, effectiveTransform } from '../effectiveValues';
+import { effectiveGradientWeight, effectiveOpacity, effectiveTransform } from '../effectiveValues';
 import { usePlayhead } from '../playheadStore';
 import { clearGesturePreview, gesturePreviewStore, scheduleGesturePreview } from '../gesturePreview';
 import { MediaUploadButton } from '../MediaUploadButton';
@@ -53,6 +53,7 @@ export function PropertiesPanel() {
   const selection = useEditor((s) => s.selection);
   const updateLayer = useEditor((s) => s.updateLayer);
   const setLayerOpacity = useEditor((s) => s.setLayerOpacity);
+  const setGradientWeight = useEditor((s) => s.setGradientWeight);
   const updateTransform = useEditor((s) => s.updateTransform);
   const updateGroupPivot = useEditor((s) => s.updateGroupPivot);
   const playhead = usePlayhead((s) => s.playhead);
@@ -243,7 +244,20 @@ export function PropertiesPanel() {
             updateTransform={updateTransform}
           />
 
-          <TypeSection layer={layer} variables={variables} updateLayer={updateLayer} />
+          <TypeSection
+            layer={layer}
+            variables={variables}
+            updateLayer={updateLayer}
+            setGradientWeight={setGradientWeight}
+            weightValue={(prop, base) => effectiveGradientWeight(
+              template,
+              base,
+              { kind: 'layer', id: layer.id },
+              prop,
+              playhead,
+              activeDirectorId,
+            )}
+          />
         </SectionCollapseProvider>
       </div>
     </div>
@@ -680,8 +694,21 @@ function AngleActions({
 }
 
 type UpdateLayer = (id: string, mutator: (l: Layer) => void) => void;
+type SetGradientWeight = (id: string, prop: AnimatableProp, value: number) => void;
 
-function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variables: Variable[]; updateLayer: UpdateLayer }) {
+function TypeSection({
+  layer,
+  variables,
+  updateLayer,
+  setGradientWeight,
+  weightValue,
+}: {
+  layer: Layer;
+  variables: Variable[];
+  updateLayer: UpdateLayer;
+  setGradientWeight?: SetGradientWeight;
+  weightValue?: (prop: AnimatableProp, base: number) => number;
+}) {
   switch (layer.type) {
     case 'text':
       return (
@@ -762,10 +789,38 @@ function TypeSection({ layer, variables, updateLayer }: { layer: Layer; variable
               <Field label="Bottom right">
                 <ColorInput value={layer.gradient.bottomRight} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.bottomRight = v; })} />
               </Field>
-              <LabeledNum label="Weight TL" value={layer.gradient.weights.topLeft} min={0} max={100} resetValue={100} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.weights.topLeft = v; })} />
-              <LabeledNum label="Weight TR" value={layer.gradient.weights.topRight} min={0} max={100} resetValue={100} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.weights.topRight = v; })} />
-              <LabeledNum label="Weight BL" value={layer.gradient.weights.bottomLeft} min={0} max={100} resetValue={100} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.weights.bottomLeft = v; })} />
-              <LabeledNum label="Weight BR" value={layer.gradient.weights.bottomRight} min={0} max={100} resetValue={100} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect' && l.gradient) l.gradient.weights.bottomRight = v; })} />
+              <LabeledNum
+                label="Weight TL"
+                value={weightValue?.('gradient.weights.topLeft', layer.gradient.weights.topLeft) ?? layer.gradient.weights.topLeft}
+                min={0}
+                max={100}
+                resetValue={100}
+                onChange={(v) => setGradientWeight?.(layer.id, 'gradient.weights.topLeft', v)}
+              />
+              <LabeledNum
+                label="Weight TR"
+                value={weightValue?.('gradient.weights.topRight', layer.gradient.weights.topRight) ?? layer.gradient.weights.topRight}
+                min={0}
+                max={100}
+                resetValue={100}
+                onChange={(v) => setGradientWeight?.(layer.id, 'gradient.weights.topRight', v)}
+              />
+              <LabeledNum
+                label="Weight BL"
+                value={weightValue?.('gradient.weights.bottomLeft', layer.gradient.weights.bottomLeft) ?? layer.gradient.weights.bottomLeft}
+                min={0}
+                max={100}
+                resetValue={100}
+                onChange={(v) => setGradientWeight?.(layer.id, 'gradient.weights.bottomLeft', v)}
+              />
+              <LabeledNum
+                label="Weight BR"
+                value={weightValue?.('gradient.weights.bottomRight', layer.gradient.weights.bottomRight) ?? layer.gradient.weights.bottomRight}
+                min={0}
+                max={100}
+                resetValue={100}
+                onChange={(v) => setGradientWeight?.(layer.id, 'gradient.weights.bottomRight', v)}
+              />
             </>
           )}
           <LabeledNum label="Radius" value={layer.cornerRadius} resetValue={0} onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'rect') l.cornerRadius = v; })} />

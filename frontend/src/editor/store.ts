@@ -154,6 +154,26 @@ function editOpacityAtPlayhead(t: Template, id: string, opacity: number, localFr
   if (layer) layer.opacity = opacity;
 }
 
+function editGradientWeightAtPlayhead(
+  t: Template,
+  id: string,
+  prop: AnimatableProp,
+  value: number,
+  localFrame: number,
+  directorId: string,
+): void {
+  const weight = gradientWeightKey(prop);
+  if (!weight) return;
+  const target: Target = { kind: 'layer', id };
+  const clamped = Math.min(100, Math.max(0, value));
+  if (hasAnimatedProp(t, target, prop, directorId)) {
+    writeTrackedPropsAtPlayhead(t, target, { [prop]: clamped } as Partial<Record<AnimatableProp, number>>, localFrame, directorId);
+    return;
+  }
+  const layer = t.layers.find((item) => item.id === id);
+  if (layer?.type === 'rect' && layer.gradient) layer.gradient.weights[weight] = clamped;
+}
+
 /**
  * Keep an entry in the same world-space position while changing its parent.
  * The transform model represents translate/rotate/scale (not skew), which is
@@ -203,6 +223,7 @@ interface EditorState {
   patch: (mutator: (t: Template) => void) => void;
   updateLayer: (id: string, mutator: (l: Layer) => void) => void;
   setLayerOpacity: (id: string, opacity: number) => void;
+  setGradientWeight: (id: string, prop: AnimatableProp, value: number) => void;
   updateTransform: (id: string, partial: Partial<Transform>, kind?: 'layer' | 'group') => void;
   updateGroupPivot: (id: string, partial: Partial<Transform>) => void;
   setName: (name: string) => void;
@@ -362,6 +383,11 @@ export const useEditor = create<EditorState>()(
       setLayerOpacity: (id, opacity) =>
         get().patch((t) => {
           editOpacityAtPlayhead(t, id, Math.min(1, Math.max(0, opacity)), currentPlayhead(), get().activeDirectorId);
+        }),
+
+      setGradientWeight: (id, prop, value) =>
+        get().patch((t) => {
+          editGradientWeightAtPlayhead(t, id, prop, value, currentPlayhead(), get().activeDirectorId);
         }),
 
       updateTransform: (id, partial, kind = 'layer') =>
