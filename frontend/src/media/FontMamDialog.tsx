@@ -32,7 +32,15 @@ export function FontFamilySelect({
   return (
     <select
       value={value || selectOptions[0] || 'Inter'}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => {
+        const family = e.target.value;
+        onChange(family);
+        // Kick CSS Font Loading so the canvas picks up the face immediately.
+        void import('@runtime').then(({ ensureFonts, resetEnsuredFonts }) => {
+          resetEnsuredFonts();
+          return ensureFonts([{ family }]);
+        });
+      }}
       className="w-full rounded-md border border-border bg-surface px-2 py-1 text-sm"
       disabled={fonts === null}
     >
@@ -78,10 +86,11 @@ export function FontMamDialog({
       await load();
       toast.success('Font imported');
       // Reload the CSS manifest by busting cache
-      const link = document.querySelector('link[href="/api/fonts/manifest.css"]');
+      const link = document.querySelector('link[href*="/api/fonts/manifest.css"]');
       if (link) {
         (link as HTMLLinkElement).href = `/api/fonts/manifest.css?t=${Date.now()}`;
       }
+      void import('@runtime').then(({ resetEnsuredFonts }) => resetEnsuredFonts());
     } catch (e) {
       toast.error(`Import failed: ${(e as Error).message}`);
     }

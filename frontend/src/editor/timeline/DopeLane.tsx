@@ -189,7 +189,10 @@ export function DopeLane({
               event.stopPropagation();
               event.currentTarget.setPointerCapture(event.pointerId);
               const chain = connectedChain(points, index);
-              setDrag({ from: a.frame, cur: a.frame, group: true, chain });
+              // Grab frame under the pointer — delta is relative to this point,
+              // not the left keyframe (avoids jumping the chain on mousedown).
+              const grabFrame = frameFromEvent(event, event.currentTarget.parentElement as HTMLElement);
+              setDrag({ from: grabFrame, cur: grabFrame, group: true, chain });
             }}
             onPointerMove={(event) => {
               if (!drag || !drag.chain) return;

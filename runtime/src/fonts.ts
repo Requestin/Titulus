@@ -34,16 +34,30 @@ export async function ensureFonts(fonts: FontSpec[]): Promise<void> {
     fonts.map(async (f) => {
       const k = key(f);
       if (ensured.has(k)) return;
-      // document.fonts.load expects a CSS font shorthand: "<weight> <size> <family>".
-      const shorthand = `${f.weight ?? 'normal'} 64px "${f.family}"`;
-      try {
-        await docFonts.load(shorthand);
-      } catch {
-        // Family may not be available; the layer will fall back to a system font.
+      const weights = [f.weight ?? 'normal', 'normal', '400'];
+      let loaded = false;
+      for (const weight of weights) {
+        const shorthand = `${weight} 64px "${f.family}"`;
+        try {
+          const faces = await docFonts.load(shorthand);
+          if (faces.length > 0) {
+            loaded = true;
+            break;
+          }
+        } catch {
+          // try next weight
+        }
       }
-      ensured.add(k);
+      // Only cache successful loads — a miss (no @font-face yet) must retry
+      // after the MAM manifest is injected/refreshed.
+      if (loaded) ensured.add(k);
     }),
   );
+}
+
+/** Drop cached ensures so a later ensureFonts() retries (e.g. after MAM import). */
+export function resetEnsuredFonts(): void {
+  ensured.clear();
 }
 
 /**

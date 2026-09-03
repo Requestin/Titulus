@@ -29,6 +29,7 @@ import { uploadsRouter } from './routes/uploads.js';
 import { filesRouter } from './routes/files.js';
 import { mediaLibraryRouter } from './routes/media.js';
 import { fontsRouter } from './routes/fonts.js';
+import { fontsDao } from './fontLibrary.js';
 import { templateFoldersRouter } from './routes/templateFolders.js';
 import { dataElementsRouter } from './routes/dataElements.js';
 import { ensureDataFilesDir } from './filesAccess.js';
@@ -130,6 +131,13 @@ app.use('/api/rundowns', auth.requireAuth, rundownsRouter(db));
 app.use('/api/uploads', auth.requireAuth, uploadsCors, uploadsRouter(media, UPLOADS_DIR));
 app.use('/api/files', auth.requireAuth, auth.requirePermission('files.read'), filesRouter({ db, dataDir: DATA_DIR }));
 app.use('/api/media', auth.requireAuth, mediaLibraryRouter({ db, media, uploadsDir: UPLOADS_DIR }));
+// Font CSS must be public — <link> and channel.html cannot send Bearer tokens.
+app.get('/api/fonts/manifest.css', (_req, res) => {
+  const dao = fontsDao(db, FONTS_DIR);
+  res.set('Content-Type', 'text/css; charset=utf-8');
+  res.set('Cache-Control', 'no-cache');
+  res.send(dao.cssManifest());
+});
 app.use('/api/fonts', auth.requireAuth, fontsRouter({ db, fontsDir: FONTS_DIR }));
 app.use('/api/template-folders', auth.requireAuth, templateFoldersRouter(db));
 app.use('/api/data-elements', auth.requireAuth, dataElementsRouter(db));
