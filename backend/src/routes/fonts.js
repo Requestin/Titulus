@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { extname, basename } from 'node:path';
-import { createId } from '../id.js';
 import { fontsDao } from '../fontLibrary.js';
 
 const FONT_EXTENSIONS = new Set(['.woff2', '.woff', '.ttf', '.otf']);

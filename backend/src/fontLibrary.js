@@ -1,6 +1,6 @@
-import { existsSync, unlinkSync, mkdirSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, unlinkSync, mkdirSync, readdirSync } from 'node:fs';
 import { join, basename, extname } from 'node:path';
-import { createId } from '../id.js';
+import { v4 as uuid } from 'uuid';
 
 const FONT_EXTENSIONS = new Set(['.woff2', '.woff', '.ttf', '.otf']);
 
@@ -41,7 +41,7 @@ export function fontsDao(db, fontsDir) {
     },
 
     create({ family, weight = 'normal', style = 'normal', filePath, originalName, title = '' }) {
-      const id = createId();
+      const id = uuid();
       db.prepare(
         `INSERT INTO font_assets (id, family, weight, style, file_path, original_name, title)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
