@@ -184,6 +184,7 @@ async function captureElementJpeg(el: HTMLElement, outW: number, outH: number): 
   const sourceW = Math.max(1, el.offsetWidth || Number.parseInt(el.style.width, 10) || 1920);
   const sourceH = Math.max(1, el.offsetHeight || Number.parseInt(el.style.height, 10) || 1080);
   const clone = prepareCaptureClone(el);
+  await waitForCloneImages(clone);
   const xhtml = ensureXhtmlNamespace(new XMLSerializer().serializeToString(clone));
   const svg = wrapForeignObjectSvg(xhtml, sourceW, sourceH);
   const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -256,6 +257,20 @@ function prepareCaptureClone(el: HTMLElement): HTMLElement {
     });
   }
   return clone;
+}
+
+/** Wait for all img elements inside a cloned subtree to load (data-URI backgrounds, etc). */
+async function waitForCloneImages(clone: HTMLElement): Promise<void> {
+  const images = [...clone.querySelectorAll('img')];
+  await Promise.all(images.map((img) => {
+    if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const done = () => resolve();
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+      window.setTimeout(done, 2000);
+    });
+  }));
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {

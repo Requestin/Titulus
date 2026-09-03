@@ -60,10 +60,12 @@ export function Toolbar({ onSave, saving, readOnly = false, lockOwner }: { onSav
 
       <div className="ml-auto flex items-center gap-2">
         {readOnly && <span className="text-[12px] text-warning">Read-only{lockOwner ? ` · locked by ${lockOwner}` : ''}</span>}
-        {dirty && !readOnly && <span className="text-[12px] text-ink-faint">Unsaved</span>}
         <Button variant="primary" size="sm" onClick={onSave} disabled={saving || readOnly}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
           Save
+          {dirty && !readOnly && !saving && (
+            <span className="ml-1 h-2 w-2 rounded-full bg-yellow-400" aria-label="Unsaved changes" />
+          )}
         </Button>
       </div>
     </div>

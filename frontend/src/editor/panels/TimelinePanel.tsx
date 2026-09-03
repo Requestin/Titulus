@@ -146,7 +146,7 @@ export function TimelinePanel() {
   const [pxPerFrame, setPxPerFrame] = useState(6);
   const [activeTrack, setActiveTrack] = useState<{ target: Target; prop: AnimatableProp } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [collapsedDirectors, setCollapsedDirectors] = useState<Set<string>>(() => new Set());
+  const [collapsedDirectors, setCollapsedDirectors] = useState<Set<string>>(() => new Set(['update']));
   const [collapsedObjects, setCollapsedObjects] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [editingDirectorId, setEditingDirectorId] = useState<string | null>(null);
