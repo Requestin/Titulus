@@ -616,12 +616,13 @@ export class TemplateRenderer {
     parentMaskId: string | null,
   ): void {
     if (!entries || !this.template) return;
-    this.mountStackRange(containerEl, containerId, entries, 0, entries.length, zById, seenMasks, parentMaskId);
+    this.mountStackRange(containerEl, containerEl, containerId, entries, 0, entries.length, zById, seenMasks, parentMaskId);
   }
 
   /** Mount a stack slice, splitting at the frontmost mask so only lower siblings are clipped. */
   private mountStackRange(
     containerEl: HTMLElement,
+    maskElParent: HTMLElement,
     containerId: string | null,
     entries: RootStackEntry[],
     start: number,
@@ -657,15 +658,19 @@ export class TemplateRenderer {
     if (!maskLayer || maskLayer.type !== 'mask') return;
 
     if (start < maskIndex) {
-      const scope = this.ensureMaskScope(maskLayer.id, containerEl, containerId, parentMaskId, seenMasks);
-      this.mountStackRange(scope.clipHost, containerId, entries, start, maskIndex, zById, seenMasks, maskLayer.id);
+      // scopeEl goes in maskElParent (not clipped by any parent mask) so the
+      // mask's own visual element and nested mask elements stay visible even
+      // when a parent mask's clip-path moves. Only affected content goes in
+      // clipHost; nested mask elements go in scopeEl (overflow:visible).
+      const scope = this.ensureMaskScope(maskLayer.id, maskElParent, containerId, parentMaskId, seenMasks);
+      this.mountStackRange(scope.clipHost, scope.scopeEl, containerId, entries, start, maskIndex, zById, seenMasks, maskLayer.id);
     }
 
     if (parentMaskId) this.entryMaskOrigin.set(maskEntry.id, parentMaskId);
-    this.mountEntry(maskEntry, containerEl, zById);
+    this.mountEntry(maskEntry, maskElParent, zById);
 
     if (maskIndex + 1 < end) {
-      this.mountStackRange(containerEl, containerId, entries, maskIndex + 1, end, zById, seenMasks, parentMaskId);
+      this.mountStackRange(containerEl, maskElParent, containerId, entries, maskIndex + 1, end, zById, seenMasks, parentMaskId);
     }
   }
 

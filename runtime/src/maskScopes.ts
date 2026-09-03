@@ -150,11 +150,17 @@ export function maskClipStyle(
   if (mask.shape === 'rect' && cr <= 0) {
     const right = x + w;
     const bottom = y + h;
-    const outer = `0px 0px, ${containerW}px 0px, ${containerW}px ${containerH}px, 0px ${containerH}px`;
-    const inner = `${x}px ${y}px, ${right}px ${y}px, ${right}px ${bottom}px, ${x}px ${bottom}px`;
+    // Use SVG path() with two separate subpaths (M...Z M...Z) and evenodd fill
+    // instead of polygon(evenodd, ...). polygon() concatenates all vertices
+    // into ONE polygon, so the implicit edges connecting the outer ring to
+    // the inner hole are diagonals that self-intersect and create bowtie/
+    // hourglass transparent artifacts with evenodd. path() subpaths are
+    // independent — no connecting edges, clean rectangular hole.
+    const pathData = `M0 0 L${containerW} 0 L${containerW} ${containerH} L0 ${containerH} Z ` +
+      `M${x} ${y} L${right} ${y} L${right} ${bottom} L${x} ${bottom} Z`;
     return {
       overflow: 'hidden',
-      clipPath: `polygon(evenodd, ${outer}, ${inner})`,
+      clipPath: `path(evenodd, '${pathData}')`,
       borderRadius: '0',
       maskImage: 'none',
       maskMode: 'match-source',

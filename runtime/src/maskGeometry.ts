@@ -228,9 +228,12 @@ export function projectedMaskClip(
       clipPath: `polygon(${inner})`,
     };
   }
-  const outer = `0px 0px, ${containerW}px 0px, ${containerW}px ${containerH}px, 0px ${containerH}px`;
+  // Use path() with separate subpaths + evenodd instead of polygon(evenodd)
+  // to avoid diagonal connecting-edge artifacts (see maskScopes.ts).
+  const innerPts = outline.map((p) => `L${p.x} ${p.y}`).join(' ');
+  const pathData = `M0 0 L${containerW} 0 L${containerW} ${containerH} L0 ${containerH} Z M${outline[0]?.x ?? 0} ${outline[0]?.y ?? 0} ${innerPts} Z`;
   return {
     overflow: 'hidden',
-    clipPath: `polygon(evenodd, ${outer}, ${inner})`,
+    clipPath: `path(evenodd, '${pathData}')`,
   };
 }
