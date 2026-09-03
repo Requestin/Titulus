@@ -514,6 +514,15 @@ export class TemplateRenderer {
   getTemplate(): Template | null { return this.template; }
   getRoot(): HTMLElement { return this.root; }
 
+  /**
+   * Last sample used to paint the canvas. During Play this is the director-machine
+   * sample (idle directors excluded). Editor overlay/properties must use this so
+   * selection bounds match the visible pose.
+   */
+  getLastTimelineSample(): TimelineSample | null {
+    return this.lastTimelineSample;
+  }
+
   /** The variable map currently applied. */
   getVariables(): Record<string, string | number> { return this.variables; }
 
@@ -1368,6 +1377,7 @@ export class TemplateRenderer {
       case 'clock': {
         const content = node.contentEl as HTMLElement;
         const s = layer.style;
+        const wrap = layer.type === 'text' && Boolean(layer.multitext);
         this.setStyle(content, cache, 'fontFamily', `"${s.fontFamily}", system-ui, sans-serif`);
         this.setStyle(content, cache, 'fontSize', `${s.fontSize}px`);
         this.setStyle(content, cache, 'fontWeight', s.fontWeight);
@@ -1375,10 +1385,13 @@ export class TemplateRenderer {
         this.setStyle(content, cache, 'textAlign', s.align);
         this.setStyle(content, cache, 'justifyContent',
           s.align === 'left' ? 'flex-start' : s.align === 'right' ? 'flex-end' : 'center');
-        this.setStyle(content, cache, 'alignItems', 'center');
+        this.setStyle(content, cache, 'alignItems', wrap ? 'flex-start' : 'center');
         this.setStyle(content, cache, 'lineHeight', String(s.lineHeight));
         this.setStyle(content, cache, 'letterSpacing', `${s.letterSpacing}px`);
-        this.setStyle(content, cache, 'whiteSpace', 'pre');
+        this.setStyle(content, cache, 'whiteSpace', wrap ? 'pre-wrap' : 'pre');
+        this.setStyle(content, cache, 'overflowWrap', wrap ? 'anywhere' : 'normal');
+        this.setStyle(content, cache, 'wordBreak', wrap ? 'break-word' : 'normal');
+        this.setStyle(el, cache, 'overflow', wrap ? 'hidden' : 'visible');
         this.setStyle(content, cache, 'webkitTextStroke',
           s.strokeWidth > 0 ? `${s.strokeWidth}px ${s.strokeColor}` : '');
         this.setStyle(content, cache, 'textShadow', textShadowCss(s));

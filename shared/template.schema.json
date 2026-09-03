@@ -282,7 +282,8 @@
         "maskMode": { "type": "string", "enum": ["normal", "inverted"] },
         "shape": { "type": "string", "enum": ["rect", "ellipse"] },
         "crawlDirectorId": { "type": "string", "minLength": 1 },
-        "crawl": { "$ref": "#/$defs/crawlProps" }
+        "crawl": { "$ref": "#/$defs/crawlProps" },
+        "multitext": { "type": "boolean" }
       },
       "allOf": [
         {
@@ -291,7 +292,8 @@
             "required": ["content", "style"],
             "properties": {
               "content": { "$ref": "#/$defs/stringOrBinding" },
-              "style": { "$ref": "#/$defs/textStyle" }
+              "style": { "$ref": "#/$defs/textStyle" },
+              "multitext": { "type": "boolean" }
             }
           }
         },

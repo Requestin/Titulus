@@ -256,6 +256,8 @@ export interface TextLayer extends BaseLayer {
   type: 'text';
   content: string | VariableBinding;
   style: TextStyle;
+  /** When true, wrap words within the layer box (CSS pre-wrap). */
+  multitext?: boolean;
 }
 
 export type RectFillMode = 'solid' | 'gradient';

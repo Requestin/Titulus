@@ -26,6 +26,7 @@ import {
 } from './playheadStore';
 import { clearGesturePreview, gesturePreviewStore, scheduleGesturePreview } from './gesturePreview';
 import { derivedGroupBox, layerBoxInCanvas } from './groupBounds';
+import { publishTimelineSample } from './timelineSampleStore';
 import {
   ancestorMatrix, canvasDeltaToParent, dragTransform, transformPoint, type AffineMatrix, type DragMode,
 } from './transformMath';
@@ -99,6 +100,8 @@ export function CanvasArea() {
   const setPlayingRef = useRef(setPlaying);
   setPlayingRef.current = setPlaying;
   const dragRef = useRef<DragState | null>(null);
+  const wasPlayingRef = useRef(false);
+  const recomputeBoxRef = useRef<(preview?: Transform) => void>(() => undefined);
   const [overlay, setOverlay] = useState<SelectionOverlay | null>(null);
   const gesturePreview = useStore(gesturePreviewStore, (s) => s.preview);
 
@@ -246,6 +249,7 @@ export function CanvasArea() {
 
     setOverlay(null);
   }
+  recomputeBoxRef.current = recomputeBox;
 
   useLayoutEffect(() => {
     const r = rendererRef.current;
@@ -257,6 +261,7 @@ export function CanvasArea() {
       const current = useEditor.getState().template;
       if (!live || !current) return;
       live.syncTemplate(resolveTemplateMedia(current), resolveVariableMap(current));
+      publishTimelineSample(live.getLastTimelineSample());
     });
     r.syncTemplate(resolveTemplateMedia(template), resolveVariableMap(template));
     r.resize(cw * zoom, ch * zoom);
@@ -270,6 +275,7 @@ export function CanvasArea() {
       );
       if (Object.keys(st.detachedLocals).length > 0) r.seekLocals(locals);
       else r.seek(st.globalPlayhead);
+      publishTimelineSample(r.getLastTimelineSample());
     }
     clearGesturePreview();
     recomputeBox();
@@ -299,10 +305,25 @@ export function CanvasArea() {
   }, [gesturePreview]);
 
   // Scrub: seek when playheads change and we're not actively playing.
+  // After Play stops, keep the director-machine sample (do not sampleAt-merge
+  // idle directors back in) so selection bounds stay on the painted pose.
   useLayoutEffect(() => {
     const r = rendererRef.current;
     const t = useEditor.getState().template;
-    if (!r || !t || playing) return;
+    if (!r || !t) return;
+
+    if (playing) {
+      wasPlayingRef.current = true;
+      return;
+    }
+
+    if (wasPlayingRef.current) {
+      wasPlayingRef.current = false;
+      publishTimelineSample(r.getLastTimelineSample());
+      recomputeBox();
+      return;
+    }
+
     const st = playheadStore.getState();
     const locals = resolveSeekLocals(
       t.timeline.directors,
@@ -313,6 +334,7 @@ export function CanvasArea() {
     const hasDetach = Object.keys(st.detachedLocals).length > 0;
     if (hasDetach) r.seekLocals(locals);
     else r.seek(st.globalPlayhead);
+    publishTimelineSample(r.getLastTimelineSample());
     recomputeBox();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playhead, globalPlayhead, localPlayheads, detachedLocals, playing]);
@@ -401,9 +423,13 @@ export function CanvasArea() {
           localPlayheads: locals,
           playhead: locals[activeId] ?? 0,
         });
+        publishTimelineSample(renderer.getLastTimelineSample());
+        recomputeBoxRef.current();
       } else {
         renderer.seek(global);
         tickPlayhead(global, directors, activeId);
+        publishTimelineSample(renderer.getLastTimelineSample());
+        recomputeBoxRef.current();
       }
       setWaitingContinue(renderer.waitingContinue());
       raf = requestAnimationFrame((time) => tick(time, true));

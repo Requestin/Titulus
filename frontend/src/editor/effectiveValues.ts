@@ -10,6 +10,7 @@ import {
 } from '@runtime';
 import type { Target } from './store';
 import { playheadStore, resolveSeekLocals } from './playheadStore';
+import { timelineSampleStore } from './timelineSampleStore';
 
 export function globalFrame(template: Template, directorId: string, localPlayhead: number): number {
   const d = template.timeline.directors.find((x) => x.id === directorId);
@@ -17,13 +18,13 @@ export function globalFrame(template: Template, directorId: string, localPlayhea
 }
 
 /**
- * Sample animated values the same way CanvasArea seeks the renderer:
- * detached locals → sampleAtLocals; otherwise sampleAt(globalPlayhead).
- * Using only active-director local→global (old path) wrongly activates every
- * director at that global frame and desyncs overlay bounds from the canvas
- * when another director owns child tracks (e.g. Update).
+ * Prefer the renderer's last paint sample (excludes idle directors during Play).
+ * Fallback: detached locals → sampleAtLocals; else sampleAt(global).
  */
 export function sampleForEditor(template: Template): TimelineSample {
+  const painted = timelineSampleStore.getState().sample;
+  if (painted) return painted;
+
   const norm = normalizeTimeline(template.timeline);
   const st = playheadStore.getState();
   if (Object.keys(st.detachedLocals).length > 0) {

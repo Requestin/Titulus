@@ -726,6 +726,15 @@ function TypeSection({
               variables={variables}
               onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'text') l.content = v; })}
             />
+            <Checkbox
+              label="Multitext"
+              checked={Boolean(layer.multitext)}
+              onChange={(v) => updateLayer(layer.id, (l) => {
+                if (l.type !== 'text') return;
+                if (v) l.multitext = true;
+                else delete l.multitext;
+              })}
+            />
           </Section>
           <TextStyleSection layer={layer} variables={variables} updateLayer={updateLayer} onOpenFontMam={onOpenFontMam ?? (() => {})} />
         </>
