@@ -392,16 +392,17 @@ export function CanvasArea() {
       );
 
       if (advance && last !== 0) {
-        const waiting = renderer.waitingContinue();
-        const paused = renderer.hasPausedDirector();
-        if (!waiting || paused) {
-          global += (Math.min(now - last, 100) / 1000) * fps;
-        }
+        // Always advance global — the director machine routes the delta only
+        // to running directors. Waiting/paused directors don't advance, but
+        // looping directors keep running. Gating on `!waiting` freezes ALL
+        // directors (including loops) when one director waits for continue.
+        global += (Math.min(now - last, 100) / 1000) * fps;
       }
       last = now;
       if (global < offset) global = offset;
 
-      if (director && !director.loop && !director.swing && global - offset >= duration) {
+      const waiting = renderer.waitingContinue();
+      if (director && !director.loop && !director.swing && !waiting && global - offset >= duration) {
         if (renderer.hasDirectorRuntime()) renderer.advancePlayback(offset + duration);
         else renderer.seek(offset + duration);
         tickPlayhead(offset + duration, directors, activeId);
