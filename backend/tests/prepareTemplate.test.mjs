@@ -169,3 +169,56 @@ test('crawl duration rebases after dynamic text without rewriting fromEnd offset
   const endKey = template.timeline.keyframes.find((key) => key.layers['crawl-1']?.crawlProgress === 1);
   assert.equal(endKey.frame, long.durationFrames);
 });
+
+test('prepareTemplate resolves asset tokens on image and video layers', async () => {
+  const { openDb, mediaAssetsDao } = await import('../src/db.js');
+  const db = openDb(':memory:');
+  mediaAssetsDao(db).create({
+    id: '11111111-1111-4111-8111-111111111111',
+    type: 'image',
+    status: 'ready',
+    originalName: 'hero.png',
+    sourceMime: 'image/png',
+    sourceSizeBytes: 10,
+    sourceFilename: 'images/hero.png',
+    playbackFilename: 'images/hero.png',
+    posterFilename: 'images/hero.png',
+    profile: 'source-image',
+    hasAlpha: false,
+    probe: { width: 100, height: 50 },
+    attempts: 0,
+    maxAttempts: 0,
+    error: null,
+  });
+  const source = {
+    name: 'Media',
+    canvas: { width: 1920, height: 1080, background: '#000' },
+    variables: [],
+    groups: [],
+    layers: [{
+      id: 'img-1',
+      type: 'image',
+      name: 'Hero',
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: 'normal',
+      groupId: null,
+      transform: {
+        x: 0, y: 0, width: 100, height: 50, rotation: 0, rotationX: 0, rotationY: 0,
+        scaleX: 1, scaleY: 1, anchorX: 0.5, anchorY: 0.5, perspective: 0, z: 0,
+      },
+      src: 'asset:11111111-1111-4111-8111-111111111111',
+      fit: 'cover',
+      cornerRadius: 0,
+    }],
+    rootStack: [{ kind: 'layer', id: 'img-1' }],
+    groupStacks: {},
+    timeline: { fps: 50, durationFrames: 100, playbackMode: 'bounded', directors: [], trackDirectors: {}, keyframes: [], actions: [] },
+  };
+  const result = await prepareTemplate(source, { trigger: 'take', db });
+  assert.equal(result.ok, true);
+  assert.equal(result.template.layers[0].src, '/uploads/images/hero.png');
+  assert.equal(source.layers[0].src, 'asset:11111111-1111-4111-8111-111111111111');
+  db.close();
+});

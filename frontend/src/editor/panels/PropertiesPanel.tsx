@@ -14,7 +14,7 @@ import { effectiveGradientWeight, effectiveOpacity, effectiveTransform } from '.
 import { usePlayhead } from '../playheadStore';
 import { clearGesturePreview, gesturePreviewStore, scheduleGesturePreview } from '../gesturePreview';
 import { MediaUploadButton } from '../MediaUploadButton';
-import { MamPicker } from '@/media/MamPicker';
+import { MamPicker, SelectedMediaInfo } from '@/media/MamPicker';
 import {
   Checkbox,
   CollapseAllButton,
@@ -860,9 +860,13 @@ function TypeSection({
               onChange={(v) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.src = v; })}
             />
           </Field>
+          {typeof layer.src === 'string' && layer.src && (
+            <SelectedMediaInfo src={layer.src} />
+          )}
           {typeof layer.src !== 'object' && (
             <div className="space-y-1">
               <MamPicker
+                kind={layer.type === 'image' ? 'image' : 'video'}
                 accept={layer.type === 'image' ? 'image/*' : 'video/*'}
                 onPick={(token) => updateLayer(layer.id, (l) => { if (l.type === 'image' || l.type === 'video') l.src = token; })}
               />

@@ -4,9 +4,9 @@
 // the source first; all expensive probe/transcode work runs on a bounded local
 // queue so it cannot block the HTTP request or overwhelm live engines.
 
-import { spawn as nodeSpawn } from 'node:child_process';
+import { spawn as nodeSpawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import { mediaAssetsDao } from './db.js';
@@ -19,6 +19,11 @@ const MAX_VIDEO_WIDTH = 3840;
 const MAX_VIDEO_HEIGHT = 2160;
 const MAX_VIDEO_FPS = 120;
 
+export const MEDIA_KIND_DIRS = Object.freeze({
+  image: 'images',
+  video: 'video',
+});
+
 /** Map a MIME type to our media kind, or null if unsupported. */
 export function mediaTypeFor(mime) {
   if (typeof mime === 'string' && mime.startsWith('image/')) return 'image';
@@ -26,7 +31,23 @@ export function mediaTypeFor(mime) {
   return null;
 }
 
-const publicUrl = (filename) => `/uploads/${filename}`;
+export function mediaKindDir(kind) {
+  return MEDIA_KIND_DIRS[kind] ?? null;
+}
+
+const publicUrl = (filename) => `/uploads/${String(filename).replace(/^\/+/, '')}`;
+
+function relativeUploadName(uploadsDir, file) {
+  if (file?.relativeName) return String(file.relativeName).replace(/\\/g, '/');
+  if (file?.path) {
+    const full = resolve(file.path);
+    const root = resolve(uploadsDir);
+    if (full.startsWith(`${root}/`) || full.startsWith(`${root}\\`)) {
+      return full.slice(root.length + 1).replace(/\\/g, '/');
+    }
+  }
+  return file?.filename ? String(file.filename) : randomUUID();
+}
 
 function fpsFromRational(value) {
   const [numerator, denominator] = String(value ?? '').split('/').map(Number);
@@ -79,6 +100,8 @@ export class MediaJobs {
     this.active = 0;
     this.live = new Map();
     mkdirSync(uploadsDir, { recursive: true });
+    mkdirSync(join(uploadsDir, MEDIA_KIND_DIRS.image), { recursive: true });
+    mkdirSync(join(uploadsDir, MEDIA_KIND_DIRS.video), { recursive: true });
     this.recover();
   }
 
@@ -90,8 +113,10 @@ export class MediaJobs {
     const id = randomUUID();
     const type = mediaTypeFor(file.mimetype);
     const size = typeof file.size === 'number' ? file.size : 0;
+    const sourceFilename = relativeUploadName(this.uploadsDir, file);
 
     if (type === 'image') {
+      const probe = this._probeImageSync(resolve(this.uploadsDir, sourceFilename));
       return this.dao.create({
         id,
         type,
@@ -99,20 +124,20 @@ export class MediaJobs {
         originalName: file.originalname,
         sourceMime: file.mimetype,
         sourceSizeBytes: size,
-        sourceFilename: file.filename,
-        playbackFilename: file.filename,
-        posterFilename: file.filename,
+        sourceFilename,
+        playbackFilename: sourceFilename,
+        posterFilename: sourceFilename,
         profile: 'source-image',
-        hasAlpha: false,
-        probe: {},
+        hasAlpha: Boolean(probe.hasAlpha),
+        probe,
         attempts: 0,
         maxAttempts: 0,
         error: null,
       });
     }
 
-    const playbackFilename = `${id}.webm`;
-    const posterFilename = `${id}.jpg`;
+    const playbackFilename = `${MEDIA_KIND_DIRS.video}/${id}.webp`;
+    const posterFilename = `${MEDIA_KIND_DIRS.video}/${id}.jpg`;
     const job = this.dao.create({
       id,
       type,
@@ -120,7 +145,7 @@ export class MediaJobs {
       originalName: file.originalname,
       sourceMime: file.mimetype,
       sourceSizeBytes: size,
-      sourceFilename: file.filename,
+      sourceFilename,
       playbackFilename,
       posterFilename,
       profile: '',
@@ -136,6 +161,18 @@ export class MediaJobs {
     this.live.set(id, state);
     this._enqueue(state);
     return state.job;
+  }
+
+  /** Catalog a file already sitting under uploads/{images|video}/. */
+  ingestExistingPath({ absolutePath, relativeName, originalName, mimetype, size = 0 }) {
+    return this.ingest({
+      path: absolutePath,
+      filename: basename(relativeName),
+      relativeName,
+      originalname: originalName,
+      mimetype,
+      size,
+    });
   }
 
   recover() {
@@ -190,7 +227,11 @@ export class MediaJobs {
 
     const probe = await this._probe(state.sourcePath);
     const profile = this._playbackProfile(probe.hasAlpha, probe.playbackFps);
-    this._setPlaybackFilename(state, `${state.job.id}.${profile.extension}`);
+    mkdirSync(dirname(state.playbackPath), { recursive: true });
+    this._setPlaybackFilename(
+      state,
+      `${MEDIA_KIND_DIRS.video}/${state.job.id}.${profile.extension}`,
+    );
     state.job.probe = probe;
     state.job.hasAlpha = probe.hasAlpha;
     state.job.profile = profile.name;
@@ -270,11 +311,37 @@ export class MediaJobs {
     Object.assign(state.job, updated);
   }
 
+  _probeImageSync(sourcePath) {
+    if (!this.exists(sourcePath)) {
+      return { width: 0, height: 0, hasAlpha: false };
+    }
+    try {
+      const result = spawnSync(this.ffprobePath, [
+        '-v', 'error',
+        '-select_streams', 'v:0',
+        '-show_entries', 'stream=width,height,pix_fmt',
+        '-of', 'json',
+        sourcePath,
+      ], { encoding: 'utf8', timeout: 15_000 });
+      if (result.status !== 0) return { width: 0, height: 0, hasAlpha: false };
+      const parsed = JSON.parse(result.stdout || '{}');
+      const stream = parsed?.streams?.[0];
+      const width = Number(stream?.width) || 0;
+      const height = Number(stream?.height) || 0;
+      const pixFmt = String(stream?.pix_fmt ?? '');
+      const hasAlpha = pixFmt.includes('a') || pixFmt === 'pal8'
+        || pixFmt.startsWith('rgba') || pixFmt.startsWith('yuva');
+      return { width, height, pixFmt, hasAlpha };
+    } catch {
+      return { width: 0, height: 0, hasAlpha: false };
+    }
+  }
+
   async _probe(sourcePath) {
     const raw = await this._run(this.ffprobePath, [
       '-v', 'error',
       '-select_streams', 'v:0',
-      '-show_entries', 'stream=codec_name,width,height,avg_frame_rate,pix_fmt:stream_tags=alpha_mode',
+      '-show_entries', 'stream=codec_name,width,height,avg_frame_rate,pix_fmt,duration:stream_tags=alpha_mode:format=duration',
       '-of', 'json',
       sourcePath,
     ]);
@@ -305,6 +372,8 @@ export class MediaJobs {
     // Animated WebP avoids Chromium's costly/unsupported video decoders.
     // Cap at 25p: 25 maps exactly to 50i and is the validated 3-channel budget.
     const playbackFps = 25;
+    const durationSec = Number(stream?.duration) || Number(parsed?.format?.duration) || 0;
+    const durationFrames = durationSec > 0 ? Math.round(durationSec * fps) : 0;
     return {
       codec: String(stream.codec_name ?? ''),
       width,
@@ -313,6 +382,8 @@ export class MediaJobs {
       playbackFps,
       pixFmt: String(stream.pix_fmt ?? ''),
       hasAlpha,
+      durationSec,
+      durationFrames,
     };
   }
 

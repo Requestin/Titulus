@@ -11,6 +11,11 @@ import { useStore } from 'zustand';
 import { useEditor } from './store';
 import { effectiveTransform } from './effectiveValues';
 import {
+  collectAssetTokens,
+  ensureMediaResolved,
+  resolveTemplateMedia,
+} from './mediaResolve';
+import {
   bindPlaybackControls,
   playheadStore,
   resolveSeekLocals,
@@ -245,7 +250,15 @@ export function CanvasArea() {
   useLayoutEffect(() => {
     const r = rendererRef.current;
     if (!r || !template) return;
-    r.syncTemplate(template, resolveVariableMap(template));
+    const tokens = collectAssetTokens(template);
+    void ensureMediaResolved(tokens).then((changed) => {
+      if (!changed) return;
+      const live = rendererRef.current;
+      const current = useEditor.getState().template;
+      if (!live || !current) return;
+      live.syncTemplate(resolveTemplateMedia(current), resolveVariableMap(current));
+    });
+    r.syncTemplate(resolveTemplateMedia(template), resolveVariableMap(template));
     r.resize(cw * zoom, ch * zoom);
     const st = playheadStore.getState();
     if (!st.playing) {

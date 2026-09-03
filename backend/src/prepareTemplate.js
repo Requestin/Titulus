@@ -87,6 +87,31 @@ function resolveMediaToken(token, ctx) {
   return null;
 }
 
+function resolveLayerMedia(template, ctx) {
+  for (const layer of template.layers ?? []) {
+    if (layer.type === 'image' || layer.type === 'video') {
+      if (typeof layer.src === 'string' && layer.src.startsWith('asset:')) {
+        const url = resolveMediaToken(layer.src, ctx);
+        if (url) layer.src = url;
+      }
+    }
+    if (layer.type === 'crawl' && layer.crawl && typeof layer.crawl.separatorImage === 'string') {
+      if (layer.crawl.separatorImage.startsWith('asset:')) {
+        const url = resolveMediaToken(layer.crawl.separatorImage, ctx);
+        if (url) layer.crawl.separatorImage = url;
+      }
+    }
+  }
+  for (const variable of template.variables ?? []) {
+    if ((variable.type === 'image' || variable.type === 'video')
+      && typeof variable.defaultValue === 'string'
+      && variable.defaultValue.startsWith('asset:')) {
+      const url = resolveMediaToken(variable.defaultValue, ctx);
+      if (url) variable.defaultValue = url;
+    }
+  }
+}
+
 export async function prepareTemplate(template, ctx = {}) {
   if (!template || typeof template !== 'object') {
     return { ok: false, blocked: true, overrides: {}, errors: [{ code: 'INVALID_TEMPLATE', message: 'template required', blocking: true }], template: null };
@@ -112,6 +137,7 @@ export async function prepareTemplate(template, ctx = {}) {
   }
 
   applyVariableOverrides(snapshot, pipeline.overrides);
+  resolveLayerMedia(snapshot, ctx);
   rebaseCrawlTimeline(snapshot);
   return {
     ok: pipeline.ok && errors.length === 0,

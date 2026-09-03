@@ -7,6 +7,11 @@ import {
   resolveVariableMap,
   type Template,
 } from '@runtime';
+import {
+  collectAssetTokens,
+  ensureMediaResolved,
+  resolveTemplateMedia,
+} from './mediaResolve';
 
 export function thumbnailLabel(name: string, max = 42): string {
   const trimmed = name.trim();
@@ -53,8 +58,10 @@ export async function renderTemplateThumbnailJpeg(template: Template, width = 32
   document.body.appendChild(host);
   const renderer = new TemplateRenderer(host, { playbackMode: 'raf' });
   try {
-    renderer.syncTemplate(template, resolveVariableMap(template), { reuseDirectors: false });
-    await ensureFonts(collectFonts(template.layers)).catch(() => undefined);
+    await ensureMediaResolved(collectAssetTokens(template));
+    const preview = resolveTemplateMedia(template);
+    renderer.syncTemplate(preview, resolveVariableMap(preview), { reuseDirectors: false });
+    await ensureFonts(collectFonts(preview.layers)).catch(() => undefined);
     if (document.fonts?.ready) await document.fonts.ready.catch(() => undefined);
     // A global seek samples every director whose time window is active. That
     // is wrong for thumbnails: an Update track can overwrite the default

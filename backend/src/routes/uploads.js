@@ -6,14 +6,15 @@
 //   GET  /api/uploads/jobs/:id  transcode job status (poll until status === 'ready')
 //
 // Security (security-review): uuid filenames (no client-controlled paths → no
-// traversal), MIME allow-list, 200 MB cap. Files land in the data uploads dir
-// and are served read-only from /uploads.
+// traversal), MIME allow-list, 200 MB cap. Files land in uploads/images or
+// uploads/video and are served read-only from /uploads.
 
 import { Router } from 'express';
 import multer from 'multer';
-import { extname } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { extname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { mediaTypeFor } from '../media.js';
+import { mediaKindDir, mediaTypeFor } from '../media.js';
 
 const MAX_BYTES = 200 * 1024 * 1024; // 200 MB (§7.5)
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg']);
@@ -29,7 +30,13 @@ export function uploadsRouter(media, uploadsDir) {
   const router = Router();
 
   const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, uploadsDir),
+    destination: (req, file, cb) => {
+      const kind = mediaTypeFor(file.mimetype) || 'image';
+      const sub = mediaKindDir(kind) || 'images';
+      const dest = join(uploadsDir, sub);
+      mkdirSync(dest, { recursive: true });
+      cb(null, dest);
+    },
     filename: (req, file, cb) => {
       // Keep only a safe extension; the name itself is a fresh uuid.
       const ext = (extname(file.originalname) || '').toLowerCase().replace(/[^.a-z0-9]/g, '');
@@ -78,6 +85,9 @@ export function uploadsRouter(media, uploadsDir) {
       if (!req.file) {
         return apiError(res, 400, 'FILE_REQUIRED', 'multipart field "file" required');
       }
+      const kind = mediaTypeFor(req.file.mimetype);
+      const sub = mediaKindDir(kind) || 'images';
+      req.file.relativeName = `${sub}/${req.file.filename}`;
       const job = media.ingest(req.file);
       const statusCode = job.status === 'error' ? 422 : 201;
       res.status(statusCode).json({

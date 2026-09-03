@@ -56,7 +56,7 @@ test('resetting a tracked opacity only writes the current keyframe', () => {
 
 test('editing a tracked gradient weight only writes the current keyframe', () => {
   const template = createDefaultTemplate();
-  const layer = createLayer('rect', 'Gradient rectangle');
+  const layer = createLayer('rect', 'Gradient rectangle') as Extract<ReturnType<typeof createLayer>, { type: 'rect' }>;
   layer.id = 'gradient-rectangle';
   layer.fillMode = 'gradient';
   layer.gradient = {
@@ -83,7 +83,10 @@ test('editing a tracked gradient weight only writes the current keyframe', () =>
 
   const updated = useEditor.getState().template!;
   const current = updated.timeline.keyframes.find((keyframe) => keyframe.frame === 20)!;
-  assert.equal(updated.layers.find((item) => item.id === layer.id)!.gradient?.weights.topLeft, 100);
+  assert.equal(
+    (updated.layers.find((item) => item.id === layer.id) as Extract<typeof layer, { type: 'rect' }>).gradient?.weights.topLeft,
+    100,
+  );
   assert.equal(current.layers[layer.id]?.['gradient.weights.topLeft'], 25);
   assert.equal(updated.timeline.keyframes[0]!.layers[layer.id]?.['gradient.weights.topLeft'], 100);
 });

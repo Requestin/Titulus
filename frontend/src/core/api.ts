@@ -65,13 +65,40 @@ export interface TemplateFolder {
   sort_order?: number;
 }
 
+export interface MediaProbe {
+  width?: number;
+  height?: number;
+  fps?: number;
+  playbackFps?: number;
+  durationSec?: number;
+  durationFrames?: number;
+  codec?: string;
+  pixFmt?: string;
+}
+
 export interface MediaAsset {
   id: string;
+  mediaAssetId?: string;
   title?: string;
+  notes?: string;
+  locked?: boolean;
+  type?: 'image' | 'video';
+  status?: 'pending' | 'processing' | 'ready' | 'error';
   originalName?: string;
   token: string;
   url: string | null;
+  posterUrl?: string | null;
   tags: string[];
+  hasAlpha?: boolean;
+  probe?: MediaProbe;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MediaTag {
+  id: string;
+  name: string;
+  createdAt?: string;
 }
 
 export type PermissionGroup = 'template_editor' | 'control' | 'settings' | 'files.read';
@@ -321,20 +348,50 @@ export const api = {
     },
   },
   media: {
-    list: (params?: { q?: string; tag?: string }) => {
+    list: (params?: { q?: string; tag?: string; tags?: string[]; type?: 'image' | 'video' }) => {
       const query = new URLSearchParams();
       if (params?.q) query.set('q', params.q);
-      if (params?.tag) query.set('tag', params.tag);
+      if (params?.type) query.set('type', params.type);
+      const tagList = params?.tags?.length
+        ? params.tags
+        : (params?.tag ? [params.tag] : []);
+      if (tagList.length) query.set('tags', tagList.join(','));
       const suffix = query.toString();
       return req<MediaAsset[]>(`/api/media${suffix ? `?${suffix}` : ''}`);
     },
+    resolve: (token: string) =>
+      req<MediaAsset>(`/api/media/resolve?token=${encodeURIComponent(token)}`),
+    get: (id: string) => req<MediaAsset>(`/api/media/${encodeURIComponent(id)}`),
     import: (file: File) => {
       const fd = new FormData();
       fd.append('file', file);
-      return req<{ catalog: MediaAsset; job: unknown }>('/api/media/import', { method: 'POST', body: fd });
+      return req<{ catalog: MediaAsset; job: UploadJob }>('/api/media/import', { method: 'POST', body: fd });
     },
+    update: (id: string, patch: { title?: string; tags?: string[]; locked?: boolean }) =>
+      req<MediaAsset>(`/api/media/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(patch),
+      }),
     setTags: (id: string, tags: string[]) =>
-      req<MediaAsset>(`/api/media/${id}/tags`, { method: 'PUT', body: JSON.stringify({ tags }) }),
+      req<MediaAsset>(`/api/media/${encodeURIComponent(id)}/tags`, {
+        method: 'PUT',
+        body: JSON.stringify({ tags }),
+      }),
+    remove: (id: string) =>
+      req<{ ok: true }>(`/api/media/${encodeURIComponent(id)}?purge=1`, { method: 'DELETE' }),
+    refresh: (type: 'image' | 'video') =>
+      req<{ imported: MediaAsset[]; converting: Array<{ name: string; status: string }>; errors: string[]; items: MediaAsset[] }>(
+        '/api/media/refresh',
+        { method: 'POST', body: JSON.stringify({ type }) },
+      ),
+    listTags: (q?: string) => {
+      const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : '';
+      return req<MediaTag[]>(`/api/media/tags${query}`);
+    },
+    createTag: (name: string) =>
+      req<MediaTag>('/api/media/tags', { method: 'POST', body: JSON.stringify({ name }) }),
+    deleteTag: (id: string) =>
+      req<{ ok: true; tag: MediaTag }>(`/api/media/tags/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   templateFolders: {
     list: () => req<TemplateFolder[]>('/api/template-folders'),
