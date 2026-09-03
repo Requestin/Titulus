@@ -105,16 +105,18 @@ async function waitForPaint(): Promise<void> {
   });
 }
 
-/** Wait for images/videos and rasterize video frames so foreignObject SVG can paint them. */
+/** Wait for images/videos and inline them as data URIs so foreignObject SVG can paint them.
+ *  External http(s)/blob URLs and nested data:image/svg+xml backgrounds do NOT load
+ *  inside a data: SVG foreignObject — everything must become raster data URIs first. */
 export async function prepareMediaForCapture(root: HTMLElement): Promise<void> {
-  // Convert data-URI CSS backgrounds (rect gradients) to blob URLs so they
-  // render inside SVG foreignObject. Nested data URIs are blocked by browsers,
-  // but blob: URLs work. We patch the inline style on the live DOM element,
-  // which inlineCaptureStyles then copies to the clone.
-  await convertDataUriBackgrounds(root);
+  await rasterizeCssBackgrounds(root);
 
   const images = [...root.querySelectorAll('img')];
-  await Promise.all(images.map((img) => waitForImage(img)));
+  await Promise.all(images.map(async (img) => {
+    await waitForImage(img);
+    const dataUrl = rasterElementToDataUrl(img);
+    if (dataUrl) img.setAttribute('src', dataUrl);
+  }));
 
   const videos = [...root.querySelectorAll('video')];
   await Promise.all(videos.map(async (video) => {
@@ -124,37 +126,73 @@ export async function prepareMediaForCapture(root: HTMLElement): Promise<void> {
   }));
 }
 
-/** Find elements with data: URI backgrounds, convert to blob: URLs, and wait for load. */
-async function convertDataUriBackgrounds(root: HTMLElement): Promise<void> {
+/** Convert CSS background-image urls (gradients, etc.) into absolute image layers with PNG data URIs. */
+async function rasterizeCssBackgrounds(root: HTMLElement): Promise<void> {
   const elements = [root, ...root.querySelectorAll<HTMLElement>('*')];
-  const tasks: Promise<void>[] = [];
   for (const el of elements) {
     const bg = getComputedStyle(el).backgroundImage;
-    if (!bg || bg === 'none' || !bg.includes('data:')) continue;
-    const match = bg.match(/url\(["']?(data:[^"')]+)["']?\)/);
-    const dataUri = match?.[1]?.trim();
-    if (!dataUri) continue;
-    tasks.push(loadDataUriAsBlobUrl(dataUri).then((blobUrl) => {
-      if (blobUrl) {
-        // Preserve background-size/position/repeat from computed style
-        const bgSize = getComputedStyle(el).backgroundSize;
-        const bgPos = getComputedStyle(el).backgroundPosition;
-        const bgRepeat = getComputedStyle(el).backgroundRepeat;
-        el.style.backgroundImage = `url("${blobUrl}")`;
-        if (bgSize) el.style.backgroundSize = bgSize;
-        if (bgPos) el.style.backgroundPosition = bgPos;
-        if (bgRepeat) el.style.backgroundRepeat = bgRepeat;
-      }
-    }));
+    if (!bg || bg === 'none' || !bg.includes('url(')) continue;
+    const match = bg.match(/url\(["']?([^"')]+)["']?\)/);
+    const url = match?.[1]?.trim();
+    if (!url) continue;
+    const dataUrl = await loadUrlAsPngDataUrl(url);
+    if (!dataUrl) continue;
+    const layer = document.createElement('img');
+    layer.alt = '';
+    layer.src = dataUrl;
+    layer.setAttribute('aria-hidden', 'true');
+    layer.style.cssText = [
+      'position:absolute',
+      'inset:0',
+      'width:100%',
+      'height:100%',
+      'pointer-events:none',
+      'object-fit:fill',
+    ].join(';');
+    el.style.backgroundImage = 'none';
+    if (!el.style.position || el.style.position === 'static') el.style.position = 'relative';
+    el.insertBefore(layer, el.firstChild);
   }
-  await Promise.all(tasks);
 }
 
-async function loadDataUriAsBlobUrl(dataUri: string): Promise<string | null> {
+function loadUrlAsPngDataUrl(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    let settled = false;
+    const finish = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    image.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, image.naturalWidth || 64);
+        canvas.height = Math.max(1, image.naturalHeight || 64);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { finish(null); return; }
+        ctx.drawImage(image, 0, 0);
+        finish(canvas.toDataURL('image/png'));
+      } catch {
+        finish(null);
+      }
+    };
+    image.onerror = () => finish(null);
+    image.src = url;
+    window.setTimeout(() => finish(null), 2000);
+  });
+}
+
+function rasterElementToDataUrl(img: HTMLImageElement): string | null {
+  if (!img.naturalWidth || !img.naturalHeight) return null;
   try {
-    const response = await fetch(dataUri);
-    const blob = await response.blob();
-    return URL.createObjectURL(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    return canvas.toDataURL('image/png');
   } catch {
     return null;
   }

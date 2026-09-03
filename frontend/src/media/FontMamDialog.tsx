@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Lock, Unlock, RefreshCw, X } from 'lucide-react';
 import { api, type FontAsset } from '@/core/api';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/form';
 import { toast } from '@/core/toast';
 import { cn } from '@/lib/cn';
 
-/** Dropdown that lists MAM fonts + allows custom entry. */
+/** Dropdown of MAM-imported font families. Inter is shown only when MAM is empty. */
 export function FontFamilySelect({
   value,
   onChange,
@@ -15,54 +14,32 @@ export function FontFamilySelect({
   onChange: (family: string) => void;
 }) {
   const [fonts, setFonts] = useState<FontAsset[] | null>(null);
-  const [custom, setCustom] = useState(false);
 
   useEffect(() => {
     api.fonts.list().then(setFonts).catch(() => setFonts([]));
   }, []);
 
   const families = fonts
-    ? [...new Set(fonts.map((f) => f.family))].sort()
+    ? [...new Set(fonts.map((f) => f.family))].sort((a, b) => a.localeCompare(b))
     : [];
+  const options = families.length > 0 ? families : ['Inter'];
+
+  // Keep current value selectable even if it is not in the list yet.
+  const selectOptions = value && !options.includes(value)
+    ? [...options, value]
+    : options;
 
   return (
-    <div className="flex gap-1">
-      {custom || (fonts && !families.includes(value)) ? (
-        <Input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="Font family name"
-          className="flex-1"
-        />
-      ) : (
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="flex-1 rounded-md border border-border bg-surface px-2 py-1 text-sm"
-        >
-          {fonts === null ? (
-            <option value={value}>{value}</option>
-          ) : (
-            <>
-              {families.map((f) => (
-                <option key={f} value={f}>{f}</option>
-              ))}
-              {value && !families.includes(value) && (
-                <option value={value}>{value} (not in MAM)</option>
-              )}
-            </>
-          )}
-        </select>
-      )}
-      <button
-        type="button"
-        title={custom ? 'Pick from list' : 'Enter custom name'}
-        onClick={() => setCustom(!custom)}
-        className="rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-2"
-      >
-        {custom ? 'List' : 'Custom'}
-      </button>
-    </div>
+    <select
+      value={value || selectOptions[0] || 'Inter'}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-md border border-border bg-surface px-2 py-1 text-sm"
+      disabled={fonts === null}
+    >
+      {selectOptions.map((family) => (
+        <option key={family} value={family}>{family}</option>
+      ))}
+    </select>
   );
 }
 

@@ -233,6 +233,32 @@ export function tracksForDirector(template: Template, directorId: string): Timel
 }
 
 /**
+ * Selection carries the lane's display directorId (e.g. "default"), but
+ * untagged keyframes store no directorId field. Erase/write must use the
+ * actual storage tag — otherwise erase misses and copies are left behind.
+ */
+export function storageDirectorIdFor(
+  template: Template,
+  selected: SelectedKeyframe,
+): string | undefined {
+  for (const keyframe of template.timeline.keyframes) {
+    if (keyframe.frame !== selected.frame) continue;
+    if (bagFor(keyframe, selected.target)?.[selected.prop] === undefined) continue;
+    if (selected.directorId) {
+      if (!keyframeBelongsToDirector(
+        template.timeline,
+        keyframe,
+        selected.target,
+        selected.prop,
+        selected.directorId,
+      )) continue;
+    }
+    return keyframe.directorId;
+  }
+  return undefined;
+}
+
+/**
  * Collision policy is overwrite:
  * selected sources are lifted first, destinations replace any occupant,
  * and if two selected points of one track land on the same frame the later
@@ -247,7 +273,8 @@ export function planKeyframeMoves(
   if (delta === 0 || selected.length === 0) return [];
   const byTrack = new Map<string, SelectedKeyframe[]>();
   for (const keyframe of selected) {
-    const key = `${trackKey(keyframe.target, keyframe.prop)}:${keyframe.directorId ?? ''}`;
+    const storage = storageDirectorIdFor(template, keyframe);
+    const key = `${trackKey(keyframe.target, keyframe.prop)}:${storage ?? ''}`;
     const list = byTrack.get(key) ?? [];
     list.push(keyframe);
     byTrack.set(key, list);
@@ -265,13 +292,14 @@ export function planKeyframeMoves(
       const point = pointsFor(template, keyframe.target, keyframe.prop, keyframe.directorId)
         .find((item) => item.frame === keyframe.frame);
       if (!point) continue;
+      const storageDirectorId = storageDirectorIdFor(template, keyframe);
       moves.push({
         target: keyframe.target,
         prop: keyframe.prop,
         fromFrame: keyframe.frame,
         toFrame,
         value: point.value,
-        ...(keyframe.directorId ? { directorId: keyframe.directorId } : {}),
+        ...(storageDirectorId ? { directorId: storageDirectorId } : {}),
       });
     }
   }
@@ -347,12 +375,13 @@ export function retargetSelected(
   moves: PlannedMove[],
 ): SelectedKeyframe[] {
   return selected.map((key) => {
+    // Match by target/prop/frame only — selected.directorId is the lane display
+    // id, while move.directorId is the storage tag (often undefined).
     const move = moves.find((item) => (
       item.target.kind === key.target.kind
       && item.target.id === key.target.id
       && item.prop === key.prop
       && item.fromFrame === key.frame
-      && (item.directorId ?? undefined) === (key.directorId ?? undefined)
     ));
     return move ? { ...key, frame: move.toFrame } : key;
   });

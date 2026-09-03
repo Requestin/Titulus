@@ -91,6 +91,27 @@ test('planKeyframeMoves overwrites a destination and keeps the later source on a
   assert.equal(template.timeline.keyframes.find((item) => item.frame === 0)?.layers.box?.y, 20);
 });
 
+test('planKeyframeMoves erases untagged keyframes even when selection carries display directorId', () => {
+  const template = animatedRect();
+  const target = { kind: 'layer' as const, id: 'box' };
+  // Lane selection includes display directorId "default", but stored keyframes are untagged.
+  const selected: SelectedKeyframe[] = [
+    { target, prop: 'x', frame: 0, directorId: 'default' },
+    { target, prop: 'x', frame: 20, directorId: 'default' },
+  ];
+  const moves = planKeyframeMoves(template, selected, 10);
+  assert.deepEqual(moves.map((m) => [m.fromFrame, m.toFrame, m.directorId]), [
+    [0, 10, undefined],
+    [20, 30, undefined],
+  ]);
+  applyKeyframeMoves(template, moves);
+  const xPoints = pointsFor(template, target, 'x', 'default');
+  assert.deepEqual(xPoints.map((item) => [item.frame, item.value]), [[10, 10], [30, 40]]);
+  // Old frames must be gone — no copies left behind.
+  assert.equal(template.timeline.keyframes.find((item) => item.frame === 0)?.layers.box?.x, undefined);
+  assert.equal(template.timeline.keyframes.find((item) => item.frame === 20)?.layers.box?.x, undefined);
+});
+
 test('keyframe identity is target+prop+frame', () => {
   const target = { kind: 'layer' as const, id: 'box' };
   assert.equal(keyframeKey({ target, prop: 'x', frame: 12 }), 'layer:box:x@12');

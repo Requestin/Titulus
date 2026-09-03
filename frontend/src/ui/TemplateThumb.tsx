@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LayoutTemplate } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { templateThumbnailUrl } from '@/editor/captureThumbnail';
@@ -15,62 +15,53 @@ export function TemplateThumb({
   className?: string;
   iconClassName?: string;
 }) {
-  const [failed, setFailed] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  const retryTimer = useRef<number | null>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
-  const url = templateThumbnailUrl(
-    templateId,
-    `${cacheKey ?? ''}${attempt > 0 ? `-r${attempt}` : ''}`,
-  );
+  const [src, setSrc] = useState<string | null>(null);
+  const baseUrl = templateThumbnailUrl(templateId, cacheKey);
 
-  // Check if the image is already complete (cached) after mount and after url changes.
   useEffect(() => {
-    const img = imgRef.current;
-    if (img && img.complete && img.naturalWidth > 0) {
-      setLoaded(true);
+    let cancelled = false;
+    let attempt = 0;
+    let timer: number | null = null;
+    setSrc(null);
+
+    const delays = [0, 150, 400, 900, 1800, 3500];
+
+    function tryLoad() {
+      const url = attempt === 0
+        ? baseUrl
+        : `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}r=${attempt}`;
+      const image = new Image();
+      image.onload = () => {
+        if (cancelled) return;
+        setSrc(url);
+      };
+      image.onerror = () => {
+        if (cancelled) return;
+        attempt += 1;
+        if (attempt >= delays.length) return;
+        timer = window.setTimeout(tryLoad, delays[attempt] ?? 3500);
+      };
+      image.src = url;
     }
-  }, [url]);
 
-  useEffect(() => {
-    setFailed(false);
-    setLoaded(false);
-    setAttempt(0);
-    if (retryTimer.current !== null) window.clearTimeout(retryTimer.current);
+    tryLoad();
     return () => {
-      if (retryTimer.current !== null) window.clearTimeout(retryTimer.current);
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
     };
-  }, [templateId, cacheKey]);
-
-  function retry() {
-    if (attempt >= 6) {
-      setFailed(true);
-      return;
-    }
-    const delays = [0, 200, 500, 1000, 2000, 4000];
-    retryTimer.current = window.setTimeout(() => {
-      setAttempt((value) => value + 1);
-    }, delays[attempt] ?? 4000);
-  }
+  }, [templateId, cacheKey, baseUrl]);
 
   return (
     <div className={cn('relative grid place-items-center overflow-hidden bg-surface-2 text-ink-faint', className)}>
-      {!failed && (
+      {src ? (
         <img
-          ref={imgRef}
-          key={url}
-          src={url}
+          src={src}
           alt=""
-          className={cn(
-            'absolute inset-0 h-full w-full object-cover',
-            loaded ? 'opacity-100' : 'opacity-0',
-          )}
-          onLoad={() => setLoaded(true)}
-          onError={retry}
+          className="absolute inset-0 h-full w-full object-cover"
         />
+      ) : (
+        <LayoutTemplate className={cn('relative', iconClassName)} aria-hidden />
       )}
-      {(!loaded || failed) && <LayoutTemplate className={cn('relative', iconClassName)} aria-hidden />}
     </div>
   );
 }
